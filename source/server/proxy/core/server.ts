@@ -1,5 +1,5 @@
 import type { Server } from 'node:http'
-import { getSettings } from '../database/settings-store'
+import { getSettings } from '../../database/settings-store'
 import { ProxyRuntime } from './proxy-runtime'
 
 export interface ProxyServerStatus {

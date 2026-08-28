@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ModelWithProvider } from './router'
 import type * as RouterModule from './router'
-import { configureSecretStore } from '../infrastructure/secrets/secret-store'
+import { configureSecretStore } from '../../infrastructure/secrets/secret-store'
 
 const mocks = vi.hoisted(() => ({
   models: [] as ModelWithProvider[],
@@ -39,18 +39,18 @@ vi.mock('./health', () => ({
   markProviderModelSuccess: mocks.markProviderModelSuccess,
 }))
 
-vi.mock('../database/settings-store', () => ({
+vi.mock('../../database/settings-store', () => ({
   getSettings: async () => ({ idleTimeoutMilliseconds: 1_000, logRetentionDays: 7, captureRequestContent: mocks.captureRequestContent }),
 }))
 
-vi.mock('../database/logical-model-store', () => ({
+vi.mock('../../database/logical-model-store', () => ({
   listLogicalModels: async () => [
     { id: 'default', name: 'default', enabled: true },
     { id: 'secondary', name: 'secondary', enabled: true },
   ],
 }))
 
-vi.mock('../database/request-log-store', () => ({
+vi.mock('../../database/request-log-store', () => ({
   createRequestLog: mocks.createRequestLog,
   createRequestAttempt: mocks.createRequestAttempt,
   createRequestContent: mocks.createRequestContent,

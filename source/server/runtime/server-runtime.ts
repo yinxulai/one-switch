@@ -6,8 +6,8 @@ import { configureSettingsDefaults, getSettings } from '../database/settings-sto
 import { configureSecretStore } from '../infrastructure/secrets/secret-store'
 import { installLogCapture } from '../management/log-buffer'
 import { startManagementServer, stopManagementServer } from '../management/server'
-import { resetManualModels } from '../proxy/manual-routing'
-import { startProxyServer, stopProxyServer } from '../proxy/server'
+import { resetManualModels } from '../proxy/core/manual-routing'
+import { startProxyServer, stopProxyServer } from '../proxy/core/server'
 
 export interface ServerRuntimeOptions {
   dataDir: string

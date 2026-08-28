@@ -1,5 +1,5 @@
 import type { RawUsage } from '@common/schemas'
-import type { ProtocolAdapter, StreamConverter } from './protocols/types'
+import type { ProtocolAdapter, StreamConverter } from '../protocols/types'
 import type { HeaderMap } from './headers'
 
 export interface ExtractedUsage {
@@ -164,12 +164,12 @@ export class ResponsePipeline {
   private consumeJson(body: string): void {
     try {
       const data = JSON.parse(body) as Record<string, unknown>
-      if (this.options.isStreaming && !this.firstOutputReported && hasOutput(data)) {
+      if (this.options.isStreaming && !this.firstOutputReported && hasResponseOutput(data)) {
         this.firstOutputReported = true
         this.options.onFirstOutput?.()
       }
-      const usage = extractTokenUsage(data)
-      this.usage = mergeUsage(this.usage, usage)
+      const usage = extractResponseUsage(data)
+      this.usage = mergeResponseUsage(this.usage, usage)
       this.options.onUsage(usage)
     } catch {
       // Usage is best-effort; malformed provider events must still be forwarded.
@@ -182,7 +182,7 @@ function emptyUsage(): ExtractedUsage {
 }
 
 /** Only count an actual generated delta, not role-only, usage, or [DONE] events. */
-function hasOutput(data: Record<string, unknown>): boolean {
+export function hasResponseOutput(data: Record<string, unknown>): boolean {
   const choices = Array.isArray(data.choices) ? data.choices : []
   for (const choice of choices) {
     const record = asRecord(choice)
@@ -211,7 +211,7 @@ function hasValue(value: unknown): boolean {
   return value !== null && value !== undefined
 }
 
-function extractTokenUsage(data: Record<string, unknown>): ExtractedUsage {
+export function extractResponseUsage(data: Record<string, unknown>): ExtractedUsage {
   const candidates: RawUsage[] = []
   collectUsage(data.usage, candidates)
   collectUsage(asRecord(data.message)?.usage, candidates)
@@ -233,7 +233,7 @@ function extractTokenUsage(data: Record<string, unknown>): ExtractedUsage {
   }
 }
 
-function mergeUsage(current: ExtractedUsage, incoming: ExtractedUsage): ExtractedUsage {
+export function mergeResponseUsage(current: ExtractedUsage, incoming: ExtractedUsage): ExtractedUsage {
   return {
     inputTokens: incoming.inputTokens ?? current.inputTokens,
     outputTokens: incoming.outputTokens ?? current.outputTokens,

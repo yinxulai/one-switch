@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { Protocol } from '@common/schemas'
 import { CONVERTIBLE_PROTOCOLS, isConvertible } from '@common/protocols'
-import { convertRequestBody } from './conversion'
-import { convertResponseBody, createSseConverter, parseSseIncremental, serializeSseEvent } from './conversion-response'
+import { convertRequestBody } from './request'
+import { convertResponseBody, createSseConverter, parseSseIncremental, serializeSseEvent } from './response'
 
 function request(protocol: Protocol, body: Record<string, unknown>): Buffer {
   return Buffer.from(JSON.stringify({ ...body, _protocol: protocol }))

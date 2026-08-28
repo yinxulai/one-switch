@@ -2,13 +2,13 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { z } from 'zod'
 import { getSettings } from '../database/settings-store'
 import { listProviderHealth, listProviderModelHealth } from '../database/health-store'
-import { getManualModel, setManualModel } from '../proxy/manual-routing'
+import { getManualModel, setManualModel } from '../proxy/core/manual-routing'
 import {
   getProxyServerStatus,
   restartProxyServer,
   startProxyServer,
   stopProxyServer,
-} from '../proxy/server'
+} from '../proxy/core/server'
 import type { ManagementHandler } from './response'
 import { sendSuccess } from './response'
 import { HttpRouter } from '../http-router'

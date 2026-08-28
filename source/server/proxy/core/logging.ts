@@ -1,7 +1,7 @@
 import type http from 'node:http'
 import type { IncomingHttpHeaders, OutgoingHttpHeaders } from 'node:http'
 import type { Protocol, RawUsage, RequestAttribute, RequestStatus } from '@common/schemas'
-import { getSettings } from '../database/settings-store'
+import { getSettings } from '../../database/settings-store'
 import {
   createRequestAttempt,
   createRequestContent,
@@ -11,7 +11,7 @@ import {
   replaceRequestUsage,
   updateRequestContent,
   updateRequestLogStatus,
-} from '../database/request-log-store'
+} from '../../database/request-log-store'
 import { redactHeaders } from './headers'
 import type { ProxyObservationHooks } from './hooks'
 
