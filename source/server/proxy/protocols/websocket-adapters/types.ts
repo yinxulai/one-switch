@@ -1,6 +1,6 @@
 import type { IncomingMessage } from 'node:http'
 import type { Protocol } from '@common/schemas'
-import type { ExtractedUsage } from '../response-pipeline'
+import type { ExtractedUsage } from '../../core/response-pipeline'
 
 export interface WebSocketFramePolicy {
   allowBinary: boolean

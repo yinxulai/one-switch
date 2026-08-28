@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { listLogicalModels } from '../database/logical-model-store'
+import { listLogicalModels } from '../../database/logical-model-store'
 import { generateId } from '@common/utils'
 import { executeProxyRequest } from './attempt-executor'
 import type { ProxyObservationHooks } from './hooks'

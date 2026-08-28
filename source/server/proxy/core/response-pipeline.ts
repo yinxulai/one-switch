@@ -1,5 +1,5 @@
 import type { RawUsage } from '@common/schemas'
-import type { ProtocolAdapter, StreamConverter } from './protocols/types'
+import type { ProtocolAdapter, StreamConverter } from '../protocols/types'
 import type { HeaderMap } from './headers'
 
 export interface ExtractedUsage {

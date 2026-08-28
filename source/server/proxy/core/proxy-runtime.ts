@@ -1,8 +1,8 @@
 import type { Server } from 'node:http'
 import http from 'node:http'
 import { handleProxyRequest } from './request-entry'
-import { attachWebSocketProxy } from './websocket'
-import { getErrorResponseMessage, isErrorCode, normalizeError } from '../errors'
+import { attachWebSocketProxy } from '../transports/websocket'
+import { getErrorResponseMessage, isErrorCode, normalizeError } from '../../errors'
 
 export interface ProxyEndpoint {
   host: string

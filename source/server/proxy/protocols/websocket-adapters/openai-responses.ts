@@ -1,6 +1,6 @@
 import type { IncomingMessage } from 'node:http'
 import type { Protocol } from '@common/schemas'
-import { extractResponseUsage, hasResponseOutput } from '../response-pipeline'
+import { extractResponseUsage, hasResponseOutput } from '../../core/response-pipeline'
 import type { WebSocketFrameResult, WebSocketProtocolAdapter, WebSocketProtocolError, WebSocketTurnObservation } from './types'
 
 const PATHS = new Set(['/v1/responses', '/responses'])

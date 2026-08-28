@@ -1,11 +1,11 @@
 import type { IncomingHttpHeaders } from 'node:http'
 import { generateId } from '@common/utils'
 import type { Protocol, RequestStatus } from '@common/schemas'
-import { getSettings } from '../database/settings-store'
+import { getSettings } from '../../database/settings-store'
 import { createAttemptLogger, initializeRequestLogger, type RequestLogger } from './logging'
 import { mergeResponseUsage, type ExtractedUsage } from './response-pipeline'
 import type { ModelWithProvider } from './router'
-import type { WebSocketTurnObservation } from './websocket-adapters/types'
+import type { WebSocketTurnObservation } from '../protocols/websocket-adapters/types'
 
 export interface WebSocketTurnObserverOptions {
   logicalModelId: string

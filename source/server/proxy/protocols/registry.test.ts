@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { protocolAdapters } from './registry'
-import { createRequestContext } from '../request-context'
+import { createRequestContext } from '../core/request-context'
 
 function context(body: Record<string, unknown>, clientProtocol: 'openai-completions' | 'openai-responses' | 'anthropic-messages') {
   return createRequestContext({

@@ -7,8 +7,8 @@ import {
   recordProviderFailure,
   listProviderHealth,
   resetProviderHealth,
-} from '../database/health-store'
-import { getSettings } from '../database/settings-store'
+} from '../../database/health-store'
+import { getSettings } from '../../database/settings-store'
 
 export async function isProviderAvailable(providerId: string): Promise<boolean> {
   const health = await getProviderHealth(providerId)

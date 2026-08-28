@@ -1,5 +1,5 @@
 import type { Protocol } from '@common/schemas'
-import type { RequestContext } from '../request-context'
+import type { RequestContext } from '../core/request-context'
 
 export interface StreamConverter {
   push(chunk: string): string

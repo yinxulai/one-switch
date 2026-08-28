@@ -12,7 +12,7 @@ vi.mock('./logging', () => ({
   createAttemptLogger: mocks.createAttemptLogger,
 }))
 
-vi.mock('../database/settings-store', () => ({ getSettings: mocks.getSettings }))
+vi.mock('../../database/settings-store', () => ({ getSettings: mocks.getSettings }))
 
 import { WebSocketTurnObserver } from './websocket-turn-observer'
 

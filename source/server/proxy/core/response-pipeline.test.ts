@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { ProtocolAdapter } from './protocols/types'
+import type { ProtocolAdapter } from '../protocols/types'
 import { ResponsePipeline, type ResponsePipelineOptions, type ResponseSink } from './response-pipeline'
 
 function makeAdapter(overrides: Partial<ProtocolAdapter> = {}): ProtocolAdapter {

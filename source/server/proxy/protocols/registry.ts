@@ -1,8 +1,8 @@
 import type { Protocol } from '@common/schemas'
-import { convertRequestBody } from '../conversion'
-import { convertResponseBody, createSseConverter } from '../conversion-response'
-import { injectUsageParams, rewriteRequestModel } from '../request'
-import type { RequestContext } from '../request-context'
+import { convertRequestBody } from './conversion'
+import { convertResponseBody, createSseConverter } from './conversion-response'
+import { injectUsageParams, rewriteRequestModel } from '../core/request'
+import type { RequestContext } from '../core/request-context'
 import type { ProtocolAdapter, ProtocolAdapterRegistry, StreamConverter } from './types'
 
 class RegisteredProtocolAdapter implements ProtocolAdapter {
