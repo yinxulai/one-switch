@@ -81,6 +81,57 @@ describe('WebSocketTurnObserver', () => {
     expect(logger.finalizeRequestLog).toHaveBeenCalledWith('success', expect.any(Number), expect.objectContaining({ inputTokens: 2, outputTokens: 3, ttftMilliseconds: expect.any(Number), upstreamProtocol: 'openai-responses' }))
   })
 
+  it('merges partial and final official Responses usage without losing details or zero values', async () => {
+    const { logger, attemptLogger } = createLoggerMocks()
+    const observer = createObserver()
+    await observer.start('{"type":"response.create","stream_id":"stream_usage"}', 'stream_usage')
+
+    await observer.observe({
+      type: 'event',
+      correlationKey: 'stream_usage',
+      usage: {
+        inputTokens: 12,
+        outputTokens: null,
+        reasoningTokens: null,
+        cachedInputTokens: 4,
+        cacheCreationInputTokens: null,
+        rawUsage: { input_tokens: 12, input_tokens_details: { cached_tokens: 4 } },
+      },
+    }, '{"type":"response.in_progress"}')
+    await observer.observe({
+      type: 'complete',
+      correlationKey: 'stream_usage',
+      usage: {
+        inputTokens: 12,
+        outputTokens: 0,
+        reasoningTokens: 0,
+        cachedInputTokens: 4,
+        cacheCreationInputTokens: null,
+        rawUsage: {
+          input_tokens: 12,
+          input_tokens_details: { cached_tokens: 4 },
+          output_tokens: 0,
+          output_tokens_details: { reasoning_tokens: 0 },
+          total_tokens: 12,
+        },
+      },
+    }, '{"type":"response.completed"}')
+
+    const expectedUsage = expect.objectContaining({
+      inputTokens: 12,
+      outputTokens: 0,
+      reasoningTokens: 0,
+      cachedInputTokens: 4,
+      rawUsage: expect.objectContaining({
+        input_tokens_details: { cached_tokens: 4 },
+        output_tokens_details: { reasoning_tokens: 0 },
+        total_tokens: 12,
+      }),
+    })
+    expect(attemptLogger.recordAttempt).toHaveBeenCalledWith('success', 101, false, undefined, undefined, undefined, undefined, expectedUsage)
+    expect(logger.finalizeRequestLog).toHaveBeenCalledWith('success', expect.any(Number), expectedUsage)
+  })
+
   it('records failed turns with the protocol error and partial content', async () => {
     const { logger, attemptLogger } = createLoggerMocks()
     const observer = createObserver()

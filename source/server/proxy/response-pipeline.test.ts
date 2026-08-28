@@ -18,16 +18,36 @@ function setup(overrides: Partial<ResponsePipelineOptions> = {}) {
 }
 
 describe('ResponsePipeline', () => {
-  it('forwards successful JSON and extracts usage from nested provider fields', () => {
+  it('forwards successful JSON and extracts official nested Responses usage', () => {
     const { pipeline, response, onUsage } = setup()
-    const body = '{"response":{"usage":{"input_tokens":12,"output_tokens":7}}}'
+    const body = JSON.stringify({
+      type: 'response.completed',
+      response: {
+        id: 'resp_1',
+        status: 'completed',
+        usage: {
+          input_tokens: 12,
+          input_tokens_details: { cached_tokens: 4 },
+          output_tokens: 7,
+          output_tokens_details: { reasoning_tokens: 3 },
+          total_tokens: 19,
+        },
+      },
+    })
     pipeline.push(body, true)
     const result = pipeline.finish(true, null)
     expect(response.chunks).toEqual([body])
     expect(result.upstreamBody).toBe(body)
     expect(result.downstreamBody).toBe(body)
-    expect(result.usage).toMatchObject({ inputTokens: 12, outputTokens: 7 })
+    expect(result.usage).toMatchObject({ inputTokens: 12, outputTokens: 7, cachedInputTokens: 4, reasoningTokens: 3 })
+    expect(result.usage.rawUsage).toMatchObject({ total_tokens: 19 })
     expect(onUsage).toHaveBeenCalledOnce()
+  })
+
+  it('preserves zero token values in official nested Responses usage', () => {
+    const { pipeline } = setup()
+    pipeline.push('{"type":"response.incomplete","response":{"usage":{"input_tokens":5,"input_tokens_details":{"cached_tokens":0},"output_tokens":0,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":5}}}', true)
+    expect(pipeline.finish(true, null).usage).toMatchObject({ inputTokens: 5, outputTokens: 0, cachedInputTokens: 0, reasoningTokens: 0 })
   })
 
   it('extracts reasoning tokens from provider usage details', () => {

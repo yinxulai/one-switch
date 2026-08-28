@@ -28,6 +28,7 @@ export const openAIResponsesWebSocketAdapter: WebSocketProtocolAdapter = {
     const event = parsed as Record<string, unknown>
     if (event.type !== 'response.create') return { ok: false, code: 1002, message: 'unsupported Responses client event' }
     if (event.model !== undefined && typeof event.model !== 'string') return { ok: false, code: 1002, message: 'response.create model must be a string' }
+    if (event.stream_id !== undefined && typeof event.stream_id !== 'string') return { ok: false, code: 1002, message: 'response.create stream_id must be a string' }
     const correlationKey = typeof event.stream_id === 'string' ? event.stream_id : undefined
     return { ok: true, payload: JSON.stringify({ ...event, model: providerModelId }), correlationKey }
   },
@@ -38,12 +39,11 @@ export const openAIResponsesWebSocketAdapter: WebSocketProtocolAdapter = {
     const event = parsed as Record<string, unknown>
     const type = typeof event.type === 'string' ? event.type : ''
     const usage = extractResponseUsage(event)
-    const correlationKey = typeof event.stream_id === 'string'
-      ? event.stream_id
-      : typeof event.response === 'object' && event.response !== null && typeof (event.response as Record<string, unknown>).id === 'string'
-        ? (event.response as Record<string, unknown>).id as string
-        : undefined
-    if (type === 'response.completed') return { type: 'complete', event, usage, correlationKey }
+    // Responses WebSocket echoes stream_id only for named lanes. The response
+    // id identifies a response, not the client lane, so it must not be used for
+    // turn routing; default-lane events intentionally fall back to FIFO.
+    const correlationKey = typeof event.stream_id === 'string' ? event.stream_id : undefined
+    if (type === 'response.completed' || type === 'response.incomplete') return { type: 'complete', event, raw, usage, correlationKey }
     if (type === 'response.failed' || type === 'error') return { type: 'failed', event, raw, error: raw, usage, correlationKey }
     return { type: 'event', event, raw, hasOutput: hasResponseOutput(event), usage, correlationKey }
   },
