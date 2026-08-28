@@ -1,6 +1,6 @@
 import type { Protocol } from '@common/schemas'
-import { convertRequestBody } from './conversion'
-import { convertResponseBody, createSseConverter } from './conversion-response'
+import { convertRequestBody } from '../transformers/request'
+import { convertResponseBody, createSseConverter } from '../transformers/response'
 import { injectUsageParams, rewriteRequestModel } from '../core/request'
 import type { RequestContext } from '../core/request-context'
 import type { ProtocolAdapter, ProtocolAdapterRegistry, StreamConverter } from './types'

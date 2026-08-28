@@ -5,7 +5,7 @@ import { getSettings } from '../../database/settings-store'
 import { createAttemptLogger, initializeRequestLogger, type RequestLogger } from './logging'
 import { mergeResponseUsage, type ExtractedUsage } from './response-pipeline'
 import type { ModelWithProvider } from './router'
-import type { WebSocketTurnObservation } from '../protocols/websocket-adapters/types'
+import type { WebSocketTurnObservation } from '../protocols/openai-responses/websocket-types'
 
 export interface WebSocketTurnObserverOptions {
   logicalModelId: string

@@ -4,7 +4,7 @@ import { isProviderAvailable, isProviderModelAvailable } from './health'
 import { isConvertible } from '@common/protocols'
 import type { ProviderModelRoute, Provider, Protocol } from '@common/schemas'
 import { HttpRouter } from '../../http-router'
-import { detectTransportFromUrl, type Transport } from '../transports/transport'
+import { detectTransportFromUrl, type Transport } from '../transports/types'
 
 export interface ModelWithProvider {
   model: ProviderModelRoute

@@ -1,7 +1,7 @@
 import type { IncomingMessage } from 'node:http'
 import type { Protocol } from '@common/schemas'
 import { extractResponseUsage, hasResponseOutput } from '../../core/response-pipeline'
-import type { WebSocketFrameResult, WebSocketProtocolAdapter, WebSocketProtocolError, WebSocketTurnObservation } from './types'
+import type { WebSocketFrameResult, WebSocketProtocolAdapter, WebSocketProtocolError, WebSocketTurnObservation } from './websocket-types'
 
 const PATHS = new Set(['/v1/responses', '/responses'])
 const OPENAI_BETA_HEADER = 'responses_websockets=2026-02-06'

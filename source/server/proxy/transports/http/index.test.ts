@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import http from 'node:http'
-import { attachDownstreamAbort, attachResponseIdleTimeout, sendUpstreamRequest } from './transport'
+import { sendUpstreamRequest } from './index'
+import { attachDownstreamAbort } from './lifecycle'
+import { attachResponseIdleTimeout } from '../sse/lifecycle'
 
 describe('transport', () => {
   it('sends a request body and exposes the response', async () => {

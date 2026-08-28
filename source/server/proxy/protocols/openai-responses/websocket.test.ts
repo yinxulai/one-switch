@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { openAIResponsesWebSocketAdapter } from './openai-responses'
+import { openAIResponsesWebSocketAdapter } from './websocket'
 
 describe('OpenAI Responses WebSocket adapter', () => {
   it('matches Responses paths', () => {

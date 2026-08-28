@@ -1,6 +1,6 @@
 import type { IncomingMessage } from 'node:http'
-import { openAIResponsesWebSocketAdapter } from './openai-responses'
-import type { WebSocketProtocolAdapter } from './types'
+import { openAIResponsesWebSocketAdapter } from './websocket'
+import type { WebSocketProtocolAdapter } from './websocket-types'
 
 const adapters: WebSocketProtocolAdapter[] = [openAIResponsesWebSocketAdapter]
 
