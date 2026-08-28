@@ -1,6 +1,20 @@
 import http from 'node:http'
 import https from 'node:https'
 
+export const TransportValues = ['http', 'sse', 'websocket'] as const
+export type Transport = typeof TransportValues[number]
+
+export interface EndpointCapability {
+  protocol: string
+  transport: Transport
+  streaming: boolean
+}
+
+export function detectTransportFromUrl(url: string): Transport {
+  const scheme = new URL(url).protocol
+  return scheme === 'ws:' || scheme === 'wss:' ? 'websocket' : 'http'
+}
+
 export type UpstreamRequestOptions = http.RequestOptions
 export type UpstreamResponse = http.IncomingMessage
 export type UpstreamResponseHeaders = http.IncomingHttpHeaders

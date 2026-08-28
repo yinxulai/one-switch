@@ -106,7 +106,7 @@ proxy/
 - 默认监听 `127.0.0.1` 的可配置端口，不暴露到局域网
 - 客户端只需配置一个统一 Base URL（如 `http://127.0.0.1:port`），无需按协议区分
 - 支持普通 HTTP 请求和 SSE 流式响应透传
-- 支持 Responses API 的 WebSocket 传输（`/v1/responses` 的 `Upgrade: websocket` 握手），WS→WS 透传中继、上游不支持时回 426 由客户端降级 HTTP，详见 [websocket-transport.md](./websocket-transport.md)
+- 支持 Responses API 的 WebSocket 传输（`/v1/responses` 的 `Upgrade: websocket` 握手），WS→WS 透传中继、上游不支持时回 426 由客户端降级 HTTP，详见 [websocket-transport.md](./websocket-transport.md)；Protocol 与 Transport 的扩展边界见 [transport-and-ws-adapters.md](./transport-and-ws-adapters.md)
 - 不强制接管系统代理；推荐用户在 AI 工具中配置本地 Base URL
 
 ## 协议识别

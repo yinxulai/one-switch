@@ -4,6 +4,7 @@ import { isProviderAvailable, isProviderModelAvailable } from './health'
 import { isConvertible } from '@common/protocols'
 import type { ProviderModelRoute, Provider, Protocol } from '@common/schemas'
 import { HttpRouter } from '../http-router'
+import { detectTransportFromUrl, type Transport } from './transport'
 
 export interface ModelWithProvider {
   model: ProviderModelRoute
@@ -52,6 +53,10 @@ export async function getAvailableModels(logicalModelId = 'default', options: Av
  */
 export function findEndpoint(model: ProviderModelRoute, protocol: Protocol) {
   return model.endpoints.find(endpoint => endpoint.protocol === protocol)
+}
+
+export function findTransportEndpoint(model: ProviderModelRoute, protocol: Protocol, transport: Transport) {
+  return model.endpoints.find(endpoint => endpoint.protocol === protocol && (detectTransportFromUrl(endpoint.endpointUrl) === transport || (transport === 'websocket' && detectTransportFromUrl(endpoint.endpointUrl) === 'http')))
 }
 
 /**

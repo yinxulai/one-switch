@@ -29,6 +29,14 @@ flowchart LR
 
 ProviderModel 通过 `provider_model_endpoints` 绑定 ProviderEndpoint，并可为绑定配置模型专属 `url`。
 
+### Protocol 与 Transport
+
+- `Protocol` 表示请求/响应的业务语义和消息 schema，例如 `openai-responses`；
+- `Transport` 表示 HTTP、SSE、WebSocket 等承载方式；
+- WebSocket 不作为通用协议值写入 `ProtocolSchema`，而是通过 `protocol + transport` 的能力组合路由；
+- 只有消息语义、状态机和事件模型都不同的接口（例如 OpenAI Realtime 与 Responses）才新增独立协议或协议变体；
+- WebSocket 公共 runtime 处理连接生命周期，具体 WS 事件语义由协议 adapter 处理，详见 [transport-and-ws-adapters.md](./transport-and-ws-adapters.md)。
+
 ### Protocol
 代理自动识别的 API 协议类型，根据请求 path 匹配判定，无需客户端区分 Base URL。
 

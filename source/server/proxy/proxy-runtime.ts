@@ -1,6 +1,7 @@
 import type { Server } from 'node:http'
 import http from 'node:http'
 import { handleProxyRequest } from './request-entry'
+import { attachWebSocketProxy } from './websocket'
 import { getErrorResponseMessage, isErrorCode, normalizeError } from '../errors'
 
 export interface ProxyEndpoint {
@@ -17,6 +18,7 @@ export class ProxyRuntime {
   private state: 'stopped' | 'starting' | 'running' | 'stopping' = 'stopped'
   private operation: Promise<void> = Promise.resolve()
   private endpoint: ProxyEndpoint
+  private websocketCleanup: (() => void) | null = null
 
   constructor(endpoint: ProxyEndpoint) {
     this.endpoint = endpoint
@@ -45,6 +47,8 @@ export class ProxyRuntime {
         this.server = candidate
         this.state = 'running'
       } catch (error) {
+        this.websocketCleanup?.()
+        this.websocketCleanup = null
         await close(candidate)
         this.state = 'stopped'
         throw error
@@ -58,6 +62,8 @@ export class ProxyRuntime {
       this.state = 'stopping'
       const active = this.server
       this.server = null
+      this.websocketCleanup?.()
+      this.websocketCleanup = null
       await close(active)
       this.state = 'stopped'
     })
@@ -69,6 +75,8 @@ export class ProxyRuntime {
         this.state = 'stopping'
         const active = this.server
         this.server = null
+        this.websocketCleanup?.()
+        this.websocketCleanup = null
         await close(active)
         this.state = 'stopped'
       }
@@ -80,6 +88,8 @@ export class ProxyRuntime {
         this.server = candidate
         this.state = 'running'
       } catch (error) {
+        this.websocketCleanup?.()
+        this.websocketCleanup = null
         await close(candidate)
         this.state = 'stopped'
         throw error
@@ -94,7 +104,7 @@ export class ProxyRuntime {
   }
 
   private createServer(): Server {
-    return http.createServer(async (req, res) => {
+    const server = http.createServer(async (req, res) => {
       try {
         const url = new URL(req.url!, 'http://localhost')
         if (url.pathname === '/v1/models') {
@@ -116,6 +126,8 @@ export class ProxyRuntime {
         writeJsonError(res, normalized.statusCode, normalized.code, getErrorResponseMessage(normalized, '代理处理失败'))
       }
     })
+    this.websocketCleanup = attachWebSocketProxy(server)
+    return server
   }
 }
 
