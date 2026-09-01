@@ -25,7 +25,7 @@ describe('runtime log store', () => {
     const third = createRuntimeLog('warn', 'third message', 300)
     const fourth = createRuntimeLog('warn', 'warn message', 400)
 
-    expect(listRuntimeLogs({ limit: 2 }).map(log => log.id)).toEqual([third.id, second.id])
+    expect(listRuntimeLogs({ limit: 2 }).map(log => log.id)).toEqual([fourth.id, third.id])
     expect(listRuntimeLogs({ after: first.id, limit: 10 }).map(log => log.id)).toEqual([fourth.id, third.id, second.id])
     expect(listRuntimeLogs({ limit: 2, offset: 1 }).map(log => log.id)).toEqual([third.id, second.id])
     expect(listRuntimeLogs({ level: 'warn', limit: 10 }).map(log => log.id)).toEqual([fourth.id, third.id])
