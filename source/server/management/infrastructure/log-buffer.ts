@@ -5,7 +5,7 @@
  */
 
 import type { LogEntry } from '@common/schemas'
-import { clearRuntimeLogs, createRuntimeLog, listAllRuntimeLogs, listRuntimeLogs, pruneRuntimeLogsBefore } from '@server/database/runtime-log-store'
+import { clearRuntimeLogs, countRuntimeLogs, createRuntimeLog, listAllRuntimeLogs, listRuntimeLogs, pruneRuntimeLogsBefore } from '@server/database/runtime-log-store'
 
 export type LogLevel = 'info' | 'warn' | 'error' | 'debug'
 
@@ -123,6 +123,9 @@ export function installLogCapture(): void {
 interface ListLogsOptions {
   after?: number
   limit?: number
+  offset?: number
+  level?: LogEntry['level']
+  searchText?: string
 }
 
 export function listLogs(options?: ListLogsOptions): LogEntry[] {
@@ -132,8 +135,19 @@ export function listLogs(options?: ListLogsOptions): LogEntry[] {
   } catch {
     const after = options?.after ?? 0
     const limit = options?.limit ?? 500
-    const filtered = after > 0 ? entries.filter(entry => entry.id > after) : entries
-    return filtered.slice(-limit).reverse()
+    const offset = options?.offset ?? 0
+    const filtered = filterEntries(entries, options)
+    const visible = after > 0 ? filtered.filter(entry => entry.id > after) : filtered
+    return visible.slice().reverse().slice(offset, offset + limit)
+  }
+}
+
+export function countLogs(options?: Pick<ListLogsOptions, 'level' | 'searchText'>): number {
+  try {
+    drainPendingEntries()
+    return countRuntimeLogs(options)
+  } catch {
+    return filterEntries(entries, options).length
   }
 }
 
@@ -159,4 +173,13 @@ export function exportLogs(): string {
   return source
     .map(entry => `[${new Date(entry.timestamp).toISOString()}] [${entry.level.toUpperCase()}] ${entry.message}`)
     .join('\n')
+}
+
+function filterEntries(source: LogEntry[], options?: Pick<ListLogsOptions, 'level' | 'searchText'>) {
+  const normalizedSearchText = options?.searchText?.trim().toLowerCase()
+  return source.filter(entry => {
+    if (options?.level && entry.level !== options.level) return false
+    if (normalizedSearchText && !entry.message.toLowerCase().includes(normalizedSearchText)) return false
+    return true
+  })
 }

@@ -4,6 +4,9 @@ import { getDb } from './index'
 interface ListRuntimeLogsOptions {
   after?: number
   limit?: number
+  offset?: number
+  level?: LogEntry['level']
+  searchText?: string
 }
 
 const DEFAULT_LIMIT = 500
@@ -13,6 +16,12 @@ type RuntimeLogRow = {
   level: string
   message: string
   timestamp: number | bigint
+}
+
+interface RuntimeLogFilter {
+  after?: number
+  level?: LogEntry['level']
+  searchText?: string
 }
 
 function mapLogRow(row: RuntimeLogRow): LogEntry {
@@ -38,20 +47,29 @@ export function createRuntimeLog(level: LogEntry['level'], message: string, time
 }
 
 export function listRuntimeLogs(options?: ListRuntimeLogsOptions): LogEntry[] {
-  const after = options?.after ?? 0
   const limit = options?.limit ?? DEFAULT_LIMIT
-
-  if (after > 0) {
-    const rows = getDb().$client
-      .prepare('SELECT id, level, message, timestamp FROM runtime_logs WHERE id > ? ORDER BY id DESC LIMIT ?')
-      .all(after, limit) as RuntimeLogRow[]
-    return rows.map(mapLogRow)
-  }
+  const offset = options?.offset ?? 0
+  const { whereClause, parameters } = buildRuntimeLogFilter({
+    after: options?.after,
+    level: options?.level,
+    searchText: options?.searchText,
+  })
 
   const rows = getDb().$client
-    .prepare('SELECT id, level, message, timestamp FROM runtime_logs ORDER BY id DESC LIMIT ?')
-    .all(limit) as RuntimeLogRow[]
+    .prepare(`SELECT id, level, message, timestamp FROM runtime_logs${whereClause} ORDER BY id DESC LIMIT ? OFFSET ?`)
+    .all(...parameters, limit, offset) as RuntimeLogRow[]
   return rows.map(mapLogRow)
+}
+
+export function countRuntimeLogs(options?: Pick<ListRuntimeLogsOptions, 'level' | 'searchText'>): number {
+  const { whereClause, parameters } = buildRuntimeLogFilter({
+    level: options?.level,
+    searchText: options?.searchText,
+  })
+  const row = getDb().$client
+    .prepare(`SELECT COUNT(*) as total FROM runtime_logs${whereClause}`)
+    .get(...parameters) as { total: number | bigint }
+  return Number(row.total)
 }
 
 export function listAllRuntimeLogs(): LogEntry[] {
@@ -70,4 +88,30 @@ export function pruneRuntimeLogsBefore(retentionDays: number): number {
   const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000
   const result = getDb().$client.prepare('DELETE FROM runtime_logs WHERE timestamp < ?').run(cutoff)
   return Number(result.changes)
+}
+
+function buildRuntimeLogFilter(filter?: RuntimeLogFilter) {
+  const clauses: string[] = []
+  const parameters: Array<number | string> = []
+
+  if (filter?.after && filter.after > 0) {
+    clauses.push('id > ?')
+    parameters.push(filter.after)
+  }
+
+  if (filter?.level) {
+    clauses.push('level = ?')
+    parameters.push(filter.level)
+  }
+
+  const normalizedSearchText = filter?.searchText?.trim()
+  if (normalizedSearchText) {
+    clauses.push('instr(lower(message), lower(?)) > 0')
+    parameters.push(normalizedSearchText)
+  }
+
+  return {
+    whereClause: clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '',
+    parameters,
+  }
 }

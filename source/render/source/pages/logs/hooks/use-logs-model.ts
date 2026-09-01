@@ -5,9 +5,13 @@ import { unwrap } from '@/api/unwrap'
 import { useToast } from '@/components/ui/toast'
 import { useLogsUiStore } from '../store'
 
+const PAGE_SIZE = 100
+
 export function useLogsModel(initialSearchText?: string) {
   const toast = useToast()
   const client = useQueryClient()
+  const page = useLogsUiStore(state => state.page)
+  const setPage = useLogsUiStore(state => state.setPage)
   const live = useLogsUiStore(state => state.live)
   const setLive = useLogsUiStore(state => state.setLive)
   const levelFilter = useLogsUiStore(state => state.levelFilter)
@@ -20,10 +24,30 @@ export function useLogsModel(initialSearchText?: string) {
     if (initialSearchText?.trim()) setLevelFilter('all')
   }, [initialSearchText, setLevelFilter, setSearchText])
 
-  const query = useQuery({ queryKey: ['runtime-logs'], queryFn: () => unwrap(logsApi.list({ limit: 2000 })).then(data => data.logs), refetchInterval: live ? 2_000 : false })
+  const query = useQuery({
+    queryKey: ['runtime-logs', page, levelFilter, searchText],
+    queryFn: () => unwrap(logsApi.list({
+      limit: PAGE_SIZE,
+      offset: (page - 1) * PAGE_SIZE,
+      ...(levelFilter !== 'all' ? { level: levelFilter } : {}),
+      ...(searchText.trim() ? { searchText } : {}),
+    })),
+    placeholderData: previous => previous,
+    refetchInterval: live && page === 1 ? 2_000 : false,
+  })
   const exportMutation = useMutation({ mutationFn: () => unwrap(logsApi.export()) })
-  const clearMutation = useMutation({ mutationFn: () => unwrap(logsApi.clear()), onSuccess: () => { client.setQueryData(['runtime-logs'], []); setClearDialogOpen(false); toast.success('运行日志已清空') } })
-  const logs = query.data ?? []
+  const clearMutation = useMutation({
+    mutationFn: () => unwrap(logsApi.clear()),
+    onSuccess: () => {
+      setPage(1)
+      client.invalidateQueries({ queryKey: ['runtime-logs'] })
+      setClearDialogOpen(false)
+      toast.success('运行日志已清空')
+    },
+  })
+  const logs = query.data?.logs ?? []
+  const total = query.data?.total ?? 0
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const refresh = useCallback(() => query.refetch(), [query])
   const exportLogs = useCallback(async () => {
     try {
@@ -34,7 +58,6 @@ export function useLogsModel(initialSearchText?: string) {
     } catch (error) { toast.error(error instanceof Error ? error.message : '运行日志导出失败') }
   }, [exportMutation, toast])
   const clearLogs = useCallback(async () => { try { await clearMutation.mutateAsync() } catch (error) { toast.error(error instanceof Error ? error.message : '运行日志清空失败') } }, [clearMutation, toast])
-  const normalizedSearch = searchText.trim().toLowerCase()
-  const filteredLogs = logs.filter(log => (levelFilter === 'all' || log.level === levelFilter) && (!normalizedSearch || log.message.toLowerCase().includes(normalizedSearch)))
-  return { logs, filteredLogs, loading: query.isPending, refreshing: query.isFetching && !query.isPending, live, setLive, levelFilter, setLevelFilter, searchText, setSearchText, clearDialogOpen, setClearDialogOpen, refresh, exportLogs, clearLogs }
+  const goToPage = useCallback((targetPage: number) => setPage(Math.min(Math.max(1, targetPage), totalPages)), [setPage, totalPages])
+  return { logs, total, loading: query.isPending, refreshing: query.isFetching && !query.isPending, page, totalPages, pageSize: PAGE_SIZE, live, setLive, levelFilter, setLevelFilter, searchText, setSearchText, clearDialogOpen, setClearDialogOpen, refresh, exportLogs, clearLogs, goToPage }
 }

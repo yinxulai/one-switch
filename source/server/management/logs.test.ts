@@ -24,12 +24,21 @@ describe('log routes', () => {
 
   it('lists, exports and clears the in-memory log buffer', async () => {
     console.info('hello from logs route test')
+    console.warn('warn from logs route test')
 
     const listRes = mockResponse()
-    await logRoutes.invoke('/api/logs/list', listRes, { limit: 50 })
-    const listPayload = responseData(listRes) as { data: { logs: Array<{ message: string }>; latestId: number } }
+    await logRoutes.invoke('/api/logs/list', listRes, { limit: 1, offset: 0, level: 'warn', searchText: 'warn' })
+    const listPayload = responseData(listRes) as { data: { logs: Array<{ message: string }>; total: number } }
+    expect(listPayload.data.total).toBe(1)
+    expect(listPayload.data.logs).toHaveLength(1)
+    expect(listPayload.data.logs[0].message).toContain('warn from logs route test')
+
+    const pagedRes = mockResponse()
+    await logRoutes.invoke('/api/logs/list', pagedRes, { limit: 1, offset: 1 })
+    const pagedPayload = responseData(pagedRes) as { data: { logs: Array<{ message: string }>; total: number } }
+    expect(pagedPayload.data.total).toBeGreaterThan(1)
     expect(listPayload.data.logs.length).toBeGreaterThan(0)
-    expect(listPayload.data.logs[0].message).toContain('hello from logs route test')
+    expect(pagedPayload.data.logs[0].message).toContain('hello from logs route test')
 
     const exportRes = mockResponse()
     await logRoutes.invoke('/api/logs/export', exportRes)

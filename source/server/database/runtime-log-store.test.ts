@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { closeDatabase, initDatabase } from './index'
-import { clearRuntimeLogs, createRuntimeLog, listAllRuntimeLogs, listRuntimeLogs, pruneRuntimeLogsBefore } from './runtime-log-store'
+import { clearRuntimeLogs, countRuntimeLogs, createRuntimeLog, listAllRuntimeLogs, listRuntimeLogs, pruneRuntimeLogsBefore } from './runtime-log-store'
 
 let temporaryDirectory: string
 
@@ -23,9 +23,15 @@ describe('runtime log store', () => {
     const first = createRuntimeLog('info', 'first message', 100)
     const second = createRuntimeLog('debug', 'second message', 200)
     const third = createRuntimeLog('warn', 'third message', 300)
+    const fourth = createRuntimeLog('warn', 'warn message', 400)
 
     expect(listRuntimeLogs({ limit: 2 }).map(log => log.id)).toEqual([third.id, second.id])
-    expect(listRuntimeLogs({ after: first.id, limit: 10 }).map(log => log.id)).toEqual([third.id, second.id])
+    expect(listRuntimeLogs({ after: first.id, limit: 10 }).map(log => log.id)).toEqual([fourth.id, third.id, second.id])
+    expect(listRuntimeLogs({ limit: 2, offset: 1 }).map(log => log.id)).toEqual([third.id, second.id])
+    expect(listRuntimeLogs({ level: 'warn', limit: 10 }).map(log => log.id)).toEqual([fourth.id, third.id])
+    expect(listRuntimeLogs({ searchText: 'warn', limit: 10 }).map(log => log.id)).toEqual([fourth.id])
+    expect(countRuntimeLogs({ level: 'warn' })).toBe(2)
+    expect(countRuntimeLogs({ searchText: 'message' })).toBe(4)
   })
 
   it('clears and prunes runtime logs by retention days', () => {
