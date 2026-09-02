@@ -260,6 +260,35 @@ html[data-magicui-theme-vt="active"] [data-slot="app-sidebar"] > div:first-child
   user-select: none;
 }
 
+.workflow-reactflow .react-flow__controls {
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid hsl(var(--border) / 0.85);
+  border-radius: 12px;
+  background: hsl(var(--card) / 0.96);
+  box-shadow: none;
+}
+
+.workflow-reactflow .react-flow__controls-button {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 10px;
+  background: hsl(var(--muted) / 0.65);
+  color: hsl(var(--foreground));
+  box-shadow: none;
+}
+
+.workflow-reactflow .react-flow__controls-button:hover {
+  background: hsl(var(--muted));
+}
+
+.workflow-reactflow .react-flow__controls-button svg {
+  width: 14px;
+  height: 14px;
+}
+
 .workflow-reactflow .react-flow__edge-path {
   vector-effect: non-scaling-stroke;
 }

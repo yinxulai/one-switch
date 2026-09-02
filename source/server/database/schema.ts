@@ -157,6 +157,25 @@ export const logicalModels = sqliteTable(
   table => [index('idx_logical_models_enabled').on(table.enabled), index('idx_logical_models_deleted_time').on(table.deletedTime)],
 )
 
+export const workflows = sqliteTable(
+  'workflows',
+  {
+    id: text('id').primaryKey(),
+    type: text('type').notNull(),
+    version: integer('version').notNull(),
+    name: text('name').notNull(),
+    definition: text('definition').notNull(),
+    createdTime: integer('createdTime').notNull(),
+    updatedTime: integer('updatedTime').notNull(),
+    deletedTime: integer('deletedTime'),
+  },
+  table => [
+    uniqueIndex('idx_workflows_type_version').on(table.type, table.version),
+    index('idx_workflows_type').on(table.type, table.deletedTime),
+    index('idx_workflows_deleted_time').on(table.deletedTime),
+  ],
+)
+
 export const schedulingPolicies = sqliteTable(
   'scheduling_policies',
   {
@@ -312,6 +331,17 @@ export const requestContents = sqliteTable(
   ],
 )
 
+export const runtimeLogs = sqliteTable(
+  'runtime_logs',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    level: text('level').notNull(),
+    message: text('message').notNull(),
+    timestamp: integer('timestamp').notNull(),
+  },
+  table => [index('idx_runtime_logs_timestamp').on(table.timestamp), index('idx_runtime_logs_level_timestamp').on(table.level, table.timestamp)],
+)
+
 export type ProviderRow = typeof providers.$inferSelect
 export type LogicalModelRow = typeof logicalModels.$inferSelect
 export type ProviderModelRow = typeof providerModels.$inferSelect
@@ -323,6 +353,8 @@ export type ProviderEndpointRow = typeof providerEndpoints.$inferSelect
 export type ProviderModelEndpointRow = typeof providerModelEndpoints.$inferSelect
 export type ProtocolConverterRow = typeof protocolConverters.$inferSelect
 export type SchedulingPolicyRow = typeof schedulingPolicies.$inferSelect
+export type WorkflowRow = typeof workflows.$inferSelect
+export type RuntimeLogRow = typeof runtimeLogs.$inferSelect
 export type RequestLogRow = typeof requestLogs.$inferSelect
 export type RequestMetricRow = typeof requestMetrics.$inferSelect
 export type RequestAttributeRow = typeof requestAttributes.$inferSelect
