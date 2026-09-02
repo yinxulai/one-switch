@@ -3,6 +3,7 @@ import {
   ClipboardList,
   Cog,
   Database,
+  GitBranch,
   ListOrdered,
   Plug,
   ScrollText,
@@ -13,7 +14,7 @@ import { cn } from '@/lib/utils'
 import { AnimatedThemeToggler } from '@/components/ui/animated-theme-toggler'
 import { buttonVariants } from '@/components/ui/button'
 
-export type PageKey = 'queue' | 'providers' | 'access' | 'rules' | 'overview' | 'requests' | 'settings' | 'logs'
+export type PageKey = 'queue' | 'providers' | 'access' | 'rules' | 'workflow' | 'overview' | 'requests' | 'settings' | 'logs'
 export type Theme = 'light' | 'dark'
 export type ThemeMode = 'system' | Theme
 
@@ -39,6 +40,7 @@ const baseNavItems: NavItem[] = [
   { key: 'overview', label: '统计分析', icon: ChartColumnIncreasing, section: '数据' },
   { key: 'requests', label: '请求记录', icon: ClipboardList, section: '数据' },
   { key: 'rules', label: '请求修改', icon: SlidersHorizontal, section: '高级' },
+  { key: 'workflow', label: '流程编排', icon: GitBranch, section: '高级' },
   { key: 'access', label: '接入配置', icon: Plug, section: '系统' },
   { key: 'logs', label: '运行日志', icon: ScrollText, section: '系统' },
   { key: 'settings', label: '设置', icon: Cog, section: '系统' },
