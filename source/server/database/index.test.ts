@@ -72,7 +72,7 @@ describe('database lifecycle', () => {
     const expectedTables = [
       'settings', 'providers', 'provider_health', 'provider_model_health',
       'provider_models', 'provider_settings', 'provider_endpoints',
-      'provider_model_endpoints', 'protocol_converters', 'logical_models', 'request_rewrite_rules', 'provider_model_request_rewrite_rules',
+      'provider_model_endpoints', 'protocol_converters', 'logical_models', 'workflows', 'request_rewrite_rules', 'provider_model_request_rewrite_rules',
       'scheduling_policies', 'request_logs', 'request_metrics', 'request_attributes', 'request_usages',
       'request_attempts', 'request_contents', 'request_conversions', 'runtime_logs',
     ]
@@ -120,6 +120,7 @@ describe('database lifecycle', () => {
     const requestLogColumns = client.prepare('PRAGMA table_info(request_logs)').all()
     const settingsColumns = client.prepare('PRAGMA table_info(settings)').all()
     const attemptColumns = client.prepare('PRAGMA table_info(request_attempts)').all()
+    const workflowColumns = client.prepare('PRAGMA table_info(workflows)').all()
     const indexes = client.prepare("SELECT name FROM sqlite_master WHERE type = 'index'").all()
 
     expect(requestLogColumns.map(column => (column as { name: string }).name)).toEqual([
@@ -131,8 +132,11 @@ describe('database lifecycle', () => {
     expect(attemptColumns.map(column => (column as { name: string }).name)).toEqual(
       expect.arrayContaining(['providerModelId', 'providerName', 'providerModelName', 'url', 'httpStatus', 'retryable']),
     )
+    expect(workflowColumns.map(column => (column as { name: string }).name)).toEqual([
+      'id', 'name', 'type', 'version', 'definition', 'createdTime', 'updatedTime', 'deletedTime',
+    ])
     expect(indexes.map(index => (index as { name: string }).name)).toEqual(
-      expect.arrayContaining(['idx_scheduling_policies_route', 'idx_request_attempts_request_order', 'idx_request_attributes_key_value', 'idx_runtime_logs_timestamp']),
+      expect.arrayContaining(['idx_scheduling_policies_route', 'idx_request_attempts_request_order', 'idx_request_attributes_key_value', 'idx_runtime_logs_timestamp', 'idx_workflows_type_version']),
     )
   })
 })

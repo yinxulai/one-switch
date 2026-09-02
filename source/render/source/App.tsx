@@ -13,7 +13,7 @@ const pagePaths = {
   providers: '/providers',
   access: '/access',
   rules: '/rules',
-  workflow: '/workflow',
+  router: '/router',
   overview: '/overview',
   requests: '/requests',
   settings: '/settings',

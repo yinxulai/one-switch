@@ -5,7 +5,6 @@ import {
   createRouter,
   Navigate,
   Outlet,
-  redirect,
   useNavigate,
 } from '@tanstack/react-router'
 import type { AnalyticsRange } from '@common/schemas'
@@ -18,7 +17,7 @@ import { LogsPage } from './pages/logs/page'
 import { RequestLogsPage } from './pages/request-logs/page'
 import { RequestRewriteRulesPage } from './pages/request-rewrite-rules/page'
 import { AccessConfigPage } from './pages/access-config/page'
-import { WorkflowStudioPage } from './pages/workflow-studio/page'
+import { RouterPage } from './pages/router/page'
 
 const rootRoute = createRootRoute({ component: App })
 
@@ -117,7 +116,7 @@ function OverviewProviderRoute() {
 
 const accessRoute = createRoute({ getParentRoute: () => rootRoute, path: '/access', component: AccessConfigPage })
 const rulesRoute = createRoute({ getParentRoute: () => rootRoute, path: '/rules', component: RequestRewriteRulesPage })
-const workflowRoute = createRoute({ getParentRoute: () => rootRoute, path: '/workflow', component: WorkflowStudioPage })
+const routerRoute = createRoute({ getParentRoute: () => rootRoute, path: '/router', component: RouterPage })
 const requestsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/requests', component: RequestLogsPage })
 
 interface LogsSearch {
@@ -151,7 +150,7 @@ const routeTree = rootRoute.addChildren([
   providersRoute,
   accessRoute,
   rulesRoute,
-  workflowRoute,
+  routerRoute,
   overviewRouteTree,
   requestsRoute,
   logsRoute,
