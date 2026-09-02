@@ -1,4 +1,4 @@
-export type WorkflowNodeKind = 'input' | 'output' | 'condition' | 'modifier' | 'transformer' | 'queue'
+export type WorkflowNodeKind = 'input' | 'output' | 'condition' | 'filter' | 'modifier' | 'transformer' | 'json-edit' | 'text-replace' | 'note' | 'queue'
 
 export interface WorkflowNodeBase {
   id: string
@@ -21,7 +21,16 @@ export interface OutputNode extends WorkflowNodeBase {
 export interface ConditionNode extends WorkflowNodeBase {
   kind: 'condition'
   path: string
-  operator: 'eq' | 'contains' | 'gt' | 'exists'
+  operator: 'eq' | 'neq' | 'contains' | 'startsWith' | 'gt' | 'exists' | 'regex'
+  value: string
+  nextTrue: string
+  nextFalse: string
+}
+
+export interface FilterNode extends WorkflowNodeBase {
+  kind: 'filter'
+  path: string
+  mode: 'contains' | 'eq' | 'regex' | 'in-list'
   value: string
   nextTrue: string
   nextFalse: string
@@ -42,13 +51,41 @@ export interface TransformerNode extends WorkflowNodeBase {
   next: string
 }
 
-export interface QueueNode extends WorkflowNodeBase {
-  kind: 'queue'
-  queueId: string
+export interface JsonEditNode extends WorkflowNodeBase {
+  kind: 'json-edit'
+  path: string
+  operation: 'set' | 'remove' | 'merge'
+  value: string
   next: string
 }
 
-export type WorkflowNodeModel = InputNode | OutputNode | ConditionNode | ModifierNode | TransformerNode | QueueNode
+export interface TextReplaceNode extends WorkflowNodeBase {
+  kind: 'text-replace'
+  path: string
+  search: string
+  replace: string
+  useRegex: boolean
+  regexFlags: string
+  next: string
+}
+
+export interface NoteNode extends WorkflowNodeBase {
+  kind: 'note'
+  content: string
+}
+
+export interface QueueNode extends WorkflowNodeBase {
+  kind: 'queue'
+  queueId: string
+  candidateQueues: string[]
+  taskPath: string
+  taskOperator: 'none' | 'contains' | 'eq' | 'regex'
+  taskValue: string
+  taskMissQueueId: string
+  next: string
+}
+
+export type WorkflowNodeModel = InputNode | OutputNode | ConditionNode | FilterNode | ModifierNode | TransformerNode | JsonEditNode | TextReplaceNode | NoteNode | QueueNode
 
 export interface WorkflowTrace {
   nodeId: string
