@@ -9,9 +9,8 @@ import {
 } from '@dnd-kit/core'
 import { restrictToParentElement, restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import { ArrowRight, ListTree, RefreshCw, Target } from 'lucide-react'
+import { ListTree, RefreshCw, Target } from 'lucide-react'
 import { useMemo } from 'react'
-import { TableHeaderSurface } from '@/components/table-primitives'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -26,6 +25,7 @@ export type HealthMap = Record<string, ProviderHealth>
 export type ProviderModelHealthMap = Record<string, ProviderModelHealth>
 
 interface QueueListCardProps {
+  logicalModelName: string
   models: ProviderModelRoute[]
   providers: ProviderMap
   health: HealthMap
@@ -40,11 +40,13 @@ interface QueueListCardProps {
   onToggleEnabled: (model: ProviderModelRoute, enabled: boolean) => void
   onDragEnd: (event: DragEndEvent) => void
   onNavigateToProviderAnalytics?: (providerId: string) => void
-  onNavigateToModels?: () => void
+  onAddModel?: () => void
+  onRemoveModel?: (model: ProviderModelRoute) => void
 }
 
 export function QueueListCard(props: QueueListCardProps) {
   const {
+    logicalModelName,
     models,
     providers,
     health,
@@ -59,7 +61,8 @@ export function QueueListCard(props: QueueListCardProps) {
     onToggleEnabled,
     onDragEnd,
     onNavigateToProviderAnalytics,
-    onNavigateToModels,
+    onAddModel,
+    onRemoveModel,
   } = props
 
   const sensors = useSensors(
@@ -76,39 +79,26 @@ export function QueueListCard(props: QueueListCardProps) {
   const coolingCount = rows.filter(row => row.cooling).length
 
   const renderHeader = () => (
-    <CardHeader className="flex-row items-center justify-between gap-4 pb-4">
+    <CardHeader className="group/header relative flex-row items-center justify-between gap-4 border-b border-border/60 pb-4">
       <div className="min-w-0">
         <div className="flex items-center gap-2">
-          <CardTitle>模型队列</CardTitle>
+          <CardTitle>{logicalModelName} 队列</CardTitle>
         </div>
         <CardDescription className="mt-1">
-          {models.length ? `${models.length} 个模型 · ${enabledCount} 个已启用` : '添加供应商模型后配置优先级和故障转移'}
+          {models.length ? `${models.length} 个模型 · ${enabledCount} 个已启用` : '添加模型后配置优先级和故障转移'}
           {coolingCount > 0 && <span className="text-amber-600 dark:text-amber-500"> · {coolingCount} 个冷却中</span>}
         </CardDescription>
       </div>
       <div className="flex items-center gap-2">
+        {onAddModel && <Button variant="outline" size="sm" onClick={onAddModel}>添加模型</Button>}
         <Tabs value={mode} onValueChange={value => onModeChange(value as 'auto' | 'manual')}>
           <TabsList className="h-7">
-            <TabsTrigger value="auto" disabled={switchingMode} className="h-6 px-2.5 text-[11px]">
-              <RefreshCw size={12} className={switchingMode ? 'animate-spin' : undefined} /> 自动转移
-            </TabsTrigger>
-            <TabsTrigger value="manual" disabled={switchingMode} className="h-6 px-2.5 text-[11px]">
-              <Target size={12} /> 手动指定
-            </TabsTrigger>
+            <TabsTrigger value="auto" disabled={switchingMode} className="h-6 px-2.5 text-[11px]"><RefreshCw size={12} className={switchingMode ? 'animate-spin' : undefined} /> 自动转移</TabsTrigger>
+            <TabsTrigger value="manual" disabled={switchingMode} className="h-6 px-2.5 text-[11px]"><Target size={12} /> 手动指定</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
     </CardHeader>
-  )
-
-  const renderTableHeader = () => (
-    <TableHeaderSurface className="grid min-h-8 min-w-xl grid-cols-[4rem_minmax(14rem,1.4fr)_minmax(9rem,1fr)_7.5rem] items-center px-4 lg:min-w-176 lg:grid-cols-[4rem_minmax(14rem,1.4fr)_minmax(9rem,1fr)_minmax(8rem,.9fr)_7.5rem]">
-      <span className="px-3 py-2">顺序</span>
-      <span className="px-3 py-2">供应商与模型</span>
-      <span className="px-3 py-2">性能</span>
-      <span className="hidden px-3 py-2 lg:block">健康状态</span>
-      <span className="px-3 py-2 text-right">状态</span>
-    </TableHeaderSurface>
   )
 
   const renderQueueTable = () => (
@@ -119,8 +109,7 @@ export function QueueListCard(props: QueueListCardProps) {
       onDragEnd={event => void onDragEnd(event)}
     >
       <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
-        <div className="overflow-x-auto overflow-y-hidden rounded-b-lg">
-          {renderTableHeader()}
+        <div className="max-h-96 overflow-x-auto overflow-y-auto rounded-b-lg">
           {rows.map(row => (
             <SortableQueueModel key={row.model.id} id={row.model.id}>
               {(handleProps, dragging) => (
@@ -138,6 +127,7 @@ export function QueueListCard(props: QueueListCardProps) {
                   onSelect={() => void onSelectManualModel(row.model)}
                   onToggleEnabled={enabled => void onToggleEnabled(row.model, enabled)}
                   onNavigateToProviderAnalytics={onNavigateToProviderAnalytics}
+                  onRemove={() => onRemoveModel?.(row.model)}
                 />
               )}
             </SortableQueueModel>
@@ -151,11 +141,9 @@ export function QueueListCard(props: QueueListCardProps) {
     <EmptyState
       icon={ListTree}
       title="队列中还没有模型"
-      description="前往模型管理添加第一个供应商模型，回来后即可调整优先级和故障转移顺序。"
-      action={onNavigateToModels && (
-        <Button variant="outline" size="sm" onClick={onNavigateToModels}>
-          添加供应商模型 <ArrowRight size={13} />
-        </Button>
+      description="为这个队列显式添加模型后，模型才会参与请求。"
+      action={onAddModel && (
+        <Button variant="outline" size="sm" onClick={onAddModel}>添加模型</Button>
       )}
       className="min-h-48 border-0 py-10"
     />
@@ -167,7 +155,7 @@ export function QueueListCard(props: QueueListCardProps) {
   }
 
   return (
-    <Card className="overflow-hidden">
+    <Card className="group overflow-hidden border-border/60">
       {renderHeader()}
       <CardContent className="p-0">{renderContent()}</CardContent>
     </Card>

@@ -32,7 +32,7 @@ afterEach(async () => {
 describe('provider model routes', () => {
   it('creates a model and updates its scheduling policy', async () => {
     const provider = await createProvider({ name: 'Provider Model Provider', apiKeyReference: 'key_provider_model', timeoutMilliseconds: 15_000, enabled: true })
-    const logicalModel = await createLogicalModel({ name: 'routing-model', description: 'route tests' })
+    const logicalModel = await createLogicalModel({ id: 'routing-model', name: 'routing-model', description: 'route tests' })
 
     const createRes = mockResponse()
     await providerModelRoutes.invoke('/api/provider-model/create', createRes, {

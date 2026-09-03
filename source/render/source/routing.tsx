@@ -9,6 +9,7 @@ import {
   useNavigate,
 } from '@tanstack/react-router'
 import type { AnalyticsRange } from '@common/schemas'
+import { useState } from 'react'
 import App from './App'
 import { QueueControlPage } from './pages/queue-control/page'
 import { ModelManagementPage } from './pages/model-management/page'
@@ -36,8 +37,11 @@ const queueRoute = createRoute({
 
 function QueueRoute() {
   const navigate = useNavigate()
+  const [search, setSearch] = useState({ logicalModelId: 'default' })
   return (
     <QueueControlPage
+      logicalModelId={search.logicalModelId}
+      onLogicalModelChange={logicalModelId => setSearch({ logicalModelId })}
       onNavigateToModels={() => void navigate({ to: '/providers' })}
       onNavigateToAccess={() => void navigate({ to: '/access' })}
       onNavigateToProviderAnalytics={providerId => void navigate({ to: '/overview/$providerId', params: { providerId }, search: { range: '7d' } })}

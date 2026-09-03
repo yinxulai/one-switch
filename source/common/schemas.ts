@@ -136,8 +136,11 @@ export type SchedulingPolicy = z.infer<typeof SchedulingPolicySchema>
 
 // ========== Logical Model ==========
 
+/** Logical model IDs are stable public queue identifiers. */
+export const LogicalModelIdSchema = z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/, '队列 ID 必须以小写字母开头，只能包含小写字母、数字、下划线和连字符（最多 64 个字符）')
+
 export const LogicalModelSchema = z.object({
-  id: z.string(),
+  id: LogicalModelIdSchema,
   name: z.string().min(1).max(100),
   description: z.string().default(''),
   enabled: z.boolean().default(true),

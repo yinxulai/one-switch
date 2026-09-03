@@ -3,10 +3,17 @@ import { ProxyToggleButton } from '@/components/proxy-toggle-button'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Plug } from 'lucide-react'
+import { Plug, Plus } from 'lucide-react'
+import { useState } from 'react'
 import { useQueueControlService } from './service'
+import { useLogicalModels, useLogicalModelsActions } from '@/features/logical-models/hooks'
 import { QueueListCard } from './components/queue-list-card'
 import { QueueSummary } from './components/queue-summary'
+import { AddQueueModelDialog } from './components/add-queue-model-dialog'
+import { CreateQueueDialog } from './components/create-queue-dialog'
+import { schedulingPolicyApi } from '@/api/models'
+import { unwrap } from '@/api/unwrap'
+import type { ProviderModelRoute } from '@common/schemas'
 
 interface QueueControlPageProps {
   onNavigateToModels?: () => void
@@ -14,9 +21,58 @@ interface QueueControlPageProps {
   onNavigateToProviderAnalytics?: (providerId: string) => void
 }
 
+interface QueueColumnProps {
+  logicalModelId: string
+  logicalModelName: string
+  onNavigateToModels?: () => void
+  onNavigateToProviderAnalytics?: (providerId: string) => void
+}
+
+function QueueColumn(props: QueueColumnProps) {
+  const { logicalModelId, logicalModelName, onNavigateToModels, onNavigateToProviderAnalytics } = props
+  const service = useQueueControlService(logicalModelId)
+  const [addModelOpen, setAddModelOpen] = useState(false)
+  const removeModel = async (model: ProviderModelRoute) => {
+    if (!window.confirm(`确定从“${logicalModelName}”队列移除 ${model.modelName} 吗？`)) return
+    try {
+      await unwrap(schedulingPolicyApi.remove(logicalModelId, model.id))
+      await service.reload()
+    } catch (error) {
+      console.error(error)
+    }
+  }
+  return (
+    <>
+      <QueueListCard
+        logicalModelName={logicalModelName}
+        models={service.models}
+        providers={service.providers}
+        health={service.health}
+        providerModelHealth={service.providerModelHealth}
+        modelMetrics={service.modelMetrics}
+        mode={service.mode}
+        manualModelId={service.manualModelId ?? ''}
+        switchingMode={service.switchingMode}
+        isCooling={service.isCooling}
+        onModeChange={mode => void service.changeMode(mode)}
+        onSelectManualModel={service.selectManualModel}
+        onToggleEnabled={service.updateEnabled}
+        onDragEnd={service.handleDragEnd}
+        onNavigateToProviderAnalytics={onNavigateToProviderAnalytics}
+        onAddModel={() => setAddModelOpen(true)}
+        onRemoveModel={model => void removeModel(model)}
+      />
+      <AddQueueModelDialog open={addModelOpen} logicalModelId={logicalModelId} onOpenChange={setAddModelOpen} onAdded={() => void service.reload()} />
+    </>
+  )
+}
+
 export function QueueControlPage(props: QueueControlPageProps) {
   const { onNavigateToModels, onNavigateToAccess, onNavigateToProviderAnalytics } = props
-  const service = useQueueControlService()
+  const logicalModels = useLogicalModels()
+  const { refresh: refreshLogicalModels } = useLogicalModelsActions()
+  const service = useQueueControlService('default')
+  const [createQueueOpen, setCreateQueueOpen] = useState(false)
   const proxyRunning = service.proxyStatus?.running ?? false
 
   return (
@@ -26,6 +82,9 @@ export function QueueControlPage(props: QueueControlPageProps) {
         description="管理请求优先级、切换模式和模型启停"
         actions={(
           <div className="flex items-center gap-2">
+            <Button onClick={() => setCreateQueueOpen(true)}>
+              <Plus size={13} /> 创建队列
+            </Button>
             {onNavigateToAccess && (
               <Button variant="outline" onClick={onNavigateToAccess}>
                 <Plug size={13} /> 接入配置
@@ -67,22 +126,21 @@ export function QueueControlPage(props: QueueControlPageProps) {
           <>
             <QueueSummary models={service.models} summaryMetrics={service.summaryMetrics} />
 
-            <QueueListCard
-              models={service.models}
-              providers={service.providers}
-              health={service.health}
-              providerModelHealth={service.providerModelHealth}
-              modelMetrics={service.modelMetrics}
-              mode={service.mode}
-              manualModelId={service.manualModelId ?? ''}
-              switchingMode={service.switchingMode}
-              isCooling={service.isCooling}
-              onModeChange={mode => void service.changeMode(mode)}
-              onSelectManualModel={service.selectManualModel}
-              onToggleEnabled={service.updateEnabled}
-              onDragEnd={service.handleDragEnd}
-              onNavigateToProviderAnalytics={onNavigateToProviderAnalytics}
-              onNavigateToModels={onNavigateToModels}
+            <div className="grid gap-4 md:grid-cols-2">
+              {logicalModels.filter(model => model.enabled).map(model => (
+                <QueueColumn
+                  key={model.id}
+                  logicalModelId={model.id}
+                  logicalModelName={model.name}
+                  onNavigateToModels={onNavigateToModels}
+                  onNavigateToProviderAnalytics={onNavigateToProviderAnalytics}
+                />
+              ))}
+            </div>
+            <CreateQueueDialog
+              open={createQueueOpen}
+              onOpenChange={setCreateQueueOpen}
+              onCreated={refreshLogicalModels}
             />
           </>
         )}

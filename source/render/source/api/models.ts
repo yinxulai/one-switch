@@ -1,7 +1,7 @@
 import type { LogicalModel, Protocol, ProviderModel, ProviderModelRequestRewriteRule, ProviderModelRoute, ProviderModelRouteEndpoint, RequestRewriteRuleTestCase, RequestRewriteRule, SchedulingPolicy } from '@common/schemas'
 import { request } from './client'
 
-type CreateLogicalModelInput = { name: string; description?: string; enabled?: boolean }
+type CreateLogicalModelInput = { id: string; description?: string; name?: string; enabled?: boolean }
 type ProviderModelEndpointView = { id: string; url: string | null; enabled: boolean; protocol: Protocol; providerModelId: string; providerEndpointId: string; conversions: Array<{ id: string; clientProtocol: Protocol; enabled: boolean }> }
 type ProviderModelView = ProviderModel & { endpoints: ProviderModelEndpointView[] }
 type ProviderModelUpdateInput = { logicalModelId?: string; modelName?: string; enabled?: boolean; priority?: number; endpoints?: ProviderModelRouteEndpoint[] }

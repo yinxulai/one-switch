@@ -35,15 +35,17 @@ async function handleGetLogicalModel(_req: IncomingMessage, res: ServerResponse,
 }
 
 const CreateLogicalModelSchema = LogicalModelSchema.pick({
+  id: true,
   name: true,
   description: true,
   enabled: true,
-}).partial({ description: true, enabled: true })
+}).partial({ name: true, description: true, enabled: true })
 
 async function handleCreateLogicalModel(_req: IncomingMessage, res: ServerResponse, body: unknown): Promise<void> {
   const input = CreateLogicalModelSchema.parse(body)
   sendSuccess(res, await createLogicalModel({
-    name: input.name,
+    id: input.id,
+    name: input.name ?? input.id,
     description: input.description ?? '',
     enabled: input.enabled ?? true,
   }))

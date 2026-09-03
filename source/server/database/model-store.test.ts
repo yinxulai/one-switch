@@ -90,7 +90,7 @@ describe('model store', () => {
     })
     expect(converter).toMatchObject({ providerModelEndpointId: extraEndpoint.id, clientProtocol: 'openai-responses', enabled: true })
 
-    const logicalModel = await createLogicalModel({ name: 'model-routing', description: 'route test' })
+    const logicalModel = await createLogicalModel({ id: 'model-routing', name: 'model-routing', description: 'route test' })
     await upsertSchedulingPolicy({
       logicalModelId: logicalModel.id,
       providerModelId: route.id,

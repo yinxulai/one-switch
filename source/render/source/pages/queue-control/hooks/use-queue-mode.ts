@@ -6,10 +6,10 @@ import type { ProviderHealth, ProviderModelHealth, ProviderModelRoute } from '@c
 type HealthMap = Record<string, ProviderHealth>
 type ProviderModelHealthMap = Record<string, ProviderModelHealth>
 
-export function useQueueMode(models: ProviderModelRoute[], health: HealthMap, providerModelHealth: ProviderModelHealthMap) {
+export function useQueueMode(logicalModelId: string, models: ProviderModelRoute[], health: HealthMap, providerModelHealth: ProviderModelHealthMap) {
   const toast = useToast()
-  const query = useQueueModeQuery()
-  const mutation = useSwitchQueueMutation()
+  const query = useQueueModeQuery(logicalModelId)
+  const mutation = useSwitchQueueMutation(logicalModelId)
   const manualModelId = query.data?.manualModelId ?? null
   const mode: 'auto' | 'manual' = manualModelId ? 'manual' : 'auto'
   const refresh = query.refetch

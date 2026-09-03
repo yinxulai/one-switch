@@ -5,7 +5,6 @@ import { unwrap } from '@/api/unwrap'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import { useToast } from '@/components/ui/toast'
 import type { ProviderModelRoute } from '@common/schemas'
-import { queueKeys } from '@/pages/queue-control/queries'
 import { modelKeys } from './use-model-data'
 import { useModelData } from './use-model-data'
 import { useProviderDialog } from './use-provider-dialog'
@@ -27,7 +26,7 @@ export function useModelManagement() {
   const providerManagement = useProviderManagement({ reload: data.reload })
   const modelDialog = useModelDialog({ selectedProvider, models: data.models, reload: data.reload })
 
-  const invalidateModels = useCallback(async () => { await Promise.all([client.invalidateQueries({ queryKey: modelKeys.all }), client.invalidateQueries({ queryKey: queueKeys.models })]) }, [client])
+  const invalidateModels = useCallback(async () => { await Promise.all([client.invalidateQueries({ queryKey: modelKeys.all }), client.invalidateQueries({ queryKey: ['queue-models'] })]) }, [client])
   const updateModelMutation = useMutation({ mutationFn: ({ id, enabled }: UpdateModelEnabledVariables) => unwrap(providerModelApi.update(id, { logicalModelId: 'default', enabled })), onMutate: async ({ id, enabled }) => { await client.cancelQueries({ queryKey: modelKeys.all }); const previous = client.getQueryData<ProviderModelRoute[]>(modelKeys.all); client.setQueryData<ProviderModelRoute[]>(modelKeys.all, current => current?.map(model => model.id === id ? { ...model, enabled } : model)); return { previous } }, onError: (error, _variables, context) => { client.setQueryData(modelKeys.all, context?.previous); toast.error(error.message) }, onSettled: invalidateModels })
   const removeModelMutation = useMutation({ mutationFn: (id: string) => unwrap(providerModelApi.remove(id)), onError: error => toast.error(error.message) })
   const updateModelEnabled = useCallback(async (model: typeof data.models[number], enabled: boolean) => {
