@@ -175,9 +175,9 @@ function createDefaultRouterModels(): WorkflowNodeModel[] {
     {
       id: 'output',
       kind: 'output',
-      name: '输出',
+      name: '返回路由目标',
       enabled: true,
-      description: '输出最终逻辑队列。',
+      description: '返回由逻辑模型解析出的可用队列，交由代理执行请求。',
       position: { x: 920, y: 260 },
       includeTrace: true,
       summaryLevel: 'detailed',
@@ -210,9 +210,9 @@ function toCanvasNodeType(kind: WorkflowNodeKind): WorkflowCanvasNodeType {
 }
 
 function kindLabel(kind: WorkflowNodeKind): string {
-  if (kind === 'input') return '输入'
+  if (kind === 'input') return '输入请求'
   if (kind === 'control-input') return '控制输入'
-  if (kind === 'output') return '输出'
+  if (kind === 'output') return '路由结果出口'
   if (kind === 'protocol-discovery') return '协议发现'
   if (kind === 'condition') return '条件'
   return '模型匹配'
@@ -228,9 +228,9 @@ function kindTone(kind: WorkflowNodeKind): string {
 }
 
 function modelSummary(model: WorkflowNodeModel): string {
-  if (model.kind === 'input') return 'route entry'
+  if (model.kind === 'input') return '接收请求并开始路由'
   if (model.kind === 'control-input') return `${model.controls.filter(control => control.enabled).length} controls`
-  if (model.kind === 'output') return `summary: ${model.summaryLevel}`
+  if (model.kind === 'output') return '生成可用队列，交由代理执行'
   if (model.kind === 'protocol-discovery') return 'auto: path/header/model analysis'
   if (model.kind === 'condition') {
     return model.rule.operator === 'exists'
@@ -501,9 +501,9 @@ function createNodeByKind(kind: Extract<WorkflowNodeKind, 'control-input' | 'pro
   return {
     id,
     kind,
-    name: '模型选择节点',
+    name: '解析路由目标',
     enabled: true,
-    description: '选择目标逻辑模型。',
+    description: '匹配逻辑模型并准备生成可执行队列。',
     position,
     logicalModelId: 'default',
     next: 'output',
@@ -776,9 +776,9 @@ function WorkflowStudioCanvas() {
       return '字段来源于上游 schema，操作符与输入控件应由字段类型自动驱动。'
     }
     if (node.kind === 'logical-model-selector') {
-      return '当前仅支持选择逻辑模型，目标队列由逻辑模型目录自动映射。'
+      return '匹配请求中的 model 与逻辑模型；匹配完成后，系统会解析出可供代理执行的队列。'
     }
-    return '可配置输出摘要级别与 trace 附带策略，便于调试与观测。'
+    return '该节点不会直接返回模型响应，而是返回一个可用队列交由代理执行。Trace 和摘要级别仅用于调试与观测。'
   }
 
   return (
@@ -958,13 +958,15 @@ function WorkflowStudioCanvas() {
               {runResult && (
                 <>
                   <div className="flex flex-wrap items-center gap-2 text-xs">
-                    <Badge variant={runResult.targetQueue ? 'success' : 'muted'}>queue: {runResult.targetQueue ?? 'null'}</Badge>
-                    <Badge variant="info">protocol: {runResult.protocol}</Badge>
-                    <Badge variant="info">stop: {runResult.stopReason}</Badge>
-                    <Badge variant="muted">steps: {runResult.trace.length}</Badge>
+                    <Badge variant={runResult.targetQueue ? 'success' : 'warning'}>
+                      {runResult.targetQueue ? '路由状态：已生成可用队列' : '路由状态：无法生成队列'}
+                    </Badge>
+                    <Badge variant={runResult.targetQueue ? 'success' : 'muted'}>目标队列：{runResult.targetQueue ?? '未生成'}</Badge>
+                    <Badge variant="info">协议：{runResult.protocol}</Badge>
+                    <Badge variant="muted">节点数：{runResult.trace.length}</Badge>
                   </div>
                   <div className="rounded-lg bg-muted/45 p-2 font-mono text-[11px]">
-                    <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">Route Decision</div>
+                    <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">路由决策（调试详情）</div>
                     <pre className="whitespace-pre-wrap break-all">{JSON.stringify(runResult.routeDecision, null, 2)}</pre>
                   </div>
                   <div className="rounded-lg bg-muted/45 p-2 font-mono text-[11px]">
@@ -1349,7 +1351,7 @@ function WorkflowStudioCanvas() {
                       </Select>
                     </div>
                     <div className="rounded-lg bg-muted/45 px-3 py-2 text-xs text-muted-foreground">
-                      请求体中的 model 会按逻辑模型 id/name 自动匹配；未命中时回退到 default。输出队列由该逻辑模型的调度策略决定。
+                      请求体中的 model 会按逻辑模型 id/name 自动匹配；未命中时回退到 default。匹配完成后，系统会解析出可供代理执行的目标队列。
                     </div>
                   </div>
                 )}
@@ -1368,8 +1370,8 @@ function WorkflowStudioCanvas() {
                       <Select value={selectedNode.summaryLevel} onValueChange={value => updateNode(selectedNode.id, node => node.kind === 'output' ? { ...node, summaryLevel: value as 'brief' | 'detailed' } : node)}>
                         <SelectTrigger className="w-full"><SelectValue placeholder="summary" /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="brief">brief</SelectItem>
-                          <SelectItem value="detailed">detailed</SelectItem>
+                          <SelectItem value="brief">简要</SelectItem>
+                          <SelectItem value="detailed">详细</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
