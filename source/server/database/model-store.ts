@@ -39,12 +39,12 @@ export async function listProviderModelsForLogicalModel(logicalModelId: string, 
   const rows = getDb().select({ model: providerModels, policy: schedulingPolicies })
     .from(schedulingPolicies)
     .innerJoin(providerModels, eq(schedulingPolicies.providerModelId, providerModels.id))
-    .where(and(eq(schedulingPolicies.logicalModelId, logicalModelId), eq(schedulingPolicies.enabled, true)))
+    .where(eq(schedulingPolicies.logicalModelId, logicalModelId))
     .orderBy(asc(schedulingPolicies.priority), desc(schedulingPolicies.weight), asc(schedulingPolicies.createdTime), asc(schedulingPolicies.providerModelId))
     .all()
   return rows
-    .filter(({ model, policy }) => (includeDeleted || model.deletedTime === null) && (includeDisabled || model.enabled) && policy.enabled)
-    .map(({ model, policy }) => ({ ...mapProviderModelRoute(model), priority: policy.priority }))
+    .filter(({ model }) => (includeDeleted || model.deletedTime === null) && (includeDisabled || model.enabled))
+    .map(({ model, policy }) => ({ ...mapProviderModelRoute(model), priority: policy.priority, enabled: policy.enabled }))
 }
 
 export async function getProviderModel(id: string): Promise<ProviderModelView | undefined> {

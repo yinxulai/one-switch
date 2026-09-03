@@ -91,6 +91,6 @@ export interface RequestLogger {
   finalizeRequestLog(status: RequestStatus, startedAt: number, metrics?: RequestLogMetrics): Promise<void>
   finalizeRequestContent(outcome: RequestLogOutcome): Promise<void>
   finalizeLocalErrorContent(statusCode: number, responseHeaders: IncomingHttpHeaders | OutgoingHttpHeaders, responseBody: string): Promise<void>
-  recordAttempt(status: RequestStatus, httpStatus: number | null, retryable: boolean, errorCode?: string, errorMessage?: string, upstreamRequestId?: string | null, details?: string | null, usage?: AttemptUsageInput): Promise<{ id: string } | null>
+  recordAttempt(status: RequestStatus, httpStatus: number | null, retryable: boolean, errorCode?: string, errorMessage?: string, upstreamRequestId?: string | null, usage?: AttemptUsageInput): Promise<{ id: string } | null>
   recordAttemptContent(input: AttemptContentInput): Promise<void>
 }

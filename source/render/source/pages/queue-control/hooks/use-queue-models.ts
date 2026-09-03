@@ -22,12 +22,12 @@ function toQueueModel(model: ProviderModelRoute): ProviderModelRoute {
   }
 }
 
-export function useQueueModels() {
+export function useQueueModels(logicalModelId: string) {
   const client = useQueryClient()
-  const query = useQueueModelsQuery()
+  const query = useQueueModelsQuery(logicalModelId)
   const models = useMemo(() => (query.data ?? []).map(toQueueModel), [query.data])
   const loadModels = useCallback(async () => { const result = await query.refetch(); return !result.isError }, [query])
-  const updateModels = useCallback((update: (models: ProviderModelRoute[]) => ProviderModelRoute[]) => client.setQueryData<ProviderModelRoute[]>(queueKeys.models, current => update(current ?? [])), [client])
+  const updateModels = useCallback((update: (models: ProviderModelRoute[]) => ProviderModelRoute[]) => client.setQueryData<ProviderModelRoute[]>(queueKeys.models(logicalModelId), current => update(current ?? [])), [client, logicalModelId])
   const updateEnabledModel = useCallback((id: string, enabled: boolean) => updateModels(current => current.map(model => model.id === id ? { ...model, enabled } : model)), [updateModels])
   return { models, loading: query.isPending, loadModels, updateModels, updateEnabledModel }
 }

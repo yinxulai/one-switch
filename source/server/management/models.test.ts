@@ -31,7 +31,7 @@ afterEach(async () => {
 describe('logical model routes', () => {
   it('creates, lists, gets, updates and deletes a logical model', async () => {
     const createRes = mockResponse()
-    await modelRoutes.invoke('/api/logical-model/create', createRes, { name: 'dev-model', description: 'for tests' })
+    await modelRoutes.invoke('/api/logical-model/create', createRes, { id: 'dev-model', name: 'dev-model', description: 'for tests' })
     const created = responseData(createRes).data as { id: string; name: string }
     expect(created.name).toBe('dev-model')
 
@@ -60,7 +60,7 @@ describe('logical model routes', () => {
   })
 
   it('creates a model from the underlying store with default fields', async () => {
-    const model = await createLogicalModel({ name: 'store-model' })
+    const model = await createLogicalModel({ id: 'store-model', name: 'store-model' })
     expect(model).toMatchObject({ name: 'store-model', enabled: true, description: '' })
   })
 })

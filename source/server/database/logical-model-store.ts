@@ -22,10 +22,10 @@ export async function getLogicalModel(id: string): Promise<LogicalModel | undefi
   return row ? mapLogicalModel(row) : undefined
 }
 
-type CreateLogicalModelInput = Pick<LogicalModel, 'name'> & Partial<Pick<LogicalModel, 'description' | 'enabled'>>
+type CreateLogicalModelInput = Pick<LogicalModel, 'id'> & Partial<Pick<LogicalModel, 'name' | 'description' | 'enabled'>>
 
 export async function createLogicalModel(input: CreateLogicalModelInput): Promise<LogicalModel> {
-  const id = generateId('model_')
+  const id = input.id
   const time = now()
   getDb()
     .insert(logicalModels)

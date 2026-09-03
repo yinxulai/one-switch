@@ -10,18 +10,19 @@ import { useQueueMetrics } from './use-queue-metrics'
 import { useQueueMode } from './use-queue-mode'
 import { useQueueModels } from './use-queue-models'
 
-export function useQueueControl() {
+export function useQueueControl(logicalModelId: string) {
   const toast = useToast()
-  const updateModelMutation = useUpdateQueueModelMutation()
+  const updateModelMutation = useUpdateQueueModelMutation(logicalModelId)
   const providers = useProviders()
   const healthState = useHealth()
   const health = healthState.providers
   const providerModelHealth = healthState.providerModels
-  const modelsState = useQueueModels()
-  const metrics = useQueueMetrics()
+  const modelsState = useQueueModels(logicalModelId)
+  const metrics = useQueueMetrics(logicalModelId)
   const proxy = useProxyToggle()
-  const queueMode = useQueueMode(modelsState.models, health, providerModelHealth)
+  const queueMode = useQueueMode(logicalModelId, modelsState.models, health, providerModelHealth)
   const interactions = useQueueInteractions(
+    logicalModelId,
     modelsState.models,
     modelsState.updateModels,
     modelsState.loadModels,

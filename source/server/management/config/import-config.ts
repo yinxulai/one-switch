@@ -71,7 +71,7 @@ export async function importConfig(body: unknown): Promise<{ imported: { provide
     const existing = existingModels.find(em => em.name === m.name)
     const model = existing
       ? await updateLogicalModel(existing.id, { name: m.name, description: m.description ?? '', enabled: m.enabled ?? true })
-      : await createLogicalModel({ name: m.name, description: m.description ?? '', enabled: m.enabled ?? true })
+      : await createLogicalModel({ id: m.id, name: m.name, description: m.description ?? '', enabled: m.enabled ?? true })
     importedModelIds.add(model.id)
     if (m.id) logicalModelIdMap.set(m.id, model.id)
     importedLogicalModels++

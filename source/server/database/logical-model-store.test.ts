@@ -21,7 +21,7 @@ afterEach(async () => {
 
 describe('logical model store', () => {
   it('creates and updates logical models with real database persistence', async () => {
-    const created = await createLogicalModel({ name: 'production', description: 'prod routing', enabled: true })
+    const created = await createLogicalModel({ id: 'production', name: 'production', description: 'prod routing', enabled: true })
 
     expect(await listLogicalModels()).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: created.id, name: 'production' }),

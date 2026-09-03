@@ -5,7 +5,7 @@ import { schedulingPolicyApi } from '@/api/models'
 import { useToast } from '@/components/ui/toast'
 import type { ProviderModelRoute } from '@common/schemas'
 
-export function useQueueInteractions(models: ProviderModelRoute[], updateModels: (update: (models: ProviderModelRoute[]) => ProviderModelRoute[]) => void, loadModels: () => Promise<boolean>, proxyBaseUrl: string) {
+export function useQueueInteractions(logicalModelId: string, models: ProviderModelRoute[], updateModels: (update: (models: ProviderModelRoute[]) => ProviderModelRoute[]) => void, loadModels: () => Promise<boolean>, proxyBaseUrl: string) {
   const toast = useToast()
   const [copied, setCopied] = useState(false)
   const copyTimerRef = useRef<number | null>(null)
@@ -31,7 +31,7 @@ export function useQueueInteractions(models: ProviderModelRoute[], updateModels:
       .map((model, index) => ({ ...model, priority: index + 1 }))
     updateModels(() => reordered)
     const results = await Promise.all(reordered.map(model => schedulingPolicyApi.update({
-      logicalModelId: 'default',
+      logicalModelId,
       providerModelId: model.id,
       priority: model.priority,
     })))
@@ -39,7 +39,7 @@ export function useQueueInteractions(models: ProviderModelRoute[], updateModels:
       toast.error('队列顺序保存失败，已恢复服务端数据')
       await loadModels()
     }
-  }, [loadModels, models, toast, updateModels])
+  }, [loadModels, logicalModelId, models, toast, updateModels])
 
   return { copied, copyEndpoint, handleDragEnd }
 }

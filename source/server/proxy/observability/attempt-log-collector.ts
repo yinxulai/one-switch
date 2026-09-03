@@ -9,7 +9,7 @@ import type { AttemptContentInput, AttemptLoggingInput, AttemptUsageInput, Reque
 import { redactHeaders } from '@server/proxy/response/headers'
 
 export function createAttemptLogger(input: AttemptLoggingInput): Pick<RequestLogger, 'recordAttempt' | 'recordAttemptContent'> {
-  const recordAttempt = async (status: RequestStatus, httpStatus: number | null, retryable: boolean, errorCode?: string, errorMessage?: string, upstreamRequestId?: string | null, details?: string | null, usage?: AttemptUsageInput) => {
+  const recordAttempt = async (status: RequestStatus, httpStatus: number | null, retryable: boolean, errorCode?: string, errorMessage?: string, upstreamRequestId?: string | null, usage?: AttemptUsageInput) => {
     try {
       const attempt = await createRequestAttempt({
         requestId: input.requestId,
@@ -21,7 +21,6 @@ export function createAttemptLogger(input: AttemptLoggingInput): Pick<RequestLog
         errorCode: errorCode ?? null,
         errorMessage: errorMessage ?? null,
         upstreamRequestId: upstreamRequestId ?? null,
-        details: details ?? null,
         upstreamProtocol: input.snapshot.upstreamProtocol,
         durationMilliseconds: Date.now() - input.startedAt,
       })
