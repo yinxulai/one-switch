@@ -110,8 +110,15 @@ export interface ConditionNode extends WorkflowNodeBase {
 
 export interface LogicalModelSelectorNode extends WorkflowNodeBase {
   kind: 'logical-model-selector'
+  /** 默认逻辑模型；请求 model 会优先按 id/name 自动匹配。 */
   logicalModelId: string
   next: string
+}
+
+export interface RuntimeLogicalModel {
+  id: string
+  name: string
+  enabled: boolean
 }
 
 export interface OutputNode extends WorkflowNodeBase {

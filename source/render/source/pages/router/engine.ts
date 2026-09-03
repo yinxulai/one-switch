@@ -11,10 +11,14 @@ import type {
   WorkflowNodeModel,
   WorkflowRunResult,
   WorkflowTrace,
+  RuntimeLogicalModel,
 } from './types'
-import { getLogicalModelById } from './logical-model-catalog'
 
 type LogicalModelSelectorNode = Extract<WorkflowNodeModel, { kind: 'logical-model-selector' }>
+
+export interface WorkflowRunOptions {
+  logicalModels?: RuntimeLogicalModel[]
+}
 
 const MAX_STEPS = 80
 
@@ -202,40 +206,28 @@ function discoverProtocol(_node: ProtocolDiscoveryNode, payload: Record<string, 
   return { protocol: 'unknown', reason: '自动识别未命中，归类 unknown' }
 }
 
-function pickModelDecision(protocol: WorkflowProtocol, node: LogicalModelSelectorNode): LogicalModelDecision {
-  const logicalModel = getLogicalModelById(node.logicalModelId)
-  if (!logicalModel) {
-    return {
-      selectedModel: node.logicalModelId,
-      targetQueue: '',
-      matched: false,
-      reason: '逻辑模型不存在',
-    }
-  }
+function pickModelDecision(node: LogicalModelSelectorNode, payload: Record<string, unknown>, logicalModels: RuntimeLogicalModel[]): LogicalModelDecision {
+  const requestedModel = String(getByPath(payload, 'request.body.model') ?? '').trim()
+  const matched = logicalModels.find(model => model.enabled && (model.id === requestedModel || model.name === requestedModel))
+  const fallback = logicalModels.find(model => model.enabled && model.name === 'default')
+  const selected = matched ?? fallback
 
-  if (!logicalModel.enabled) {
+  if (!selected) {
     return {
-      selectedModel: logicalModel.id,
+      selectedModel: requestedModel || node.logicalModelId,
       targetQueue: '',
       matched: false,
-      reason: `逻辑模型 ${logicalModel.id} 已禁用`,
-    }
-  }
-
-  if (!logicalModel.supportedProtocols.includes(protocol)) {
-    return {
-      selectedModel: logicalModel.id,
-      targetQueue: '',
-      matched: false,
-      reason: `逻辑模型 ${logicalModel.id} 不支持协议 ${protocol}`,
+      reason: '没有可用的逻辑模型，且未配置启用的 default 逻辑模型',
     }
   }
 
   return {
-    selectedModel: logicalModel.id,
-    targetQueue: logicalModel.targetQueue,
-    matched: true,
-    reason: `逻辑模型 ${logicalModel.id} 路由到队列 ${logicalModel.targetQueue}`,
+    selectedModel: selected.id,
+    targetQueue: selected.id,
+    matched: matched !== undefined,
+    reason: matched
+      ? `请求模型 ${requestedModel} 匹配逻辑模型 ${selected.id}`
+      : `请求模型 ${requestedModel || '(缺失)'} 未匹配，回退到 default 逻辑模型 ${selected.id}`,
   }
 }
 
@@ -257,8 +249,9 @@ function buildMissingInputTrace(message: string): WorkflowTrace {
   }
 }
 
-export function runWorkflow(nodes: WorkflowNodeModel[], inputPayload: unknown): WorkflowRunResult {
+export function runWorkflow(nodes: WorkflowNodeModel[], inputPayload: unknown, options: WorkflowRunOptions = {}): WorkflowRunResult {
   const envelope = normalizeInputPayload(inputPayload)
+  const logicalModels = options.logicalModels ?? []
   const outputPayload = envelope.payload
   const trace: WorkflowTrace[] = []
   const byId = new Map(nodes.map(node => [node.id, node]))
@@ -399,7 +392,7 @@ export function runWorkflow(nodes: WorkflowNodeModel[], inputPayload: unknown): 
     }
 
     if (current.kind === 'logical-model-selector') {
-      routeDecision = pickModelDecision(protocol, current)
+      routeDecision = pickModelDecision(current, outputPayload, logicalModels)
       ;(outputPayload.metadata as Record<string, unknown>).routeDecision = routeDecision
       trace.push({
         nodeId: current.id,

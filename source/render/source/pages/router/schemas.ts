@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { ProtocolSchema } from '@common/schemas'
 
 const NodePositionSchema = z.object({
   x: z.number(),
