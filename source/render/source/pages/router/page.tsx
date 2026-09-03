@@ -41,7 +41,7 @@ import { useToast } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
 import { unwrap } from '@/api/unwrap'
 import { routerApi } from '@/api/router'
-import { LOGICAL_MODEL_CATALOG } from './logical-model-catalog'
+import { logicalModelApi } from '@/api/models'
 import {
   DEFAULT_OPERATOR_SET,
   type ControlInputItem,
@@ -159,60 +159,17 @@ function createDefaultRouterModels(): WorkflowNodeModel[] {
       name: '输入',
       enabled: true,
       description: '路由入口节点。',
-      position: { x: 80, y: 260 },
-      next: 'control-input',
-    },
-    {
-      id: 'control-input',
-      kind: 'control-input',
-      name: '控制输入',
-      enabled: true,
-      description: '注入开关和系统控制值。',
-      position: { x: 290, y: 260 },
-      controls: [
-        createControlItem('switch'),
-        createControlItem('select'),
-      ],
-      next: 'protocol-discovery',
-    },
-    {
-      id: 'protocol-discovery',
-      kind: 'protocol-discovery',
-      name: '协议发现',
-      enabled: true,
-      description: '识别协议并分发到对应分支连接点。',
-      position: { x: 370, y: 260 },
-      branches: {
-        'openai-completions': 'condition-policy',
-        'openai-responses': 'condition-policy',
-        'anthropic-messages': 'condition-policy',
-        unknown: 'output',
-      },
-    },
-    {
-      id: 'condition-policy',
-      kind: 'condition',
-      name: '准入条件',
-      enabled: true,
-      description: '根据上游字段做准入判断。',
-      position: { x: 710, y: 260 },
-      rule: {
-        fieldPath: 'request.body.tenant',
-        valueType: 'string',
-        operator: 'startsWith',
-        value: 'vip-',
-      },
-      nextTrue: 'logical-model-selector',
-      nextFalse: 'output',
+      position: { x: 120, y: 260 },
+      next: 'logical-model-selector',
     },
     {
       id: 'logical-model-selector',
       kind: 'logical-model-selector',
-      name: '模型选择器',
+      name: '模型匹配',
       enabled: true,
-      description: '根据上游分支选择逻辑模型。',
-      position: { x: 1040, y: 260 },
-      logicalModelId: 'logical-chat-vip',
+      description: '按请求 model 的 id/name 匹配逻辑模型，未命中回退 default。',
+      position: { x: 520, y: 260 },
+      logicalModelId: 'default',
       next: 'output',
     },
     {
@@ -220,8 +177,8 @@ function createDefaultRouterModels(): WorkflowNodeModel[] {
       kind: 'output',
       name: '输出',
       enabled: true,
-      description: '输出最终路由决策。',
-      position: { x: 1370, y: 260 },
+      description: '输出最终逻辑队列。',
+      position: { x: 920, y: 260 },
       includeTrace: true,
       summaryLevel: 'detailed',
     },
@@ -258,7 +215,7 @@ function kindLabel(kind: WorkflowNodeKind): string {
   if (kind === 'output') return '输出'
   if (kind === 'protocol-discovery') return '协议发现'
   if (kind === 'condition') return '条件'
-  return '模型选择器'
+  return '模型匹配'
 }
 
 function kindTone(kind: WorkflowNodeKind): string {
@@ -280,8 +237,7 @@ function modelSummary(model: WorkflowNodeModel): string {
       ? `${model.rule.fieldPath} exists`
       : `${model.rule.fieldPath} ${model.rule.operator} ${model.rule.value ?? ''}`
   }
-  const selected = LOGICAL_MODEL_CATALOG.find(item => item.id === model.logicalModelId)
-  return selected ? `${selected.id} -> ${selected.targetQueue}` : model.logicalModelId
+  return `按 model id/name 匹配，未命中 -> ${model.logicalModelId || 'default'}`
 }
 
 function isProtectedNode(model: WorkflowNodeModel): boolean {
@@ -549,7 +505,7 @@ function createNodeByKind(kind: Extract<WorkflowNodeKind, 'control-input' | 'pro
     enabled: true,
     description: '选择目标逻辑模型。',
     position,
-    logicalModelId: 'logical-chat-default',
+    logicalModelId: 'default',
     next: 'output',
   }
 }
@@ -591,9 +547,20 @@ function WorkflowStudioCanvas() {
   const [payloadText, setPayloadText] = useState(JSON.stringify(samplePayload, null, 2))
   const [payloadError, setPayloadError] = useState('')
   const [runResult, setRunResult] = useState<WorkflowRunResult | null>(null)
+  const [logicalModels, setLogicalModels] = useState<Array<{ id: string; name: string; enabled: boolean }>>([])
   const [canvasHeight, setCanvasHeight] = useState(620)
 
   const hints = useMemo(() => buildConfigHints(models), [models])
+
+  useEffect(() => {
+    let cancelled = false
+    void unwrap(logicalModelApi.list()).then(items => {
+      if (!cancelled) setLogicalModels(items.map(model => ({ id: model.id, name: model.name, enabled: model.enabled })))
+    }).catch(() => {
+      if (!cancelled) setLogicalModels([])
+    })
+    return () => { cancelled = true }
+  }, [])
 
   const selectedNode = useMemo(() => models.find(model => model.id === selectedNodeId) ?? null, [models, selectedNodeId])
 
@@ -1375,14 +1342,14 @@ function WorkflowStudioCanvas() {
                       <Select value={selectedNode.logicalModelId} onValueChange={value => updateNode(selectedNode.id, node => node.kind === 'logical-model-selector' ? { ...node, logicalModelId: value } : node)}>
                         <SelectTrigger className="w-full"><SelectValue placeholder="logicalModelId" /></SelectTrigger>
                         <SelectContent>
-                          {LOGICAL_MODEL_CATALOG.filter(item => item.enabled).map(item => (
-                            <SelectItem key={item.id} value={item.id}>{item.label} ({item.targetQueue})</SelectItem>
+                          {logicalModels.filter(item => item.enabled).map(item => (
+                            <SelectItem key={item.id} value={item.id}>{item.name} ({item.id})</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     </div>
                     <div className="rounded-lg bg-muted/45 px-3 py-2 text-xs text-muted-foreground">
-                      模型选择器当前仅支持一个逻辑模型配置；队列由模型目录自动决定。
+                      请求体中的 model 会按逻辑模型 id/name 自动匹配；未命中时回退到 default。输出队列由该逻辑模型的调度策略决定。
                     </div>
                   </div>
                 )}

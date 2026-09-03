@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { runWorkflow } from './engine'
-import type { WorkflowNodeModel } from './types'
+import { runWorkflow as runWorkflowEngine } from './engine'
+import type { RuntimeLogicalModel, WorkflowNodeModel } from './types'
+
+const runtimeLogicalModels: RuntimeLogicalModel[] = [
+  { id: 'model-vip', name: 'gpt-4o-mini', enabled: true },
+  { id: 'model-default', name: 'default', enabled: true },
+]
+
+function runWorkflow(nodes: WorkflowNodeModel[], inputPayload: unknown, logicalModels = runtimeLogicalModels) {
+  return runWorkflowEngine(nodes, inputPayload, { logicalModels })
+}
 
 type BaseNodeOverrides = {
   input?: Partial<Extract<WorkflowNodeModel, { kind: 'input' }>>
@@ -69,7 +78,7 @@ function createBaseNodes(overrides?: BaseNodeOverrides): WorkflowNodeModel[] {
     enabled: true,
     description: '根据分支选择逻辑模型',
     position: { x: 780, y: 120 },
-    logicalModelId: 'logical-chat-vip',
+    logicalModelId: 'model-default',
     next: 'output',
     ...overrides?.selector,
   }
@@ -134,8 +143,10 @@ describe('router engine', () => {
 
     expect(result.stopReason).toBe('output')
     expect(result.protocol).toBe('openai-completions')
-    expect(result.targetQueue).toBe('queue-vip-cn')
-    expect(result.routeDecision?.targetQueue).toBe('queue-vip-cn')
+    expect(result.targetQueue).toBe('model-vip')
+    expect(result.routeDecision?.targetQueue).toBe('model-vip')
+    expect(result.routeDecision?.selectedModel).toBe('model-vip')
+    expect(result.routeDecision?.matched).toBe(true)
     expect(result.trace.some(item => item.kind === 'logical-model-selector' && item.success)).toBe(true)
   })
 
@@ -176,7 +187,7 @@ describe('router engine', () => {
 
     const payload = result.outputPayload as { metadata: { controls: { featureEnabled: boolean } } }
     expect(payload.metadata.controls.featureEnabled).toBe(true)
-    expect(result.targetQueue).toBe('queue-vip-cn')
+    expect(result.targetQueue).toBe('model-vip')
   })
 
   it('auto-detects anthropic-messages by model id without explicit rules', () => {
@@ -219,12 +230,8 @@ describe('router engine', () => {
     expect(result.routeDecision).toBeNull()
   })
 
-  it('supports logical-model-only selector configuration', () => {
-    const nodes = createBaseNodes({
-      selector: {
-        logicalModelId: 'logical-chat-default',
-      },
-    })
+  it('falls back to the enabled default logical model when request model is unknown', () => {
+    const nodes = createBaseNodes()
 
     const result = runWorkflow(nodes, {
       request: {
@@ -232,15 +239,32 @@ describe('router engine', () => {
         headers: { 'x-provider': 'openai' },
         body: {
           tenant: 'vip-cn',
-          model: 'gpt-4o-mini',
+          model: 'unknown-model',
         },
       },
       metadata: {},
     })
 
     expect(result.stopReason).toBe('output')
-    expect(result.targetQueue).toBe('queue-default')
-    expect(result.routeDecision?.selectedModel).toBe('logical-chat-default')
+    expect(result.targetQueue).toBe('model-default')
+    expect(result.routeDecision?.selectedModel).toBe('model-default')
+    expect(result.routeDecision?.matched).toBe(false)
+  })
+
+  it('matches a request model by logical model id', () => {
+    const result = runWorkflow(createBaseNodes(), {
+      request: {
+        path: '/v1/chat/completions',
+        headers: { 'x-provider': 'openai' },
+        body: {
+          tenant: 'vip-cn',
+          model: 'model-vip',
+        },
+      },
+      metadata: {},
+    })
+
+    expect(result.routeDecision?.selectedModel).toBe('model-vip')
     expect(result.routeDecision?.matched).toBe(true)
   })
 
@@ -308,7 +332,7 @@ describe('router engine', () => {
         },
       },
       selector: {
-        logicalModelId: 'logical-chat-vip',
+        logicalModelId: 'model-vip',
       },
     })
 
@@ -322,10 +346,10 @@ describe('router engine', () => {
         },
       },
       metadata: {},
-    })
+    }, [])
 
     expect(result.stopReason).toBe('output')
-    expect(result.routeDecision?.selectedModel).toBe('logical-chat-vip')
+    expect(result.routeDecision?.selectedModel).toBe('gpt-4o-mini')
     expect(result.routeDecision?.matched).toBe(false)
     expect(result.targetQueue).toBe('')
   })
@@ -367,7 +391,7 @@ describe('router engine', () => {
       metadata: {},
     })
 
-    expect(pass.targetQueue).toBe('queue-vip-cn')
+    expect(pass.targetQueue).toBe('model-vip')
     expect(fail.targetQueue).toBeNull()
   })
 })
