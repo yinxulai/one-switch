@@ -5,6 +5,7 @@ import {
   createRouter,
   Navigate,
   Outlet,
+  redirect,
   useNavigate,
 } from '@tanstack/react-router'
 import type { AnalyticsRange } from '@common/schemas'
