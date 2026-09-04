@@ -59,16 +59,16 @@ export function CachedTokensCell(props: CachedTokensCellProps) {
 function RequestLogsTableHeader() {
   return (
     <thead className={tableHeaderClass}>
-      <tr>
-        <th className={cn(tableHeaderCellClass, 'w-8')} />
-        <th className={tableHeaderCellClass}>状态</th>
-        <th className={tableHeaderCellClass}>时间</th>
-        <th className={tableHeaderCellClass}>供应商模型</th>
-        <th className={cn(tableHeaderCellClass, 'text-center')}>
+      <tr className="h-8">
+        <th className={cn(tableHeaderCellClass, 'w-8 py-1.5')} />
+        <th className={cn(tableHeaderCellClass, 'py-1.5')}>状态</th>
+        <th className={cn(tableHeaderCellClass, 'py-1.5')}>时间</th>
+        <th className={cn(tableHeaderCellClass, 'py-1.5')}>供应商模型</th>
+        <th className={cn(tableHeaderCellClass, 'py-1.5 text-center')}>
           <ArrowUpFromLine size={11} className="mr-0.5 inline" />
           输入
         </th>
-        <th className={cn(tableHeaderCellClass, 'text-center')}>
+        <th className={cn(tableHeaderCellClass, 'py-1.5 text-center')}>
           <Database size={11} className="mr-0.5 inline" />
           缓存输入
         </th>
@@ -76,7 +76,7 @@ function RequestLogsTableHeader() {
           <ArrowDownToLine size={11} className="mr-0.5 inline" />
           输出
         </th>
-        <th className={cn(tableHeaderCellClass, 'text-center')}>
+        <th className={cn(tableHeaderCellClass, 'py-1.5 text-center')}>
           <Clock size={11} className="mr-0.5 inline" />
           TTFT
         </th>
@@ -84,7 +84,7 @@ function RequestLogsTableHeader() {
           <Zap size={11} className="mr-0.5 inline" />
           TPS
         </th>
-        <th className={cn(tableHeaderCellClass, 'text-right')}>耗时</th>
+        <th className={cn(tableHeaderCellClass, 'py-1.5 text-right')}>耗时</th>
       </tr>
     </thead>
   )

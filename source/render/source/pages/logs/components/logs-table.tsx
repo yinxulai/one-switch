@@ -90,10 +90,10 @@ export function LogsTable(props: LogsTableProps) {
       <div className="max-h-[calc(100vh-190px)] overflow-auto">
         <Table className="w-full table-fixed text-xs">
           <TableHeader className={cn('sticky top-0 z-10 bg-card/95 backdrop-blur-sm', tableHeaderClass)}>
-            <TableRow>
-              <TableHead className={cn(tableHeaderCellClass, 'w-40')}>时间</TableHead>
-              <TableHead className={cn(tableHeaderCellClass, 'w-20')}>级别</TableHead>
-              <TableHead className={tableHeaderCellClass}>消息</TableHead>
+            <TableRow className="h-8">
+              <TableHead className={cn(tableHeaderCellClass, 'h-auto w-40 py-1.5')}>时间</TableHead>
+              <TableHead className={cn(tableHeaderCellClass, 'h-auto w-20 py-1.5')}>级别</TableHead>
+              <TableHead className={cn(tableHeaderCellClass, 'h-auto py-1.5')}>消息</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>{renderTableBody()}</TableBody>
