@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { GripVertical, Pencil, Trash2 } from 'lucide-react'
 import { requestRewriteRuleApi, providerModelApi } from '@/api/models'
+import { useHealth } from '@/features/health/hooks'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -10,7 +11,7 @@ import { SortableProviderModel } from './sortable-provider-model'
 import type { ProviderModelRoute } from '@common/schemas'
 
 interface ProviderModelRowProps {
-  provider: Provider
+
   model: ProviderModelRoute
   selected: boolean
   onSelectedChange: (checked: boolean) => void
@@ -20,8 +21,10 @@ interface ProviderModelRowProps {
 }
 
 export function ProviderModelRow(props: ProviderModelRowProps) {
-  const { provider, model, selected, onSelectedChange, onEditModel, onToggleModelEnabled, onRemoveModel } = props
+  const { model, selected, onSelectedChange, onEditModel, onToggleModelEnabled, onRemoveModel } = props
   const [ruleNames, setRuleNames] = useState<string[]>([])
+  const { providerModels } = useHealth()
+  const modelHealth = providerModels[model.id]
 
   useEffect(() => {
     let cancelled = false
@@ -60,6 +63,16 @@ export function ProviderModelRow(props: ProviderModelRowProps) {
             </div>
             <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
               <ProtocolIcons endpoints={model.endpoints} />
+              {modelHealth?.consecutiveFailures ? (
+                <Badge variant="destructive" className="px-1.5 py-0 text-[10px] font-normal">连续失败 {modelHealth.consecutiveFailures} 次</Badge>
+              ) : modelHealth?.lastSuccessTime ? (
+                <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-500">
+                  <span className="size-1.5 rounded-full bg-emerald-500" />
+                  最近成功
+                </span>
+              ) : (
+                <span className="text-muted-foreground/70">暂无请求</span>
+              )}
               {ruleNames.length > 0 && <>
                 <span className="text-muted-foreground/70">·</span>
                 {ruleNames.map(name => <Badge key={name} variant="muted" className="max-w-40 truncate px-1.5 py-0 text-[10px] font-normal">{name}</Badge>)}

@@ -1,6 +1,6 @@
 import type { Protocol } from '@common/schemas'
 
-export type WorkflowNodeKind = 'input' | 'control-input' | 'protocol-discovery' | 'condition' | 'logical-model-selector' | 'output'
+export type WorkflowNodeKind = 'input' | 'control-input' | 'protocol-discovery' | 'condition' | 'resolver' | 'output'
 
 export type WorkflowProtocol = Protocol | 'unknown'
 
@@ -10,8 +10,11 @@ export type ConditionOperator =
   | 'equals'
   | 'notEquals'
   | 'contains'
-  | 'in'
+  | 'notContains'
   | 'startsWith'
+  | 'endsWith'
+  | 'in'
+  | 'notIn'
   | 'regex'
   | 'gt'
   | 'gte'
@@ -20,6 +23,8 @@ export type ConditionOperator =
   | 'between'
   | 'isTrue'
   | 'isFalse'
+  | 'empty'
+  | 'notEmpty'
   | 'exists'
 
 export interface NodePosition {
@@ -101,17 +106,44 @@ export interface ConditionRule {
   enumOptions?: string[]
 }
 
-export interface ConditionNode extends WorkflowNodeBase {
-  kind: 'condition'
-  rule: ConditionRule
-  nextTrue: string
-  nextFalse: string
+export type ConditionLogicalOperator = 'and' | 'or'
+
+export interface ConditionCase {
+  id: string
+  name: string
+  logicalOperator: ConditionLogicalOperator
+  conditions: ConditionRule[]
+  next: string
 }
 
-export interface LogicalModelSelectorNode extends WorkflowNodeBase {
-  kind: 'logical-model-selector'
-  /** 默认逻辑模型；请求 model 会优先按 id/name 自动匹配。 */
-  logicalModelId: string
+export interface ConditionNode extends WorkflowNodeBase {
+  kind: 'condition'
+  cases: ConditionCase[]
+  elseNext: string
+}
+
+export interface ResolverMatchRule {
+  field: string
+  operator: 'equalsInput'
+}
+
+export interface ResolverFallback {
+  type: 'reference'
+  resource: string
+  id: string
+}
+
+export interface ResolverResolution {
+  resource: string
+  candidates: { source: 'catalog' | 'ids'; ids?: string[] }
+  match: ResolverMatchRule[]
+  fallback?: ResolverFallback
+}
+
+export interface ResolverNode extends WorkflowNodeBase {
+  kind: 'resolver'
+  input: { path: string }
+  resolution: ResolverResolution
   next: string
 }
 
@@ -119,6 +151,21 @@ export interface RuntimeLogicalModel {
   id: string
   name: string
   enabled: boolean
+}
+
+export interface RuntimeCandidate {
+  id: string
+  name?: string
+  enabled?: boolean
+  resource?: string
+}
+
+export interface ResolverDecision {
+  selectedId: string | null
+  resource: string
+  source: 'match' | 'fallback' | 'none'
+  matchedRule?: number
+  reason: string
 }
 
 export interface OutputNode extends WorkflowNodeBase {
@@ -132,15 +179,8 @@ export type WorkflowNodeModel =
   | ControlInputNode
   | ProtocolDiscoveryNode
   | ConditionNode
-  | LogicalModelSelectorNode
+  | ResolverNode
   | OutputNode
-
-export interface LogicalModelDecision {
-  selectedModel: string
-  targetQueue: string
-  matched: boolean
-  reason: string
-}
 
 export interface WorkflowTrace {
   nodeId: string
@@ -153,9 +193,8 @@ export interface WorkflowTrace {
 
 export interface WorkflowRunResult {
   outputPayload: unknown
-  targetQueue: string | null
   protocol: WorkflowProtocol
-  routeDecision: LogicalModelDecision | null
+  resolutions: Record<string, ResolverDecision>
   stopReason: 'output' | 'missing-next' | 'max-steps' | 'error'
   trace: WorkflowTrace[]
 }
@@ -174,9 +213,9 @@ export interface ConfigHints {
 }
 
 export const DEFAULT_OPERATOR_SET: Record<SchemaValueType, ConditionOperator[]> = {
-  string: ['equals', 'notEquals', 'contains', 'in', 'startsWith', 'regex', 'exists'],
+  string: ['equals', 'notEquals', 'contains', 'notContains', 'startsWith', 'endsWith', 'in', 'notIn', 'regex', 'empty', 'notEmpty', 'exists'],
   number: ['equals', 'notEquals', 'gt', 'gte', 'lt', 'lte', 'between', 'exists'],
   boolean: ['isTrue', 'isFalse', 'equals', 'notEquals', 'exists'],
-  enum: ['equals', 'notEquals', 'in', 'exists'],
-  unknown: ['equals', 'notEquals', 'exists'],
+  enum: ['equals', 'notEquals', 'in', 'notIn', 'exists'],
+  unknown: ['equals', 'notEquals', 'empty', 'notEmpty', 'exists'],
 }

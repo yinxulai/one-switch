@@ -105,7 +105,6 @@ export function ProviderModelList(props: ProviderModelListProps) {
               {visibleModels.map(model => (
                 <ProviderModelRow
                   key={model.id}
-                  provider={provider}
                   model={model}
                   selected={selectedSet.has(model.id)}
                   onSelectedChange={checked => {
