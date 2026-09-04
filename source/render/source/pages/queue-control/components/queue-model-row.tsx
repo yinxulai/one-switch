@@ -16,7 +16,6 @@ import { Button } from '@/components/ui/button'
 import { ProtocolIcons } from '@/components/protocol-icons'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
-import { tableRowClass } from '@/components/table-primitives'
 import type { QueueModelMetrics } from '../lib/model-metrics'
 
 interface QueueModelRowProps {
@@ -134,8 +133,7 @@ export function QueueModelRow(props: QueueModelRowProps) {
     <div
       onClick={props.onSelect}
       className={cn(
-        'group/row grid min-h-14 min-w-88 grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-x-2 overflow-hidden border-y border-border/40 border-l-2 border-l-transparent px-3 py-2 not-first:border-t-0',
-        tableRowClass,
+        'group/row grid min-h-14 min-w-88 grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-x-1 overflow-hidden border-b border-border/60 border-l-2 border-l-transparent px-3 py-2 last:border-b-0 transition-colors hover:bg-muted/20',
         props.selected && 'rounded-md border-l-primary bg-primary/5',
         props.mode === 'manual' && 'cursor-pointer',
         props.dragging && 'rounded-md bg-muted/60',
@@ -160,7 +158,7 @@ export function QueueModelRow(props: QueueModelRowProps) {
             {props.provider && props.onNavigateToProviderAnalytics ? (
               <button
                 type="button"
-                className="group/provider inline-flex min-w-0 items-center gap-0.5 truncate rounded-sm text-left font-medium text-foreground/90 outline-none transition-colors hover:text-primary focus-visible:bg-primary/10 focus-visible:text-primary"
+                className="group/provider inline-flex min-w-0 items-center gap-0.5 rounded-sm text-left font-medium text-foreground/90 outline-none transition-colors hover:text-primary focus-visible:bg-primary/10 focus-visible:text-primary"
                 title={`查看 ${props.provider.name} 数据分析`}
                 aria-label={`查看 ${props.provider.name} 数据分析`}
                 onClick={event => {
@@ -168,14 +166,18 @@ export function QueueModelRow(props: QueueModelRowProps) {
                   props.onNavigateToProviderAnalytics?.(model.providerId)
                 }}
               >
-                <span className="truncate">{props.provider.name}</span>
+                <span className="min-w-0 truncate">{props.provider.name}</span>
+                <span className="shrink-0 text-muted-foreground/50" aria-hidden="true">·</span>
+                <span className="min-w-0 truncate font-mono text-foreground/90">{model.modelName}</span>
                 <ChevronRight size={13} aria-hidden="true" className="shrink-0 text-muted-foreground/60 transition-transform group-hover/provider:translate-x-0.5 group-hover/provider:text-primary group-focus-visible/provider:text-primary" />
               </button>
             ) : (
-              <div className="min-w-0 truncate font-medium">{props.provider?.name ?? '未知供应商'}</div>
+              <>
+                <div className="min-w-0 truncate font-medium">{props.provider?.name ?? '未知供应商'}</div>
+                <span className="shrink-0 text-muted-foreground/50" aria-hidden="true">·</span>
+                <div className="min-w-0 truncate font-mono text-foreground/90">{model.modelName}</div>
+              </>
             )}
-            <span className="shrink-0 text-muted-foreground/50" aria-hidden="true">·</span>
-            <div className="min-w-0 truncate font-mono text-foreground/90">{model.modelName}</div>
           </div>
         </div>
         <div className="mt-1 flex min-w-0 items-center gap-2 text-[10px] text-muted-foreground">

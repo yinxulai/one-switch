@@ -24,12 +24,11 @@ interface QueueControlPageProps {
 interface QueueColumnProps {
   logicalModelId: string
   logicalModelName: string
-  onNavigateToModels?: () => void
   onNavigateToProviderAnalytics?: (providerId: string) => void
 }
 
 function QueueColumn(props: QueueColumnProps) {
-  const { logicalModelId, logicalModelName, onNavigateToModels, onNavigateToProviderAnalytics } = props
+  const { logicalModelId, logicalModelName, onNavigateToProviderAnalytics } = props
   const service = useQueueControlService(logicalModelId)
   const [addModelOpen, setAddModelOpen] = useState(false)
   const removeModel = async (model: ProviderModelRoute) => {
@@ -68,12 +67,13 @@ function QueueColumn(props: QueueColumnProps) {
 }
 
 export function QueueControlPage(props: QueueControlPageProps) {
-  const { onNavigateToModels, onNavigateToAccess, onNavigateToProviderAnalytics } = props
+  const { onNavigateToAccess, onNavigateToProviderAnalytics } = props
   const logicalModels = useLogicalModels()
   const { refresh: refreshLogicalModels } = useLogicalModelsActions()
   const service = useQueueControlService('default')
   const [createQueueOpen, setCreateQueueOpen] = useState(false)
   const proxyRunning = service.proxyStatus?.running ?? false
+  const enabledLogicalModels = logicalModels.filter(model => model.enabled)
 
   return (
     <PageLayout>
@@ -126,13 +126,12 @@ export function QueueControlPage(props: QueueControlPageProps) {
           <>
             <QueueSummary models={service.models} summaryMetrics={service.summaryMetrics} />
 
-            <div className="grid gap-4 md:grid-cols-2">
-              {logicalModels.filter(model => model.enabled).map(model => (
+            <div className={`grid gap-4 ${enabledLogicalModels.length === 1 ? 'md:grid-cols-1' : 'md:grid-cols-2'}`}>
+              {enabledLogicalModels.map(model => (
                 <QueueColumn
                   key={model.id}
                   logicalModelId={model.id}
                   logicalModelName={model.name}
-                  onNavigateToModels={onNavigateToModels}
                   onNavigateToProviderAnalytics={onNavigateToProviderAnalytics}
                 />
               ))}
