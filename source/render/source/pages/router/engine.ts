@@ -277,6 +277,10 @@ function nextForProtocol(node: ProtocolDiscoveryNode, protocol: WorkflowProtocol
   return node.branches[protocol]
 }
 
+function readArrayItems(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : []
+}
+
 function isTerminal(node: WorkflowNodeModel): boolean {
   return node.kind === 'output'
 }
@@ -301,6 +305,8 @@ export function runWorkflow(nodes: WorkflowNodeModel[], inputPayload: unknown, o
   const outputPayload = envelope.payload
   const trace: WorkflowTrace[] = []
   const byId = new Map(nodes.map(node => [node.id, node]))
+  const iterationStacks = new Map<string, { index: number; item: unknown }[]>()
+  const loopCounters = new Map<string, number>()
 
   const start = nodes.find(node => node.kind === 'input')
   if (!start) {
@@ -339,6 +345,8 @@ export function runWorkflow(nodes: WorkflowNodeModel[], inputPayload: unknown, o
       } else if (current.kind === 'condition') {
         disabledNext = current.elseNext
       } else if (current.kind === 'resolver') {
+        disabledNext = current.next
+      } else if (current.kind === 'iteration' || current.kind === 'loop') {
         disabledNext = current.next
       }
 
@@ -467,6 +475,87 @@ export function runWorkflow(nodes: WorkflowNodeModel[], inputPayload: unknown, o
       if (!current) {
         stopReason = 'missing-next'
       }
+      continue
+    }
+
+    if (current.kind === 'iteration') {
+      const items = readArrayItems(getByPath(outputPayload, current.input.path))
+      const stack = iterationStacks.get(current.id) ?? []
+      if (items.length === 0) {
+        trace.push({
+          nodeId: current.id,
+          nodeName: current.name,
+          kind: current.kind,
+          success: true,
+          message: '迭代输入为空数组，跳过循环体',
+          details: { path: current.input.path, index: stack.length },
+        })
+        current = byId.get(current.next)
+      } else if (stack.length < items.length) {
+        stack.push({ index: stack.length, item: items[stack.length] })
+        iterationStacks.set(current.id, stack)
+        const active = stack[stack.length - 1]!
+        const metadata = outputPayload.metadata as Record<string, unknown>
+        metadata.iteration = { current: active.item, index: active.index, length: items.length }
+        trace.push({
+          nodeId: current.id,
+          nodeName: current.name,
+          kind: current.kind,
+          success: true,
+          message: `迭代 ${active.index + 1}/${items.length}`,
+          details: { index: active.index, item: active.item },
+        })
+        current = byId.get(current.bodyNext)
+      } else {
+        iterationStacks.delete(current.id)
+        const metadata = outputPayload.metadata as Record<string, unknown>
+        delete metadata.iteration
+        trace.push({
+          nodeId: current.id,
+          nodeName: current.name,
+          kind: current.kind,
+          success: true,
+          message: `迭代完成，共 ${items.length} 项`,
+          details: { index: items.length, length: items.length },
+        })
+        current = byId.get(current.next)
+      }
+      if (!current) stopReason = 'missing-next'
+      continue
+    }
+
+    if (current.kind === 'loop') {
+      const metadata = outputPayload.metadata as Record<string, unknown>
+      const counter = loopCounters.get(current.id) ?? 0
+      const conditionPassed = evaluateCondition(current.condition, getByPath(outputPayload, current.condition.fieldPath))
+      const exhausted = counter >= current.maxIterations
+
+      if (conditionPassed && !exhausted) {
+        loopCounters.set(current.id, counter + 1)
+        metadata.loop = { index: counter + 1, maxIterations: current.maxIterations }
+        trace.push({
+          nodeId: current.id,
+          nodeName: current.name,
+          kind: current.kind,
+          success: true,
+          message: `循环第 ${counter + 1}/${current.maxIterations} 轮（条件满足）`,
+          details: { index: counter + 1, fieldPath: current.condition.fieldPath },
+        })
+        current = byId.get(current.bodyNext)
+      } else {
+        loopCounters.delete(current.id)
+        delete metadata.loop
+        trace.push({
+          nodeId: current.id,
+          nodeName: current.name,
+          kind: current.kind,
+          success: true,
+          message: exhausted ? `达到最大迭代次数 ${current.maxIterations}，退出循环` : '循环条件不满足，退出循环',
+          details: { index: counter, exhausted, fieldPath: current.condition.fieldPath },
+        })
+        current = byId.get(current.next)
+      }
+      if (!current) stopReason = 'missing-next'
       continue
     }
 

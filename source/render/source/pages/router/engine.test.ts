@@ -11,9 +11,7 @@ function runWorkflow(nodes: WorkflowNodeModel[], inputPayload: unknown, logicalM
   return runWorkflowEngine(nodes, inputPayload, { logicalModels })
 }
 
-function singleCase(next = 'resolver', conditions: ConditionRule[] = [
-  { fieldPath: 'request.body.tenant', valueType: 'string', operator: 'startsWith', value: 'vip-' },
-]): ConditionCase {
+function singleCase(next = 'resolver', conditions: ConditionRule[] = [{ fieldPath: 'request.body.tenant', valueType: 'string', operator: 'startsWith', value: 'vip-' }]): ConditionCase {
   return {
     id: 'case-1',
     name: '分支 1',
@@ -434,5 +432,32 @@ describe('router engine', () => {
     expect(pass.resolutions.resolver?.selectedId).toBe('model-vip')
     expect(fail.resolutions).toEqual({})
     expect(fail.trace.some(item => item.nodeId === 'condition-gate' && !item.success)).toBe(true)
+  })
+
+  it('迭代节点遍历数组并在完成后从 out 端口退出', () => {
+    const nodes: WorkflowNodeModel[] = [
+      { id: 'input', kind: 'input', name: '输入', enabled: true, description: '', position: { x: 0, y: 0 }, next: 'iteration' },
+      { id: 'iteration', kind: 'iteration', name: '迭代', enabled: true, description: '', position: { x: 100, y: 0 }, input: { path: 'request.body.items' }, bodyNext: 'control', next: 'output' },
+      { id: 'control', kind: 'control-input', name: '循环体', enabled: true, description: '', position: { x: 200, y: 0 }, controls: [], next: 'iteration' },
+      { id: 'output', kind: 'output', name: '输出', enabled: true, description: '', position: { x: 300, y: 0 }, includeTrace: true, summaryLevel: 'brief' },
+    ]
+    const result = runWorkflow(nodes, { request: { body: { items: ['a', 'b', 'c'] } }, metadata: {} })
+    expect(result.stopReason).toBe('output')
+    expect(result.trace.filter(item => item.nodeId === 'iteration' && item.message.startsWith('迭代 '))).toHaveLength(3)
+    expect(result.trace.some(item => item.nodeId === 'iteration' && item.message === '迭代完成，共 3 项')).toBe(true)
+    expect((result.outputPayload as { metadata: Record<string, unknown> }).metadata.iteration).toBeUndefined()
+  })
+
+  it('循环节点按条件执行循环体并在达到上限后退出', () => {
+    const nodes: WorkflowNodeModel[] = [
+      { id: 'input', kind: 'input', name: '输入', enabled: true, description: '', position: { x: 0, y: 0 }, next: 'loop' },
+      { id: 'loop', kind: 'loop', name: '循环', enabled: true, description: '', position: { x: 100, y: 0 }, maxIterations: 2, condition: { fieldPath: 'request.body.continue', valueType: 'boolean', operator: 'isTrue' }, bodyNext: 'control', next: 'output' },
+      { id: 'control', kind: 'control-input', name: '循环体', enabled: true, description: '', position: { x: 200, y: 0 }, controls: [], next: 'loop' },
+      { id: 'output', kind: 'output', name: '输出', enabled: true, description: '', position: { x: 300, y: 0 }, includeTrace: true, summaryLevel: 'brief' },
+    ]
+    const result = runWorkflow(nodes, { request: { body: { continue: true } }, metadata: {} })
+    expect(result.stopReason).toBe('output')
+    expect(result.trace.filter(item => item.nodeId === 'loop' && item.message.includes('条件满足'))).toHaveLength(2)
+    expect(result.trace.some(item => item.message === '达到最大迭代次数 2，退出循环')).toBe(true)
   })
 })

@@ -7,7 +7,7 @@ const NodePositionSchema = z.object({
 
 const WorkflowNodeBaseSchema = z.object({
   id: z.string(),
-  kind: z.enum(['input', 'control-input', 'protocol-discovery', 'condition', 'resolver', 'output']),
+  kind: z.enum(['input', 'control-input', 'protocol-discovery', 'condition', 'resolver', 'iteration', 'loop', 'output']),
   name: z.string(),
   enabled: z.boolean(),
   description: z.string(),
@@ -97,6 +97,21 @@ const ResolverNodeSchema = WorkflowNodeBaseSchema.extend({
   next: z.string(),
 })
 
+const IterationNodeSchema = WorkflowNodeBaseSchema.extend({
+  kind: z.literal('iteration'),
+  input: z.object({ path: z.string().min(1) }),
+  bodyNext: z.string().min(1),
+  next: z.string().min(1),
+})
+
+const LoopNodeSchema = WorkflowNodeBaseSchema.extend({
+  kind: z.literal('loop'),
+  maxIterations: z.number().int().min(1).max(1000),
+  condition: ConditionRuleSchema,
+  bodyNext: z.string().min(1),
+  next: z.string().min(1),
+})
+
 const OutputNodeSchema = WorkflowNodeBaseSchema.extend({
   kind: z.literal('output'),
   includeTrace: z.boolean(),
@@ -109,6 +124,8 @@ export const WorkflowNodeModelSchema = z.discriminatedUnion('kind', [
   ProtocolDiscoveryNodeSchema,
   ConditionNodeSchema,
   ResolverNodeSchema,
+  IterationNodeSchema,
+  LoopNodeSchema,
   OutputNodeSchema,
 ])
 
