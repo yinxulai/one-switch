@@ -179,4 +179,41 @@ describe('resolveInputHints', () => {
     expect(hints.fields.map(field => field.path)).not.toContain('metadata.controls.mode')
     expect(hints.fields.map(field => field.path)).toContain('request.body.model')
   })
+
+  it('声明 Logic 节点的 body/out 连线和迭代字段', () => {
+    const target = condition('condition')
+    const iteration: Extract<WorkflowNodeModel, { kind: 'iteration' }> = {
+      id: 'iteration',
+      kind: 'iteration',
+      name: '迭代',
+      enabled: true,
+      description: '',
+      position,
+      input: { path: 'request.body.items' },
+      bodyNext: 'condition',
+      next: 'output',
+    }
+    const hints = resolveInputHints([input('iteration'), iteration, target, output()], target.id, samplePayload)
+    expect(hints.fields.map(field => field.path)).toEqual(expect.arrayContaining(['request.body.model', 'metadata.iteration.current', 'metadata.iteration.index']))
+    expect(hints.upstreamNodeIds).toEqual(expect.arrayContaining(['input', 'iteration']))
+  })
+
+  it('声明 Loop 节点的 metadata.loop.index 字段', () => {
+    const target = condition('condition')
+    const loop: Extract<WorkflowNodeModel, { kind: 'loop' }> = {
+      id: 'loop',
+      kind: 'loop',
+      name: '循环',
+      enabled: true,
+      description: '',
+      position,
+      maxIterations: 3,
+      condition: { fieldPath: 'request.body.priority', valueType: 'number', operator: 'gte', value: '1' },
+      bodyNext: 'condition',
+      next: 'output',
+    }
+    const hints = resolveInputHints([input('loop'), loop, target, output()], target.id, samplePayload)
+    expect(hints.fields.map(field => field.path)).toContain('metadata.loop.index')
+    expect(hints.upstreamNodeIds).toEqual(expect.arrayContaining(['input', 'loop']))
+  })
 })

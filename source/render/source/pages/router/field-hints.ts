@@ -35,6 +35,12 @@ export function buildWorkflowConnections(models: WorkflowNodeModel[]): WorkflowC
       continue
     }
 
+    if (model.kind === 'iteration' || model.kind === 'loop') {
+      connections.push({ sourceNodeId: model.id, sourcePort: 'body', targetNodeId: model.bodyNext })
+      connections.push({ sourceNodeId: model.id, sourcePort: 'out', targetNodeId: model.next })
+      continue
+    }
+
     if (model.kind === 'condition') {
       for (const caseNode of model.cases) {
         connections.push({ sourceNodeId: model.id, sourcePort: caseNode.id, targetNodeId: caseNode.next })
@@ -186,6 +192,32 @@ export function resolveInputHints(models: WorkflowNodeModel[], targetNodeId: str
         valueType: 'string',
         sourceNodeId: model.id,
         sourcePort: 'resolution',
+      })
+      continue
+    }
+
+    if (model.kind === 'iteration') {
+      addUniqueField(fields, {
+        path: 'metadata.iteration.current',
+        valueType: 'unknown',
+        sourceNodeId: model.id,
+        sourcePort: 'body',
+      })
+      addUniqueField(fields, {
+        path: 'metadata.iteration.index',
+        valueType: 'number',
+        sourceNodeId: model.id,
+        sourcePort: 'body',
+      })
+      continue
+    }
+
+    if (model.kind === 'loop') {
+      addUniqueField(fields, {
+        path: 'metadata.loop.index',
+        valueType: 'number',
+        sourceNodeId: model.id,
+        sourcePort: 'body',
       })
       continue
     }

@@ -1,6 +1,6 @@
 import type { Protocol } from '@common/schemas'
 
-export type WorkflowNodeKind = 'input' | 'control-input' | 'protocol-discovery' | 'condition' | 'resolver' | 'output'
+export type WorkflowNodeKind = 'input' | 'control-input' | 'protocol-discovery' | 'condition' | 'resolver' | 'iteration' | 'loop' | 'output'
 
 export type WorkflowProtocol = Protocol | 'unknown'
 
@@ -147,6 +147,21 @@ export interface ResolverNode extends WorkflowNodeBase {
   next: string
 }
 
+export interface IterationNode extends WorkflowNodeBase {
+  kind: 'iteration'
+  input: { path: string }
+  bodyNext: string
+  next: string
+}
+
+export interface LoopNode extends WorkflowNodeBase {
+  kind: 'loop'
+  maxIterations: number
+  condition: ConditionRule
+  bodyNext: string
+  next: string
+}
+
 export interface RuntimeLogicalModel {
   id: string
   name: string
@@ -180,6 +195,8 @@ export type WorkflowNodeModel =
   | ProtocolDiscoveryNode
   | ConditionNode
   | ResolverNode
+  | IterationNode
+  | LoopNode
   | OutputNode
 
 export interface WorkflowTrace {

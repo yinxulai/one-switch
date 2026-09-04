@@ -60,7 +60,7 @@ import { buildWorkflowConnections, resolveInputHints, WORKFLOW_PROTOCOLS } from 
 
 const routerStorageKey = 'one-switch.router.models.v1'
 const protocolOptions = WORKFLOW_PROTOCOLS
-const routerLayoutOrder: WorkflowNodeKind[] = ['input', 'control-input', 'protocol-discovery', 'condition', 'resolver', 'output']
+const routerLayoutOrder: WorkflowNodeKind[] = ['input', 'control-input', 'protocol-discovery', 'condition', 'resolver', 'iteration', 'loop', 'output']
 
 function createConditionRule(): ConditionRule {
   return {
@@ -221,6 +221,8 @@ type WorkflowCanvasNodeType =
   | 'protocol-discovery'
   | 'condition'
   | 'resolver'
+  | 'iteration'
+  | 'loop'
 
 function toCanvasNodeType(kind: WorkflowNodeKind): WorkflowCanvasNodeType {
   if (kind === 'input') return 'route-input'
@@ -235,6 +237,8 @@ function kindLabel(kind: WorkflowNodeKind): string {
   if (kind === 'output') return '路由结果出口'
   if (kind === 'protocol-discovery') return '协议发现'
   if (kind === 'condition') return '条件'
+  if (kind === 'iteration') return '迭代'
+  if (kind === 'loop') return '循环'
   return '解析'
 }
 
@@ -244,6 +248,7 @@ function kindTone(kind: WorkflowNodeKind): string {
   if (kind === 'output') return 'bg-success/14 text-success-foreground'
   if (kind === 'protocol-discovery') return 'bg-cyan-500/12 text-cyan-500'
   if (kind === 'condition') return 'bg-warning/14 text-warning-foreground'
+  if (kind === 'iteration' || kind === 'loop') return 'bg-violet-500/14 text-violet-500'
   return 'bg-primary/14 text-primary'
 }
 
@@ -255,6 +260,8 @@ function modelSummary(model: WorkflowNodeModel): string {
   if (model.kind === 'condition') {
     return `${model.cases.length} 个分支 + ELSE -> ${model.elseNext}`
   }
+  if (model.kind === 'iteration') return `迭代 ${model.input.path} -> ${model.bodyNext}`
+  if (model.kind === 'loop') return `循环 ≤ ${model.maxIterations} 次 -> ${model.bodyNext}`
   return `${model.resolution.resource}: ${model.input.path}`
 }
 
@@ -301,6 +308,15 @@ const BaseNodeView = memo(function BaseNodeView(props: BaseNodeViewProps) {
         <>
           <Handle type="source" position={Position.Right} style={{ top: '50%' }} className="size-3! border-0! bg-success!" />
           <span className="pointer-events-none absolute -right-8 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">out</span>
+        </>
+      )}
+
+      {(model.kind === 'iteration' || model.kind === 'loop') && (
+        <>
+          <Handle id="body" type="source" position={Position.Right} style={{ top: 30 }} className="size-3! border-0! bg-success!" />
+          <span className="pointer-events-none absolute -right-11 text-[10px] text-success" style={{ top: 24 }}>body</span>
+          <Handle id="out" type="source" position={Position.Right} style={{ top: 52 }} className="size-3! border-0! bg-primary!" />
+          <span className="pointer-events-none absolute -right-8 text-[10px] text-muted-foreground" style={{ top: 46 }}>out</span>
         </>
       )}
 
@@ -360,6 +376,8 @@ const nodeTypes = {
   'protocol-discovery': BaseNodeView,
   condition: BaseNodeView,
   resolver: BaseNodeView,
+  iteration: BaseNodeView,
+  loop: BaseNodeView,
 }
 
 const defaultEdgeOptions = {
@@ -378,12 +396,12 @@ function buildFlowEdges(models: WorkflowNodeModel[]): Edge[] {
     source: connection.sourceNodeId,
     sourceHandle: connection.sourcePort === 'out' ? undefined : connection.sourcePort,
     target: connection.targetNodeId,
-    animated: connection.sourcePort !== 'out' && connection.sourcePort !== 'else'
+    animated: connection.sourcePort !== 'out' && connection.sourcePort !== 'else' && connection.sourcePort !== 'body'
       && (!WORKFLOW_PROTOCOLS.includes(connection.sourcePort as WorkflowProtocol) || connection.sourcePort !== 'unknown'),
   }))
 }
 
-function createNodeByKind(kind: Extract<WorkflowNodeKind, 'control-input' | 'protocol-discovery' | 'condition' | 'resolver'>, position: NodePosition): WorkflowNodeModel {
+function createNodeByKind(kind: Extract<WorkflowNodeKind, 'control-input' | 'protocol-discovery' | 'condition' | 'resolver' | 'iteration' | 'loop'>, position: NodePosition): WorkflowNodeModel {
   const id = `${kind}-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`
   if (kind === 'control-input') {
     return {
@@ -423,6 +441,38 @@ function createNodeByKind(kind: Extract<WorkflowNodeKind, 'control-input' | 'pro
       position,
       cases: [createConditionCase()],
       elseNext: 'output',
+    }
+  }
+  if (kind === 'iteration') {
+    return {
+      id,
+      kind,
+      name: '迭代节点',
+      enabled: true,
+      description: '遍历数组，循环体通过 body 端口回到下游并回流。',
+      position,
+      input: { path: 'request.items' },
+      bodyNext: 'output',
+      next: 'output',
+    }
+  }
+  if (kind === 'loop') {
+    return {
+      id,
+      kind,
+      name: '循环节点',
+      enabled: true,
+      description: '在条件满足时反复执行循环体，最多执行指定轮数。',
+      position,
+      maxIterations: 10,
+      condition: {
+        fieldPath: 'metadata.loop.index',
+        valueType: 'number',
+        operator: 'lt',
+        value: '3',
+      },
+      bodyNext: 'output',
+      next: 'output',
     }
   }
   return {
@@ -473,7 +523,7 @@ function WorkflowStudioCanvas() {
   const [dragEnabled, setDragEnabled] = useState(true)
   const [dockMode, setDockMode] = useState<'select' | 'pan'>('select')
   const [addMenuOpen, setAddMenuOpen] = useState(false)
-  const [expandedAddGroup, setExpandedAddGroup] = useState<'基础节点' | '路由节点' | null>('路由节点')
+  const [expandedAddGroup, setExpandedAddGroup] = useState<'基础节点' | '路由节点' | '逻辑节点' | null>('路由节点')
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [testDrawerOpen, setTestDrawerOpen] = useState(false)
@@ -607,13 +657,19 @@ function WorkflowStudioCanvas() {
       if (node.kind === 'resolver' && node.next === removedId) {
         return { ...node, next: 'output' }
       }
+      if (node.kind === 'iteration' && (node.bodyNext === removedId || node.next === removedId)) {
+        return { ...node, bodyNext: node.bodyNext === removedId ? 'output' : node.bodyNext, next: node.next === removedId ? 'output' : node.next }
+      }
+      if (node.kind === 'loop' && (node.bodyNext === removedId || node.next === removedId)) {
+        return { ...node, bodyNext: node.bodyNext === removedId ? 'output' : node.bodyNext, next: node.next === removedId ? 'output' : node.next }
+      }
       return node
     }))
     setDrawerOpen(false)
     setSelectedNodeId(null)
   }, [])
 
-  const appendAtCanvasCenter = useCallback((kind: Extract<WorkflowNodeKind, 'control-input' | 'protocol-discovery' | 'condition' | 'resolver'>) => {
+  const appendAtCanvasCenter = useCallback((kind: Extract<WorkflowNodeKind, 'control-input' | 'protocol-discovery' | 'condition' | 'resolver' | 'iteration' | 'loop'>) => {
     const rect = canvasRef.current?.getBoundingClientRect()
     if (!rect) return
     const position = flow.screenToFlowPosition({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 })
@@ -647,6 +703,10 @@ function WorkflowStudioCanvas() {
       if (node.kind === 'input' || node.kind === 'control-input' || node.kind === 'resolver') {
         return { ...node, next: connection.target }
       }
+      if (node.kind === 'iteration' || node.kind === 'loop') {
+        if (connection.sourceHandle === 'body') return { ...node, bodyNext: connection.target }
+        return { ...node, next: connection.target }
+      }
       return node
     })
   }, [updateNode])
@@ -673,7 +733,7 @@ function WorkflowStudioCanvas() {
   }, [models, toast])
 
   const conditionFieldHints = useMemo(() => {
-    if (!selectedNode || selectedNode.kind !== 'condition') return []
+    if (!selectedNode || (selectedNode.kind !== 'condition' && selectedNode.kind !== 'loop')) return []
     return resolveInputHints(models, selectedNode.id, samplePayload).fields
   }, [models, selectedNode])
 
@@ -704,6 +764,12 @@ function WorkflowStudioCanvas() {
     }
     if (node.kind === 'resolver') {
       return '从运行时资源目录按输入路径和声明顺序匹配；未命中时使用可选回退引用。资源类型不写死在节点中。'
+    }
+    if (node.kind === 'iteration') {
+      return '遍历输入路径下的数组，循环体通过 body 端口连接下游并回流回迭代节点；每轮把当前项写入 metadata.iteration.current。'
+    }
+    if (node.kind === 'loop') {
+      return '在条件满足时反复执行 body 端口连接的循环体，达到最大迭代次数或条件不满足时从 out 端口退出。'
     }
     return '该节点不会直接返回模型响应，而是返回一个可用队列交由代理执行。Trace 和摘要级别仅用于调试与观测。'
   }
@@ -814,6 +880,27 @@ function WorkflowStudioCanvas() {
                               <button type="button" className="rounded-md px-2 py-2 text-left hover:bg-zinc-800" onClick={() => { appendAtCanvasCenter('resolver'); setAddMenuOpen(false) }}>
                                 <span className="block text-sm">资源解析</span>
                                 <span className="mt-0.5 block text-xs text-zinc-400">从运行时资源目录按输入字段匹配目标资源，可选回退。</span>
+                              </button>
+                            </div>
+                          )}
+
+                          <button
+                            type="button"
+                            className="flex items-center justify-between rounded-md px-2 py-1.5 text-left text-sm hover:bg-zinc-800"
+                            onClick={() => setExpandedAddGroup(current => current === '逻辑节点' ? null : '逻辑节点')}
+                          >
+                            <span>逻辑节点</span>
+                            <span className="text-xs text-zinc-400">{expandedAddGroup === '逻辑节点' ? '收起' : '展开'}</span>
+                          </button>
+                          {expandedAddGroup === '逻辑节点' && (
+                            <div className="grid gap-1 pl-2">
+                              <button type="button" className="rounded-md px-2 py-2 text-left hover:bg-zinc-800" onClick={() => { appendAtCanvasCenter('iteration'); setAddMenuOpen(false) }}>
+                                <span className="block text-sm">迭代</span>
+                                <span className="mt-0.5 block text-xs text-zinc-400">遍历数组并对每一项执行循环体。</span>
+                              </button>
+                              <button type="button" className="rounded-md px-2 py-2 text-left hover:bg-zinc-800" onClick={() => { appendAtCanvasCenter('loop'); setAddMenuOpen(false) }}>
+                                <span className="block text-sm">循环</span>
+                                <span className="mt-0.5 block text-xs text-zinc-400">条件满足时重复执行循环体，带最大次数保护。</span>
                               </button>
                             </div>
                           )}
@@ -1171,6 +1258,113 @@ function WorkflowStudioCanvas() {
                     </div>
                     <div className="rounded-lg bg-muted/45 px-3 py-2 text-xs text-muted-foreground">
                       协议分支输出口通过画布连线设置：openai-completions / openai-responses / anthropic-messages / unknown。
+                    </div>
+                  </div>
+                )}
+
+                {selectedNode.kind === 'iteration' && (
+                  <div className="grid gap-3">
+                    <div className="grid gap-1.5">
+                      <Label>数组字段路径</Label>
+                      <Input
+                        value={selectedNode.input.path}
+                        placeholder="request.body.items"
+                        onChange={event => updateNode(selectedNode.id, node => node.kind === 'iteration'
+                          ? { ...node, input: { path: event.target.value } }
+                          : node)}
+                      />
+                    </div>
+                    <div className="rounded-lg bg-muted/45 px-3 py-2 text-xs text-muted-foreground">
+                      body 端口连接循环体，out 端口连接迭代完成后的下游节点。循环体中可使用 metadata.iteration.current 和 metadata.iteration.index。
+                    </div>
+                  </div>
+                )}
+
+                {selectedNode.kind === 'loop' && (
+                  <div className="grid gap-3">
+                    <div className="grid gap-1.5">
+                      <Label>最大迭代次数</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={1000}
+                        value={selectedNode.maxIterations}
+                        onChange={event => updateNode(selectedNode.id, node => node.kind === 'loop'
+                          ? { ...node, maxIterations: Math.min(1000, Math.max(1, Number(event.target.value) || 1)) }
+                          : node)}
+                      />
+                    </div>
+                    <div className="grid gap-2 rounded-lg bg-muted/35 p-3">
+                      <div className="text-sm font-medium">循环条件</div>
+                      <div className="grid gap-1.5">
+                        <Label>字段路径（上游 schema）</Label>
+                        <Select
+                          value={selectedNode.condition.fieldPath}
+                          onValueChange={value => updateNode(selectedNode.id, node => {
+                            if (node.kind !== 'loop') return node
+                            const field = conditionFieldHints.find(item => item.path === value)
+                            const nextType = field?.valueType ?? node.condition.valueType
+                            return {
+                              ...node,
+                              condition: {
+                                ...node.condition,
+                                fieldPath: value,
+                                valueType: nextType,
+                                enumOptions: field?.enumOptions,
+                                operator: getOperatorsByType(nextType)[0] ?? 'equals',
+                              },
+                            }
+                          })}
+                        >
+                          <SelectTrigger className="w-full"><SelectValue placeholder="field path" /></SelectTrigger>
+                          <SelectContent>
+                            {conditionFieldHints.map(field => (
+                              <SelectItem key={field.path} value={field.path}>{field.path} · {field.valueType}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {!conditionFieldIsAvailable(selectedNode.condition.fieldPath) && (
+                          <div className="rounded-lg bg-warning/14 px-3 py-2 text-xs text-warning-foreground">
+                            当前字段 {selectedNode.condition.fieldPath} 不再由任何已连接的上游节点提供。
+                          </div>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="grid gap-1.5">
+                          <Label>字段类型</Label>
+                          <Input value={conditionFieldType(selectedNode.condition.fieldPath, selectedNode.condition.valueType)} disabled />
+                        </div>
+                        <div className="grid gap-1.5">
+                          <Label>操作符</Label>
+                          <Select
+                            value={selectedNode.condition.operator}
+                            onValueChange={value => updateNode(selectedNode.id, node => node.kind === 'loop'
+                              ? { ...node, condition: { ...node.condition, operator: value as ConditionOperator } }
+                              : node)}
+                          >
+                            <SelectTrigger className="w-full"><SelectValue placeholder="operator" /></SelectTrigger>
+                            <SelectContent>
+                              {currentConditionOperators(selectedNode.condition.fieldPath, selectedNode.condition.valueType).map(operator => (
+                                <SelectItem key={operator} value={operator}>{operator}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      {!['exists', 'isTrue', 'isFalse', 'empty', 'notEmpty'].includes(selectedNode.condition.operator) && (
+                        <div className="grid gap-1.5">
+                          <Label>比较值</Label>
+                          <Input
+                            value={selectedNode.condition.value ?? ''}
+                            onChange={event => updateNode(selectedNode.id, node => node.kind === 'loop'
+                              ? { ...node, condition: { ...node.condition, value: event.target.value } }
+                              : node)}
+                          />
+                        </div>
+                      )}
+                    </div>
+                    <div className="rounded-lg bg-muted/45 px-3 py-2 text-xs text-muted-foreground">
+                      body 端口连接循环体，out 端口连接条件不满足或达到上限后的下游节点。循环轮次写入 metadata.loop.index。
                     </div>
                   </div>
                 )}
