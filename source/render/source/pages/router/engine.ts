@@ -1,8 +1,11 @@
 import type {
+  ConditionCase,
   ConditionOperator,
   ConditionRule,
   ControlInputNode,
-  LogicalModelDecision,
+  ResolverDecision,
+  ResolverNode,
+  RuntimeCandidate,
   ProtocolDiscoveryNode,
   RouteContext,
   RouteContextEnvelope,
@@ -14,10 +17,9 @@ import type {
   RuntimeLogicalModel,
 } from './types'
 
-type LogicalModelSelectorNode = Extract<WorkflowNodeModel, { kind: 'logical-model-selector' }>
-
 export interface WorkflowRunOptions {
   logicalModels?: RuntimeLogicalModel[]
+  catalogs?: Record<string, RuntimeCandidate[]>
 }
 
 const MAX_STEPS = 80
@@ -120,6 +122,14 @@ function evaluateCondition(rule: ConditionRule, actual: unknown): boolean {
     return actual !== undefined && actual !== null
   }
 
+  if (operator === 'empty') {
+    return actual === undefined || actual === null || String(actual).trim() === ''
+  }
+
+  if (operator === 'notEmpty') {
+    return actual !== undefined && actual !== null && String(actual).trim() !== ''
+  }
+
   if (operator === 'isTrue') {
     return actual === true
   }
@@ -140,15 +150,24 @@ function evaluateCondition(rule: ConditionRule, actual: unknown): boolean {
     return String(actual ?? '').includes(rule.value ?? '')
   }
 
+  if (operator === 'notContains') {
+    return !String(actual ?? '').includes(rule.value ?? '')
+  }
+
   if (operator === 'startsWith') {
     return String(actual ?? '').startsWith(rule.value ?? '')
   }
 
-  if (operator === 'in') {
+  if (operator === 'endsWith') {
+    return String(actual ?? '').endsWith(rule.value ?? '')
+  }
+
+  if (operator === 'in' || operator === 'notIn') {
     const items = rule.valueType === 'enum' && rule.enumOptions?.length
       ? rule.enumOptions
       : splitSet(rule.value)
-    return items.includes(String(actual ?? ''))
+    const included = items.includes(String(actual ?? ''))
+    return operator === 'in' ? included : !included
   }
 
   if (operator === 'between') {
@@ -181,6 +200,13 @@ function evaluateCondition(rule: ConditionRule, actual: unknown): boolean {
   return false
 }
 
+function evaluateCase(caseNode: ConditionCase, payload: Record<string, unknown>): boolean {
+  const results = caseNode.conditions.map(rule => evaluateCondition(rule, getByPath(payload, rule.fieldPath)))
+  return caseNode.logicalOperator === 'and'
+    ? results.every(Boolean)
+    : results.some(Boolean)
+}
+
 function discoverProtocol(_node: ProtocolDiscoveryNode, payload: Record<string, unknown>): { protocol: WorkflowProtocol; reason: string } {
   const path = String(getByPath(payload, 'request.path') ?? '').toLowerCase()
   const headersValue = getByPath(payload, 'request.headers')
@@ -206,28 +232,44 @@ function discoverProtocol(_node: ProtocolDiscoveryNode, payload: Record<string, 
   return { protocol: 'unknown', reason: '自动识别未命中，归类 unknown' }
 }
 
-function pickModelDecision(node: LogicalModelSelectorNode, payload: Record<string, unknown>, logicalModels: RuntimeLogicalModel[]): LogicalModelDecision {
-  const requestedModel = String(getByPath(payload, 'request.body.model') ?? '').trim()
-  const matched = logicalModels.find(model => model.enabled && (model.id === requestedModel || model.name === requestedModel))
-  const fallback = logicalModels.find(model => model.enabled && model.name === 'default')
-  const selected = matched ?? fallback
+function resolveCandidates(node: ResolverNode, catalogs: Record<string, RuntimeCandidate[]>): RuntimeCandidate[] {
+  const candidates = node.resolution.candidates.source === 'catalog'
+    ? catalogs[node.resolution.resource] ?? []
+    : (catalogs[node.resolution.resource] ?? []).filter(candidate => node.resolution.candidates.ids?.includes(candidate.id))
+  return candidates.filter(candidate => candidate.enabled !== false)
+}
 
-  if (!selected) {
+function resolveCandidate(node: ResolverNode, payload: Record<string, unknown>, catalogs: Record<string, RuntimeCandidate[]>): ResolverDecision {
+  const input = String(getByPath(payload, node.input.path) ?? '').trim()
+  const candidates = resolveCandidates(node, catalogs)
+  const matched = node.resolution.match
+    .map((rule, index) => ({ rule, index }))
+    .flatMap(({ rule, index }) => candidates
+      .filter(candidate => rule.operator === 'equalsInput' && (candidate.id === input || candidate.name === input))
+      .map(candidate => ({ candidate, index })))
+    [0]
+
+  if (matched) {
     return {
-      selectedModel: requestedModel || node.logicalModelId,
-      targetQueue: '',
-      matched: false,
-      reason: '没有可用的逻辑模型，且未配置启用的 default 逻辑模型',
+      selectedId: matched.candidate.id,
+      resource: node.resolution.resource,
+      source: 'match',
+      matchedRule: matched.index,
+      reason: `输入 ${input || '(缺失)'} 命中 ${node.resolution.resource} ${matched.candidate.id}`,
     }
   }
 
+  const fallback = node.resolution.fallback
+  const fallbackCandidate = fallback && fallback.resource === node.resolution.resource
+    ? candidates.find(candidate => candidate.id === fallback.id)
+    : undefined
   return {
-    selectedModel: selected.id,
-    targetQueue: selected.id,
-    matched: matched !== undefined,
-    reason: matched
-      ? `请求模型 ${requestedModel} 匹配逻辑模型 ${selected.id}`
-      : `请求模型 ${requestedModel || '(缺失)'} 未匹配，回退到 default 逻辑模型 ${selected.id}`,
+    selectedId: fallbackCandidate?.id ?? null,
+    resource: node.resolution.resource,
+    source: fallbackCandidate ? 'fallback' : 'none',
+    reason: fallbackCandidate
+      ? `输入 ${input || '(缺失)'} 未命中，回退到 ${fallbackCandidate.id}`
+      : `输入 ${input || '(缺失)'} 未命中，且没有可用回退资源`,
   }
 }
 
@@ -252,6 +294,10 @@ function buildMissingInputTrace(message: string): WorkflowTrace {
 export function runWorkflow(nodes: WorkflowNodeModel[], inputPayload: unknown, options: WorkflowRunOptions = {}): WorkflowRunResult {
   const envelope = normalizeInputPayload(inputPayload)
   const logicalModels = options.logicalModels ?? []
+  const catalogs: Record<string, RuntimeCandidate[]> = {
+    'logical-model': logicalModels,
+    ...(options.catalogs ?? {}),
+  }
   const outputPayload = envelope.payload
   const trace: WorkflowTrace[] = []
   const byId = new Map(nodes.map(node => [node.id, node]))
@@ -260,9 +306,8 @@ export function runWorkflow(nodes: WorkflowNodeModel[], inputPayload: unknown, o
   if (!start) {
     return {
       outputPayload,
-      targetQueue: null,
       protocol: 'unknown',
-      routeDecision: null,
+      resolutions: {},
       stopReason: 'error',
       trace: [buildMissingInputTrace('缺少输入节点')],
     }
@@ -270,7 +315,7 @@ export function runWorkflow(nodes: WorkflowNodeModel[], inputPayload: unknown, o
 
   let current: WorkflowNodeModel | undefined = start
   let protocol: WorkflowProtocol = 'unknown'
-  let routeDecision: LogicalModelDecision | null = null
+  const resolutions: Record<string, ResolverDecision> = {}
   let stopReason: WorkflowRunResult['stopReason'] = 'missing-next'
   let steps = 0
 
@@ -292,8 +337,8 @@ export function runWorkflow(nodes: WorkflowNodeModel[], inputPayload: unknown, o
       } else if (current.kind === 'protocol-discovery') {
         disabledNext = current.branches.unknown
       } else if (current.kind === 'condition') {
-        disabledNext = current.nextFalse
-      } else if (current.kind === 'logical-model-selector') {
+        disabledNext = current.elseNext
+      } else if (current.kind === 'resolver') {
         disabledNext = current.next
       }
 
@@ -369,40 +414,52 @@ export function runWorkflow(nodes: WorkflowNodeModel[], inputPayload: unknown, o
     }
 
     if (current.kind === 'condition') {
-      const actual = getByPath(outputPayload, current.rule.fieldPath)
-      const passed = evaluateCondition(current.rule, actual)
+      const caseResults = current.cases.map(caseNode => ({
+        caseId: caseNode.id,
+        name: caseNode.name,
+        passed: evaluateCase(caseNode, outputPayload),
+      }))
+      const matchedCase = current.cases.find(caseNode => evaluateCase(caseNode, outputPayload))
+      const nextId = matchedCase?.next ?? current.elseNext
       trace.push({
         nodeId: current.id,
         nodeName: current.name,
         kind: current.kind,
-        success: passed,
-        message: passed ? `条件命中，走 true -> ${current.nextTrue}` : `条件不命中，走 false -> ${current.nextFalse}`,
+        success: Boolean(matchedCase),
+        message: matchedCase
+          ? `命中分支 ${matchedCase.name}，走 ${matchedCase.next}`
+          : `未命中任何分支，走 ELSE -> ${current.elseNext}`,
         details: {
-          fieldPath: current.rule.fieldPath,
-          operator: current.rule.operator,
-          compareValue: current.rule.value,
-          actual,
+          cases: caseResults,
+          matchedCaseId: matchedCase?.id ?? null,
         },
       })
-      current = byId.get(passed ? current.nextTrue : current.nextFalse)
+      current = byId.get(nextId)
       if (!current) {
         stopReason = 'missing-next'
       }
       continue
     }
 
-    if (current.kind === 'logical-model-selector') {
-      routeDecision = pickModelDecision(current, outputPayload, logicalModels)
-      ;(outputPayload.metadata as Record<string, unknown>).routeDecision = routeDecision
+    if (current.kind === 'resolver') {
+      const decision = resolveCandidate(current, outputPayload, catalogs)
+      resolutions[current.id] = decision
+      const metadata = outputPayload.metadata as Record<string, unknown>
+      const metadataResolutions = (metadata.resolutions && typeof metadata.resolutions === 'object'
+        ? metadata.resolutions
+        : {}) as Record<string, unknown>
+      metadataResolutions[current.id] = decision
+      metadata.resolutions = metadataResolutions
       trace.push({
         nodeId: current.id,
         nodeName: current.name,
         kind: current.kind,
-        success: Boolean(routeDecision.targetQueue),
-        message: routeDecision.reason,
+        success: Boolean(decision.selectedId),
+        message: decision.reason,
         details: {
-          selectedModel: routeDecision.selectedModel,
-          targetQueue: routeDecision.targetQueue,
+          selectedId: decision.selectedId,
+          resource: decision.resource,
+          source: decision.source,
           protocol,
         },
       })
@@ -437,9 +494,8 @@ export function runWorkflow(nodes: WorkflowNodeModel[], inputPayload: unknown, o
 
   return {
     outputPayload,
-    targetQueue: routeDecision?.targetQueue ?? null,
     protocol,
-    routeDecision,
+    resolutions,
     stopReason,
     trace,
   }

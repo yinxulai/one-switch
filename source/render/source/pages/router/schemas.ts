@@ -7,7 +7,7 @@ const NodePositionSchema = z.object({
 
 const WorkflowNodeBaseSchema = z.object({
   id: z.string(),
-  kind: z.enum(['input', 'control-input', 'protocol-discovery', 'condition', 'logical-model-selector', 'output']),
+  kind: z.enum(['input', 'control-input', 'protocol-discovery', 'condition', 'resolver', 'output']),
   name: z.string(),
   enabled: z.boolean(),
   description: z.string(),
@@ -51,24 +51,49 @@ const ProtocolDiscoveryNodeSchema = WorkflowNodeBaseSchema.extend({
 })
 
 const ConditionRuleSchema = z.object({
-  fieldPath: z.string(),
+  fieldPath: z.string().min(1),
   valueType: z.enum(['string', 'number', 'boolean', 'enum', 'unknown']),
-  operator: z.enum(['equals', 'notEquals', 'contains', 'in', 'startsWith', 'regex', 'gt', 'gte', 'lt', 'lte', 'between', 'isTrue', 'isFalse', 'exists']),
+  operator: z.enum(['equals', 'notEquals', 'contains', 'notContains', 'startsWith', 'endsWith', 'in', 'notIn', 'regex', 'gt', 'gte', 'lt', 'lte', 'between', 'isTrue', 'isFalse', 'empty', 'notEmpty', 'exists']),
   value: z.string().optional(),
   secondaryValue: z.string().optional(),
   enumOptions: z.array(z.string()).optional(),
 })
 
-const ConditionNodeSchema = WorkflowNodeBaseSchema.extend({
-  kind: z.literal('condition'),
-  rule: ConditionRuleSchema,
-  nextTrue: z.string(),
-  nextFalse: z.string(),
+const ConditionCaseSchema = z.object({
+  id: z.string().min(1),
+  name: z.string(),
+  logicalOperator: z.enum(['and', 'or']),
+  conditions: z.array(ConditionRuleSchema).min(1),
+  next: z.string().min(1),
 })
 
-const LogicalModelSelectorNodeSchema = WorkflowNodeBaseSchema.extend({
-  kind: z.literal('logical-model-selector'),
-  logicalModelId: z.string(),
+const ConditionNodeSchema = WorkflowNodeBaseSchema.extend({
+  kind: z.literal('condition'),
+  cases: z.array(ConditionCaseSchema).min(1),
+  elseNext: z.string(),
+})
+
+const ResolverMatchRuleSchema = z.object({
+  field: z.string().min(1),
+  operator: z.literal('equalsInput'),
+})
+
+const ResolverNodeSchema = WorkflowNodeBaseSchema.extend({
+  kind: z.literal('resolver'),
+  input: z.object({ path: z.string().min(1) }),
+  resolution: z.object({
+    resource: z.string().min(1),
+    candidates: z.union([
+      z.object({ source: z.literal('catalog') }),
+      z.object({ source: z.literal('ids'), ids: z.array(z.string().min(1)).min(1) }),
+    ]),
+    match: z.array(ResolverMatchRuleSchema).min(1),
+    fallback: z.object({
+      type: z.literal('reference'),
+      resource: z.string().min(1),
+      id: z.string().min(1),
+    }).optional(),
+  }),
   next: z.string(),
 })
 
@@ -83,7 +108,7 @@ export const WorkflowNodeModelSchema = z.discriminatedUnion('kind', [
   ControlInputNodeSchema,
   ProtocolDiscoveryNodeSchema,
   ConditionNodeSchema,
-  LogicalModelSelectorNodeSchema,
+  ResolverNodeSchema,
   OutputNodeSchema,
 ])
 

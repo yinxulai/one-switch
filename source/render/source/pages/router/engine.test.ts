@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { runWorkflow as runWorkflowEngine } from './engine'
-import type { RuntimeLogicalModel, WorkflowNodeModel } from './types'
+import type { ConditionCase, ConditionRule, RuntimeLogicalModel, WorkflowNodeModel } from './types'
 
 const runtimeLogicalModels: RuntimeLogicalModel[] = [
   { id: 'model-vip', name: 'gpt-4o-mini', enabled: true },
@@ -11,12 +11,24 @@ function runWorkflow(nodes: WorkflowNodeModel[], inputPayload: unknown, logicalM
   return runWorkflowEngine(nodes, inputPayload, { logicalModels })
 }
 
+function singleCase(next = 'resolver', conditions: ConditionRule[] = [
+  { fieldPath: 'request.body.tenant', valueType: 'string', operator: 'startsWith', value: 'vip-' },
+]): ConditionCase {
+  return {
+    id: 'case-1',
+    name: '分支 1',
+    logicalOperator: 'and',
+    conditions,
+    next,
+  }
+}
+
 type BaseNodeOverrides = {
   input?: Partial<Extract<WorkflowNodeModel, { kind: 'input' }>>
   control?: Partial<Extract<WorkflowNodeModel, { kind: 'control-input' }>>
   protocol?: Partial<Extract<WorkflowNodeModel, { kind: 'protocol-discovery' }>>
   condition?: Partial<Extract<WorkflowNodeModel, { kind: 'condition' }>>
-  selector?: Partial<Extract<WorkflowNodeModel, { kind: 'logical-model-selector' }>>
+  resolver?: Partial<Extract<WorkflowNodeModel, { kind: 'resolver' }>>
 }
 
 function createBaseNodes(overrides?: BaseNodeOverrides): WorkflowNodeModel[] {
@@ -27,14 +39,8 @@ function createBaseNodes(overrides?: BaseNodeOverrides): WorkflowNodeModel[] {
     enabled: true,
     description: '仅放行 vip 租户',
     position: { x: 480, y: 120 },
-    rule: {
-      fieldPath: 'request.body.tenant',
-      valueType: 'string',
-      operator: 'startsWith',
-      value: 'vip-',
-    },
-    nextTrue: 'logical-model-selector',
-    nextFalse: 'output',
+    cases: [singleCase()],
+    elseNext: 'output',
     ...overrides?.condition,
   }
 
@@ -71,16 +77,22 @@ function createBaseNodes(overrides?: BaseNodeOverrides): WorkflowNodeModel[] {
     ...overrides?.control,
   }
 
-  const selectorNode: Extract<WorkflowNodeModel, { kind: 'logical-model-selector' }> = {
-    id: 'logical-model-selector',
-    kind: 'logical-model-selector',
-    name: '模型选择器',
+  const resolverNode: Extract<WorkflowNodeModel, { kind: 'resolver' }> = {
+    id: 'resolver',
+    kind: 'resolver',
+    name: '模型解析',
     enabled: true,
-    description: '根据分支选择逻辑模型',
+    description: '根据请求 model 匹配逻辑模型',
     position: { x: 780, y: 120 },
-    logicalModelId: 'model-default',
+    input: { path: 'request.body.model' },
+    resolution: {
+      resource: 'logical-model',
+      candidates: { source: 'catalog' },
+      match: [{ field: 'id', operator: 'equalsInput' }, { field: 'name', operator: 'equalsInput' }],
+      fallback: { type: 'reference', resource: 'logical-model', id: 'model-default' },
+    },
     next: 'output',
-    ...overrides?.selector,
+    ...overrides?.resolver,
   }
 
   return [
@@ -111,7 +123,7 @@ function createBaseNodes(overrides?: BaseNodeOverrides): WorkflowNodeModel[] {
       ...overrides?.protocol,
     },
     conditionNode,
-    selectorNode,
+    resolverNode,
     {
       id: 'output',
       kind: 'output',
@@ -126,7 +138,7 @@ function createBaseNodes(overrides?: BaseNodeOverrides): WorkflowNodeModel[] {
 }
 
 describe('router engine', () => {
-  it('routes openai-completions requests to model selector and target queue', () => {
+  it('routes openai-completions requests through IF and resolver nodes', () => {
     const nodes = createBaseNodes()
 
     const result = runWorkflow(nodes, {
@@ -143,21 +155,18 @@ describe('router engine', () => {
 
     expect(result.stopReason).toBe('output')
     expect(result.protocol).toBe('openai-completions')
-    expect(result.targetQueue).toBe('model-vip')
-    expect(result.routeDecision?.targetQueue).toBe('model-vip')
-    expect(result.routeDecision?.selectedModel).toBe('model-vip')
-    expect(result.routeDecision?.matched).toBe(true)
-    expect(result.trace.some(item => item.kind === 'logical-model-selector' && item.success)).toBe(true)
+    expect(result.resolutions.resolver?.selectedId).toBe('model-vip')
+    expect(result.trace.some(item => item.nodeId === 'condition-gate' && item.success)).toBe(true)
   })
 
   it('injects control-input values into metadata for downstream conditions', () => {
     const nodes = createBaseNodes({
       condition: {
-        rule: {
+        cases: [singleCase('resolver', [{
           fieldPath: 'metadata.controls.featureEnabled',
           valueType: 'boolean',
           operator: 'isTrue',
-        },
+        }])],
       },
       control: {
         controls: [
@@ -178,7 +187,7 @@ describe('router engine', () => {
         path: '/v1/chat/completions',
         headers: { 'x-provider': 'openai' },
         body: {
-          tenant: 'vip-cn',
+          tenant: 'standard-cn',
           model: 'gpt-4o-mini',
         },
       },
@@ -187,7 +196,7 @@ describe('router engine', () => {
 
     const payload = result.outputPayload as { metadata: { controls: { featureEnabled: boolean } } }
     expect(payload.metadata.controls.featureEnabled).toBe(true)
-    expect(result.targetQueue).toBe('model-vip')
+    expect(result.trace.some(item => item.nodeId === 'condition-gate' && item.success)).toBe(true)
   })
 
   it('auto-detects anthropic-messages by model id without explicit rules', () => {
@@ -226,8 +235,7 @@ describe('router engine', () => {
 
     expect(result.stopReason).toBe('output')
     expect(result.protocol).toBe('unknown')
-    expect(result.targetQueue).toBeNull()
-    expect(result.routeDecision).toBeNull()
+    expect(result.resolutions).toEqual({})
   })
 
   it('falls back to the enabled default logical model when request model is unknown', () => {
@@ -246,9 +254,8 @@ describe('router engine', () => {
     })
 
     expect(result.stopReason).toBe('output')
-    expect(result.targetQueue).toBe('model-default')
-    expect(result.routeDecision?.selectedModel).toBe('model-default')
-    expect(result.routeDecision?.matched).toBe(false)
+    expect(result.resolutions.resolver?.selectedId).toBe('model-default')
+    expect(result.resolutions.resolver?.source).toBe('fallback')
   })
 
   it('matches a request model by logical model id', () => {
@@ -264,8 +271,8 @@ describe('router engine', () => {
       metadata: {},
     })
 
-    expect(result.routeDecision?.selectedModel).toBe('model-vip')
-    expect(result.routeDecision?.matched).toBe(true)
+    expect(result.resolutions.resolver?.selectedId).toBe('model-vip')
+    expect(result.resolutions.resolver?.source).toBe('match')
   })
 
   it('returns an error when the input node is missing', () => {
@@ -285,7 +292,7 @@ describe('router engine', () => {
     })
 
     expect(result.stopReason).toBe('error')
-    expect(result.targetQueue).toBeNull()
+    expect(result.resolutions).toEqual({})
     expect(result.trace).toHaveLength(1)
     expect(result.trace[0]?.message).toBe('缺少输入节点')
   })
@@ -317,11 +324,11 @@ describe('router engine', () => {
 
     expect(result.stopReason).toBe('output')
     expect(result.protocol).toBe('unknown')
-    expect(result.routeDecision).toBeNull()
+    expect(result.resolutions).toEqual({})
     expect(result.trace.some(item => item.nodeId === 'protocol' && item.message === '节点禁用，跳过')).toBe(true)
   })
 
-  it('marks unsupported logical model selection as unmatched', () => {
+  it('records an unmatched resolver without legacy route output', () => {
     const nodes = createBaseNodes({
       protocol: {
         branches: {
@@ -330,9 +337,6 @@ describe('router engine', () => {
           'anthropic-messages': 'condition-gate',
           unknown: 'condition-gate',
         },
-      },
-      selector: {
-        logicalModelId: 'model-vip',
       },
     })
 
@@ -349,21 +353,57 @@ describe('router engine', () => {
     }, [])
 
     expect(result.stopReason).toBe('output')
-    expect(result.routeDecision?.selectedModel).toBe('gpt-4o-mini')
-    expect(result.routeDecision?.matched).toBe(false)
-    expect(result.targetQueue).toBe('')
+    expect(result.resolutions.resolver?.selectedId).toBeNull()
+    expect(result.resolutions.resolver?.source).toBe('none')
+    expect(result).not.toHaveProperty('routeDecision')
+    expect(result).not.toHaveProperty('targetQueue')
+  })
+
+  it('supports multiple IF branches with OR and ELSE fallback', () => {
+    const nodes = createBaseNodes({
+      condition: {
+        cases: [
+          singleCase('resolver', [{ fieldPath: 'request.body.tenant', valueType: 'string', operator: 'equals', value: 'vip-cn' }]),
+          {
+            id: 'case-2',
+            name: '高优先级',
+            logicalOperator: 'or',
+            conditions: [
+              { fieldPath: 'request.body.priority', valueType: 'number', operator: 'gte', value: '5' },
+              { fieldPath: 'request.body.tenant', valueType: 'string', operator: 'equals', value: 'internal' },
+            ],
+            next: 'output',
+          },
+        ],
+        elseNext: 'output',
+      },
+    })
+
+    const result = runWorkflow(nodes, {
+      request: {
+        path: '/v1/chat/completions',
+        headers: { 'x-provider': 'openai' },
+        body: { tenant: 'internal', priority: 1, model: 'gpt-4o-mini' },
+      },
+      metadata: {},
+    })
+
+    const conditionTrace = result.trace.find(item => item.nodeId === 'condition-gate')
+    expect(result.stopReason).toBe('output')
+    expect(conditionTrace?.success).toBe(true)
+    expect(conditionTrace?.details).toMatchObject({ matchedCaseId: 'case-2' })
   })
 
   it('supports numeric between condition operator', () => {
     const nodes = createBaseNodes({
       condition: {
-        rule: {
+        cases: [singleCase('resolver', [{
           fieldPath: 'request.body.priority',
           valueType: 'number',
           operator: 'between',
           value: '1',
           secondaryValue: '3',
-        },
+        }])],
       },
     })
 
@@ -391,7 +431,8 @@ describe('router engine', () => {
       metadata: {},
     })
 
-    expect(pass.targetQueue).toBe('model-vip')
-    expect(fail.targetQueue).toBeNull()
+    expect(pass.resolutions.resolver?.selectedId).toBe('model-vip')
+    expect(fail.resolutions).toEqual({})
+    expect(fail.trace.some(item => item.nodeId === 'condition-gate' && !item.success)).toBe(true)
   })
 })
