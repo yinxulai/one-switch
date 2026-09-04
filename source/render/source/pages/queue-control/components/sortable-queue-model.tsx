@@ -19,7 +19,7 @@ export function SortableQueueModel(props: SortableQueueModelProps) {
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={cn(
-        'relative overflow-hidden bg-card',
+        'relative overflow-hidden border-b border-border/60 bg-card last:border-b-0',
         isDragging && 'z-10 overflow-visible ring-1 ring-primary/45 bg-primary/3',
       )}
     >
