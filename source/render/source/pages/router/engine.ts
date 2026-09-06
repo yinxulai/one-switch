@@ -3,24 +3,20 @@ import type {
   ConditionOperator,
   ConditionRule,
   ControlInputNode,
-  ResolverDecision,
-  ResolverNode,
-  RuntimeCandidate,
+  QueueRouteRule,
+  QueueSelection,
+  QueueSelectNode,
   ProtocolDiscoveryNode,
   RouteContext,
   RouteContextEnvelope,
   RouteContextInput,
+  WorkflowGraph,
   WorkflowProtocol,
-  WorkflowNodeModel,
   WorkflowRunResult,
   WorkflowTrace,
-  RuntimeLogicalModel,
 } from './types'
 
-export interface WorkflowRunOptions {
-  logicalModels?: RuntimeLogicalModel[]
-  catalogs?: Record<string, RuntimeCandidate[]>
-}
+export interface WorkflowRunOptions {}
 
 const MAX_STEPS = 80
 
@@ -147,10 +143,16 @@ function evaluateCondition(rule: ConditionRule, actual: unknown): boolean {
   }
 
   if (operator === 'contains') {
+    if (Array.isArray(actual)) {
+      return actual.map(item => String(item)).includes(rule.value ?? '')
+    }
     return String(actual ?? '').includes(rule.value ?? '')
   }
 
   if (operator === 'notContains') {
+    if (Array.isArray(actual)) {
+      return !actual.map(item => String(item)).includes(rule.value ?? '')
+    }
     return !String(actual ?? '').includes(rule.value ?? '')
   }
 
@@ -232,362 +234,265 @@ function discoverProtocol(_node: ProtocolDiscoveryNode, payload: Record<string, 
   return { protocol: 'unknown', reason: '自动识别未命中，归类 unknown' }
 }
 
-function resolveCandidates(node: ResolverNode, catalogs: Record<string, RuntimeCandidate[]>): RuntimeCandidate[] {
-  const candidates = node.resolution.candidates.source === 'catalog'
-    ? catalogs[node.resolution.resource] ?? []
-    : (catalogs[node.resolution.resource] ?? []).filter(candidate => node.resolution.candidates.ids?.includes(candidate.id))
-  return candidates.filter(candidate => candidate.enabled !== false)
+function normalizeProtocolMessageContent(content: unknown): unknown {
+  if (Array.isArray(content)) {
+    return content.map(item => typeof item === 'string' ? item : (item && typeof item === 'object' ? item : String(item ?? '')))
+  }
+  if (content === undefined || content === null) return ''
+  if (typeof content === 'string' || typeof content === 'number' || typeof content === 'boolean') return content
+  return JSON.stringify(content)
 }
 
-function resolveCandidate(node: ResolverNode, payload: Record<string, unknown>, catalogs: Record<string, RuntimeCandidate[]>): ResolverDecision {
-  const input = String(getByPath(payload, node.input.path) ?? '').trim()
-  const candidates = resolveCandidates(node, catalogs)
-  const matched = node.resolution.match
-    .map((rule, index) => ({ rule, index }))
-    .flatMap(({ rule, index }) => candidates
-      .filter(candidate => rule.operator === 'equalsInput' && (candidate.id === input || candidate.name === input))
-      .map(candidate => ({ candidate, index })))
-    [0]
+function normalizeProtocolMessages(candidate: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(candidate)) return []
 
-  if (matched) {
+  return candidate.map((item) => {
+    if (!item || typeof item !== 'object') {
+      return { role: 'user', content: String(item ?? '') }
+    }
+
+    const record = item as Record<string, unknown>
+    const role = typeof record.role === 'string' ? record.role : 'user'
+    const content = 'content' in record ? record.content : ('text' in record ? record.text : '')
+
     return {
-      selectedId: matched.candidate.id,
-      resource: node.resolution.resource,
-      source: 'match',
-      matchedRule: matched.index,
-      reason: `输入 ${input || '(缺失)'} 命中 ${node.resolution.resource} ${matched.candidate.id}`,
+      ...record,
+      role,
+      content: normalizeProtocolMessageContent(content),
+    }
+  })
+}
+
+function buildNormalizedProtocolOutput(protocol: WorkflowProtocol, payload: Record<string, unknown>): Record<string, unknown> {
+  const requestBody = (getByPath(payload, 'request.body') ?? {}) as Record<string, unknown>
+  const model = typeof requestBody.model === 'string' ? requestBody.model : ''
+  const bodyMessages = Array.isArray(requestBody.messages)
+    ? requestBody.messages
+    : Array.isArray(requestBody.input)
+      ? requestBody.input
+      : []
+
+  return {
+    protocol,
+    model,
+    messages: normalizeProtocolMessages(bodyMessages),
+    raw: requestBody,
+  }
+}
+
+function recordProtocolOutput(payload: Record<string, unknown>, protocol: WorkflowProtocol): Record<string, unknown> {
+  const metadata = (payload.metadata && typeof payload.metadata === 'object'
+    ? payload.metadata
+    : {}) as Record<string, unknown>
+  const normalized = buildNormalizedProtocolOutput(protocol, payload)
+  const branchOutputs = (metadata.protocolOutputs && typeof metadata.protocolOutputs === 'object'
+    ? metadata.protocolOutputs
+    : {}) as Record<string, unknown>
+
+  branchOutputs[protocol] = normalized
+  metadata.protocol = protocol
+  metadata.protocolOutput = normalized
+  metadata.protocolOutputs = branchOutputs
+  payload.metadata = metadata
+
+  return normalized
+}
+
+function normalizeQueueIds(queueIds: string[]): string[] {
+  return [...new Set(queueIds.map(id => id.trim()).filter(Boolean))]
+}
+
+function controlBoolean(payload: Record<string, unknown>, key: string, fallback: boolean): boolean {
+  const raw = getByPath(payload, `metadata.controls.${key}`)
+  return typeof raw === 'boolean' ? raw : fallback
+}
+
+function controlString(payload: Record<string, unknown>, key: string): string | undefined {
+  const raw = getByPath(payload, `metadata.controls.${key}`)
+  return typeof raw === 'string' && raw.trim() ? raw.trim() : undefined
+}
+
+function evaluateRuleSpecificity(rule: QueueRouteRule): number {
+  if (rule.operator === 'equals' || rule.operator === 'in') return 400
+  if (rule.operator === 'startsWith' || rule.operator === 'endsWith') return 320
+  if (rule.operator === 'contains' || rule.operator === 'notContains') return 220
+  if (rule.operator === 'regex') return 120
+  return 180
+}
+
+function selectQueues(node: QueueSelectNode, payload: Record<string, unknown>): QueueSelection {
+  const fallbackQueueId = controlString(payload, 'defaultQueueId')
+    ?? (node.fallbackQueueId?.trim() || undefined)
+    ?? node.queueIds.map(id => id.trim()).find(Boolean)
+    ?? 'default'
+
+  if (node.mode !== 'rule-based') {
+    const staticQueueIds = normalizeQueueIds(node.queueIds)
+    if (staticQueueIds.length > 0) {
+      return { queueIds: staticQueueIds, reason: `静态选择 ${staticQueueIds.length} 个逻辑队列` }
+    }
+    return { queueIds: [fallbackQueueId], reason: `静态队列为空，回退到默认队列 ${fallbackQueueId}` }
+  }
+
+  const enableModelRouting = controlBoolean(payload, 'enableModelRouting', true)
+  const enableHeaderRouting = controlBoolean(payload, 'enableHeaderRouting', true)
+  const requestModel = String(getByPath(payload, 'request.body.model') ?? '').trim()
+
+  if (enableModelRouting && requestModel && node.modelQueueRoutes?.length) {
+    const hit = node.modelQueueRoutes.find(route => route.enabled && route.modelId.trim().toLowerCase() === requestModel.toLowerCase())
+    if (hit) {
+      const queueIds = normalizeQueueIds(hit.queueIds)
+      if (queueIds.length > 0) {
+        return { queueIds, reason: `模型直达命中 ${hit.modelId}` }
+      }
     }
   }
 
-  const fallback = node.resolution.fallback
-  const fallbackCandidate = fallback && fallback.resource === node.resolution.resource
-    ? candidates.find(candidate => candidate.id === fallback.id)
-    : undefined
-  return {
-    selectedId: fallbackCandidate?.id ?? null,
-    resource: node.resolution.resource,
-    source: fallbackCandidate ? 'fallback' : 'none',
-    reason: fallbackCandidate
-      ? `输入 ${input || '(缺失)'} 未命中，回退到 ${fallbackCandidate.id}`
-      : `输入 ${input || '(缺失)'} 未命中，且没有可用回退资源`,
+  const matched = (node.rules ?? [])
+    .map((rule, index) => ({ rule, index }))
+    .filter(({ rule }) => {
+      if (!rule.enabled) return false
+      if (rule.scope === 'model' && !enableModelRouting) return false
+      if (rule.scope === 'header' && !enableHeaderRouting) return false
+      return true
+    })
+    .filter(({ rule }) => {
+      const actual = getByPath(payload, rule.fieldPath)
+      return evaluateCondition(rule, actual)
+    })
+    .map(({ rule, index }) => ({
+      rule,
+      index,
+      specificity: evaluateRuleSpecificity(rule),
+      queueIds: normalizeQueueIds(rule.queueIds),
+    }))
+    .filter(item => item.queueIds.length > 0)
+
+  if (matched.length > 0) {
+    matched.sort((a, b) => {
+      if (node.conflictStrategy === 'highest-priority') {
+        if (a.rule.priority !== b.rule.priority) return a.rule.priority - b.rule.priority
+        if (a.specificity !== b.specificity) return b.specificity - a.specificity
+      } else {
+        if (a.specificity !== b.specificity) return b.specificity - a.specificity
+        if (a.rule.priority !== b.rule.priority) return a.rule.priority - b.rule.priority
+      }
+      return a.index - b.index
+    })
+
+    const winner = matched[0]
+    return {
+      queueIds: winner?.queueIds ?? [fallbackQueueId],
+      reason: winner ? `规则命中 ${winner.rule.name}` : `回退到默认队列 ${fallbackQueueId}`,
+    }
   }
-}
 
-function nextForProtocol(node: ProtocolDiscoveryNode, protocol: WorkflowProtocol): string {
-  return node.branches[protocol]
-}
-
-function readArrayItems(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : []
-}
-
-function isTerminal(node: WorkflowNodeModel): boolean {
-  return node.kind === 'output'
+  return { queueIds: [fallbackQueueId], reason: `未命中规则，回退到默认队列 ${fallbackQueueId}` }
 }
 
 function buildMissingInputTrace(message: string): WorkflowTrace {
-  return {
-    nodeId: '-',
-    nodeName: '初始化',
-    kind: 'input',
-    success: false,
-    message,
-  }
+  return { nodeId: '-', nodeName: '初始化', kind: 'input', success: false, message }
 }
 
-export function runWorkflow(nodes: WorkflowNodeModel[], inputPayload: unknown, options: WorkflowRunOptions = {}): WorkflowRunResult {
+function edgeTarget(edges: Map<string, string>, nodeId: string, port = 'out'): string | undefined {
+  return edges.get(`${nodeId}:${port}`)
+}
+
+export function runWorkflow(graph: WorkflowGraph, inputPayload: unknown, _options: WorkflowRunOptions = {}): WorkflowRunResult {
   const envelope = normalizeInputPayload(inputPayload)
-  const logicalModels = options.logicalModels ?? []
-  const catalogs: Record<string, RuntimeCandidate[]> = {
-    'logical-model': logicalModels,
-    ...(options.catalogs ?? {}),
-  }
   const outputPayload = envelope.payload
   const trace: WorkflowTrace[] = []
-  const byId = new Map(nodes.map(node => [node.id, node]))
-  const iterationStacks = new Map<string, { index: number; item: unknown }[]>()
-  const loopCounters = new Map<string, number>()
-
-  const start = nodes.find(node => node.kind === 'input')
-  if (!start) {
-    return {
-      outputPayload,
-      protocol: 'unknown',
-      resolutions: {},
-      stopReason: 'error',
-      trace: [buildMissingInputTrace('缺少输入节点')],
-    }
-  }
-
-  let current: WorkflowNodeModel | undefined = start
+  const byId = new Map(graph.nodes.map(node => [node.id, node]))
+  const edges = new Map<string, string>()
+  for (const edge of graph.edges) edges.set(`${edge.sourceNodeId}:${edge.sourcePort}`, edge.targetNodeId)
   let protocol: WorkflowProtocol = 'unknown'
-  const resolutions: Record<string, ResolverDecision> = {}
-  let stopReason: WorkflowRunResult['stopReason'] = 'missing-next'
+  const queueSelections: Record<string, QueueSelection> = {}
   let steps = 0
+  let stopReason: WorkflowRunResult['stopReason'] = 'missing-next'
 
-  while (current && steps < MAX_STEPS) {
-    steps += 1
+  const execute = (startId: string | undefined, stopAt?: string): string | undefined => {
+    let currentId = startId
+    while (currentId && steps < MAX_STEPS) {
+      if (currentId === stopAt) return currentId
+      const current = byId.get(currentId)
+      if (!current) { stopReason = 'missing-next'; return undefined }
+      steps += 1
 
-    if (!current.enabled && current.kind !== 'input' && current.kind !== 'output') {
-      trace.push({
-        nodeId: current.id,
-        nodeName: current.name,
-        kind: current.kind,
-        success: true,
-        message: '节点禁用，跳过',
-      })
+      if (!current.enabled && current.kind !== 'input' && current.kind !== 'output') {
+        trace.push({ nodeId: current.id, nodeName: current.name, kind: current.kind, success: true, message: '节点禁用，跳过' })
+        currentId = edgeTarget(edges, current.id, current.kind === 'protocol-discovery' ? 'unknown' : 'out')
+        continue
+      }
 
-      let disabledNext: string | null = null
+      if (current.kind === 'input') {
+        trace.push({ nodeId: current.id, nodeName: current.name, kind: current.kind, success: true, message: '输入进入路由流程' })
+        currentId = edgeTarget(edges, current.id)
+        continue
+      }
+
       if (current.kind === 'control-input') {
-        disabledNext = current.next
-      } else if (current.kind === 'protocol-discovery') {
-        disabledNext = current.branches.unknown
-      } else if (current.kind === 'condition') {
-        disabledNext = current.elseNext
-      } else if (current.kind === 'resolver') {
-        disabledNext = current.next
-      } else if (current.kind === 'iteration' || current.kind === 'loop') {
-        disabledNext = current.next
+        applyControlInputs(outputPayload, current)
+        trace.push({
+          nodeId: current.id, nodeName: current.name, kind: current.kind, success: true,
+          message: '控制输入已写入 metadata.controls',
+          details: { controls: current.controls.filter(control => control.enabled).map(control => ({ key: control.key, kind: control.kind, value: control.defaultValue })) },
+        })
+        currentId = edgeTarget(edges, current.id)
+        continue
       }
 
-      if (!disabledNext) {
-        stopReason = 'missing-next'
-        break
-      }
-
-      current = byId.get(disabledNext)
-      if (!current) {
-        stopReason = 'missing-next'
-      }
-      continue
-    }
-
-    if (current.kind === 'input') {
-      trace.push({
-        nodeId: current.id,
-        nodeName: current.name,
-        kind: current.kind,
-        success: true,
-        message: '输入进入路由流程',
-      })
-      current = byId.get(current.next)
-      if (!current) {
-        stopReason = 'missing-next'
-      }
-      continue
-    }
-
-    if (current.kind === 'control-input') {
-      applyControlInputs(outputPayload, current)
-      trace.push({
-        nodeId: current.id,
-        nodeName: current.name,
-        kind: current.kind,
-        success: true,
-        message: '控制输入已写入 metadata.controls',
-        details: {
-          controls: current.controls.filter(control => control.enabled).map(control => ({
-            key: control.key,
-            kind: control.kind,
-            value: control.defaultValue,
-          })),
-        },
-      })
-      current = byId.get(current.next)
-      if (!current) {
-        stopReason = 'missing-next'
-      }
-      continue
-    }
-
-    if (current.kind === 'protocol-discovery') {
-      const discovered = discoverProtocol(current, outputPayload)
-      protocol = discovered.protocol
-      ;(outputPayload.metadata as Record<string, unknown>).protocol = protocol
-      trace.push({
-        nodeId: current.id,
-        nodeName: current.name,
-        kind: current.kind,
-        success: protocol !== 'unknown',
-        message: discovered.reason,
-        details: { protocol },
-      })
-
-      const nextId = nextForProtocol(current, protocol)
-      current = byId.get(nextId)
-      if (!current) {
-        stopReason = 'missing-next'
-      }
-      continue
-    }
-
-    if (current.kind === 'condition') {
-      const caseResults = current.cases.map(caseNode => ({
-        caseId: caseNode.id,
-        name: caseNode.name,
-        passed: evaluateCase(caseNode, outputPayload),
-      }))
-      const matchedCase = current.cases.find(caseNode => evaluateCase(caseNode, outputPayload))
-      const nextId = matchedCase?.next ?? current.elseNext
-      trace.push({
-        nodeId: current.id,
-        nodeName: current.name,
-        kind: current.kind,
-        success: Boolean(matchedCase),
-        message: matchedCase
-          ? `命中分支 ${matchedCase.name}，走 ${matchedCase.next}`
-          : `未命中任何分支，走 ELSE -> ${current.elseNext}`,
-        details: {
-          cases: caseResults,
-          matchedCaseId: matchedCase?.id ?? null,
-        },
-      })
-      current = byId.get(nextId)
-      if (!current) {
-        stopReason = 'missing-next'
-      }
-      continue
-    }
-
-    if (current.kind === 'resolver') {
-      const decision = resolveCandidate(current, outputPayload, catalogs)
-      resolutions[current.id] = decision
-      const metadata = outputPayload.metadata as Record<string, unknown>
-      const metadataResolutions = (metadata.resolutions && typeof metadata.resolutions === 'object'
-        ? metadata.resolutions
-        : {}) as Record<string, unknown>
-      metadataResolutions[current.id] = decision
-      metadata.resolutions = metadataResolutions
-      trace.push({
-        nodeId: current.id,
-        nodeName: current.name,
-        kind: current.kind,
-        success: Boolean(decision.selectedId),
-        message: decision.reason,
-        details: {
-          selectedId: decision.selectedId,
-          resource: decision.resource,
-          source: decision.source,
-          protocol,
-        },
-      })
-      current = byId.get(current.next)
-      if (!current) {
-        stopReason = 'missing-next'
-      }
-      continue
-    }
-
-    if (current.kind === 'iteration') {
-      const items = readArrayItems(getByPath(outputPayload, current.input.path))
-      const stack = iterationStacks.get(current.id) ?? []
-      if (items.length === 0) {
+      if (current.kind === 'protocol-discovery') {
+        const discovered = discoverProtocol(current, outputPayload)
+        protocol = discovered.protocol
+        const normalized = recordProtocolOutput(outputPayload, protocol)
         trace.push({
           nodeId: current.id,
           nodeName: current.name,
           kind: current.kind,
-          success: true,
-          message: '迭代输入为空数组，跳过循环体',
-          details: { path: current.input.path, index: stack.length },
+          success: protocol !== 'unknown',
+          message: discovered.reason,
+          details: { protocol, normalized },
         })
-        current = byId.get(current.next)
-      } else if (stack.length < items.length) {
-        stack.push({ index: stack.length, item: items[stack.length] })
-        iterationStacks.set(current.id, stack)
-        const active = stack[stack.length - 1]!
-        const metadata = outputPayload.metadata as Record<string, unknown>
-        metadata.iteration = { current: active.item, index: active.index, length: items.length }
-        trace.push({
-          nodeId: current.id,
-          nodeName: current.name,
-          kind: current.kind,
-          success: true,
-          message: `迭代 ${active.index + 1}/${items.length}`,
-          details: { index: active.index, item: active.item },
-        })
-        current = byId.get(current.bodyNext)
-      } else {
-        iterationStacks.delete(current.id)
-        const metadata = outputPayload.metadata as Record<string, unknown>
-        delete metadata.iteration
-        trace.push({
-          nodeId: current.id,
-          nodeName: current.name,
-          kind: current.kind,
-          success: true,
-          message: `迭代完成，共 ${items.length} 项`,
-          details: { index: items.length, length: items.length },
-        })
-        current = byId.get(current.next)
+        currentId = edgeTarget(edges, current.id, protocol)
+        continue
       }
-      if (!current) stopReason = 'missing-next'
-      continue
-    }
 
-    if (current.kind === 'loop') {
-      const metadata = outputPayload.metadata as Record<string, unknown>
-      const counter = loopCounters.get(current.id) ?? 0
-      const conditionPassed = evaluateCondition(current.condition, getByPath(outputPayload, current.condition.fieldPath))
-      const exhausted = counter >= current.maxIterations
-
-      if (conditionPassed && !exhausted) {
-        loopCounters.set(current.id, counter + 1)
-        metadata.loop = { index: counter + 1, maxIterations: current.maxIterations }
+      if (current.kind === 'condition') {
+        const caseResults = current.cases.map(caseNode => ({ caseId: caseNode.id, name: caseNode.name, passed: evaluateCase(caseNode, outputPayload) }))
+        const matchedCase = current.cases.find((_case, index) => caseResults[index]?.passed)
+        const port = matchedCase?.id ?? 'else'
+        currentId = edgeTarget(edges, current.id, port)
         trace.push({
-          nodeId: current.id,
-          nodeName: current.name,
-          kind: current.kind,
-          success: true,
-          message: `循环第 ${counter + 1}/${current.maxIterations} 轮（条件满足）`,
-          details: { index: counter + 1, fieldPath: current.condition.fieldPath },
+          nodeId: current.id, nodeName: current.name, kind: current.kind, success: Boolean(matchedCase),
+          message: matchedCase ? `命中分支 ${matchedCase.name}` : '未命中任何分支，走 ELSE',
+          details: { cases: caseResults, matchedCaseId: matchedCase?.id ?? null, sourcePort: port },
         })
-        current = byId.get(current.bodyNext)
-      } else {
-        loopCounters.delete(current.id)
-        delete metadata.loop
-        trace.push({
-          nodeId: current.id,
-          nodeName: current.name,
-          kind: current.kind,
-          success: true,
-          message: exhausted ? `达到最大迭代次数 ${current.maxIterations}，退出循环` : '循环条件不满足，退出循环',
-          details: { index: counter, exhausted, fieldPath: current.condition.fieldPath },
-        })
-        current = byId.get(current.next)
+        continue
       }
-      if (!current) stopReason = 'missing-next'
-      continue
-    }
 
-    if (isTerminal(current)) {
-      trace.push({
-        nodeId: current.id,
-        nodeName: current.name,
-        kind: current.kind,
-        success: true,
-        message: '到达输出节点',
-        details: {
-          includeTrace: current.includeTrace,
-          summaryLevel: current.summaryLevel,
-        },
-      })
-      stopReason = 'output'
-      current = undefined
-      continue
+      if (current.kind === 'queue-select') {
+        const selection = selectQueues(current, outputPayload)
+        queueSelections[current.id] = selection
+        outputPayload.queueIds = selection.queueIds
+        trace.push({ nodeId: current.id, nodeName: current.name, kind: current.kind, success: selection.queueIds.length > 0, message: selection.reason, details: { queueIds: selection.queueIds, reason: selection.reason } })
+        currentId = edgeTarget(edges, current.id)
+        continue
+      }
+
+      if (current.kind === 'output') {
+        trace.push({ nodeId: current.id, nodeName: current.name, kind: current.kind, success: true, message: '到达输出节点', details: { includeTrace: current.includeTrace, summaryLevel: current.summaryLevel } })
+        stopReason = 'output'
+        return undefined
+      }
     }
+    if (steps >= MAX_STEPS) stopReason = 'max-steps'
+    return currentId
   }
 
-  if (steps >= MAX_STEPS) {
-    stopReason = 'max-steps'
-  }
-
-  return {
-    outputPayload,
-    protocol,
-    resolutions,
-    stopReason,
-    trace,
-  }
+  const start = graph.nodes.find(node => node.kind === 'input')
+  if (!start) return { outputPayload, protocol: 'unknown', queueSelections: {}, stopReason: 'error', trace: [buildMissingInputTrace('缺少输入节点')] }
+  execute(start.id)
+  return { outputPayload, protocol, queueSelections, stopReason, trace }
 }
 
 export function createRouteContextInput(payload: RouteContextInput): RouteContextEnvelope {

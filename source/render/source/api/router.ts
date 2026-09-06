@@ -1,6 +1,6 @@
-import type { WorkflowNodeModel, WorkflowRunResult } from '@/pages/router/types'
+import type { WorkflowGraph, WorkflowRunResult } from '@/pages/router/types'
 import { request } from './client'
 
 export const routerApi = {
-  run: (nodes: WorkflowNodeModel[], inputPayload: unknown, signal?: AbortSignal) => request<WorkflowRunResult>('/router/run', { nodes, inputPayload }, { signal }),
+  run: (graph: WorkflowGraph, inputPayload: unknown, signal?: AbortSignal) => request<WorkflowRunResult>('/router/run', { graph, inputPayload }, { signal }),
 }

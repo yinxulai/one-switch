@@ -3,7 +3,7 @@ import {
   type ConfigHints,
   type SchemaFieldDescriptor,
   type SchemaValueType,
-  type WorkflowNodeModel,
+  type WorkflowGraph,
   type WorkflowProtocol,
 } from './types'
 
@@ -24,44 +24,16 @@ export interface InputHintResult extends ConfigHints {
   upstreamNodeIds: string[]
 }
 
-export function buildWorkflowConnections(models: WorkflowNodeModel[]): WorkflowConnection[] {
-  const connections: WorkflowConnection[] = []
-
-  for (const model of models) {
-    if (model.kind === 'output') continue
-
-    if (model.kind === 'input' || model.kind === 'control-input' || model.kind === 'resolver') {
-      connections.push({ sourceNodeId: model.id, sourcePort: 'out', targetNodeId: model.next })
-      continue
-    }
-
-    if (model.kind === 'iteration' || model.kind === 'loop') {
-      connections.push({ sourceNodeId: model.id, sourcePort: 'body', targetNodeId: model.bodyNext })
-      connections.push({ sourceNodeId: model.id, sourcePort: 'out', targetNodeId: model.next })
-      continue
-    }
-
-    if (model.kind === 'condition') {
-      for (const caseNode of model.cases) {
-        connections.push({ sourceNodeId: model.id, sourcePort: caseNode.id, targetNodeId: caseNode.next })
-      }
-      connections.push({ sourceNodeId: model.id, sourcePort: 'else', targetNodeId: model.elseNext })
-      continue
-    }
-
-    for (const protocol of WORKFLOW_PROTOCOLS) {
-      connections.push({
-        sourceNodeId: model.id,
-        sourcePort: protocol,
-        targetNodeId: model.branches[protocol],
-      })
-    }
-  }
-
-  return connections
+export function buildWorkflowConnections(graph: WorkflowGraph): WorkflowConnection[] {
+  return graph.edges.map(edge => ({
+    sourceNodeId: edge.sourceNodeId,
+    sourcePort: edge.sourcePort,
+    targetNodeId: edge.targetNodeId,
+  }))
 }
 
 function inferType(value: unknown): SchemaValueType {
+  if (Array.isArray(value)) return 'array'
   if (typeof value === 'string') return 'string'
   if (typeof value === 'number') return 'number'
   if (typeof value === 'boolean') return 'boolean'
@@ -92,14 +64,14 @@ function flattenFields(source: unknown, prefix: string, sourceNodeId: string, so
   return fields
 }
 
-function collectUpstreamConnections(models: WorkflowNodeModel[], targetNodeId: string): {
+function collectUpstreamConnections(graph: WorkflowGraph, targetNodeId: string): {
   connections: WorkflowConnection[]
   upstreamNodeIds: Set<string>
 } {
-  const knownNodeIds = new Set(models.map(model => model.id))
+  const knownNodeIds = new Set(graph.nodes.map(model => model.id))
   const incoming = new Map<string, WorkflowConnection[]>()
 
-  for (const connection of buildWorkflowConnections(models)) {
+  for (const connection of buildWorkflowConnections(graph)) {
     if (!knownNodeIds.has(connection.targetNodeId)) continue
     const targetConnections = incoming.get(connection.targetNodeId) ?? []
     targetConnections.push(connection)
@@ -140,8 +112,9 @@ function addUniqueField(fields: SchemaFieldDescriptor[], field: SchemaFieldDescr
   }
 }
 
-export function resolveInputHints(models: WorkflowNodeModel[], targetNodeId: string, samplePayload: unknown): InputHintResult {
-  const { connections, upstreamNodeIds } = collectUpstreamConnections(models, targetNodeId)
+export function resolveInputHints(graph: WorkflowGraph, targetNodeId: string, samplePayload: unknown): InputHintResult {
+  const models = graph.nodes
+  const { connections, upstreamNodeIds } = collectUpstreamConnections(graph, targetNodeId)
   const modelsById = new Map(models.map(model => [model.id, model]))
   const fields: SchemaFieldDescriptor[] = []
 
@@ -186,38 +159,12 @@ export function resolveInputHints(models: WorkflowNodeModel[], targetNodeId: str
       continue
     }
 
-    if (model.kind === 'resolver') {
+    if (model.kind === 'queue-select') {
       addUniqueField(fields, {
-        path: `metadata.resolutions.${model.id}.selectedId`,
-        valueType: 'string',
+        path: 'queueIds',
+        valueType: 'array',
         sourceNodeId: model.id,
-        sourcePort: 'resolution',
-      })
-      continue
-    }
-
-    if (model.kind === 'iteration') {
-      addUniqueField(fields, {
-        path: 'metadata.iteration.current',
-        valueType: 'unknown',
-        sourceNodeId: model.id,
-        sourcePort: 'body',
-      })
-      addUniqueField(fields, {
-        path: 'metadata.iteration.index',
-        valueType: 'number',
-        sourceNodeId: model.id,
-        sourcePort: 'body',
-      })
-      continue
-    }
-
-    if (model.kind === 'loop') {
-      addUniqueField(fields, {
-        path: 'metadata.loop.index',
-        valueType: 'number',
-        sourceNodeId: model.id,
-        sourcePort: 'body',
+        sourcePort: 'out',
       })
       continue
     }

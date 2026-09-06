@@ -1,14 +1,13 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { z } from 'zod'
 import { runWorkflow } from '@render/source/pages/router/engine'
-import { WorkflowNodeModelSchema, RouteContextInputSchema } from '@render/source/pages/router/schemas'
-import { listLogicalModels } from '@server/database/logical-model-store'
+import { WorkflowGraphSchema, RouteContextInputSchema } from '@render/source/pages/router/schemas'
 import { HttpRouter } from '@server/http-router'
 import type { ManagementHandler } from '../../core/response'
 import { sendSuccess } from '../../core/response'
 
 const RouterRunRequestSchema = z.object({
-  nodes: z.array(WorkflowNodeModelSchema),
+  graph: WorkflowGraphSchema,
   inputPayload: RouteContextInputSchema,
 })
 
@@ -17,9 +16,6 @@ export const routerRunRoutes = new HttpRouter<ManagementHandler>()
 
 async function handleRouterRun(_req: IncomingMessage, res: ServerResponse, body: unknown): Promise<void> {
   const input = RouterRunRequestSchema.parse(body)
-  const logicalModels = await listLogicalModels()
-  const result = runWorkflow(input.nodes, input.inputPayload, {
-    logicalModels: logicalModels.map(model => ({ id: model.id, name: model.name, enabled: model.enabled })),
-  })
+  const result = runWorkflow(input.graph, input.inputPayload)
   sendSuccess(res, result)
 }
