@@ -7,7 +7,7 @@ const NodePositionSchema = z.object({
 
 const WorkflowNodeBaseSchema = z.object({
   id: z.string(),
-  kind: z.enum(['input', 'control-input', 'protocol-discovery', 'condition', 'resolver', 'iteration', 'loop', 'output']),
+  kind: z.enum(['input', 'control-input', 'protocol-discovery', 'condition', 'queue-select', 'output']),
   name: z.string(),
   enabled: z.boolean(),
   description: z.string(),
@@ -31,32 +31,46 @@ const ControlInputItemSchema = z.object({
 
 const InputNodeSchema = WorkflowNodeBaseSchema.extend({
   kind: z.literal('input'),
-  next: z.string(),
 })
 
 const ControlInputNodeSchema = WorkflowNodeBaseSchema.extend({
   kind: z.literal('control-input'),
   controls: z.array(ControlInputItemSchema),
-  next: z.string(),
 })
 
 const ProtocolDiscoveryNodeSchema = WorkflowNodeBaseSchema.extend({
   kind: z.literal('protocol-discovery'),
-  branches: z.object({
-    'openai-completions': z.string(),
-    'openai-responses': z.string(),
-    'anthropic-messages': z.string(),
-    unknown: z.string(),
-  }),
 })
 
 const ConditionRuleSchema = z.object({
   fieldPath: z.string().min(1),
-  valueType: z.enum(['string', 'number', 'boolean', 'enum', 'unknown']),
+  valueType: z.enum(['string', 'number', 'boolean', 'enum', 'array', 'unknown']),
   operator: z.enum(['equals', 'notEquals', 'contains', 'notContains', 'startsWith', 'endsWith', 'in', 'notIn', 'regex', 'gt', 'gte', 'lt', 'lte', 'between', 'isTrue', 'isFalse', 'empty', 'notEmpty', 'exists']),
   value: z.string().optional(),
   secondaryValue: z.string().optional(),
   enumOptions: z.array(z.string()).optional(),
+})
+
+const QueueSelectRuleSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  enabled: z.boolean(),
+  priority: z.number().int(),
+  scope: z.enum(['header', 'model', 'custom']),
+  fieldPath: z.string().min(1),
+  valueType: z.enum(['string', 'number', 'boolean', 'enum', 'array', 'unknown']),
+  operator: z.enum(['equals', 'notEquals', 'contains', 'notContains', 'startsWith', 'endsWith', 'in', 'notIn', 'regex', 'gt', 'gte', 'lt', 'lte', 'between', 'isTrue', 'isFalse', 'empty', 'notEmpty', 'exists']),
+  value: z.string().optional(),
+  secondaryValue: z.string().optional(),
+  enumOptions: z.array(z.string()).optional(),
+  queueIds: z.array(z.string().min(1)).min(1),
+})
+
+const ModelQueueRouteSchema = z.object({
+  id: z.string().min(1),
+  modelId: z.string().min(1),
+  enabled: z.boolean(),
+  queueIds: z.array(z.string().min(1)).min(1),
 })
 
 const ConditionCaseSchema = z.object({
@@ -64,52 +78,21 @@ const ConditionCaseSchema = z.object({
   name: z.string(),
   logicalOperator: z.enum(['and', 'or']),
   conditions: z.array(ConditionRuleSchema).min(1),
-  next: z.string().min(1),
 })
 
 const ConditionNodeSchema = WorkflowNodeBaseSchema.extend({
   kind: z.literal('condition'),
   cases: z.array(ConditionCaseSchema).min(1),
-  elseNext: z.string(),
 })
 
-const ResolverMatchRuleSchema = z.object({
-  field: z.string().min(1),
-  operator: z.literal('equalsInput'),
-})
-
-const ResolverNodeSchema = WorkflowNodeBaseSchema.extend({
-  kind: z.literal('resolver'),
-  input: z.object({ path: z.string().min(1) }),
-  resolution: z.object({
-    resource: z.string().min(1),
-    candidates: z.union([
-      z.object({ source: z.literal('catalog') }),
-      z.object({ source: z.literal('ids'), ids: z.array(z.string().min(1)).min(1) }),
-    ]),
-    match: z.array(ResolverMatchRuleSchema).min(1),
-    fallback: z.object({
-      type: z.literal('reference'),
-      resource: z.string().min(1),
-      id: z.string().min(1),
-    }).optional(),
-  }),
-  next: z.string(),
-})
-
-const IterationNodeSchema = WorkflowNodeBaseSchema.extend({
-  kind: z.literal('iteration'),
-  input: z.object({ path: z.string().min(1) }),
-  bodyNext: z.string().min(1),
-  next: z.string().min(1),
-})
-
-const LoopNodeSchema = WorkflowNodeBaseSchema.extend({
-  kind: z.literal('loop'),
-  maxIterations: z.number().int().min(1).max(1000),
-  condition: ConditionRuleSchema,
-  bodyNext: z.string().min(1),
-  next: z.string().min(1),
+const QueueSelectNodeSchema = WorkflowNodeBaseSchema.extend({
+  kind: z.literal('queue-select'),
+  queueIds: z.array(z.string().min(1)).min(1),
+  mode: z.enum(['static', 'rule-based']).optional(),
+  fallbackQueueId: z.string().min(1).optional(),
+  modelQueueRoutes: z.array(ModelQueueRouteSchema).optional(),
+  rules: z.array(QueueSelectRuleSchema).optional(),
+  conflictStrategy: z.enum(['most-specific', 'highest-priority']).optional(),
 })
 
 const OutputNodeSchema = WorkflowNodeBaseSchema.extend({
@@ -123,11 +106,22 @@ export const WorkflowNodeModelSchema = z.discriminatedUnion('kind', [
   ControlInputNodeSchema,
   ProtocolDiscoveryNodeSchema,
   ConditionNodeSchema,
-  ResolverNodeSchema,
-  IterationNodeSchema,
-  LoopNodeSchema,
+  QueueSelectNodeSchema,
   OutputNodeSchema,
 ])
+
+export const WorkflowEdgeSchema = z.object({
+  id: z.string().min(1),
+  sourceNodeId: z.string().min(1),
+  sourcePort: z.string().min(1),
+  targetNodeId: z.string().min(1),
+})
+
+export const WorkflowGraphSchema = z.object({
+  version: z.literal(1),
+  nodes: z.array(WorkflowNodeModelSchema),
+  edges: z.array(WorkflowEdgeSchema),
+})
 
 export const RouteContextInputSchema = z.object({
   request: z.record(z.string(), z.unknown()),

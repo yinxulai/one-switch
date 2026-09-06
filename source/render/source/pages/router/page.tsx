@@ -13,7 +13,21 @@ import {
   useReactFlow,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { ArrowRight, CirclePlay, Hand, Lock, LockOpen, LocateFixed, MousePointer2, Plus, Save } from 'lucide-react'
+import {
+  ArrowRight,
+  ArrowRightLeft,
+  Braces,
+  CirclePlay,
+  GitBranch,
+  Hand,
+  Lock,
+  LockOpen,
+  LocateFixed,
+  MousePointer2,
+  Plus,
+  Save,
+  Waypoints,
+} from 'lucide-react'
 import { PageContent, PageHeader, PageLayout } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -38,6 +52,7 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/components/ui/toast'
+import { useLogicalModels } from '@/features/logical-models/hooks'
 import { cn } from '@/lib/utils'
 import { unwrap } from '@/api/unwrap'
 import { routerApi } from '@/api/router'
@@ -49,18 +64,24 @@ import {
   type ControlInputItem,
   type ControlInputKind,
   type ConditionOperator,
+  type ModelQueueRoute,
   type NodePosition,
+  type QueueRouteRule,
+  type QueueRouteScope,
   type SchemaValueType,
   type WorkflowProtocol,
   type WorkflowNodeKind,
   type WorkflowNodeModel,
   type WorkflowRunResult,
+  type WorkflowGraph,
+  type WorkflowEdge,
 } from './types'
-import { buildWorkflowConnections, resolveInputHints, WORKFLOW_PROTOCOLS } from './field-hints'
+import { resolveInputHints, WORKFLOW_PROTOCOLS } from './field-hints'
+import { WorkflowGraphSchema } from './schemas'
 
-const routerStorageKey = 'one-switch.router.models.v1'
+const routerStorageKey = 'one-switch.router.graph.v1'
 const protocolOptions = WORKFLOW_PROTOCOLS
-const routerLayoutOrder: WorkflowNodeKind[] = ['input', 'control-input', 'protocol-discovery', 'condition', 'resolver', 'iteration', 'loop', 'output']
+const routerLayoutOrder: WorkflowNodeKind[] = ['input', 'control-input', 'protocol-discovery', 'condition', 'queue-select', 'output']
 
 function createConditionRule(): ConditionRule {
   return {
@@ -77,7 +98,6 @@ function createConditionCase(): ConditionCase {
     name: '分支 1',
     logicalOperator: 'and',
     conditions: [createConditionRule()],
-    next: 'output',
   }
 }
 
@@ -109,6 +129,30 @@ function createControlItem(kind: ControlInputKind): ControlInputItem {
       { label: 'Fast', value: 'fast' },
       { label: 'Strict', value: 'strict' },
     ],
+  }
+}
+
+function createModelQueueRoute(): ModelQueueRoute {
+  return {
+    id: createId('model-route'),
+    modelId: '',
+    enabled: true,
+    queueIds: ['default'],
+  }
+}
+
+function createQueueRouteRule(scope: QueueRouteScope = 'header'): QueueRouteRule {
+  return {
+    id: createId('route-rule'),
+    name: scope === 'model' ? 'Model 规则' : 'Header 规则',
+    enabled: true,
+    priority: 100,
+    scope,
+    fieldPath: scope === 'model' ? 'request.body.model' : 'request.headers.x-client-source',
+    valueType: 'string',
+    operator: scope === 'model' ? 'startsWith' : 'in',
+    value: scope === 'model' ? 'gpt-' : 'vip-app,vip-sdk',
+    queueIds: ['default'],
   }
 }
 
@@ -171,16 +215,51 @@ const samplePayload = {
   metadata: { source: 'desktop-app' },
 }
 
-function createDefaultRouterModels(): WorkflowNodeModel[] {
-  return [
+function createDefaultGraph(): WorkflowGraph {
+  const conditionCase = createConditionCase()
+  const nodes: WorkflowNodeModel[] = [
     {
       id: 'input',
       kind: 'input',
-      name: '输入',
+      name: '输入请求',
       enabled: true,
-      description: '路由入口节点。',
+      description: '固定入口节点：接收原始请求并开始路由。',
       position: { x: 120, y: 260 },
-      next: 'condition',
+    },
+    {
+      id: 'control-input',
+      kind: 'control-input',
+      name: '控制输入',
+      enabled: true,
+      description: '控制 Header/model 分流开关与默认回退队列。',
+      position: { x: 420, y: 260 },
+      controls: [
+        {
+          id: 'control-enable-header-routing',
+          key: 'enableHeaderRouting',
+          label: '启用 Header 分流',
+          kind: 'switch',
+          enabled: true,
+          defaultValue: true,
+        },
+        {
+          id: 'control-enable-model-routing',
+          key: 'enableModelRouting',
+          label: '启用 Model 分流',
+          kind: 'switch',
+          enabled: true,
+          defaultValue: true,
+        },
+        {
+          id: 'control-default-queue-id',
+          key: 'defaultQueueId',
+          label: '默认队列',
+          kind: 'select',
+          enabled: true,
+          defaultValue: 'default',
+          options: [{ label: 'default', value: 'default' }],
+        },
+      ],
     },
     {
       id: 'condition',
@@ -188,26 +267,82 @@ function createDefaultRouterModels(): WorkflowNodeModel[] {
       name: '条件分支',
       enabled: true,
       description: '按类型感知条件执行 IF / ELSE 多分支。',
-      position: { x: 520, y: 260 },
-      cases: [createConditionCase()],
-      elseNext: 'output',
+      position: { x: 720, y: 260 },
+      cases: [conditionCase],
+    },
+    {
+      id: 'queue-select',
+      kind: 'queue-select',
+      name: '队列选择节点',
+      enabled: true,
+      description: '模型直达优先，其次按 Header/model 规则分流，最后回退默认队列。',
+      position: { x: 1020, y: 260 },
+      queueIds: ['default'],
+      mode: 'rule-based',
+      fallbackQueueId: 'default',
+      conflictStrategy: 'most-specific',
+      modelQueueRoutes: [
+        {
+          id: 'route-model-gpt-4o-mini',
+          modelId: 'gpt-4o-mini',
+          enabled: true,
+          queueIds: ['model-fast-lane'],
+        },
+      ],
+      rules: [
+        {
+          id: 'rule-header-vip-source',
+          name: 'Header 来源 VIP',
+          enabled: true,
+          priority: 10,
+          scope: 'header',
+          fieldPath: 'request.headers.x-client-source',
+          valueType: 'string',
+          operator: 'in',
+          value: 'vip-app,vip-sdk',
+          queueIds: ['premium-lane'],
+        },
+        {
+          id: 'rule-model-claude-prefix',
+          name: 'Model 前缀 Claude',
+          enabled: true,
+          priority: 20,
+          scope: 'model',
+          fieldPath: 'request.body.model',
+          valueType: 'string',
+          operator: 'startsWith',
+          value: 'claude',
+          queueIds: ['anthropic-main'],
+        },
+      ],
     },
     {
       id: 'output',
       kind: 'output',
-      name: '返回路由目标',
+      name: '路由结果出口',
       enabled: true,
-      description: '返回由条件分支解析出的路由结果，交由代理执行请求。',
-      position: { x: 920, y: 260 },
+      description: '固定出口节点：输出路由结果并交由代理执行。',
+      position: { x: 1320, y: 260 },
       includeTrace: true,
       summaryLevel: 'detailed',
     },
   ]
+
+  const edges: WorkflowEdge[] = [
+    { id: 'edge-input-control', sourceNodeId: 'input', sourcePort: 'out', targetNodeId: 'control-input' },
+    { id: 'edge-control-condition', sourceNodeId: 'control-input', sourcePort: 'out', targetNodeId: 'condition' },
+    { id: 'edge-condition-case', sourceNodeId: 'condition', sourcePort: conditionCase.id, targetNodeId: 'queue-select' },
+    { id: 'edge-condition-else', sourceNodeId: 'condition', sourcePort: 'else', targetNodeId: 'queue-select' },
+    { id: 'edge-queue-select-output', sourceNodeId: 'queue-select', sourcePort: 'out', targetNodeId: 'output' },
+  ]
+
+  return { version: 1, nodes, edges }
 }
 
 type WorkflowNodeData = {
   model: WorkflowNodeModel
   onOpen: (nodeId: string) => void
+  onUpdateNode: (nodeId: string, updater: (node: WorkflowNodeModel) => WorkflowNodeModel) => void
 }
 
 type BaseNodeViewProps = {
@@ -220,9 +355,7 @@ type WorkflowCanvasNodeType =
   | 'route-output'
   | 'protocol-discovery'
   | 'condition'
-  | 'resolver'
-  | 'iteration'
-  | 'loop'
+  | 'queue-select'
 
 function toCanvasNodeType(kind: WorkflowNodeKind): WorkflowCanvasNodeType {
   if (kind === 'input') return 'route-input'
@@ -237,9 +370,18 @@ function kindLabel(kind: WorkflowNodeKind): string {
   if (kind === 'output') return '路由结果出口'
   if (kind === 'protocol-discovery') return '协议发现'
   if (kind === 'condition') return '条件'
-  if (kind === 'iteration') return '迭代'
-  if (kind === 'loop') return '循环'
-  return '解析'
+  if (kind === 'queue-select') return '队列选择'
+  return '输出'
+}
+
+function kindIcon(kind: WorkflowNodeKind) {
+  if (kind === 'input') return CirclePlay
+  if (kind === 'control-input') return ArrowRightLeft
+  if (kind === 'output') return ArrowRight
+  if (kind === 'protocol-discovery') return GitBranch
+  if (kind === 'condition') return Waypoints
+  if (kind === 'queue-select') return ArrowRightLeft
+  return Braces
 }
 
 function kindTone(kind: WorkflowNodeKind): string {
@@ -248,43 +390,86 @@ function kindTone(kind: WorkflowNodeKind): string {
   if (kind === 'output') return 'bg-success/14 text-success-foreground'
   if (kind === 'protocol-discovery') return 'bg-cyan-500/12 text-cyan-500'
   if (kind === 'condition') return 'bg-warning/14 text-warning-foreground'
-  if (kind === 'iteration' || kind === 'loop') return 'bg-violet-500/14 text-violet-500'
+  if (kind === 'queue-select') return 'bg-violet-500/14 text-violet-500'
   return 'bg-primary/14 text-primary'
 }
 
 function modelSummary(model: WorkflowNodeModel): string {
   if (model.kind === 'input') return '接收请求并开始路由'
-  if (model.kind === 'control-input') return `${model.controls.filter(control => control.enabled).length} controls`
+  if (model.kind === 'control-input') return `${model.controls.filter(control => control.enabled).length} 个控制项`
   if (model.kind === 'output') return '生成可用队列，交由代理执行'
-  if (model.kind === 'protocol-discovery') return 'auto: path/header/model analysis'
-  if (model.kind === 'condition') {
-    return `${model.cases.length} 个分支 + ELSE -> ${model.elseNext}`
+  if (model.kind === 'protocol-discovery') return '自动识别协议并输出分支'
+  if (model.kind === 'condition') return `${model.cases.length} 个分支 + ELSE`
+  if (model.kind === 'queue-select') {
+    const mode = model.mode ?? 'static'
+    if (mode === 'rule-based') {
+      return `${model.modelQueueRoutes?.length ?? 0} 条模型直达 + ${model.rules?.length ?? 0} 条规则`
+    }
+    return `${model.queueIds.length} 个逻辑队列`
   }
-  if (model.kind === 'iteration') return `迭代 ${model.input.path} -> ${model.bodyNext}`
-  if (model.kind === 'loop') return `循环 ≤ ${model.maxIterations} 次 -> ${model.bodyNext}`
-  return `${model.resolution.resource}: ${model.input.path}`
+  return '生成可用队列，交由代理执行'
+}
+
+const fixedNodeCopy = {
+  input: {
+    name: '输入请求',
+    description: '固定入口节点：接收原始请求并开始路由。',
+  },
+  output: {
+    name: '路由结果出口',
+    description: '固定出口节点：输出路由结果并交由代理执行。',
+  },
+} as const
+
+function withFixedNodeCopy(nodes: WorkflowNodeModel[]): WorkflowNodeModel[] {
+  let changed = false
+  const next = nodes.map(node => {
+    if (node.kind !== 'input' && node.kind !== 'output') return node
+    const fixed = node.kind === 'input' ? fixedNodeCopy.input : fixedNodeCopy.output
+    if (node.name === fixed.name && node.description === fixed.description) return node
+    changed = true
+    return { ...node, name: fixed.name, description: fixed.description }
+  })
+  return changed ? next : nodes
 }
 
 function isProtectedNode(model: WorkflowNodeModel): boolean {
   return model.kind === 'input' || model.kind === 'output'
 }
 
+const nodeHandleClass = 'size-3! border-0! bg-primary!'
+
 const BaseNodeView = memo(function BaseNodeView(props: BaseNodeViewProps) {
   const { data } = props
   const model = data.model
+  const KindIcon = kindIcon(model.kind)
+  const enabledControls = model.kind === 'control-input'
+    ? model.controls.filter(control => control.enabled)
+    : []
   const protocolBranchLabels = model.kind === 'protocol-discovery'
     ? protocolOptions
     : []
-  const branchGap = 22
+  const conditionBranchCount = model.kind === 'condition' ? model.cases.length + 1 : 0
+  const branchGap = conditionBranchCount > 6 ? 16 : 22
   const branchStartTop = 30
+  const conditionBranchStartTop = 76
   const dynamicMinHeight = protocolBranchLabels.length > 0
     ? branchStartTop + (protocolBranchLabels.length - 1) * branchGap + 34
-    : undefined
+    : conditionBranchCount > 0
+      ? conditionBranchStartTop + (conditionBranchCount - 1) * branchGap + 34
+      : undefined
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={() => data.onOpen(model.id)}
+      onKeyDown={event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          data.onOpen(model.id)
+        }
+      }}
       style={dynamicMinHeight ? { minHeight: `${dynamicMinHeight}px` } : undefined}
       className={cn(
         'relative flex w-72 flex-col items-start justify-start overflow-visible rounded-xl bg-card px-3 py-2 text-left ring-1 ring-foreground/10 transition-colors hover:bg-card/85',
@@ -292,51 +477,116 @@ const BaseNodeView = memo(function BaseNodeView(props: BaseNodeViewProps) {
       )}
     >
       <div className="mb-2 flex items-center gap-2">
+        <span className={cn('inline-flex size-5 items-center justify-center rounded-md', kindTone(model.kind))}>
+          <KindIcon className="size-3.5" />
+        </span>
         <span className={cn('rounded-md px-1.5 py-0.5 text-[10px] font-medium', kindTone(model.kind))}>{kindLabel(model.kind)}</span>
       </div>
       <div className="truncate text-xs font-medium">{model.name}</div>
       <div className="mt-1 truncate text-[11px] text-muted-foreground">{modelSummary(model)}</div>
 
+      {model.kind === 'control-input' && enabledControls.length > 0 && (
+        <div className="mt-2 w-full space-y-1.5">
+          {enabledControls.map(control => (
+            <div key={control.id} className="flex items-center justify-between gap-2 rounded-md bg-muted/45 py-1 pl-1.5 pr-2">
+              <span className="truncate text-[10px] text-muted-foreground">{control.label}</span>
+
+              {control.kind === 'switch' ? (
+                <Switch
+                  checked={Boolean(control.defaultValue)}
+                  onClick={event => event.stopPropagation()}
+                  onCheckedChange={checked => {
+                    data.onUpdateNode(model.id, node => node.kind === 'control-input'
+                      ? {
+                        ...node,
+                        controls: node.controls.map(item => item.id === control.id ? { ...item, defaultValue: checked } : item),
+                      }
+                      : node)
+                  }}
+                />
+              ) : (
+                <select
+                  value={typeof control.defaultValue === 'string' ? control.defaultValue : (control.options?.[0]?.value ?? '')}
+                  onClick={event => event.stopPropagation()}
+                  onChange={event => {
+                    const nextValue = event.target.value
+                    data.onUpdateNode(model.id, node => node.kind === 'control-input'
+                      ? {
+                        ...node,
+                        controls: node.controls.map(item => item.id === control.id ? { ...item, defaultValue: nextValue } : item),
+                      }
+                      : node)
+                  }}
+                  className="h-6 rounded border border-foreground/10 bg-background px-1.5 text-[10px] text-foreground outline-none"
+                >
+                  {(control.options ?? []).map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
       {model.kind !== 'input' && (
         <>
-          <Handle type="target" position={Position.Left} style={{ top: '50%' }} className="size-3! border-0! bg-info!" />
-          <span className="pointer-events-none absolute -left-7 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">in</span>
+          <Handle type="target" position={Position.Left} style={{ top: '50%', left: '-6px' }} className={nodeHandleClass} />
+          <span className="pointer-events-none absolute -left-7 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">input</span>
         </>
       )}
 
-      {(model.kind === 'input' || model.kind === 'control-input' || model.kind === 'resolver') && (
+      {model.kind === 'input' && (
         <>
-          <Handle type="source" position={Position.Right} style={{ top: '50%' }} className="size-3! border-0! bg-success!" />
-          <span className="pointer-events-none absolute -right-8 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">out</span>
+          <Handle
+            type="source"
+            position={Position.Right}
+            style={{ top: 43, right: '-6px' }}
+            className={nodeHandleClass}
+          />
+          <span
+            className="pointer-events-none absolute -right-8 text-[10px] text-muted-foreground"
+            style={{ top: model.kind === 'input' ? 37 : 'calc(50% - 6px)' }}
+          >
+            next
+          </span>
         </>
       )}
 
-      {(model.kind === 'iteration' || model.kind === 'loop') && (
+      {model.kind === 'control-input' && (
         <>
-          <Handle id="body" type="source" position={Position.Right} style={{ top: 30 }} className="size-3! border-0! bg-success!" />
-          <span className="pointer-events-none absolute -right-11 text-[10px] text-success" style={{ top: 24 }}>body</span>
-          <Handle id="out" type="source" position={Position.Right} style={{ top: 52 }} className="size-3! border-0! bg-primary!" />
-          <span className="pointer-events-none absolute -right-8 text-[10px] text-muted-foreground" style={{ top: 46 }}>out</span>
+          {enabledControls.map((control, index) => (
+            <Handle key={control.id} id={control.id} type="source" position={Position.Right} style={{ top: 82 + index * 34, right: '-6px' }} className={nodeHandleClass} />
+          ))}
+          <Handle id="out" type="source" position={Position.Right} style={{ top: dynamicMinHeight ? dynamicMinHeight - 10 : '50%', right: '-6px' }} className={nodeHandleClass} />
+          <span className="pointer-events-none absolute -right-10 text-[10px] text-primary" style={{ top: dynamicMinHeight ? dynamicMinHeight - 16 : 'calc(50% - 6px)' }}>继续</span>
         </>
+      )}
+
+      {model.kind === 'queue-select' && (
+        <div className="mt-3 text-[11px] text-muted-foreground">
+          {(model.mode ?? 'static') === 'rule-based'
+            ? `规则模式 · 默认回退 ${model.fallbackQueueId ?? model.queueIds[0] ?? 'default'}`
+            : (model.queueIds.length > 0 ? `已选择 ${model.queueIds.length} 个逻辑队列` : '尚未选择逻辑队列')}
+        </div>
       )}
 
       {model.kind === 'condition' && (
         <>
-          {model.cases.map((caseNode, index) => {
-            const top = 30 + index * branchGap
-            return (
-              <div key={caseNode.id}>
-                <Handle id={caseNode.id} type="source" position={Position.Right} style={{ top }} className="size-3! border-0! bg-success!" />
-                <span className="pointer-events-none absolute -right-11 text-[10px] text-success" style={{ top: top - 6 }}>
-                  {caseNode.name}
-                </span>
+          <div className="mt-3 w-full space-y-1">
+            {model.cases.map(caseNode => (
+              <div key={caseNode.id} className="flex h-5 items-center justify-end gap-1.5 pr-0.5 text-[10px] text-success" title={caseNode.name}>
+                <span className="pointer-events-none max-w-44 truncate">{caseNode.name}</span>
               </div>
-            )
-          })}
-          <Handle id="else" type="source" position={Position.Right} style={{ top: 30 + model.cases.length * branchGap }} className="size-3! border-0! bg-warning!" />
-          <span className="pointer-events-none absolute -right-12 text-[10px] text-warning" style={{ top: 24 + model.cases.length * branchGap }}>
-            else
-          </span>
+            ))}
+            <div className="flex h-5 items-center justify-end gap-1.5 pr-0.5 text-[10px] text-warning">
+              <span className="pointer-events-none">ELSE</span>
+            </div>
+          </div>
+          {model.cases.map((caseNode, index) => (
+            <Handle key={caseNode.id} id={caseNode.id} type="source" position={Position.Right} style={{ top: conditionBranchStartTop + index * branchGap, right: '-6px' }} className={nodeHandleClass} />
+          ))}
+          <Handle id="else" type="source" position={Position.Right} style={{ top: conditionBranchStartTop + model.cases.length * branchGap, right: '-6px' }} className={nodeHandleClass} />
         </>
       )}
 
@@ -351,8 +601,8 @@ const BaseNodeView = memo(function BaseNodeView(props: BaseNodeViewProps) {
                   id={label}
                   type="source"
                   position={Position.Right}
-                  style={{ top }}
-                  className={cn('size-3! border-0!', isUnknown ? 'bg-warning!' : 'bg-success!')}
+                  style={{ top, right: '-6px' }}
+                  className={nodeHandleClass}
                 />
                 <span
                   className={cn('pointer-events-none absolute -right-20 text-[10px]', isUnknown ? 'text-warning' : 'text-muted-foreground')}
@@ -365,7 +615,7 @@ const BaseNodeView = memo(function BaseNodeView(props: BaseNodeViewProps) {
           })}
         </>
       )}
-    </button>
+    </div>
   )
 })
 
@@ -375,9 +625,7 @@ const nodeTypes = {
   'route-output': BaseNodeView,
   'protocol-discovery': BaseNodeView,
   condition: BaseNodeView,
-  resolver: BaseNodeView,
-  iteration: BaseNodeView,
-  loop: BaseNodeView,
+  'queue-select': BaseNodeView,
 }
 
 const defaultEdgeOptions = {
@@ -390,18 +638,18 @@ const defaultEdgeOptions = {
   },
 } satisfies NonNullable<React.ComponentProps<typeof ReactFlow<Node<WorkflowNodeData>, Edge>>['defaultEdgeOptions']>
 
-function buildFlowEdges(models: WorkflowNodeModel[]): Edge[] {
-  return buildWorkflowConnections(models).map(connection => ({
-    id: `${connection.sourceNodeId}:${connection.sourcePort}->${connection.targetNodeId}`,
-    source: connection.sourceNodeId,
-    sourceHandle: connection.sourcePort === 'out' ? undefined : connection.sourcePort,
-    target: connection.targetNodeId,
-    animated: connection.sourcePort !== 'out' && connection.sourcePort !== 'else' && connection.sourcePort !== 'body'
-      && (!WORKFLOW_PROTOCOLS.includes(connection.sourcePort as WorkflowProtocol) || connection.sourcePort !== 'unknown'),
+function buildFlowEdges(graph: WorkflowGraph): Edge[] {
+  return graph.edges.map(edge => ({
+    id: edge.id,
+    source: edge.sourceNodeId,
+    sourceHandle: edge.sourcePort === 'out' ? undefined : edge.sourcePort,
+    target: edge.targetNodeId,
+    animated: edge.sourcePort !== 'out' && edge.sourcePort !== 'else' && edge.sourcePort !== 'body'
+      && (!WORKFLOW_PROTOCOLS.includes(edge.sourcePort as WorkflowProtocol) || edge.sourcePort !== 'unknown'),
   }))
 }
 
-function createNodeByKind(kind: Extract<WorkflowNodeKind, 'control-input' | 'protocol-discovery' | 'condition' | 'resolver' | 'iteration' | 'loop'>, position: NodePosition): WorkflowNodeModel {
+function createNodeByKind(kind: Extract<WorkflowNodeKind, 'control-input' | 'protocol-discovery' | 'condition' | 'queue-select'>, position: NodePosition): WorkflowNodeModel {
   const id = `${kind}-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`
   if (kind === 'control-input') {
     return {
@@ -412,7 +660,6 @@ function createNodeByKind(kind: Extract<WorkflowNodeKind, 'control-input' | 'pro
       description: '注入开关与下拉等系统控制值。',
       position,
       controls: [createControlItem('switch')],
-      next: 'protocol-discovery',
     }
   }
   if (kind === 'protocol-discovery') {
@@ -423,12 +670,6 @@ function createNodeByKind(kind: Extract<WorkflowNodeKind, 'control-input' | 'pro
       enabled: true,
       description: '新增协议识别分支。',
       position,
-      branches: {
-        'openai-completions': 'output',
-        'openai-responses': 'output',
-        'anthropic-messages': 'output',
-        unknown: 'output',
-      },
     }
   }
   if (kind === 'condition') {
@@ -440,56 +681,21 @@ function createNodeByKind(kind: Extract<WorkflowNodeKind, 'control-input' | 'pro
       description: '按类型感知条件做 IF / ELSE 多分支。',
       position,
       cases: [createConditionCase()],
-      elseNext: 'output',
-    }
-  }
-  if (kind === 'iteration') {
-    return {
-      id,
-      kind,
-      name: '迭代节点',
-      enabled: true,
-      description: '遍历数组，循环体通过 body 端口回到下游并回流。',
-      position,
-      input: { path: 'request.items' },
-      bodyNext: 'output',
-      next: 'output',
-    }
-  }
-  if (kind === 'loop') {
-    return {
-      id,
-      kind,
-      name: '循环节点',
-      enabled: true,
-      description: '在条件满足时反复执行循环体，最多执行指定轮数。',
-      position,
-      maxIterations: 10,
-      condition: {
-        fieldPath: 'metadata.loop.index',
-        valueType: 'number',
-        operator: 'lt',
-        value: '3',
-      },
-      bodyNext: 'output',
-      next: 'output',
     }
   }
   return {
     id,
-    kind,
-    name: '资源解析节点',
+    kind: 'queue-select',
+    name: '队列选择节点',
     enabled: true,
-    description: '根据输入字段从运行时资源目录中匹配目标资源。',
+    description: '选择一个或多个逻辑队列，交由出口执行。',
     position,
-    input: { path: 'request.body.model' },
-    resolution: {
-      resource: 'logical-model',
-      candidates: { source: 'catalog' },
-      match: [{ field: 'id', operator: 'equalsInput' }, { field: 'name', operator: 'equalsInput' }],
-      fallback: { type: 'reference', resource: 'logical-model', id: 'default' },
-    },
-    next: 'output',
+    queueIds: ['default'],
+    mode: 'rule-based',
+    fallbackQueueId: 'default',
+    conflictStrategy: 'most-specific',
+    modelQueueRoutes: [],
+    rules: [],
   }
 }
 
@@ -499,6 +705,7 @@ function getOperatorsByType(type: SchemaValueType): ConditionOperator[] {
 
 function WorkflowStudioCanvas() {
   const toast = useToast()
+  const logicalModels = useLogicalModels()
   const flow = useReactFlow<Node<WorkflowNodeData>, Edge>()
   const canvasRef = useRef<HTMLDivElement | null>(null)
   const cachedNodesRef = useRef<Map<string, Node<WorkflowNodeData>>>(new Map())
@@ -506,24 +713,27 @@ function WorkflowStudioCanvas() {
   const dragRafRef = useRef<number | null>(null)
   const pendingDragRef = useRef<{ id: string; position: { x: number; y: number } } | null>(null)
 
-  const [models, setModels] = useState<WorkflowNodeModel[]>(() => {
+  const [graph, setGraph] = useState<WorkflowGraph>(() => {
     try {
       const raw = localStorage.getItem(routerStorageKey)
-      if (!raw) return createDefaultRouterModels()
+      if (!raw) return createDefaultGraph()
       const parsed = JSON.parse(raw) as unknown
-      if (!Array.isArray(parsed) || parsed.length === 0) return createDefaultRouterModels()
-      const hasInput = parsed.some(item => item && typeof item === 'object' && (item as { kind?: unknown }).kind === 'input')
-      const hasOutput = parsed.some(item => item && typeof item === 'object' && (item as { kind?: unknown }).kind === 'output')
-      return hasInput && hasOutput ? layoutRouterNodes(parsed as WorkflowNodeModel[]) : createDefaultRouterModels()
+      const result = WorkflowGraphSchema.safeParse(parsed)
+      if (!result.success) return createDefaultGraph()
+      const hasInput = result.data.nodes.some(node => node.kind === 'input')
+      const hasOutput = result.data.nodes.some(node => node.kind === 'output')
+      return hasInput && hasOutput
+        ? { ...result.data, nodes: withFixedNodeCopy(layoutRouterNodes(result.data.nodes)) }
+        : createDefaultGraph()
     } catch {
-      return createDefaultRouterModels()
+      return createDefaultGraph()
     }
   })
+  const models = graph.nodes
 
   const [dragEnabled, setDragEnabled] = useState(true)
   const [dockMode, setDockMode] = useState<'select' | 'pan'>('select')
   const [addMenuOpen, setAddMenuOpen] = useState(false)
-  const [expandedAddGroup, setExpandedAddGroup] = useState<'基础节点' | '路由节点' | '逻辑节点' | null>('路由节点')
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [testDrawerOpen, setTestDrawerOpen] = useState(false)
@@ -535,7 +745,10 @@ function WorkflowStudioCanvas() {
   const selectedNode = useMemo(() => models.find(model => model.id === selectedNodeId) ?? null, [models, selectedNodeId])
 
   const updateNode = useCallback((nodeId: string, updater: (node: WorkflowNodeModel) => WorkflowNodeModel) => {
-    setModels(current => current.map(node => (node.id === nodeId ? updater(node) : node)))
+    setGraph(current => ({
+      ...current,
+      nodes: withFixedNodeCopy(current.nodes.map(node => (node.id === nodeId ? updater(node) : node))),
+    }))
   }, [])
 
   const handleOpenNode = useCallback((nodeId: string) => {
@@ -562,7 +775,7 @@ function WorkflowStudioCanvas() {
         type: toCanvasNodeType(model.kind),
         position: model.position,
         draggable,
-        data: { model, onOpen: handleOpenNode },
+        data: { model, onOpen: handleOpenNode, onUpdateNode: updateNode },
       }
       nextCache.set(model.id, created)
       result.push(created)
@@ -572,7 +785,7 @@ function WorkflowStudioCanvas() {
     return result
   }, [dockMode, dragEnabled, handleOpenNode, models])
 
-  const flowEdges = useMemo(() => buildFlowEdges(models), [models])
+  const flowEdges = useMemo(() => buildFlowEdges(graph), [graph])
 
   useEffect(() => {
     if (hasFitViewRef.current || !models.length) return
@@ -633,109 +846,69 @@ function WorkflowStudioCanvas() {
   }, [updateNode])
 
   const rewireRemovedNode = useCallback((removedId: string) => {
-    setModels(current => current.filter(node => node.id !== removedId).map(node => {
-      if (node.kind === 'input' && node.next === removedId) return { ...node, next: 'output' }
-      if (node.kind === 'control-input' && node.next === removedId) return { ...node, next: 'output' }
-      if (node.kind === 'condition') {
-        return {
-          ...node,
-          cases: node.cases.map(caseNode => caseNode.next === removedId ? { ...caseNode, next: 'output' } : caseNode),
-          elseNext: node.elseNext === removedId ? 'output' : node.elseNext,
-        }
-      }
-      if (node.kind === 'protocol-discovery') {
-        return {
-          ...node,
-          branches: {
-            'openai-completions': node.branches['openai-completions'] === removedId ? 'output' : node.branches['openai-completions'],
-            'openai-responses': node.branches['openai-responses'] === removedId ? 'output' : node.branches['openai-responses'],
-            'anthropic-messages': node.branches['anthropic-messages'] === removedId ? 'output' : node.branches['anthropic-messages'],
-            unknown: node.branches.unknown === removedId ? 'output' : node.branches.unknown,
-          },
-        }
-      }
-      if (node.kind === 'resolver' && node.next === removedId) {
-        return { ...node, next: 'output' }
-      }
-      if (node.kind === 'iteration' && (node.bodyNext === removedId || node.next === removedId)) {
-        return { ...node, bodyNext: node.bodyNext === removedId ? 'output' : node.bodyNext, next: node.next === removedId ? 'output' : node.next }
-      }
-      if (node.kind === 'loop' && (node.bodyNext === removedId || node.next === removedId)) {
-        return { ...node, bodyNext: node.bodyNext === removedId ? 'output' : node.bodyNext, next: node.next === removedId ? 'output' : node.next }
-      }
-      return node
+    setGraph(current => ({
+      ...current,
+      nodes: withFixedNodeCopy(current.nodes.filter(node => node.id !== removedId)),
+      edges: current.edges
+        .filter(edge => edge.sourceNodeId !== removedId && edge.targetNodeId !== removedId)
+        .map(edge => edge.targetNodeId === removedId ? { ...edge, targetNodeId: 'output' } : edge),
     }))
     setDrawerOpen(false)
     setSelectedNodeId(null)
   }, [])
 
-  const appendAtCanvasCenter = useCallback((kind: Extract<WorkflowNodeKind, 'control-input' | 'protocol-discovery' | 'condition' | 'resolver' | 'iteration' | 'loop'>) => {
+  const appendAtCanvasCenter = useCallback((kind: Extract<WorkflowNodeKind, 'control-input' | 'protocol-discovery' | 'condition' | 'queue-select'>) => {
     const rect = canvasRef.current?.getBoundingClientRect()
     if (!rect) return
     const position = flow.screenToFlowPosition({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 })
     const newNode = createNodeByKind(kind, position)
-    setModels(current => [...current, newNode])
+    setGraph(current => ({ ...current, nodes: withFixedNodeCopy([...current.nodes, newNode]) }))
   }, [flow])
 
   const handleConnect = useCallback((connection: Connection) => {
     if (!connection.source || !connection.target || connection.source === connection.target) return
-    updateNode(connection.source, node => {
-      if (node.kind === 'condition') {
-        if (connection.sourceHandle === 'else') return { ...node, elseNext: connection.target }
+    const sourcePort = connection.sourceHandle ?? 'out'
+    const edgeId = `${connection.source}:${sourcePort}->${connection.target}`
+    setGraph(current => {
+      const existing = current.edges.find(edge => edge.sourceNodeId === connection.source && edge.sourcePort === sourcePort)
+      if (existing) {
         return {
-          ...node,
-          cases: node.cases.map(caseNode => caseNode.id === connection.sourceHandle
-            ? { ...caseNode, next: connection.target }
-            : caseNode),
+          ...current,
+          edges: current.edges.map(edge => edge.id === existing.id ? { ...edge, targetNodeId: connection.target! } : edge),
         }
       }
-      if (node.kind === 'protocol-discovery') {
-        const handle = connection.sourceHandle as WorkflowProtocol | null
-        if (!handle || !protocolOptions.includes(handle)) return node
-        return {
-          ...node,
-          branches: {
-            ...node.branches,
-            [handle]: connection.target,
-          },
-        }
+      return {
+        ...current,
+        edges: [...current.edges, { id: edgeId, sourceNodeId: connection.source, sourcePort, targetNodeId: connection.target! }],
       }
-      if (node.kind === 'input' || node.kind === 'control-input' || node.kind === 'resolver') {
-        return { ...node, next: connection.target }
-      }
-      if (node.kind === 'iteration' || node.kind === 'loop') {
-        if (connection.sourceHandle === 'body') return { ...node, bodyNext: connection.target }
-        return { ...node, next: connection.target }
-      }
-      return node
     })
-  }, [updateNode])
+  }, [])
 
   const runLocalTest = useCallback(async () => {
     try {
       const payload = JSON.parse(payloadText) as unknown
-      const result = await unwrap(routerApi.run(models, payload))
+      const result = await unwrap(routerApi.run(graph, payload))
       setRunResult(result)
       setPayloadError('')
     } catch (error) {
       setRunResult(null)
       setPayloadError(error instanceof Error ? error.message : '输入负载不是合法 JSON。')
     }
-  }, [models, payloadText])
+  }, [graph, payloadText])
 
   const saveWorkflow = useCallback(() => {
     try {
-      localStorage.setItem(routerStorageKey, JSON.stringify(models))
+      localStorage.setItem(routerStorageKey, JSON.stringify(graph))
       toast.success('路由已保存')
     } catch {
       toast.error('保存失败，请稍后重试')
     }
-  }, [models, toast])
+  }, [graph, toast])
 
   const conditionFieldHints = useMemo(() => {
-    if (!selectedNode || (selectedNode.kind !== 'condition' && selectedNode.kind !== 'loop')) return []
-    return resolveInputHints(models, selectedNode.id, samplePayload).fields
-  }, [models, selectedNode])
+    if (!selectedNode || selectedNode.kind !== 'condition') return []
+    return resolveInputHints(graph, selectedNode.id, samplePayload).fields
+  }, [graph, selectedNode])
 
   const conditionFieldType = useCallback((fieldPath: string, fallback: SchemaValueType): SchemaValueType => {
     return conditionFieldHints.find(item => item.path === fieldPath)?.valueType ?? fallback
@@ -753,6 +926,9 @@ function WorkflowStudioCanvas() {
     if (node.kind === 'input') {
       return '输入节点无配置项，仅作为路由入口。'
     }
+    if (node.kind === 'output') {
+      return '输出节点无核心配置项，固定作为路由出口。Trace 与摘要仅影响调试可见性。'
+    }
     if (node.kind === 'control-input') {
       return '控制输入节点会把开关、下拉等值写入 metadata.controls，供条件节点和其他逻辑引用。'
     }
@@ -762,16 +938,10 @@ function WorkflowStudioCanvas() {
     if (node.kind === 'condition') {
       return '字段来源于上游 schema，每个分支可包含多个条件，按 AND / OR 组合判定；首个命中的分支生效，否则走 ELSE。'
     }
-    if (node.kind === 'resolver') {
-      return '从运行时资源目录按输入路径和声明顺序匹配；未命中时使用可选回退引用。资源类型不写死在节点中。'
+    if (node.kind === 'queue-select') {
+      return '从逻辑模型队列中选择一个或多个目标，作为路由出口的明确执行范围。'
     }
-    if (node.kind === 'iteration') {
-      return '遍历输入路径下的数组，循环体通过 body 端口连接下游并回流回迭代节点；每轮把当前项写入 metadata.iteration.current。'
-    }
-    if (node.kind === 'loop') {
-      return '在条件满足时反复执行 body 端口连接的循环体，达到最大迭代次数或条件不满足时从 out 端口退出。'
-    }
-    return '该节点不会直接返回模型响应，而是返回一个可用队列交由代理执行。Trace 和摘要级别仅用于调试与观测。'
+    return '该节点不会直接返回模型响应，而是返回一个可用队列交由代理执行。'
   }
 
   return (
@@ -826,13 +996,13 @@ function WorkflowStudioCanvas() {
               </ReactFlow>
 
               <div className="pointer-events-none absolute inset-x-0 bottom-3 z-20 flex justify-center px-3">
-                <div className="pointer-events-auto inline-flex max-w-full items-center gap-1 rounded-2xl border border-zinc-700/80 bg-zinc-900/94 p-1.5 text-zinc-100 shadow-lg shadow-black/20">
+                <div className="pointer-events-auto inline-flex max-w-full items-center gap-1 rounded-2xl bg-popover/96 p-1.5 text-foreground ring-1 ring-foreground/10">
                   <div className="relative">
                     <Button
                       type="button"
                       size="icon"
                       variant="ghost"
-                      className={cn('size-8 rounded-lg text-zinc-100 hover:bg-zinc-800', addMenuOpen && 'bg-zinc-800')}
+                      className={cn('size-8 rounded-lg text-foreground hover:bg-muted', addMenuOpen && 'bg-muted')}
                       aria-label="添加节点"
                       onClick={() => setAddMenuOpen(value => !value)}
                     >
@@ -840,82 +1010,60 @@ function WorkflowStudioCanvas() {
                     </Button>
 
                     {addMenuOpen && (
-                      <div className="absolute bottom-[calc(100%+0.5rem)] left-1/2 w-80 -translate-x-1/2 rounded-xl bg-zinc-900 p-2 text-zinc-100">
-                        <div className="grid gap-2">
-                          <button
-                            type="button"
-                            className="flex items-center justify-between rounded-md px-2 py-1.5 text-left text-sm hover:bg-zinc-800"
-                            onClick={() => setExpandedAddGroup(current => current === '基础节点' ? null : '基础节点')}
-                          >
-                            <span>基础节点</span>
-                            <span className="text-xs text-zinc-400">{expandedAddGroup === '基础节点' ? '收起' : '展开'}</span>
-                          </button>
-                          {expandedAddGroup === '基础节点' && (
-                            <div className="grid gap-1 pl-2">
-                              <button type="button" className="rounded-md px-2 py-2 text-left hover:bg-zinc-800" onClick={() => { appendAtCanvasCenter('control-input'); setAddMenuOpen(false) }}>
-                                <span className="block text-sm">控制输入</span>
-                                <span className="mt-0.5 block text-xs text-zinc-400">向路由上下文注入开关或选项。</span>
+                      <div className="absolute bottom-[calc(100%+0.5rem)] left-1/2 z-30 w-[20rem] -translate-x-1/2 rounded-xl bg-popover p-2 text-popover-foreground ring-1 ring-foreground/10">
+                        <div className="grid gap-2.5">
+                          <div className="space-y-1.5">
+                            <div className="px-1 text-[9px] font-medium uppercase tracking-[0.14em] text-muted-foreground">基础节点</div>
+                            <div className="grid gap-1 pl-1">
+                              <button type="button" className="flex items-center gap-2 rounded-md px-1.5 py-1.5 text-left hover:bg-muted" onClick={() => { appendAtCanvasCenter('control-input'); setAddMenuOpen(false) }}>
+                                <div className="flex size-5 items-center justify-center text-muted-foreground"><ArrowRightLeft className="size-3.5" /></div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-xs">控制输入</div>
+                                  <div className="mt-0.5 text-[10px] text-muted-foreground">注入开关或选项</div>
+                                </div>
                               </button>
                             </div>
-                          )}
+                          </div>
 
-                          <button
-                            type="button"
-                            className="flex items-center justify-between rounded-md px-2 py-1.5 text-left text-sm hover:bg-zinc-800"
-                            onClick={() => setExpandedAddGroup(current => current === '路由节点' ? null : '路由节点')}
-                          >
-                            <span>路由节点</span>
-                            <span className="text-xs text-zinc-400">{expandedAddGroup === '路由节点' ? '收起' : '展开'}</span>
-                          </button>
-                          {expandedAddGroup === '路由节点' && (
-                            <div className="grid gap-1 pl-2">
-                              <button type="button" className="rounded-md px-2 py-2 text-left hover:bg-zinc-800" onClick={() => { appendAtCanvasCenter('protocol-discovery'); setAddMenuOpen(false) }}>
-                                <span className="block text-sm">协议发现</span>
-                                <span className="mt-0.5 block text-xs text-zinc-400">识别请求协议并从对应端口输出。</span>
+                          <div className="space-y-1.5">
+                            <div className="px-1 text-[9px] font-medium uppercase tracking-[0.14em] text-muted-foreground">路由节点</div>
+                            <div className="grid gap-1 pl-1">
+                              <button type="button" className="flex items-center gap-2 rounded-md px-1.5 py-1.5 text-left hover:bg-muted" onClick={() => { appendAtCanvasCenter('protocol-discovery'); setAddMenuOpen(false) }}>
+                                <div className="flex size-5 items-center justify-center text-muted-foreground"><GitBranch className="size-3.5" /></div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-xs">协议发现</div>
+                                  <div className="mt-0.5 text-[10px] text-muted-foreground">识别协议并输出分支</div>
+                                </div>
                               </button>
-                              <button type="button" className="rounded-md px-2 py-2 text-left hover:bg-zinc-800" onClick={() => { appendAtCanvasCenter('condition'); setAddMenuOpen(false) }}>
-                                <span className="block text-sm">条件</span>
-                                <span className="mt-0.5 block text-xs text-zinc-400">根据上游字段执行 IF / ELSE 多分支。</span>
+                              <button type="button" className="flex items-center gap-2 rounded-md px-1.5 py-1.5 text-left hover:bg-muted" onClick={() => { appendAtCanvasCenter('condition'); setAddMenuOpen(false) }}>
+                                <div className="flex size-5 items-center justify-center text-muted-foreground"><Waypoints className="size-3.5" /></div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-xs">条件</div>
+                                  <div className="mt-0.5 text-[10px] text-muted-foreground">IF / ELSE 多分支判定</div>
+                                </div>
                               </button>
-                              <button type="button" className="rounded-md px-2 py-2 text-left hover:bg-zinc-800" onClick={() => { appendAtCanvasCenter('resolver'); setAddMenuOpen(false) }}>
-                                <span className="block text-sm">资源解析</span>
-                                <span className="mt-0.5 block text-xs text-zinc-400">从运行时资源目录按输入字段匹配目标资源，可选回退。</span>
+                              <button type="button" className="flex items-center gap-2 rounded-md px-1.5 py-1.5 text-left hover:bg-muted" onClick={() => { appendAtCanvasCenter('queue-select'); setAddMenuOpen(false) }}>
+                                <div className="flex size-5 items-center justify-center text-muted-foreground"><ArrowRightLeft className="size-3.5" /></div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-xs">队列选择</div>
+                                  <div className="mt-0.5 text-[10px] text-muted-foreground">选择一个或多个逻辑队列</div>
+                                </div>
                               </button>
                             </div>
-                          )}
+                          </div>
 
-                          <button
-                            type="button"
-                            className="flex items-center justify-between rounded-md px-2 py-1.5 text-left text-sm hover:bg-zinc-800"
-                            onClick={() => setExpandedAddGroup(current => current === '逻辑节点' ? null : '逻辑节点')}
-                          >
-                            <span>逻辑节点</span>
-                            <span className="text-xs text-zinc-400">{expandedAddGroup === '逻辑节点' ? '收起' : '展开'}</span>
-                          </button>
-                          {expandedAddGroup === '逻辑节点' && (
-                            <div className="grid gap-1 pl-2">
-                              <button type="button" className="rounded-md px-2 py-2 text-left hover:bg-zinc-800" onClick={() => { appendAtCanvasCenter('iteration'); setAddMenuOpen(false) }}>
-                                <span className="block text-sm">迭代</span>
-                                <span className="mt-0.5 block text-xs text-zinc-400">遍历数组并对每一项执行循环体。</span>
-                              </button>
-                              <button type="button" className="rounded-md px-2 py-2 text-left hover:bg-zinc-800" onClick={() => { appendAtCanvasCenter('loop'); setAddMenuOpen(false) }}>
-                                <span className="block text-sm">循环</span>
-                                <span className="mt-0.5 block text-xs text-zinc-400">条件满足时重复执行循环体，带最大次数保护。</span>
-                              </button>
-                            </div>
-                          )}
                         </div>
                       </div>
                     )}
                   </div>
 
-                  <div className="mx-1 h-6 w-px bg-zinc-700" />
+                  <div className="mx-1 h-6 w-px bg-muted" />
 
                   <Button
                     type="button"
                     size="icon"
                     variant="ghost"
-                    className={cn('size-8 rounded-lg text-zinc-100 hover:bg-zinc-800', dockMode === 'select' && 'bg-blue-600 text-white hover:bg-blue-500')}
+                    className={cn('size-8 rounded-lg text-foreground hover:bg-muted', dockMode === 'select' && 'bg-primary text-primary-foreground hover:bg-primary/90')}
                     onClick={() => setDockMode('select')}
                     aria-label="选择模式"
                   >
@@ -926,7 +1074,7 @@ function WorkflowStudioCanvas() {
                     type="button"
                     size="icon"
                     variant="ghost"
-                    className={cn('size-8 rounded-lg text-zinc-100 hover:bg-zinc-800', dockMode === 'pan' && 'bg-blue-600 text-white hover:bg-blue-500')}
+                    className={cn('size-8 rounded-lg text-foreground hover:bg-muted', dockMode === 'pan' && 'bg-primary text-primary-foreground hover:bg-primary/90')}
                     onClick={() => setDockMode('pan')}
                     aria-label="平移模式"
                   >
@@ -937,20 +1085,20 @@ function WorkflowStudioCanvas() {
                     type="button"
                     size="icon"
                     variant="ghost"
-                    className={cn('size-8 rounded-lg text-zinc-100 hover:bg-zinc-800', !dragEnabled && 'bg-zinc-800 text-zinc-300')}
+                    className={cn('size-8 rounded-lg text-foreground hover:bg-muted', !dragEnabled && 'bg-muted text-muted-foreground')}
                     onClick={() => setDragEnabled(value => !value)}
                     aria-label={dragEnabled ? '锁定拖拽' : '解锁拖拽'}
                   >
                     {dragEnabled ? <LockOpen className="size-4" /> : <Lock className="size-4" />}
                   </Button>
 
-                  <div className="mx-1 h-6 w-px bg-zinc-700" />
+                  <div className="mx-1 h-6 w-px bg-muted" />
 
                   <Button
                     type="button"
                     size="icon"
                     variant="ghost"
-                    className="size-8 rounded-lg text-zinc-100 hover:bg-zinc-800"
+                    className="size-8 rounded-lg text-foreground hover:bg-muted"
                     onClick={() => void flow.fitView({ padding: 0.2 })}
                     aria-label="适配视图"
                   >
@@ -964,7 +1112,7 @@ function WorkflowStudioCanvas() {
       </PageContent>
 
       <Drawer open={testDrawerOpen} onOpenChange={setTestDrawerOpen} direction="right">
-        <DrawerContent className="h-full w-170 max-w-[95vw] border-l bg-popover">
+        <DrawerContent className="h-full w-208! max-w-[90vw]! border-l bg-popover">
           <DrawerHeader>
             <DrawerTitle className="flex items-center gap-2"><ArrowRight className="size-4" /> 测试运行</DrawerTitle>
             <DrawerDescription>在此输入 JSON，执行路由并查看结果与完整轨迹。</DrawerDescription>
@@ -992,7 +1140,7 @@ function WorkflowStudioCanvas() {
                   </div>
                   <div className="rounded-lg bg-muted/45 p-2 font-mono text-[11px]">
                     <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">解析结果（调试详情）</div>
-                    <pre className="whitespace-pre-wrap break-all">{JSON.stringify(runResult.resolutions, null, 2)}</pre>
+                    <pre className="whitespace-pre-wrap break-all">{JSON.stringify(runResult.queueSelections, null, 2)}</pre>
                   </div>
                   <div className="rounded-lg bg-muted/45 p-2 font-mono text-[11px]">
                     <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">Output</div>
@@ -1017,7 +1165,7 @@ function WorkflowStudioCanvas() {
             </div>
           </div>
 
-          <DrawerFooter>
+          <DrawerFooter className="flex-row justify-end">
             <Button type="button" onClick={runLocalTest}>运行测试</Button>
             <Button type="button" variant="outline" onClick={() => setTestDrawerOpen(false)}>关闭</Button>
           </DrawerFooter>
@@ -1025,7 +1173,7 @@ function WorkflowStudioCanvas() {
       </Drawer>
 
       <Drawer open={drawerOpen} onOpenChange={setDrawerOpen} direction="right">
-        <DrawerContent className="h-full w-140 max-w-[92vw] border-l bg-popover">
+        <DrawerContent className="h-full w-2xl! max-w-[88vw]! border-l bg-popover">
           {!selectedNode && (
             <DrawerHeader>
               <DrawerTitle>未选中节点</DrawerTitle>
@@ -1036,37 +1184,38 @@ function WorkflowStudioCanvas() {
           {selectedNode && (
             <>
               <DrawerHeader>
-                <DrawerTitle>{selectedNode.name}</DrawerTitle>
-                <DrawerDescription>{selectedNode.description}</DrawerDescription>
-              </DrawerHeader>
-
-              <div className="space-y-4 overflow-y-auto px-4 pb-4">
-                <div className="grid gap-3">
-                  <div className="grid gap-1.5">
-                    <Label>节点类型</Label>
-                    <Input value={kindLabel(selectedNode.kind)} disabled />
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <DrawerTitle className="flex items-center gap-2">
+                      {(() => {
+                        const Icon = kindIcon(selectedNode.kind)
+                        return <Icon className="size-4 shrink-0" />
+                      })()}
+                      {isProtectedNode(selectedNode)
+                        ? <span>{selectedNode.name}</span>
+                        : (
+                          <Input
+                            value={selectedNode.name}
+                            onChange={event => updateNode(selectedNode.id, node => ({ ...node, name: event.target.value }))}
+                            className="h-8"
+                          />
+                        )}
+                    </DrawerTitle>
                   </div>
-                  <div className="grid gap-1.5">
-                    <Label>节点名称</Label>
-                    <Input value={selectedNode.name} disabled={selectedNode.kind === 'input'} onChange={event => updateNode(selectedNode.id, node => ({ ...node, name: event.target.value }))} />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <Label>节点说明</Label>
-                    <Textarea value={selectedNode.description} disabled={selectedNode.kind === 'input'} onChange={event => updateNode(selectedNode.id, node => ({ ...node, description: event.target.value }))} className="min-h-20" />
-                  </div>
-                  <div className="flex items-center justify-between rounded-lg bg-muted/45 px-3 py-2">
-                    <span className="text-sm">启用节点</span>
-                    <Switch
-                      checked={selectedNode.enabled}
-                      disabled={selectedNode.kind === 'input'}
-                      onCheckedChange={checked => updateNode(selectedNode.id, node => ({ ...node, enabled: checked }))}
-                    />
+                  <div className="flex shrink-0 items-center gap-2">
+                    {!isProtectedNode(selectedNode) && (
+                      <Button type="button" size="sm" variant="destructive" onClick={() => rewireRemovedNode(selectedNode.id)}>删除节点</Button>
+                    )}
+                    <Button type="button" size="sm" variant="outline" onClick={() => setDrawerOpen(false)}>关闭</Button>
                   </div>
                 </div>
+              </DrawerHeader>
 
-                <div className="rounded-lg bg-muted/45 px-3 py-2 text-xs text-muted-foreground">
-                  <div className="font-medium text-foreground">配置提示</div>
-                  <div className="mt-1">{renderNodeHint(selectedNode)}</div>
+              <div className="space-y-3 overflow-y-auto px-3 pb-3">
+                <div className="rounded-xl bg-muted/35 px-2.5 py-2 text-xs text-muted-foreground">
+                  <div className="font-medium text-foreground">节点说明</div>
+                  <div className="mt-1">{selectedNode.description}</div>
+                  <div className="mt-1 text-muted-foreground/80">{renderNodeHint(selectedNode)}</div>
                 </div>
 
                 {selectedNode.kind === 'input' && (
@@ -1076,14 +1225,14 @@ function WorkflowStudioCanvas() {
                 )}
 
                 {selectedNode.kind === 'control-input' && (
-                  <div className="grid gap-3">
-                    <div className="rounded-lg bg-muted/45 px-3 py-2 text-xs text-muted-foreground">
+                  <div className="grid gap-2.5">
+                    <div className="rounded-lg bg-muted/45 px-2.5 py-2 text-xs text-muted-foreground">
                       控制输入节点会把开关、下拉等值写入 metadata.controls，供条件节点直接引用。
                     </div>
 
-                    <div className="grid gap-3">
+                    <div className="grid gap-2.5">
                       {selectedNode.controls.map((control, index) => (
-                        <div key={control.id} className="grid gap-3 rounded-lg bg-muted/35 p-3">
+                        <div key={control.id} className="grid gap-2.5 rounded-lg bg-muted/35 p-2.5">
                           <div className="flex items-center justify-between gap-2">
                             <div className="text-sm font-medium">控制项 {index + 1}</div>
                             <Button
@@ -1252,125 +1401,387 @@ function WorkflowStudioCanvas() {
                 )}
 
                 {selectedNode.kind === 'protocol-discovery' && (
-                  <div className="grid gap-3">
-                    <div className="rounded-lg bg-muted/45 px-3 py-2 text-xs text-muted-foreground">
+                  <div className="grid gap-2.5">
+                    <div className="rounded-lg bg-muted/45 px-2.5 py-2 text-xs text-muted-foreground">
                       协议发现节点为零配置节点：系统自动根据 request.path、request.headers、request.body.model 识别协议。
                     </div>
-                    <div className="rounded-lg bg-muted/45 px-3 py-2 text-xs text-muted-foreground">
+                    <div className="rounded-lg bg-muted/45 px-2.5 py-2 text-xs text-muted-foreground">
                       协议分支输出口通过画布连线设置：openai-completions / openai-responses / anthropic-messages / unknown。
                     </div>
                   </div>
                 )}
 
-                {selectedNode.kind === 'iteration' && (
-                  <div className="grid gap-3">
-                    <div className="grid gap-1.5">
-                      <Label>数组字段路径</Label>
-                      <Input
-                        value={selectedNode.input.path}
-                        placeholder="request.body.items"
-                        onChange={event => updateNode(selectedNode.id, node => node.kind === 'iteration'
-                          ? { ...node, input: { path: event.target.value } }
-                          : node)}
-                      />
-                    </div>
-                    <div className="rounded-lg bg-muted/45 px-3 py-2 text-xs text-muted-foreground">
-                      body 端口连接循环体，out 端口连接迭代完成后的下游节点。循环体中可使用 metadata.iteration.current 和 metadata.iteration.index。
-                    </div>
-                  </div>
-                )}
+                {selectedNode.kind === 'queue-select' && (
+                  <div className="grid gap-2.5">
+                    <div className="text-xs text-muted-foreground">支持静态队列与规则队列两种模式；规则模式内建模型直达、Header/model 分流与默认回退。</div>
 
-                {selectedNode.kind === 'loop' && (
-                  <div className="grid gap-3">
                     <div className="grid gap-1.5">
-                      <Label>最大迭代次数</Label>
-                      <Input
-                        type="number"
-                        min={1}
-                        max={1000}
-                        value={selectedNode.maxIterations}
-                        onChange={event => updateNode(selectedNode.id, node => node.kind === 'loop'
-                          ? { ...node, maxIterations: Math.min(1000, Math.max(1, Number(event.target.value) || 1)) }
+                      <Label>选择模式</Label>
+                      <Select
+                        value={selectedNode.mode ?? 'static'}
+                        onValueChange={value => updateNode(selectedNode.id, node => node.kind === 'queue-select'
+                          ? {
+                            ...node,
+                            mode: value as 'static' | 'rule-based',
+                            fallbackQueueId: node.fallbackQueueId ?? node.queueIds[0] ?? 'default',
+                            modelQueueRoutes: node.modelQueueRoutes ?? [],
+                            rules: node.rules ?? [],
+                            conflictStrategy: node.conflictStrategy ?? 'most-specific',
+                          }
                           : node)}
-                      />
+                      >
+                        <SelectTrigger className="w-full"><SelectValue placeholder="mode" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="static">静态队列</SelectItem>
+                          <SelectItem value="rule-based">规则分流</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
-                    <div className="grid gap-2 rounded-lg bg-muted/35 p-3">
-                      <div className="text-sm font-medium">循环条件</div>
+
+                    <div className="grid gap-1.5">
+                      <Label>可选逻辑队列</Label>
                       <div className="grid gap-1.5">
-                        <Label>字段路径（上游 schema）</Label>
-                        <Select
-                          value={selectedNode.condition.fieldPath}
-                          onValueChange={value => updateNode(selectedNode.id, node => {
-                            if (node.kind !== 'loop') return node
-                            const field = conditionFieldHints.find(item => item.path === value)
-                            const nextType = field?.valueType ?? node.condition.valueType
-                            return {
-                              ...node,
-                              condition: {
-                                ...node.condition,
-                                fieldPath: value,
-                                valueType: nextType,
-                                enumOptions: field?.enumOptions,
-                                operator: getOperatorsByType(nextType)[0] ?? 'equals',
-                              },
-                            }
-                          })}
-                        >
-                          <SelectTrigger className="w-full"><SelectValue placeholder="field path" /></SelectTrigger>
-                          <SelectContent>
-                            {conditionFieldHints.map(field => (
-                              <SelectItem key={field.path} value={field.path}>{field.path} · {field.valueType}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        {!conditionFieldIsAvailable(selectedNode.condition.fieldPath) && (
-                          <div className="rounded-lg bg-warning/14 px-3 py-2 text-xs text-warning-foreground">
-                            当前字段 {selectedNode.condition.fieldPath} 不再由任何已连接的上游节点提供。
+                        {logicalModels.map(model => (
+                          <label key={model.id} className="flex items-center gap-2 rounded-lg bg-muted/35 px-3 py-2 text-sm">
+                            <input
+                              type="checkbox"
+                              checked={selectedNode.queueIds.includes(model.id)}
+                              onChange={event => updateNode(selectedNode.id, node => node.kind === 'queue-select'
+                                ? {
+                                  ...node,
+                                  queueIds: event.target.checked
+                                    ? [...new Set([...node.queueIds, model.id])]
+                                    : node.queueIds.filter(id => id !== model.id),
+                                }
+                                : node)}
+                            />
+                            <span className="min-w-0 flex-1 truncate">{model.name}</span>
+                            <span className="text-xs text-muted-foreground">{model.id}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    {(selectedNode.mode ?? 'static') === 'rule-based' && (
+                      <>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="grid gap-1.5">
+                            <Label>默认回退队列</Label>
+                            <Select
+                              value={selectedNode.fallbackQueueId ?? selectedNode.queueIds[0] ?? 'default'}
+                              onValueChange={value => updateNode(selectedNode.id, node => node.kind === 'queue-select'
+                                ? { ...node, fallbackQueueId: value }
+                                : node)}
+                            >
+                              <SelectTrigger className="w-full"><SelectValue placeholder="fallback" /></SelectTrigger>
+                              <SelectContent>
+                                {selectedNode.queueIds.map(queueId => (
+                                  <SelectItem key={queueId} value={queueId}>{queueId}</SelectItem>
+                                ))}
+                                {!selectedNode.queueIds.includes('default') && <SelectItem value="default">default</SelectItem>}
+                              </SelectContent>
+                            </Select>
                           </div>
-                        )}
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="grid gap-1.5">
-                          <Label>字段类型</Label>
-                          <Input value={conditionFieldType(selectedNode.condition.fieldPath, selectedNode.condition.valueType)} disabled />
+
+                          <div className="grid gap-1.5">
+                            <Label>冲突策略</Label>
+                            <Select
+                              value={selectedNode.conflictStrategy ?? 'most-specific'}
+                              onValueChange={value => updateNode(selectedNode.id, node => node.kind === 'queue-select'
+                                ? { ...node, conflictStrategy: value as 'most-specific' | 'highest-priority' }
+                                : node)}
+                            >
+                              <SelectTrigger className="w-full"><SelectValue placeholder="strategy" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="most-specific">最具体优先</SelectItem>
+                                <SelectItem value="highest-priority">最高优先级优先</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
                         </div>
-                        <div className="grid gap-1.5">
-                          <Label>操作符</Label>
-                          <Select
-                            value={selectedNode.condition.operator}
-                            onValueChange={value => updateNode(selectedNode.id, node => node.kind === 'loop'
-                              ? { ...node, condition: { ...node.condition, operator: value as ConditionOperator } }
-                              : node)}
-                          >
-                            <SelectTrigger className="w-full"><SelectValue placeholder="operator" /></SelectTrigger>
-                            <SelectContent>
-                              {currentConditionOperators(selectedNode.condition.fieldPath, selectedNode.condition.valueType).map(operator => (
-                                <SelectItem key={operator} value={operator}>{operator}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+
+                        <div className="grid gap-2 rounded-lg bg-muted/35 p-2.5">
+                          <div className="flex items-center justify-between">
+                            <div className="text-sm font-medium">模型直达映射</div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => updateNode(selectedNode.id, node => node.kind === 'queue-select'
+                                ? { ...node, modelQueueRoutes: [...(node.modelQueueRoutes ?? []), createModelQueueRoute()] }
+                                : node)}
+                            >
+                              添加映射
+                            </Button>
+                          </div>
+
+                          {(selectedNode.modelQueueRoutes ?? []).map((route, routeIndex) => (
+                            <div key={route.id} className="grid gap-2 rounded-lg bg-background/60 p-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="text-xs text-muted-foreground">映射 {routeIndex + 1}</div>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => updateNode(selectedNode.id, node => node.kind === 'queue-select'
+                                    ? { ...node, modelQueueRoutes: (node.modelQueueRoutes ?? []).filter(item => item.id !== route.id) }
+                                    : node)}
+                                >
+                                  删除
+                                </Button>
+                              </div>
+
+                              <div className="grid gap-1.5">
+                                <Label>客户端 modelId</Label>
+                                <Input
+                                  value={route.modelId}
+                                  onChange={event => updateNode(selectedNode.id, node => node.kind === 'queue-select'
+                                    ? {
+                                      ...node,
+                                      modelQueueRoutes: (node.modelQueueRoutes ?? []).map(item => item.id === route.id ? { ...item, modelId: event.target.value } : item),
+                                    }
+                                    : node)}
+                                />
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="grid gap-1.5">
+                                  <Label>命中队列</Label>
+                                  <Select
+                                    value={route.queueIds[0] ?? (selectedNode.fallbackQueueId ?? 'default')}
+                                    onValueChange={value => updateNode(selectedNode.id, node => node.kind === 'queue-select'
+                                      ? {
+                                        ...node,
+                                        modelQueueRoutes: (node.modelQueueRoutes ?? []).map(item => item.id === route.id ? { ...item, queueIds: [value] } : item),
+                                      }
+                                      : node)}
+                                  >
+                                    <SelectTrigger className="w-full"><SelectValue placeholder="queue" /></SelectTrigger>
+                                    <SelectContent>
+                                      {selectedNode.queueIds.map(queueId => (
+                                        <SelectItem key={queueId} value={queueId}>{queueId}</SelectItem>
+                                      ))}
+                                      {!selectedNode.queueIds.includes('default') && <SelectItem value="default">default</SelectItem>}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+
+                                <div className="flex items-center justify-between rounded-lg bg-muted/35 px-3 py-2">
+                                  <span className="text-sm">启用</span>
+                                  <Switch
+                                    checked={route.enabled}
+                                    onCheckedChange={checked => updateNode(selectedNode.id, node => node.kind === 'queue-select'
+                                      ? {
+                                        ...node,
+                                        modelQueueRoutes: (node.modelQueueRoutes ?? []).map(item => item.id === route.id ? { ...item, enabled: checked } : item),
+                                      }
+                                      : node)}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                      </div>
-                      {!['exists', 'isTrue', 'isFalse', 'empty', 'notEmpty'].includes(selectedNode.condition.operator) && (
-                        <div className="grid gap-1.5">
-                          <Label>比较值</Label>
-                          <Input
-                            value={selectedNode.condition.value ?? ''}
-                            onChange={event => updateNode(selectedNode.id, node => node.kind === 'loop'
-                              ? { ...node, condition: { ...node.condition, value: event.target.value } }
-                              : node)}
-                          />
+
+                        <div className="grid gap-2 rounded-lg bg-muted/35 p-2.5">
+                          <div className="flex items-center justify-between">
+                            <div className="text-sm font-medium">Header/Model 规则</div>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => updateNode(selectedNode.id, node => node.kind === 'queue-select'
+                                  ? { ...node, rules: [...(node.rules ?? []), createQueueRouteRule('header')] }
+                                  : node)}
+                              >
+                                添加 Header 规则
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => updateNode(selectedNode.id, node => node.kind === 'queue-select'
+                                  ? { ...node, rules: [...(node.rules ?? []), createQueueRouteRule('model')] }
+                                  : node)}
+                              >
+                                添加 Model 规则
+                              </Button>
+                            </div>
+                          </div>
+
+                          {(selectedNode.rules ?? []).map((rule, ruleIndex) => (
+                            <div key={rule.id} className="grid gap-2 rounded-lg bg-background/60 p-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="text-xs text-muted-foreground">规则 {ruleIndex + 1}</div>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => updateNode(selectedNode.id, node => node.kind === 'queue-select'
+                                    ? { ...node, rules: (node.rules ?? []).filter(item => item.id !== rule.id) }
+                                    : node)}
+                                >
+                                  删除
+                                </Button>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="grid gap-1.5">
+                                  <Label>名称</Label>
+                                  <Input
+                                    value={rule.name}
+                                    onChange={event => updateNode(selectedNode.id, node => node.kind === 'queue-select'
+                                      ? {
+                                        ...node,
+                                        rules: (node.rules ?? []).map(item => item.id === rule.id ? { ...item, name: event.target.value } : item),
+                                      }
+                                      : node)}
+                                  />
+                                </div>
+
+                                <div className="grid gap-1.5">
+                                  <Label>范围</Label>
+                                  <Select
+                                    value={rule.scope}
+                                    onValueChange={value => updateNode(selectedNode.id, node => node.kind === 'queue-select'
+                                      ? {
+                                        ...node,
+                                        rules: (node.rules ?? []).map(item => item.id === rule.id
+                                          ? {
+                                            ...item,
+                                            scope: value as QueueRouteScope,
+                                            fieldPath: value === 'model' ? 'request.body.model' : value === 'header' ? 'request.headers.x-client-source' : item.fieldPath,
+                                          }
+                                          : item),
+                                      }
+                                      : node)}
+                                  >
+                                    <SelectTrigger className="w-full"><SelectValue placeholder="scope" /></SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="header">Header</SelectItem>
+                                      <SelectItem value="model">Model</SelectItem>
+                                      <SelectItem value="custom">自定义</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="grid gap-1.5">
+                                  <Label>字段路径</Label>
+                                  <Input
+                                    value={rule.fieldPath}
+                                    onChange={event => updateNode(selectedNode.id, node => node.kind === 'queue-select'
+                                      ? {
+                                        ...node,
+                                        rules: (node.rules ?? []).map(item => item.id === rule.id ? { ...item, fieldPath: event.target.value } : item),
+                                      }
+                                      : node)}
+                                  />
+                                </div>
+
+                                <div className="grid gap-1.5">
+                                  <Label>优先级</Label>
+                                  <Input
+                                    type="number"
+                                    value={String(rule.priority)}
+                                    onChange={event => updateNode(selectedNode.id, node => {
+                                      if (node.kind !== 'queue-select') return node
+                                      const nextPriority = Number(event.target.value)
+                                      return {
+                                        ...node,
+                                        rules: (node.rules ?? []).map(item => item.id === rule.id
+                                          ? { ...item, priority: Number.isFinite(nextPriority) ? nextPriority : item.priority }
+                                          : item),
+                                      }
+                                    })}
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="grid gap-1.5">
+                                  <Label>操作符</Label>
+                                  <Select
+                                    value={rule.operator}
+                                    onValueChange={value => updateNode(selectedNode.id, node => node.kind === 'queue-select'
+                                      ? {
+                                        ...node,
+                                        rules: (node.rules ?? []).map(item => item.id === rule.id ? { ...item, operator: value as ConditionOperator } : item),
+                                      }
+                                      : node)}
+                                  >
+                                    <SelectTrigger className="w-full"><SelectValue placeholder="operator" /></SelectTrigger>
+                                    <SelectContent>
+                                      {getOperatorsByType(rule.valueType).map(operator => (
+                                        <SelectItem key={operator} value={operator}>{operator}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+
+                                <div className="grid gap-1.5">
+                                  <Label>命中队列</Label>
+                                  <Select
+                                    value={rule.queueIds[0] ?? (selectedNode.fallbackQueueId ?? 'default')}
+                                    onValueChange={value => updateNode(selectedNode.id, node => node.kind === 'queue-select'
+                                      ? {
+                                        ...node,
+                                        rules: (node.rules ?? []).map(item => item.id === rule.id ? { ...item, queueIds: [value] } : item),
+                                      }
+                                      : node)}
+                                  >
+                                    <SelectTrigger className="w-full"><SelectValue placeholder="queue" /></SelectTrigger>
+                                    <SelectContent>
+                                      {selectedNode.queueIds.map(queueId => (
+                                        <SelectItem key={queueId} value={queueId}>{queueId}</SelectItem>
+                                      ))}
+                                      {!selectedNode.queueIds.includes('default') && <SelectItem value="default">default</SelectItem>}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              </div>
+
+                              {rule.operator !== 'exists' && rule.operator !== 'isTrue' && rule.operator !== 'isFalse' && rule.operator !== 'empty' && rule.operator !== 'notEmpty' && (
+                                <div className="grid gap-1.5">
+                                  <Label>比较值</Label>
+                                  <Input
+                                    value={rule.value ?? ''}
+                                    onChange={event => updateNode(selectedNode.id, node => node.kind === 'queue-select'
+                                      ? {
+                                        ...node,
+                                        rules: (node.rules ?? []).map(item => item.id === rule.id ? { ...item, value: event.target.value } : item),
+                                      }
+                                      : node)}
+                                  />
+                                </div>
+                              )}
+
+                              <div className="flex items-center justify-between rounded-lg bg-muted/35 px-3 py-2">
+                                <span className="text-sm">启用</span>
+                                <Switch
+                                  checked={rule.enabled}
+                                  onCheckedChange={checked => updateNode(selectedNode.id, node => node.kind === 'queue-select'
+                                    ? {
+                                      ...node,
+                                      rules: (node.rules ?? []).map(item => item.id === rule.id ? { ...item, enabled: checked } : item),
+                                    }
+                                    : node)}
+                                />
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                      )}
-                    </div>
-                    <div className="rounded-lg bg-muted/45 px-3 py-2 text-xs text-muted-foreground">
-                      body 端口连接循环体，out 端口连接条件不满足或达到上限后的下游节点。循环轮次写入 metadata.loop.index。
-                    </div>
+                      </>
+                    )}
+
+                    {logicalModels.length === 0 && <div className="rounded-lg bg-warning/14 px-3 py-2 text-xs text-warning-foreground">暂无可用逻辑队列，请先在队列控制中创建。</div>}
                   </div>
                 )}
 
                 {selectedNode.kind === 'condition' && (
-                  <div className="grid gap-4">
+                  <div className="grid gap-3">
                     {conditionFieldHints.length === 0 && (
                       <div className="rounded-lg bg-muted/45 px-3 py-2 text-xs text-muted-foreground">
                         暂无可用字段，请先将会产生字段的节点连接到当前节点上游。
@@ -1614,8 +2025,8 @@ function WorkflowStudioCanvas() {
                 )}
 
                 {selectedNode.kind === 'output' && (
-                  <div className="grid gap-3">
-                    <div className="flex items-center justify-between rounded-lg bg-muted/45 px-3 py-2">
+                  <div className="grid gap-2.5">
+                    <div className="flex items-center justify-between rounded-lg bg-muted/45 px-2.5 py-2">
                       <span className="text-sm">附带完整 Trace</span>
                       <Switch
                         checked={selectedNode.includeTrace}
@@ -1635,13 +2046,6 @@ function WorkflowStudioCanvas() {
                   </div>
                 )}
               </div>
-
-              <DrawerFooter>
-                {!isProtectedNode(selectedNode) && (
-                  <Button type="button" variant="destructive" onClick={() => rewireRemovedNode(selectedNode.id)}>删除节点</Button>
-                )}
-                <Button type="button" variant="outline" onClick={() => setDrawerOpen(false)}>关闭</Button>
-              </DrawerFooter>
             </>
           )}
         </DrawerContent>

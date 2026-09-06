@@ -1,10 +1,10 @@
 import type { Protocol } from '@common/schemas'
 
-export type WorkflowNodeKind = 'input' | 'control-input' | 'protocol-discovery' | 'condition' | 'resolver' | 'iteration' | 'loop' | 'output'
+export type WorkflowNodeKind = 'input' | 'control-input' | 'protocol-discovery' | 'condition' | 'queue-select' | 'output'
 
 export type WorkflowProtocol = Protocol | 'unknown'
 
-export type SchemaValueType = 'string' | 'number' | 'boolean' | 'enum' | 'unknown'
+export type SchemaValueType = 'string' | 'number' | 'boolean' | 'enum' | 'array' | 'unknown'
 
 export type ConditionOperator =
   | 'equals'
@@ -41,6 +41,21 @@ export interface WorkflowNodeBase {
   position: NodePosition
 }
 
+export type WorkflowSourcePort = 'out' | 'body' | 'else' | WorkflowProtocol | (string & {})
+
+export interface WorkflowEdge {
+  id: string
+  sourceNodeId: string
+  sourcePort: WorkflowSourcePort
+  targetNodeId: string
+}
+
+export interface WorkflowGraph {
+  version: 1
+  nodes: WorkflowNodeModel[]
+  edges: WorkflowEdge[]
+}
+
 export interface RouteContext {
   request: Record<string, unknown>
   metadata: Record<string, unknown>
@@ -59,7 +74,6 @@ export interface RouteContextEnvelope {
 
 export interface InputNode extends WorkflowNodeBase {
   kind: 'input'
-  next: string
 }
 
 export type ControlInputKind = 'switch' | 'select'
@@ -82,19 +96,10 @@ export interface ControlInputItem {
 export interface ControlInputNode extends WorkflowNodeBase {
   kind: 'control-input'
   controls: ControlInputItem[]
-  next: string
-}
-
-export interface ProtocolDiscoveryBranches {
-  'openai-completions': string
-  'openai-responses': string
-  'anthropic-messages': string
-  unknown: string
 }
 
 export interface ProtocolDiscoveryNode extends WorkflowNodeBase {
   kind: 'protocol-discovery'
-  branches: ProtocolDiscoveryBranches
 }
 
 export interface ConditionRule {
@@ -113,53 +118,45 @@ export interface ConditionCase {
   name: string
   logicalOperator: ConditionLogicalOperator
   conditions: ConditionRule[]
-  next: string
 }
 
 export interface ConditionNode extends WorkflowNodeBase {
   kind: 'condition'
   cases: ConditionCase[]
-  elseNext: string
 }
 
-export interface ResolverMatchRule {
-  field: string
-  operator: 'equalsInput'
+export interface QueueSelectNode extends WorkflowNodeBase {
+  kind: 'queue-select'
+  queueIds: string[]
+  mode?: 'static' | 'rule-based'
+  fallbackQueueId?: string
+  modelQueueRoutes?: ModelQueueRoute[]
+  rules?: QueueRouteRule[]
+  conflictStrategy?: 'most-specific' | 'highest-priority'
 }
 
-export interface ResolverFallback {
-  type: 'reference'
-  resource: string
+export interface ModelQueueRoute {
   id: string
+  modelId: string
+  enabled: boolean
+  queueIds: string[]
 }
 
-export interface ResolverResolution {
-  resource: string
-  candidates: { source: 'catalog' | 'ids'; ids?: string[] }
-  match: ResolverMatchRule[]
-  fallback?: ResolverFallback
-}
+export type QueueRouteScope = 'header' | 'model' | 'custom'
 
-export interface ResolverNode extends WorkflowNodeBase {
-  kind: 'resolver'
-  input: { path: string }
-  resolution: ResolverResolution
-  next: string
-}
-
-export interface IterationNode extends WorkflowNodeBase {
-  kind: 'iteration'
-  input: { path: string }
-  bodyNext: string
-  next: string
-}
-
-export interface LoopNode extends WorkflowNodeBase {
-  kind: 'loop'
-  maxIterations: number
-  condition: ConditionRule
-  bodyNext: string
-  next: string
+export interface QueueRouteRule {
+  id: string
+  name: string
+  enabled: boolean
+  priority: number
+  scope: QueueRouteScope
+  fieldPath: string
+  valueType: SchemaValueType
+  operator: ConditionOperator
+  value?: string
+  secondaryValue?: string
+  enumOptions?: string[]
+  queueIds: string[]
 }
 
 export interface RuntimeLogicalModel {
@@ -168,18 +165,8 @@ export interface RuntimeLogicalModel {
   enabled: boolean
 }
 
-export interface RuntimeCandidate {
-  id: string
-  name?: string
-  enabled?: boolean
-  resource?: string
-}
-
-export interface ResolverDecision {
-  selectedId: string | null
-  resource: string
-  source: 'match' | 'fallback' | 'none'
-  matchedRule?: number
+export interface QueueSelection {
+  queueIds: string[]
   reason: string
 }
 
@@ -194,9 +181,7 @@ export type WorkflowNodeModel =
   | ControlInputNode
   | ProtocolDiscoveryNode
   | ConditionNode
-  | ResolverNode
-  | IterationNode
-  | LoopNode
+  | QueueSelectNode
   | OutputNode
 
 export interface WorkflowTrace {
@@ -211,7 +196,7 @@ export interface WorkflowTrace {
 export interface WorkflowRunResult {
   outputPayload: unknown
   protocol: WorkflowProtocol
-  resolutions: Record<string, ResolverDecision>
+  queueSelections: Record<string, QueueSelection>
   stopReason: 'output' | 'missing-next' | 'max-steps' | 'error'
   trace: WorkflowTrace[]
 }
@@ -234,5 +219,6 @@ export const DEFAULT_OPERATOR_SET: Record<SchemaValueType, ConditionOperator[]> 
   number: ['equals', 'notEquals', 'gt', 'gte', 'lt', 'lte', 'between', 'exists'],
   boolean: ['isTrue', 'isFalse', 'equals', 'notEquals', 'exists'],
   enum: ['equals', 'notEquals', 'in', 'notIn', 'exists'],
+  array: ['contains', 'notContains', 'empty', 'notEmpty', 'exists'],
   unknown: ['equals', 'notEquals', 'empty', 'notEmpty', 'exists'],
 }

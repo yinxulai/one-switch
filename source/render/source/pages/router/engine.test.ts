@@ -1,24 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { runWorkflow as runWorkflowEngine } from './engine'
-import type { ConditionCase, ConditionRule, RuntimeLogicalModel, WorkflowNodeModel } from './types'
+import type { ConditionCase, ConditionRule, WorkflowGraph, WorkflowNodeModel } from './types'
 
-const runtimeLogicalModels: RuntimeLogicalModel[] = [
-  { id: 'model-vip', name: 'gpt-4o-mini', enabled: true },
-  { id: 'model-default', name: 'default', enabled: true },
-]
+const edge = (sourceNodeId: string, sourcePort: string, targetNodeId: string) => ({ id: `${sourceNodeId}:${sourcePort}->${targetNodeId}`, sourceNodeId, sourcePort, targetNodeId })
 
-function runWorkflow(nodes: WorkflowNodeModel[], inputPayload: unknown, logicalModels = runtimeLogicalModels) {
-  return runWorkflowEngine(nodes, inputPayload, { logicalModels })
+function runWorkflow(graph: WorkflowGraph, inputPayload: unknown) {
+  return runWorkflowEngine(graph, inputPayload)
 }
 
-function singleCase(next = 'resolver', conditions: ConditionRule[] = [{ fieldPath: 'request.body.tenant', valueType: 'string', operator: 'startsWith', value: 'vip-' }]): ConditionCase {
-  return {
-    id: 'case-1',
-    name: '分支 1',
-    logicalOperator: 'and',
-    conditions,
-    next,
-  }
+function singleCase(conditions: ConditionRule[] = [{ fieldPath: 'request.body.tenant', valueType: 'string', operator: 'startsWith', value: 'vip-' }]): ConditionCase {
+  return { id: 'case-1', name: '分支 1', logicalOperator: 'and', conditions }
 }
 
 type BaseNodeOverrides = {
@@ -26,120 +17,59 @@ type BaseNodeOverrides = {
   control?: Partial<Extract<WorkflowNodeModel, { kind: 'control-input' }>>
   protocol?: Partial<Extract<WorkflowNodeModel, { kind: 'protocol-discovery' }>>
   condition?: Partial<Extract<WorkflowNodeModel, { kind: 'condition' }>>
-  resolver?: Partial<Extract<WorkflowNodeModel, { kind: 'resolver' }>>
+  queueSelect?: Partial<Extract<WorkflowNodeModel, { kind: 'queue-select' }>>
 }
 
-function createBaseNodes(overrides?: BaseNodeOverrides): WorkflowNodeModel[] {
+function createBaseGraph(overrides?: BaseNodeOverrides): WorkflowGraph {
   const conditionNode: Extract<WorkflowNodeModel, { kind: 'condition' }> = {
-    id: 'condition-gate',
-    kind: 'condition',
-    name: '租户准入判断',
-    enabled: true,
-    description: '仅放行 vip 租户',
-    position: { x: 480, y: 120 },
-    cases: [singleCase()],
-    elseNext: 'output',
-    ...overrides?.condition,
+    id: 'condition-gate', kind: 'condition', name: '租户准入判断', enabled: true, description: '仅放行 vip 租户', position: { x: 480, y: 120 }, cases: [singleCase()], ...overrides?.condition,
   }
-
   const controlNode: Extract<WorkflowNodeModel, { kind: 'control-input' }> = {
-    id: 'control-input',
-    kind: 'control-input',
-    name: '控制输入',
-    enabled: true,
-    description: '注入系统控制值',
-    position: { x: 250, y: 120 },
-    controls: [
-      {
-        id: 'feature-toggle',
-        key: 'featureEnabled',
-        label: '功能开关',
-        kind: 'switch',
-        enabled: true,
-        defaultValue: true,
-      },
-      {
-        id: 'route-mode',
-        key: 'routeMode',
-        label: '路由模式',
-        kind: 'select',
-        enabled: true,
-        defaultValue: 'balanced',
-        options: [
-          { label: 'Balanced', value: 'balanced' },
-          { label: 'Fast', value: 'fast' },
-        ],
-      },
-    ],
-    next: 'protocol',
-    ...overrides?.control,
+    id: 'control-input', kind: 'control-input', name: '控制输入', enabled: true, description: '注入系统控制值', position: { x: 250, y: 120 },
+    controls: [{ id: 'feature-toggle', key: 'featureEnabled', label: '功能开关', kind: 'switch', enabled: true, defaultValue: true }], ...overrides?.control,
   }
-
-  const resolverNode: Extract<WorkflowNodeModel, { kind: 'resolver' }> = {
-    id: 'resolver',
-    kind: 'resolver',
-    name: '模型解析',
-    enabled: true,
-    description: '根据请求 model 匹配逻辑模型',
-    position: { x: 780, y: 120 },
-    input: { path: 'request.body.model' },
-    resolution: {
-      resource: 'logical-model',
-      candidates: { source: 'catalog' },
-      match: [{ field: 'id', operator: 'equalsInput' }, { field: 'name', operator: 'equalsInput' }],
-      fallback: { type: 'reference', resource: 'logical-model', id: 'model-default' },
-    },
-    next: 'output',
-    ...overrides?.resolver,
+  const queueSelectNode: Extract<WorkflowNodeModel, { kind: 'queue-select' }> = {
+    id: 'queue-select', kind: 'queue-select', name: '队列选择', enabled: true, description: '选择逻辑队列', position: { x: 780, y: 120 }, queueIds: ['model-vip', 'model-default'], ...overrides?.queueSelect,
   }
-
-  return [
-    {
-      id: 'input',
-      kind: 'input',
-      name: '输入',
-      enabled: true,
-      description: '输入标准化',
-      position: { x: 60, y: 120 },
-      next: 'control-input',
-      ...overrides?.input,
-    },
-    controlNode,
-    {
-      id: 'protocol',
-      kind: 'protocol-discovery',
-      name: '协议发现',
-      enabled: true,
-      description: '识别请求协议并分发分支',
-      position: { x: 250, y: 120 },
-      branches: {
-        'openai-completions': 'condition-gate',
-        'openai-responses': 'condition-gate',
-        'anthropic-messages': 'condition-gate',
-        unknown: 'output',
-      },
-      ...overrides?.protocol,
-    },
-    conditionNode,
-    resolverNode,
-    {
-      id: 'output',
-      kind: 'output',
-      name: '输出',
-      enabled: true,
-      description: '路由结果输出',
-      position: { x: 1050, y: 120 },
-      includeTrace: true,
-      summaryLevel: 'detailed',
-    },
+  const nodes: WorkflowNodeModel[] = [
+    { id: 'input', kind: 'input', name: '输入', enabled: true, description: '输入标准化', position: { x: 60, y: 120 }, ...overrides?.input }, controlNode,
+    { id: 'protocol', kind: 'protocol-discovery', name: '协议发现', enabled: true, description: '识别请求协议并分发分支', position: { x: 250, y: 120 }, ...overrides?.protocol }, conditionNode, queueSelectNode,
+    { id: 'output', kind: 'output', name: '输出', enabled: true, description: '路由结果输出', position: { x: 1050, y: 120 }, includeTrace: true, summaryLevel: 'detailed' },
   ]
+  return { version: 1, nodes, edges: [
+    edge('input', 'out', 'control-input'), edge('control-input', 'out', 'protocol'), edge('protocol', 'openai-completions', 'condition-gate'), edge('protocol', 'openai-responses', 'condition-gate'), edge('protocol', 'anthropic-messages', 'condition-gate'), edge('protocol', 'unknown', 'output'), edge('condition-gate', 'case-1', 'queue-select'), edge('condition-gate', 'else', 'output'), edge('queue-select', 'out', 'output'),
+  ] }
 }
 
 describe('router engine', () => {
-  it('routes openai-completions requests through IF and resolver nodes', () => {
-    const nodes = createBaseNodes()
+  it('normalizes protocol branch payloads with model and messages for downstream outputs', () => {
+    const graph = createBaseGraph()
 
-    const result = runWorkflow(nodes, {
+    const result = runWorkflow(graph, {
+      request: {
+        path: '/v1/chat/completions',
+        headers: { 'x-provider': 'openai' },
+        body: {
+          tenant: 'vip-cn',
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: 'hello world' }],
+        },
+      },
+      metadata: { source: 'desktop' },
+    })
+
+    const normalized = (result.outputPayload as { metadata: { protocolOutput?: { protocol: string; model: string; messages: Array<{ role: string; content: unknown }> } } }).metadata.protocolOutput
+    expect(normalized).toMatchObject({
+      protocol: 'openai-completions',
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: 'hello world' }],
+    })
+  })
+
+  it('routes openai-completions requests through IF and resolver nodes', () => {
+    const graph = createBaseGraph()
+
+    const result = runWorkflow(graph, {
       request: {
         path: '/v1/chat/completions',
         headers: { 'x-provider': 'openai' },
@@ -153,14 +83,14 @@ describe('router engine', () => {
 
     expect(result.stopReason).toBe('output')
     expect(result.protocol).toBe('openai-completions')
-    expect(result.resolutions.resolver?.selectedId).toBe('model-vip')
+    expect(result.queueSelections['queue-select']?.queueIds).toEqual(['model-vip', 'model-default'])
     expect(result.trace.some(item => item.nodeId === 'condition-gate' && item.success)).toBe(true)
   })
 
   it('injects control-input values into metadata for downstream conditions', () => {
-    const nodes = createBaseNodes({
+    const graph = createBaseGraph({
       condition: {
-        cases: [singleCase('resolver', [{
+        cases: [singleCase([{ 
           fieldPath: 'metadata.controls.featureEnabled',
           valueType: 'boolean',
           operator: 'isTrue',
@@ -180,7 +110,7 @@ describe('router engine', () => {
       },
     })
 
-    const result = runWorkflow(nodes, {
+    const result = runWorkflow(graph, {
       request: {
         path: '/v1/chat/completions',
         headers: { 'x-provider': 'openai' },
@@ -198,9 +128,9 @@ describe('router engine', () => {
   })
 
   it('auto-detects anthropic-messages by model id without explicit rules', () => {
-    const nodes = createBaseNodes()
+    const graph = createBaseGraph()
 
-    const result = runWorkflow(nodes, {
+    const result = runWorkflow(graph, {
       request: {
         path: '/v1/messages',
         headers: {},
@@ -217,9 +147,9 @@ describe('router engine', () => {
   })
 
   it('sends unknown protocol directly to output branch', () => {
-    const nodes = createBaseNodes()
+    const graph = createBaseGraph()
 
-    const result = runWorkflow(nodes, {
+    const result = runWorkflow(graph, {
       request: {
         path: '/v2/unknown',
         headers: {},
@@ -233,13 +163,13 @@ describe('router engine', () => {
 
     expect(result.stopReason).toBe('output')
     expect(result.protocol).toBe('unknown')
-    expect(result.resolutions).toEqual({})
+    expect(result.queueSelections).toEqual({})
   })
 
-  it('falls back to the enabled default logical model when request model is unknown', () => {
-    const nodes = createBaseNodes()
+  it('保留条件命中后的队列选择结果', () => {
+    const graph = createBaseGraph()
 
-    const result = runWorkflow(nodes, {
+    const result = runWorkflow(graph, {
       request: {
         path: '/v1/chat/completions',
         headers: { 'x-provider': 'openai' },
@@ -252,12 +182,11 @@ describe('router engine', () => {
     })
 
     expect(result.stopReason).toBe('output')
-    expect(result.resolutions.resolver?.selectedId).toBe('model-default')
-    expect(result.resolutions.resolver?.source).toBe('fallback')
+    expect(result.queueSelections['queue-select']?.queueIds).toEqual(['model-vip', 'model-default'])
   })
 
-  it('matches a request model by logical model id', () => {
-    const result = runWorkflow(createBaseNodes(), {
+  it('保留队列选择节点的稳定结果', () => {
+    const result = runWorkflow(createBaseGraph(), {
       request: {
         path: '/v1/chat/completions',
         headers: { 'x-provider': 'openai' },
@@ -269,15 +198,14 @@ describe('router engine', () => {
       metadata: {},
     })
 
-    expect(result.resolutions.resolver?.selectedId).toBe('model-vip')
-    expect(result.resolutions.resolver?.source).toBe('match')
+    expect(result.queueSelections['queue-select']?.queueIds).toEqual(['model-vip', 'model-default'])
   })
 
   it('returns an error when the input node is missing', () => {
-    const nodes = createBaseNodes()
-      .filter(node => node.kind !== 'input')
+    const graph = createBaseGraph()
+    graph.nodes = graph.nodes.filter(node => node.kind !== 'input')
 
-    const result = runWorkflow(nodes, {
+    const result = runWorkflow(graph, {
       request: {
         path: '/v1/chat/completions',
         headers: { 'x-provider': 'openai' },
@@ -290,25 +218,20 @@ describe('router engine', () => {
     })
 
     expect(result.stopReason).toBe('error')
-    expect(result.resolutions).toEqual({})
+    expect(result.queueSelections).toEqual({})
     expect(result.trace).toHaveLength(1)
     expect(result.trace[0]?.message).toBe('缺少输入节点')
   })
 
   it('skips a disabled protocol-discovery node and follows the unknown branch', () => {
-    const nodes = createBaseNodes({
+    const graph = createBaseGraph({
       protocol: {
         enabled: false,
-        branches: {
-          'openai-completions': 'condition-gate',
-          'openai-responses': 'condition-gate',
-          'anthropic-messages': 'condition-gate',
-          unknown: 'output',
-        },
+
       },
     })
 
-    const result = runWorkflow(nodes, {
+    const result = runWorkflow(graph, {
       request: {
         path: '/v1/chat/completions',
         headers: { 'x-provider': 'openai' },
@@ -322,46 +245,34 @@ describe('router engine', () => {
 
     expect(result.stopReason).toBe('output')
     expect(result.protocol).toBe('unknown')
-    expect(result.resolutions).toEqual({})
+    expect(result.queueSelections).toEqual({})
     expect(result.trace.some(item => item.nodeId === 'protocol' && item.message === '节点禁用，跳过')).toBe(true)
   })
 
-  it('records an unmatched resolver without legacy route output', () => {
-    const nodes = createBaseNodes({
-      protocol: {
-        branches: {
-          'openai-completions': 'condition-gate',
-          'openai-responses': 'condition-gate',
-          'anthropic-messages': 'condition-gate',
-          unknown: 'condition-gate',
-        },
-      },
-    })
+  it('不生成旧 routeDecision 或 targetQueue 字段', () => {
+    const graph = createBaseGraph()
+    graph.edges = graph.edges.map(item => item.sourceNodeId === 'protocol' && item.sourcePort === 'unknown' ? { ...item, targetNodeId: 'condition-gate' } : item)
 
-    const result = runWorkflow(nodes, {
+    const result = runWorkflow(graph, {
       request: {
         path: '/v2/unknown',
         headers: {},
-        body: {
-          tenant: 'vip-cn',
-          model: 'gpt-4o-mini',
-        },
+        body: { tenant: 'vip-cn', model: 'gpt-4o-mini' },
       },
       metadata: {},
-    }, [])
+    })
 
     expect(result.stopReason).toBe('output')
-    expect(result.resolutions.resolver?.selectedId).toBeNull()
-    expect(result.resolutions.resolver?.source).toBe('none')
+    expect(result.queueSelections['queue-select']?.queueIds).toEqual(['model-vip', 'model-default'])
     expect(result).not.toHaveProperty('routeDecision')
     expect(result).not.toHaveProperty('targetQueue')
   })
 
   it('supports multiple IF branches with OR and ELSE fallback', () => {
-    const nodes = createBaseNodes({
+    const graph = createBaseGraph({
       condition: {
         cases: [
-          singleCase('resolver', [{ fieldPath: 'request.body.tenant', valueType: 'string', operator: 'equals', value: 'vip-cn' }]),
+          singleCase([{ fieldPath: 'request.body.tenant', valueType: 'string', operator: 'equals', value: 'vip-cn' }]),
           {
             id: 'case-2',
             name: '高优先级',
@@ -370,14 +281,14 @@ describe('router engine', () => {
               { fieldPath: 'request.body.priority', valueType: 'number', operator: 'gte', value: '5' },
               { fieldPath: 'request.body.tenant', valueType: 'string', operator: 'equals', value: 'internal' },
             ],
-            next: 'output',
           },
         ],
-        elseNext: 'output',
       },
     })
 
-    const result = runWorkflow(nodes, {
+    graph.edges.push(edge('condition-gate', 'case-2', 'queue-select'))
+
+    const result = runWorkflow(graph, {
       request: {
         path: '/v1/chat/completions',
         headers: { 'x-provider': 'openai' },
@@ -393,9 +304,9 @@ describe('router engine', () => {
   })
 
   it('supports numeric between condition operator', () => {
-    const nodes = createBaseNodes({
+    const graph = createBaseGraph({
       condition: {
-        cases: [singleCase('resolver', [{
+        cases: [singleCase([{ 
           fieldPath: 'request.body.priority',
           valueType: 'number',
           operator: 'between',
@@ -405,7 +316,7 @@ describe('router engine', () => {
       },
     })
 
-    const pass = runWorkflow(nodes, {
+    const pass = runWorkflow(graph, {
       request: {
         path: '/v1/chat/completions',
         headers: { 'x-provider': 'openai' },
@@ -417,7 +328,7 @@ describe('router engine', () => {
       metadata: {},
     })
 
-    const fail = runWorkflow(nodes, {
+    const fail = runWorkflow(graph, {
       request: {
         path: '/v1/chat/completions',
         headers: { 'x-provider': 'openai' },
@@ -429,35 +340,238 @@ describe('router engine', () => {
       metadata: {},
     })
 
-    expect(pass.resolutions.resolver?.selectedId).toBe('model-vip')
-    expect(fail.resolutions).toEqual({})
+    expect(pass.queueSelections['queue-select']?.queueIds).toEqual(['model-vip', 'model-default'])
+    expect(fail.queueSelections).toEqual({})
     expect(fail.trace.some(item => item.nodeId === 'condition-gate' && !item.success)).toBe(true)
   })
 
   it('迭代节点遍历数组并在完成后从 out 端口退出', () => {
     const nodes: WorkflowNodeModel[] = [
-      { id: 'input', kind: 'input', name: '输入', enabled: true, description: '', position: { x: 0, y: 0 }, next: 'iteration' },
-      { id: 'iteration', kind: 'iteration', name: '迭代', enabled: true, description: '', position: { x: 100, y: 0 }, input: { path: 'request.body.items' }, bodyNext: 'control', next: 'output' },
-      { id: 'control', kind: 'control-input', name: '循环体', enabled: true, description: '', position: { x: 200, y: 0 }, controls: [], next: 'iteration' },
+      { id: 'input', kind: 'input', name: '输入', enabled: true, description: '', position: { x: 0, y: 0 } },
+      { id: 'queue-select', kind: 'queue-select', name: '队列选择', enabled: true, description: '', position: { x: 100, y: 0 }, queueIds: ['model-a', 'model-b'] },
+      { id: 'control', kind: 'control-input', name: '下游', enabled: true, description: '', position: { x: 200, y: 0 }, controls: [] },
       { id: 'output', kind: 'output', name: '输出', enabled: true, description: '', position: { x: 300, y: 0 }, includeTrace: true, summaryLevel: 'brief' },
     ]
-    const result = runWorkflow(nodes, { request: { body: { items: ['a', 'b', 'c'] } }, metadata: {} })
+    const result = runWorkflow({ version: 1, nodes, edges: [edge('input', 'out', 'queue-select'), edge('queue-select', 'out', 'control'), edge('control', 'out', 'output')] }, { request: { body: { items: ['a', 'b', 'c'] } }, metadata: {} })
     expect(result.stopReason).toBe('output')
-    expect(result.trace.filter(item => item.nodeId === 'iteration' && item.message.startsWith('迭代 '))).toHaveLength(3)
-    expect(result.trace.some(item => item.nodeId === 'iteration' && item.message === '迭代完成，共 3 项')).toBe(true)
-    expect((result.outputPayload as { metadata: Record<string, unknown> }).metadata.iteration).toBeUndefined()
+    expect(result.queueSelections['queue-select']?.queueIds).toEqual(['model-a', 'model-b'])
+    expect((result.outputPayload as { metadata: Record<string, unknown> }).metadata).not.toHaveProperty('iteration')
   })
 
-  it('循环节点按条件执行循环体并在达到上限后退出', () => {
+  it('队列选择节点去重并保持选择顺序', () => {
     const nodes: WorkflowNodeModel[] = [
-      { id: 'input', kind: 'input', name: '输入', enabled: true, description: '', position: { x: 0, y: 0 }, next: 'loop' },
-      { id: 'loop', kind: 'loop', name: '循环', enabled: true, description: '', position: { x: 100, y: 0 }, maxIterations: 2, condition: { fieldPath: 'request.body.continue', valueType: 'boolean', operator: 'isTrue' }, bodyNext: 'control', next: 'output' },
-      { id: 'control', kind: 'control-input', name: '循环体', enabled: true, description: '', position: { x: 200, y: 0 }, controls: [], next: 'loop' },
+      { id: 'input', kind: 'input', name: '输入', enabled: true, description: '', position: { x: 0, y: 0 } },
+      { id: 'queue-select', kind: 'queue-select', name: '队列选择', enabled: true, description: '', position: { x: 100, y: 0 }, queueIds: ['model-a', 'model-a', 'model-b'] },
       { id: 'output', kind: 'output', name: '输出', enabled: true, description: '', position: { x: 300, y: 0 }, includeTrace: true, summaryLevel: 'brief' },
     ]
-    const result = runWorkflow(nodes, { request: { body: { continue: true } }, metadata: {} })
-    expect(result.stopReason).toBe('output')
-    expect(result.trace.filter(item => item.nodeId === 'loop' && item.message.includes('条件满足'))).toHaveLength(2)
-    expect(result.trace.some(item => item.message === '达到最大迭代次数 2，退出循环')).toBe(true)
+    const result = runWorkflow({ version: 1, nodes, edges: [edge('input', 'out', 'queue-select'), edge('queue-select', 'out', 'output')] }, { request: { body: {} }, metadata: {} })
+    expect(result.queueSelections['queue-select']?.queueIds).toEqual(['model-a', 'model-b'])
+    expect((result.outputPayload as { queueIds: string[] }).queueIds).toEqual(['model-a', 'model-b'])
+  })
+
+  it('rule-based 模式优先命中模型直达规则', () => {
+    const graph = createBaseGraph({
+      queueSelect: {
+        mode: 'rule-based',
+        fallbackQueueId: 'default',
+        queueIds: ['default', 'premium-lane', 'model-fast-lane'],
+        modelQueueRoutes: [
+          { id: 'model-route-1', modelId: 'gpt-4o-mini', enabled: true, queueIds: ['model-fast-lane'] },
+        ],
+        rules: [
+          {
+            id: 'header-rule-1',
+            name: 'VIP Header',
+            enabled: true,
+            priority: 10,
+            scope: 'header',
+            fieldPath: 'request.headers.x-client-source',
+            valueType: 'string',
+            operator: 'equals',
+            value: 'vip-app',
+            queueIds: ['premium-lane'],
+          },
+        ],
+      },
+    })
+
+    const result = runWorkflow(graph, {
+      request: {
+        path: '/v1/chat/completions',
+        headers: { 'x-provider': 'openai', 'x-client-source': 'vip-app' },
+        body: { tenant: 'vip-cn', model: 'gpt-4o-mini' },
+      },
+      metadata: {},
+    })
+
+    expect(result.queueSelections['queue-select']?.queueIds).toEqual(['model-fast-lane'])
+    expect(result.trace.some(item => item.nodeId === 'queue-select' && item.message.includes('模型直达命中'))).toBe(true)
+  })
+
+  it('支持 header 规则分流并可被控制输入关闭', () => {
+    const graph = createBaseGraph({
+      queueSelect: {
+        mode: 'rule-based',
+        fallbackQueueId: 'default',
+        queueIds: ['default', 'premium-lane'],
+        modelQueueRoutes: [],
+        rules: [
+          {
+            id: 'header-rule-1',
+            name: 'VIP Header',
+            enabled: true,
+            priority: 10,
+            scope: 'header',
+            fieldPath: 'request.headers.x-client-source',
+            valueType: 'string',
+            operator: 'in',
+            value: 'vip-app,vip-sdk',
+            queueIds: ['premium-lane'],
+          },
+        ],
+      },
+      control: {
+        controls: [
+          { id: 'control-header', key: 'enableHeaderRouting', label: 'Header 分流', kind: 'switch', enabled: true, defaultValue: true },
+          { id: 'control-default', key: 'defaultQueueId', label: '默认队列', kind: 'select', enabled: true, defaultValue: 'default', options: [{ label: 'default', value: 'default' }] },
+        ],
+      },
+    })
+
+    const payload = {
+      request: {
+        path: '/v1/chat/completions',
+        headers: { 'x-provider': 'openai', 'x-client-source': 'vip-sdk' },
+        body: { tenant: 'vip-cn', model: 'any-model' },
+      },
+      metadata: {},
+    }
+
+    const enabledResult = runWorkflow(graph, payload)
+    expect(enabledResult.queueSelections['queue-select']?.queueIds).toEqual(['premium-lane'])
+
+    const disabledGraph = createBaseGraph({
+      queueSelect: graph.nodes.find(node => node.id === 'queue-select' && node.kind === 'queue-select') as Extract<WorkflowNodeModel, { kind: 'queue-select' }>,
+      control: {
+        controls: [
+          { id: 'control-header', key: 'enableHeaderRouting', label: 'Header 分流', kind: 'switch', enabled: true, defaultValue: false },
+          { id: 'control-default', key: 'defaultQueueId', label: '默认队列', kind: 'select', enabled: true, defaultValue: 'default', options: [{ label: 'default', value: 'default' }] },
+        ],
+      },
+    })
+    const disabledResult = runWorkflow(disabledGraph, payload)
+    expect(disabledResult.queueSelections['queue-select']?.queueIds).toEqual(['default'])
+  })
+
+  it('支持 model 规则分流并在未命中时回退默认队列', () => {
+    const graph = createBaseGraph({
+      queueSelect: {
+        mode: 'rule-based',
+        fallbackQueueId: 'default',
+        queueIds: ['default', 'anthropic-main'],
+        modelQueueRoutes: [],
+        rules: [
+          {
+            id: 'model-rule-1',
+            name: 'Claude Prefix',
+            enabled: true,
+            priority: 30,
+            scope: 'model',
+            fieldPath: 'request.body.model',
+            valueType: 'string',
+            operator: 'startsWith',
+            value: 'claude',
+            queueIds: ['anthropic-main'],
+          },
+        ],
+      },
+      control: {
+        controls: [
+          { id: 'control-model', key: 'enableModelRouting', label: 'Model 分流', kind: 'switch', enabled: true, defaultValue: true },
+          { id: 'control-default', key: 'defaultQueueId', label: '默认队列', kind: 'select', enabled: true, defaultValue: 'default', options: [{ label: 'default', value: 'default' }] },
+        ],
+      },
+    })
+
+    const hit = runWorkflow(graph, {
+      request: {
+        path: '/v1/chat/completions',
+        headers: { 'x-provider': 'openai' },
+        body: { tenant: 'vip-cn', model: 'claude-sonnet-4' },
+      },
+      metadata: {},
+    })
+    expect(hit.queueSelections['queue-select']?.queueIds).toEqual(['anthropic-main'])
+
+    const miss = runWorkflow(graph, {
+      request: {
+        path: '/v1/chat/completions',
+        headers: { 'x-provider': 'openai' },
+        body: { tenant: 'vip-cn', model: 'other-model' },
+      },
+      metadata: {},
+    })
+    expect(miss.queueSelections['queue-select']?.queueIds).toEqual(['default'])
+  })
+
+  it('同命中下按冲突策略选择规则', () => {
+    const baseRules = [
+      {
+        id: 'rule-a',
+        name: '包含 gpt',
+        enabled: true,
+        priority: 5,
+        scope: 'model' as const,
+        fieldPath: 'request.body.model',
+        valueType: 'string' as const,
+        operator: 'contains' as const,
+        value: 'gpt',
+        queueIds: ['queue-a'],
+      },
+      {
+        id: 'rule-b',
+        name: '前缀 gpt-4',
+        enabled: true,
+        priority: 50,
+        scope: 'model' as const,
+        fieldPath: 'request.body.model',
+        valueType: 'string' as const,
+        operator: 'startsWith' as const,
+        value: 'gpt-4',
+        queueIds: ['queue-b'],
+      },
+    ]
+
+    const specificFirst = createBaseGraph({
+      queueSelect: {
+        mode: 'rule-based',
+        queueIds: ['default', 'queue-a', 'queue-b'],
+        fallbackQueueId: 'default',
+        conflictStrategy: 'most-specific',
+        rules: baseRules,
+        modelQueueRoutes: [],
+      },
+    })
+    const specificResult = runWorkflow(specificFirst, {
+      request: { path: '/v1/chat/completions', headers: { 'x-provider': 'openai' }, body: { tenant: 'vip-cn', model: 'gpt-4o-mini' } },
+      metadata: {},
+    })
+    expect(specificResult.queueSelections['queue-select']?.queueIds).toEqual(['queue-b'])
+
+    const priorityFirst = createBaseGraph({
+      queueSelect: {
+        mode: 'rule-based',
+        queueIds: ['default', 'queue-a', 'queue-b'],
+        fallbackQueueId: 'default',
+        conflictStrategy: 'highest-priority',
+        rules: baseRules,
+        modelQueueRoutes: [],
+      },
+    })
+    const priorityResult = runWorkflow(priorityFirst, {
+      request: { path: '/v1/chat/completions', headers: { 'x-provider': 'openai' }, body: { tenant: 'vip-cn', model: 'gpt-4o-mini' } },
+      metadata: {},
+    })
+    expect(priorityResult.queueSelections['queue-select']?.queueIds).toEqual(['queue-a'])
   })
 })
