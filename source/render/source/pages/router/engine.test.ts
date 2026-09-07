@@ -37,7 +37,15 @@ function createBaseGraph(overrides?: BaseNodeOverrides): WorkflowGraph {
     { id: 'output', kind: 'output', name: '输出', enabled: true, description: '路由结果输出', position: { x: 1050, y: 120 }, includeTrace: true, summaryLevel: 'detailed' },
   ]
   return { version: 1, nodes, edges: [
-    edge('input', 'out', 'control-input'), edge('control-input', 'out', 'protocol'), edge('protocol', 'openai-completions', 'condition-gate'), edge('protocol', 'openai-responses', 'condition-gate'), edge('protocol', 'anthropic-messages', 'condition-gate'), edge('protocol', 'unknown', 'output'), edge('condition-gate', 'case-1', 'queue-select'), edge('condition-gate', 'else', 'output'), edge('queue-select', 'out', 'output'),
+    edge('input', 'out', 'control-input'),
+    edge('control-input', 'out', 'protocol'),
+    edge('protocol', 'openai-completions', 'condition-gate'),
+    edge('protocol', 'openai-responses', 'condition-gate'),
+    edge('protocol', 'anthropic-messages', 'condition-gate'),
+    edge('protocol', 'unknown', 'output'),
+    edge('condition-gate', 'case-1', 'queue-select'),
+    edge('condition-gate', 'else', 'output'),
+    edge('queue-select', 'out', 'output'),
   ] }
 }
 
@@ -61,9 +69,34 @@ describe('router engine', () => {
     const normalized = (result.outputPayload as { metadata: { protocolOutput?: { protocol: string; model: string; messages: Array<{ role: string; content: unknown }> } } }).metadata.protocolOutput
     expect(normalized).toMatchObject({
       protocol: 'openai-completions',
+      transport: 'http',
       model: 'gpt-4o-mini',
       messages: [{ role: 'user', content: 'hello world' }],
     })
+  })
+
+  it('detects http-sse transport and writes transport metadata', () => {
+    const graph = createBaseGraph()
+
+    const result = runWorkflow(graph, {
+      request: {
+        path: '/v1/chat/completions',
+        headers: {
+          'x-provider': 'openai',
+          accept: 'text/event-stream',
+        },
+        body: {
+          tenant: 'vip-cn',
+          model: 'gpt-4o-mini',
+          stream: true,
+        },
+      },
+      metadata: {},
+    })
+
+    const payload = result.outputPayload as { metadata: { transport: string; protocolOutput: { transport: string } } }
+    expect(payload.metadata.transport).toBe('http-sse')
+    expect(payload.metadata.protocolOutput.transport).toBe('http-sse')
   })
 
   it('routes openai-completions requests through IF and resolver nodes', () => {
@@ -144,6 +177,96 @@ describe('router engine', () => {
 
     expect(result.stopReason).toBe('output')
     expect(result.protocol).toBe('anthropic-messages')
+  })
+
+  it('supports request.headers as string array when discovering protocol', () => {
+    const graph = createBaseGraph()
+
+    const result = runWorkflow(graph, {
+      request: {
+        path: '/v1/chat/completions',
+        headers: { 'x-provider': ['openai'] },
+        body: {
+          tenant: 'vip-cn',
+          model: 'gpt-4o-mini',
+        },
+      },
+      metadata: {},
+    })
+
+    expect(result.stopReason).toBe('output')
+    expect(result.protocol).toBe('openai-completions')
+  })
+
+  it('exposes requestModelInQueues for condition checks', () => {
+    const graph = createBaseGraph({
+      condition: {
+        cases: [singleCase([{ 
+          fieldPath: 'metadata.router.requestModelInQueues',
+          valueType: 'boolean',
+          operator: 'isTrue',
+        }])],
+      },
+      queueSelect: {
+        queueIds: ['queue-hit'],
+      },
+    })
+
+    const hit = runWorkflow(graph, {
+      request: {
+        path: '/v1/chat/completions',
+        headers: { 'x-provider': ['openai'] },
+        body: { tenant: 'any', model: 'queue-hit' },
+      },
+      queues: [
+        { id: 'queue-hit', name: 'Queue Hit', enabled: true },
+        { id: 'queue-fallback', name: 'Queue Fallback', enabled: true },
+      ],
+      metadata: {},
+    })
+
+    expect(hit.stopReason).toBe('output')
+    expect(hit.queueSelections['queue-select']?.queueIds).toEqual(['queue-hit'])
+
+    const payload = hit.outputPayload as { metadata: { router: { requestModelInQueues: boolean; queueIds: string[] } } }
+    expect(payload.metadata.router.requestModelInQueues).toBe(true)
+    expect(payload.metadata.router.queueIds).toEqual(['queue-hit', 'queue-fallback'])
+  })
+
+  it('exposes normalized protocol output fields for downstream conditions', () => {
+    const graph = createBaseGraph({
+      condition: {
+        cases: [singleCase([
+          {
+            fieldPath: 'metadata.protocolOutput.model',
+            valueType: 'string',
+            operator: 'equals',
+            value: 'gpt-4o-mini',
+          },
+          {
+            fieldPath: 'metadata.protocolOutput.messages',
+            valueType: 'array',
+            operator: 'notEmpty',
+          },
+        ])],
+      },
+    })
+
+    const result = runWorkflow(graph, {
+      request: {
+        path: '/v1/chat/completions',
+        headers: { 'x-provider': ['openai'] },
+        body: {
+          tenant: 'vip-cn',
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: 'hello world' }],
+        },
+      },
+      metadata: {},
+    })
+
+    expect(result.stopReason).toBe('output')
+    expect(result.trace.some(item => item.nodeId === 'condition-gate' && item.success)).toBe(true)
   })
 
   it('sends unknown protocol directly to output branch', () => {
@@ -367,211 +490,5 @@ describe('router engine', () => {
     const result = runWorkflow({ version: 1, nodes, edges: [edge('input', 'out', 'queue-select'), edge('queue-select', 'out', 'output')] }, { request: { body: {} }, metadata: {} })
     expect(result.queueSelections['queue-select']?.queueIds).toEqual(['model-a', 'model-b'])
     expect((result.outputPayload as { queueIds: string[] }).queueIds).toEqual(['model-a', 'model-b'])
-  })
-
-  it('rule-based 模式优先命中模型直达规则', () => {
-    const graph = createBaseGraph({
-      queueSelect: {
-        mode: 'rule-based',
-        fallbackQueueId: 'default',
-        queueIds: ['default', 'premium-lane', 'model-fast-lane'],
-        modelQueueRoutes: [
-          { id: 'model-route-1', modelId: 'gpt-4o-mini', enabled: true, queueIds: ['model-fast-lane'] },
-        ],
-        rules: [
-          {
-            id: 'header-rule-1',
-            name: 'VIP Header',
-            enabled: true,
-            priority: 10,
-            scope: 'header',
-            fieldPath: 'request.headers.x-client-source',
-            valueType: 'string',
-            operator: 'equals',
-            value: 'vip-app',
-            queueIds: ['premium-lane'],
-          },
-        ],
-      },
-    })
-
-    const result = runWorkflow(graph, {
-      request: {
-        path: '/v1/chat/completions',
-        headers: { 'x-provider': 'openai', 'x-client-source': 'vip-app' },
-        body: { tenant: 'vip-cn', model: 'gpt-4o-mini' },
-      },
-      metadata: {},
-    })
-
-    expect(result.queueSelections['queue-select']?.queueIds).toEqual(['model-fast-lane'])
-    expect(result.trace.some(item => item.nodeId === 'queue-select' && item.message.includes('模型直达命中'))).toBe(true)
-  })
-
-  it('支持 header 规则分流并可被控制输入关闭', () => {
-    const graph = createBaseGraph({
-      queueSelect: {
-        mode: 'rule-based',
-        fallbackQueueId: 'default',
-        queueIds: ['default', 'premium-lane'],
-        modelQueueRoutes: [],
-        rules: [
-          {
-            id: 'header-rule-1',
-            name: 'VIP Header',
-            enabled: true,
-            priority: 10,
-            scope: 'header',
-            fieldPath: 'request.headers.x-client-source',
-            valueType: 'string',
-            operator: 'in',
-            value: 'vip-app,vip-sdk',
-            queueIds: ['premium-lane'],
-          },
-        ],
-      },
-      control: {
-        controls: [
-          { id: 'control-header', key: 'enableHeaderRouting', label: 'Header 分流', kind: 'switch', enabled: true, defaultValue: true },
-          { id: 'control-default', key: 'defaultQueueId', label: '默认队列', kind: 'select', enabled: true, defaultValue: 'default', options: [{ label: 'default', value: 'default' }] },
-        ],
-      },
-    })
-
-    const payload = {
-      request: {
-        path: '/v1/chat/completions',
-        headers: { 'x-provider': 'openai', 'x-client-source': 'vip-sdk' },
-        body: { tenant: 'vip-cn', model: 'any-model' },
-      },
-      metadata: {},
-    }
-
-    const enabledResult = runWorkflow(graph, payload)
-    expect(enabledResult.queueSelections['queue-select']?.queueIds).toEqual(['premium-lane'])
-
-    const disabledGraph = createBaseGraph({
-      queueSelect: graph.nodes.find(node => node.id === 'queue-select' && node.kind === 'queue-select') as Extract<WorkflowNodeModel, { kind: 'queue-select' }>,
-      control: {
-        controls: [
-          { id: 'control-header', key: 'enableHeaderRouting', label: 'Header 分流', kind: 'switch', enabled: true, defaultValue: false },
-          { id: 'control-default', key: 'defaultQueueId', label: '默认队列', kind: 'select', enabled: true, defaultValue: 'default', options: [{ label: 'default', value: 'default' }] },
-        ],
-      },
-    })
-    const disabledResult = runWorkflow(disabledGraph, payload)
-    expect(disabledResult.queueSelections['queue-select']?.queueIds).toEqual(['default'])
-  })
-
-  it('支持 model 规则分流并在未命中时回退默认队列', () => {
-    const graph = createBaseGraph({
-      queueSelect: {
-        mode: 'rule-based',
-        fallbackQueueId: 'default',
-        queueIds: ['default', 'anthropic-main'],
-        modelQueueRoutes: [],
-        rules: [
-          {
-            id: 'model-rule-1',
-            name: 'Claude Prefix',
-            enabled: true,
-            priority: 30,
-            scope: 'model',
-            fieldPath: 'request.body.model',
-            valueType: 'string',
-            operator: 'startsWith',
-            value: 'claude',
-            queueIds: ['anthropic-main'],
-          },
-        ],
-      },
-      control: {
-        controls: [
-          { id: 'control-model', key: 'enableModelRouting', label: 'Model 分流', kind: 'switch', enabled: true, defaultValue: true },
-          { id: 'control-default', key: 'defaultQueueId', label: '默认队列', kind: 'select', enabled: true, defaultValue: 'default', options: [{ label: 'default', value: 'default' }] },
-        ],
-      },
-    })
-
-    const hit = runWorkflow(graph, {
-      request: {
-        path: '/v1/chat/completions',
-        headers: { 'x-provider': 'openai' },
-        body: { tenant: 'vip-cn', model: 'claude-sonnet-4' },
-      },
-      metadata: {},
-    })
-    expect(hit.queueSelections['queue-select']?.queueIds).toEqual(['anthropic-main'])
-
-    const miss = runWorkflow(graph, {
-      request: {
-        path: '/v1/chat/completions',
-        headers: { 'x-provider': 'openai' },
-        body: { tenant: 'vip-cn', model: 'other-model' },
-      },
-      metadata: {},
-    })
-    expect(miss.queueSelections['queue-select']?.queueIds).toEqual(['default'])
-  })
-
-  it('同命中下按冲突策略选择规则', () => {
-    const baseRules = [
-      {
-        id: 'rule-a',
-        name: '包含 gpt',
-        enabled: true,
-        priority: 5,
-        scope: 'model' as const,
-        fieldPath: 'request.body.model',
-        valueType: 'string' as const,
-        operator: 'contains' as const,
-        value: 'gpt',
-        queueIds: ['queue-a'],
-      },
-      {
-        id: 'rule-b',
-        name: '前缀 gpt-4',
-        enabled: true,
-        priority: 50,
-        scope: 'model' as const,
-        fieldPath: 'request.body.model',
-        valueType: 'string' as const,
-        operator: 'startsWith' as const,
-        value: 'gpt-4',
-        queueIds: ['queue-b'],
-      },
-    ]
-
-    const specificFirst = createBaseGraph({
-      queueSelect: {
-        mode: 'rule-based',
-        queueIds: ['default', 'queue-a', 'queue-b'],
-        fallbackQueueId: 'default',
-        conflictStrategy: 'most-specific',
-        rules: baseRules,
-        modelQueueRoutes: [],
-      },
-    })
-    const specificResult = runWorkflow(specificFirst, {
-      request: { path: '/v1/chat/completions', headers: { 'x-provider': 'openai' }, body: { tenant: 'vip-cn', model: 'gpt-4o-mini' } },
-      metadata: {},
-    })
-    expect(specificResult.queueSelections['queue-select']?.queueIds).toEqual(['queue-b'])
-
-    const priorityFirst = createBaseGraph({
-      queueSelect: {
-        mode: 'rule-based',
-        queueIds: ['default', 'queue-a', 'queue-b'],
-        fallbackQueueId: 'default',
-        conflictStrategy: 'highest-priority',
-        rules: baseRules,
-        modelQueueRoutes: [],
-      },
-    })
-    const priorityResult = runWorkflow(priorityFirst, {
-      request: { path: '/v1/chat/completions', headers: { 'x-provider': 'openai' }, body: { tenant: 'vip-cn', model: 'gpt-4o-mini' } },
-      metadata: {},
-    })
-    expect(priorityResult.queueSelections['queue-select']?.queueIds).toEqual(['queue-a'])
   })
 })

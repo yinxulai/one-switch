@@ -1,5 +1,20 @@
 import { z } from 'zod'
 
+const HeaderValueSchema = z.union([z.string(), z.array(z.string())])
+
+const WorkflowQueueContextSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  enabled: z.boolean(),
+})
+
+const RequestPayloadSchema = z.object({
+  path: z.string().optional(),
+  method: z.string().optional(),
+  headers: z.record(z.string(), HeaderValueSchema).optional(),
+  body: z.record(z.string(), z.unknown()).optional(),
+}).catchall(z.unknown())
+
 const NodePositionSchema = z.object({
   x: z.number(),
   y: z.number(),
@@ -51,28 +66,6 @@ const ConditionRuleSchema = z.object({
   enumOptions: z.array(z.string()).optional(),
 })
 
-const QueueSelectRuleSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1),
-  enabled: z.boolean(),
-  priority: z.number().int(),
-  scope: z.enum(['header', 'model', 'custom']),
-  fieldPath: z.string().min(1),
-  valueType: z.enum(['string', 'number', 'boolean', 'enum', 'array', 'unknown']),
-  operator: z.enum(['equals', 'notEquals', 'contains', 'notContains', 'startsWith', 'endsWith', 'in', 'notIn', 'regex', 'gt', 'gte', 'lt', 'lte', 'between', 'isTrue', 'isFalse', 'empty', 'notEmpty', 'exists']),
-  value: z.string().optional(),
-  secondaryValue: z.string().optional(),
-  enumOptions: z.array(z.string()).optional(),
-  queueIds: z.array(z.string().min(1)).min(1),
-})
-
-const ModelQueueRouteSchema = z.object({
-  id: z.string().min(1),
-  modelId: z.string().min(1),
-  enabled: z.boolean(),
-  queueIds: z.array(z.string().min(1)).min(1),
-})
-
 const ConditionCaseSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
@@ -88,11 +81,6 @@ const ConditionNodeSchema = WorkflowNodeBaseSchema.extend({
 const QueueSelectNodeSchema = WorkflowNodeBaseSchema.extend({
   kind: z.literal('queue-select'),
   queueIds: z.array(z.string().min(1)).min(1),
-  mode: z.enum(['static', 'rule-based']).optional(),
-  fallbackQueueId: z.string().min(1).optional(),
-  modelQueueRoutes: z.array(ModelQueueRouteSchema).optional(),
-  rules: z.array(QueueSelectRuleSchema).optional(),
-  conflictStrategy: z.enum(['most-specific', 'highest-priority']).optional(),
 })
 
 const OutputNodeSchema = WorkflowNodeBaseSchema.extend({
@@ -124,6 +112,7 @@ export const WorkflowGraphSchema = z.object({
 })
 
 export const RouteContextInputSchema = z.object({
-  request: z.record(z.string(), z.unknown()),
+  request: RequestPayloadSchema,
+  queues: z.array(WorkflowQueueContextSchema).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 })

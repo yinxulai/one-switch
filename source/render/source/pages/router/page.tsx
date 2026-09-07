@@ -64,10 +64,7 @@ import {
   type ControlInputItem,
   type ControlInputKind,
   type ConditionOperator,
-  type ModelQueueRoute,
   type NodePosition,
-  type QueueRouteRule,
-  type QueueRouteScope,
   type SchemaValueType,
   type WorkflowProtocol,
   type WorkflowNodeKind,
@@ -132,30 +129,6 @@ function createControlItem(kind: ControlInputKind): ControlInputItem {
   }
 }
 
-function createModelQueueRoute(): ModelQueueRoute {
-  return {
-    id: createId('model-route'),
-    modelId: '',
-    enabled: true,
-    queueIds: ['default'],
-  }
-}
-
-function createQueueRouteRule(scope: QueueRouteScope = 'header'): QueueRouteRule {
-  return {
-    id: createId('route-rule'),
-    name: scope === 'model' ? 'Model 规则' : 'Header 规则',
-    enabled: true,
-    priority: 100,
-    scope,
-    fieldPath: scope === 'model' ? 'request.body.model' : 'request.headers.x-client-source',
-    valueType: 'string',
-    operator: scope === 'model' ? 'startsWith' : 'in',
-    value: scope === 'model' ? 'gpt-' : 'vip-app,vip-sdk',
-    queueIds: ['default'],
-  }
-}
-
 function layoutRouterNodes(nodes: WorkflowNodeModel[]): WorkflowNodeModel[] {
   if (nodes.length <= 1) return nodes
 
@@ -202,7 +175,7 @@ const samplePayload = {
     path: '/v1/chat/completions',
     method: 'POST',
     headers: {
-      'x-provider': 'openai',
+      'x-provider': ['openai'],
       userAgent: 'OneSwitch/1.0',
     },
     body: {
@@ -227,39 +200,12 @@ function createDefaultGraph(): WorkflowGraph {
       position: { x: 120, y: 260 },
     },
     {
-      id: 'control-input',
-      kind: 'control-input',
-      name: '控制输入',
+      id: 'protocol',
+      kind: 'protocol-discovery',
+      name: '协议发现',
       enabled: true,
-      description: '控制 Header/model 分流开关与默认回退队列。',
-      position: { x: 420, y: 260 },
-      controls: [
-        {
-          id: 'control-enable-header-routing',
-          key: 'enableHeaderRouting',
-          label: '启用 Header 分流',
-          kind: 'switch',
-          enabled: true,
-          defaultValue: true,
-        },
-        {
-          id: 'control-enable-model-routing',
-          key: 'enableModelRouting',
-          label: '启用 Model 分流',
-          kind: 'switch',
-          enabled: true,
-          defaultValue: true,
-        },
-        {
-          id: 'control-default-queue-id',
-          key: 'defaultQueueId',
-          label: '默认队列',
-          kind: 'select',
-          enabled: true,
-          defaultValue: 'default',
-          options: [{ label: 'default', value: 'default' }],
-        },
-      ],
+      description: '输入 request，输出协议分支。',
+      position: { x: 520, y: 260 },
     },
     {
       id: 'condition',
@@ -267,54 +213,8 @@ function createDefaultGraph(): WorkflowGraph {
       name: '条件分支',
       enabled: true,
       description: '按类型感知条件执行 IF / ELSE 多分支。',
-      position: { x: 720, y: 260 },
+      position: { x: 920, y: 260 },
       cases: [conditionCase],
-    },
-    {
-      id: 'queue-select',
-      kind: 'queue-select',
-      name: '队列选择节点',
-      enabled: true,
-      description: '模型直达优先，其次按 Header/model 规则分流，最后回退默认队列。',
-      position: { x: 1020, y: 260 },
-      queueIds: ['default'],
-      mode: 'rule-based',
-      fallbackQueueId: 'default',
-      conflictStrategy: 'most-specific',
-      modelQueueRoutes: [
-        {
-          id: 'route-model-gpt-4o-mini',
-          modelId: 'gpt-4o-mini',
-          enabled: true,
-          queueIds: ['model-fast-lane'],
-        },
-      ],
-      rules: [
-        {
-          id: 'rule-header-vip-source',
-          name: 'Header 来源 VIP',
-          enabled: true,
-          priority: 10,
-          scope: 'header',
-          fieldPath: 'request.headers.x-client-source',
-          valueType: 'string',
-          operator: 'in',
-          value: 'vip-app,vip-sdk',
-          queueIds: ['premium-lane'],
-        },
-        {
-          id: 'rule-model-claude-prefix',
-          name: 'Model 前缀 Claude',
-          enabled: true,
-          priority: 20,
-          scope: 'model',
-          fieldPath: 'request.body.model',
-          valueType: 'string',
-          operator: 'startsWith',
-          value: 'claude',
-          queueIds: ['anthropic-main'],
-        },
-      ],
     },
     {
       id: 'output',
@@ -329,11 +229,13 @@ function createDefaultGraph(): WorkflowGraph {
   ]
 
   const edges: WorkflowEdge[] = [
-    { id: 'edge-input-control', sourceNodeId: 'input', sourcePort: 'out', targetNodeId: 'control-input' },
-    { id: 'edge-control-condition', sourceNodeId: 'control-input', sourcePort: 'out', targetNodeId: 'condition' },
-    { id: 'edge-condition-case', sourceNodeId: 'condition', sourcePort: conditionCase.id, targetNodeId: 'queue-select' },
-    { id: 'edge-condition-else', sourceNodeId: 'condition', sourcePort: 'else', targetNodeId: 'queue-select' },
-    { id: 'edge-queue-select-output', sourceNodeId: 'queue-select', sourcePort: 'out', targetNodeId: 'output' },
+    { id: 'edge-input-protocol', sourceNodeId: 'input', sourcePort: 'out', targetNodeId: 'protocol' },
+    { id: 'edge-protocol-openai-completions', sourceNodeId: 'protocol', sourcePort: 'openai-completions', targetNodeId: 'condition' },
+    { id: 'edge-protocol-openai-responses', sourceNodeId: 'protocol', sourcePort: 'openai-responses', targetNodeId: 'condition' },
+    { id: 'edge-protocol-anthropic-messages', sourceNodeId: 'protocol', sourcePort: 'anthropic-messages', targetNodeId: 'condition' },
+    { id: 'edge-protocol-unknown', sourceNodeId: 'protocol', sourcePort: 'unknown', targetNodeId: 'output' },
+    { id: 'edge-condition-case', sourceNodeId: 'condition', sourcePort: conditionCase.id, targetNodeId: 'output' },
+    { id: 'edge-condition-else', sourceNodeId: 'condition', sourcePort: 'else', targetNodeId: 'output' },
   ]
 
   return { version: 1, nodes, edges }
@@ -400,13 +302,7 @@ function modelSummary(model: WorkflowNodeModel): string {
   if (model.kind === 'output') return '生成可用队列，交由代理执行'
   if (model.kind === 'protocol-discovery') return '自动识别协议并输出分支'
   if (model.kind === 'condition') return `${model.cases.length} 个分支 + ELSE`
-  if (model.kind === 'queue-select') {
-    const mode = model.mode ?? 'static'
-    if (mode === 'rule-based') {
-      return `${model.modelQueueRoutes?.length ?? 0} 条模型直达 + ${model.rules?.length ?? 0} 条规则`
-    }
-    return `${model.queueIds.length} 个逻辑队列`
-  }
+  if (model.kind === 'queue-select') return `${model.queueIds.length} 个逻辑队列`
   return '生成可用队列，交由代理执行'
 }
 
@@ -565,9 +461,7 @@ const BaseNodeView = memo(function BaseNodeView(props: BaseNodeViewProps) {
 
       {model.kind === 'queue-select' && (
         <div className="mt-3 text-[11px] text-muted-foreground">
-          {(model.mode ?? 'static') === 'rule-based'
-            ? `规则模式 · 默认回退 ${model.fallbackQueueId ?? model.queueIds[0] ?? 'default'}`
-            : (model.queueIds.length > 0 ? `已选择 ${model.queueIds.length} 个逻辑队列` : '尚未选择逻辑队列')}
+          {model.queueIds.length > 0 ? `已选择 ${model.queueIds.length} 个逻辑队列` : '尚未选择逻辑队列'}
         </div>
       )}
 
@@ -644,8 +538,7 @@ function buildFlowEdges(graph: WorkflowGraph): Edge[] {
     source: edge.sourceNodeId,
     sourceHandle: edge.sourcePort === 'out' ? undefined : edge.sourcePort,
     target: edge.targetNodeId,
-    animated: edge.sourcePort !== 'out' && edge.sourcePort !== 'else' && edge.sourcePort !== 'body'
-      && (!WORKFLOW_PROTOCOLS.includes(edge.sourcePort as WorkflowProtocol) || edge.sourcePort !== 'unknown'),
+    animated: edge.sourcePort !== 'out' && edge.sourcePort !== 'else' && edge.sourcePort !== 'body',
   }))
 }
 
@@ -668,7 +561,7 @@ function createNodeByKind(kind: Extract<WorkflowNodeKind, 'control-input' | 'pro
       kind,
       name: '协议发现节点',
       enabled: true,
-      description: '新增协议识别分支。',
+      description: '输入 request，输出协议分支。',
       position,
     }
   }
@@ -691,11 +584,6 @@ function createNodeByKind(kind: Extract<WorkflowNodeKind, 'control-input' | 'pro
     description: '选择一个或多个逻辑队列，交由出口执行。',
     position,
     queueIds: ['default'],
-    mode: 'rule-based',
-    fallbackQueueId: 'default',
-    conflictStrategy: 'most-specific',
-    modelQueueRoutes: [],
-    rules: [],
   }
 }
 
@@ -887,14 +775,17 @@ function WorkflowStudioCanvas() {
   const runLocalTest = useCallback(async () => {
     try {
       const payload = JSON.parse(payloadText) as unknown
-      const result = await unwrap(routerApi.run(graph, payload))
+      const normalizedPayload = (payload && typeof payload === 'object' ? payload : {}) as Record<string, unknown>
+      normalizedPayload.queues = logicalModels.map(model => ({ id: model.id, name: model.name, enabled: model.enabled }))
+
+      const result = await unwrap(routerApi.run(graph, normalizedPayload))
       setRunResult(result)
       setPayloadError('')
     } catch (error) {
       setRunResult(null)
       setPayloadError(error instanceof Error ? error.message : '输入负载不是合法 JSON。')
     }
-  }, [graph, payloadText])
+  }, [graph, logicalModels, payloadText])
 
   const saveWorkflow = useCallback(() => {
     try {
@@ -1413,369 +1304,22 @@ function WorkflowStudioCanvas() {
 
                 {selectedNode.kind === 'queue-select' && (
                   <div className="grid gap-2.5">
-                    <div className="text-xs text-muted-foreground">支持静态队列与规则队列两种模式；规则模式内建模型直达、Header/model 分流与默认回退。</div>
-
+                    <div className="text-xs text-muted-foreground">队列选择节点只负责输出一个或多个逻辑队列，不内置任何路由策略。</div>
                     <div className="grid gap-1.5">
-                      <Label>选择模式</Label>
-                      <Select
-                        value={selectedNode.mode ?? 'static'}
-                        onValueChange={value => updateNode(selectedNode.id, node => node.kind === 'queue-select'
-                          ? {
-                            ...node,
-                            mode: value as 'static' | 'rule-based',
-                            fallbackQueueId: node.fallbackQueueId ?? node.queueIds[0] ?? 'default',
-                            modelQueueRoutes: node.modelQueueRoutes ?? [],
-                            rules: node.rules ?? [],
-                            conflictStrategy: node.conflictStrategy ?? 'most-specific',
-                          }
-                          : node)}
-                      >
-                        <SelectTrigger className="w-full"><SelectValue placeholder="mode" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="static">静态队列</SelectItem>
-                          <SelectItem value="rule-based">规则分流</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      {logicalModels.map(model => (
+                        <label key={model.id} className="flex items-center gap-2 rounded-lg bg-muted/35 px-3 py-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={selectedNode.queueIds.includes(model.id)}
+                            onChange={event => updateNode(selectedNode.id, node => node.kind === 'queue-select'
+                              ? { ...node, queueIds: event.target.checked ? [...new Set([...node.queueIds, model.id])] : node.queueIds.filter(id => id !== model.id) }
+                              : node)}
+                          />
+                          <span className="min-w-0 flex-1 truncate">{model.name}</span>
+                          <span className="text-xs text-muted-foreground">{model.id}</span>
+                        </label>
+                      ))}
                     </div>
-
-                    <div className="grid gap-1.5">
-                      <Label>可选逻辑队列</Label>
-                      <div className="grid gap-1.5">
-                        {logicalModels.map(model => (
-                          <label key={model.id} className="flex items-center gap-2 rounded-lg bg-muted/35 px-3 py-2 text-sm">
-                            <input
-                              type="checkbox"
-                              checked={selectedNode.queueIds.includes(model.id)}
-                              onChange={event => updateNode(selectedNode.id, node => node.kind === 'queue-select'
-                                ? {
-                                  ...node,
-                                  queueIds: event.target.checked
-                                    ? [...new Set([...node.queueIds, model.id])]
-                                    : node.queueIds.filter(id => id !== model.id),
-                                }
-                                : node)}
-                            />
-                            <span className="min-w-0 flex-1 truncate">{model.name}</span>
-                            <span className="text-xs text-muted-foreground">{model.id}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-
-                    {(selectedNode.mode ?? 'static') === 'rule-based' && (
-                      <>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div className="grid gap-1.5">
-                            <Label>默认回退队列</Label>
-                            <Select
-                              value={selectedNode.fallbackQueueId ?? selectedNode.queueIds[0] ?? 'default'}
-                              onValueChange={value => updateNode(selectedNode.id, node => node.kind === 'queue-select'
-                                ? { ...node, fallbackQueueId: value }
-                                : node)}
-                            >
-                              <SelectTrigger className="w-full"><SelectValue placeholder="fallback" /></SelectTrigger>
-                              <SelectContent>
-                                {selectedNode.queueIds.map(queueId => (
-                                  <SelectItem key={queueId} value={queueId}>{queueId}</SelectItem>
-                                ))}
-                                {!selectedNode.queueIds.includes('default') && <SelectItem value="default">default</SelectItem>}
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          <div className="grid gap-1.5">
-                            <Label>冲突策略</Label>
-                            <Select
-                              value={selectedNode.conflictStrategy ?? 'most-specific'}
-                              onValueChange={value => updateNode(selectedNode.id, node => node.kind === 'queue-select'
-                                ? { ...node, conflictStrategy: value as 'most-specific' | 'highest-priority' }
-                                : node)}
-                            >
-                              <SelectTrigger className="w-full"><SelectValue placeholder="strategy" /></SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="most-specific">最具体优先</SelectItem>
-                                <SelectItem value="highest-priority">最高优先级优先</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
-
-                        <div className="grid gap-2 rounded-lg bg-muted/35 p-2.5">
-                          <div className="flex items-center justify-between">
-                            <div className="text-sm font-medium">模型直达映射</div>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => updateNode(selectedNode.id, node => node.kind === 'queue-select'
-                                ? { ...node, modelQueueRoutes: [...(node.modelQueueRoutes ?? []), createModelQueueRoute()] }
-                                : node)}
-                            >
-                              添加映射
-                            </Button>
-                          </div>
-
-                          {(selectedNode.modelQueueRoutes ?? []).map((route, routeIndex) => (
-                            <div key={route.id} className="grid gap-2 rounded-lg bg-background/60 p-2">
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="text-xs text-muted-foreground">映射 {routeIndex + 1}</div>
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => updateNode(selectedNode.id, node => node.kind === 'queue-select'
-                                    ? { ...node, modelQueueRoutes: (node.modelQueueRoutes ?? []).filter(item => item.id !== route.id) }
-                                    : node)}
-                                >
-                                  删除
-                                </Button>
-                              </div>
-
-                              <div className="grid gap-1.5">
-                                <Label>客户端 modelId</Label>
-                                <Input
-                                  value={route.modelId}
-                                  onChange={event => updateNode(selectedNode.id, node => node.kind === 'queue-select'
-                                    ? {
-                                      ...node,
-                                      modelQueueRoutes: (node.modelQueueRoutes ?? []).map(item => item.id === route.id ? { ...item, modelId: event.target.value } : item),
-                                    }
-                                    : node)}
-                                />
-                              </div>
-
-                              <div className="grid grid-cols-2 gap-2">
-                                <div className="grid gap-1.5">
-                                  <Label>命中队列</Label>
-                                  <Select
-                                    value={route.queueIds[0] ?? (selectedNode.fallbackQueueId ?? 'default')}
-                                    onValueChange={value => updateNode(selectedNode.id, node => node.kind === 'queue-select'
-                                      ? {
-                                        ...node,
-                                        modelQueueRoutes: (node.modelQueueRoutes ?? []).map(item => item.id === route.id ? { ...item, queueIds: [value] } : item),
-                                      }
-                                      : node)}
-                                  >
-                                    <SelectTrigger className="w-full"><SelectValue placeholder="queue" /></SelectTrigger>
-                                    <SelectContent>
-                                      {selectedNode.queueIds.map(queueId => (
-                                        <SelectItem key={queueId} value={queueId}>{queueId}</SelectItem>
-                                      ))}
-                                      {!selectedNode.queueIds.includes('default') && <SelectItem value="default">default</SelectItem>}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-
-                                <div className="flex items-center justify-between rounded-lg bg-muted/35 px-3 py-2">
-                                  <span className="text-sm">启用</span>
-                                  <Switch
-                                    checked={route.enabled}
-                                    onCheckedChange={checked => updateNode(selectedNode.id, node => node.kind === 'queue-select'
-                                      ? {
-                                        ...node,
-                                        modelQueueRoutes: (node.modelQueueRoutes ?? []).map(item => item.id === route.id ? { ...item, enabled: checked } : item),
-                                      }
-                                      : node)}
-                                  />
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-
-                        <div className="grid gap-2 rounded-lg bg-muted/35 p-2.5">
-                          <div className="flex items-center justify-between">
-                            <div className="text-sm font-medium">Header/Model 规则</div>
-                            <div className="flex items-center gap-2">
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                onClick={() => updateNode(selectedNode.id, node => node.kind === 'queue-select'
-                                  ? { ...node, rules: [...(node.rules ?? []), createQueueRouteRule('header')] }
-                                  : node)}
-                              >
-                                添加 Header 规则
-                              </Button>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                onClick={() => updateNode(selectedNode.id, node => node.kind === 'queue-select'
-                                  ? { ...node, rules: [...(node.rules ?? []), createQueueRouteRule('model')] }
-                                  : node)}
-                              >
-                                添加 Model 规则
-                              </Button>
-                            </div>
-                          </div>
-
-                          {(selectedNode.rules ?? []).map((rule, ruleIndex) => (
-                            <div key={rule.id} className="grid gap-2 rounded-lg bg-background/60 p-2">
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="text-xs text-muted-foreground">规则 {ruleIndex + 1}</div>
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => updateNode(selectedNode.id, node => node.kind === 'queue-select'
-                                    ? { ...node, rules: (node.rules ?? []).filter(item => item.id !== rule.id) }
-                                    : node)}
-                                >
-                                  删除
-                                </Button>
-                              </div>
-
-                              <div className="grid grid-cols-2 gap-2">
-                                <div className="grid gap-1.5">
-                                  <Label>名称</Label>
-                                  <Input
-                                    value={rule.name}
-                                    onChange={event => updateNode(selectedNode.id, node => node.kind === 'queue-select'
-                                      ? {
-                                        ...node,
-                                        rules: (node.rules ?? []).map(item => item.id === rule.id ? { ...item, name: event.target.value } : item),
-                                      }
-                                      : node)}
-                                  />
-                                </div>
-
-                                <div className="grid gap-1.5">
-                                  <Label>范围</Label>
-                                  <Select
-                                    value={rule.scope}
-                                    onValueChange={value => updateNode(selectedNode.id, node => node.kind === 'queue-select'
-                                      ? {
-                                        ...node,
-                                        rules: (node.rules ?? []).map(item => item.id === rule.id
-                                          ? {
-                                            ...item,
-                                            scope: value as QueueRouteScope,
-                                            fieldPath: value === 'model' ? 'request.body.model' : value === 'header' ? 'request.headers.x-client-source' : item.fieldPath,
-                                          }
-                                          : item),
-                                      }
-                                      : node)}
-                                  >
-                                    <SelectTrigger className="w-full"><SelectValue placeholder="scope" /></SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="header">Header</SelectItem>
-                                      <SelectItem value="model">Model</SelectItem>
-                                      <SelectItem value="custom">自定义</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                              </div>
-
-                              <div className="grid grid-cols-2 gap-2">
-                                <div className="grid gap-1.5">
-                                  <Label>字段路径</Label>
-                                  <Input
-                                    value={rule.fieldPath}
-                                    onChange={event => updateNode(selectedNode.id, node => node.kind === 'queue-select'
-                                      ? {
-                                        ...node,
-                                        rules: (node.rules ?? []).map(item => item.id === rule.id ? { ...item, fieldPath: event.target.value } : item),
-                                      }
-                                      : node)}
-                                  />
-                                </div>
-
-                                <div className="grid gap-1.5">
-                                  <Label>优先级</Label>
-                                  <Input
-                                    type="number"
-                                    value={String(rule.priority)}
-                                    onChange={event => updateNode(selectedNode.id, node => {
-                                      if (node.kind !== 'queue-select') return node
-                                      const nextPriority = Number(event.target.value)
-                                      return {
-                                        ...node,
-                                        rules: (node.rules ?? []).map(item => item.id === rule.id
-                                          ? { ...item, priority: Number.isFinite(nextPriority) ? nextPriority : item.priority }
-                                          : item),
-                                      }
-                                    })}
-                                  />
-                                </div>
-                              </div>
-
-                              <div className="grid grid-cols-2 gap-2">
-                                <div className="grid gap-1.5">
-                                  <Label>操作符</Label>
-                                  <Select
-                                    value={rule.operator}
-                                    onValueChange={value => updateNode(selectedNode.id, node => node.kind === 'queue-select'
-                                      ? {
-                                        ...node,
-                                        rules: (node.rules ?? []).map(item => item.id === rule.id ? { ...item, operator: value as ConditionOperator } : item),
-                                      }
-                                      : node)}
-                                  >
-                                    <SelectTrigger className="w-full"><SelectValue placeholder="operator" /></SelectTrigger>
-                                    <SelectContent>
-                                      {getOperatorsByType(rule.valueType).map(operator => (
-                                        <SelectItem key={operator} value={operator}>{operator}</SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-
-                                <div className="grid gap-1.5">
-                                  <Label>命中队列</Label>
-                                  <Select
-                                    value={rule.queueIds[0] ?? (selectedNode.fallbackQueueId ?? 'default')}
-                                    onValueChange={value => updateNode(selectedNode.id, node => node.kind === 'queue-select'
-                                      ? {
-                                        ...node,
-                                        rules: (node.rules ?? []).map(item => item.id === rule.id ? { ...item, queueIds: [value] } : item),
-                                      }
-                                      : node)}
-                                  >
-                                    <SelectTrigger className="w-full"><SelectValue placeholder="queue" /></SelectTrigger>
-                                    <SelectContent>
-                                      {selectedNode.queueIds.map(queueId => (
-                                        <SelectItem key={queueId} value={queueId}>{queueId}</SelectItem>
-                                      ))}
-                                      {!selectedNode.queueIds.includes('default') && <SelectItem value="default">default</SelectItem>}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                              </div>
-
-                              {rule.operator !== 'exists' && rule.operator !== 'isTrue' && rule.operator !== 'isFalse' && rule.operator !== 'empty' && rule.operator !== 'notEmpty' && (
-                                <div className="grid gap-1.5">
-                                  <Label>比较值</Label>
-                                  <Input
-                                    value={rule.value ?? ''}
-                                    onChange={event => updateNode(selectedNode.id, node => node.kind === 'queue-select'
-                                      ? {
-                                        ...node,
-                                        rules: (node.rules ?? []).map(item => item.id === rule.id ? { ...item, value: event.target.value } : item),
-                                      }
-                                      : node)}
-                                  />
-                                </div>
-                              )}
-
-                              <div className="flex items-center justify-between rounded-lg bg-muted/35 px-3 py-2">
-                                <span className="text-sm">启用</span>
-                                <Switch
-                                  checked={rule.enabled}
-                                  onCheckedChange={checked => updateNode(selectedNode.id, node => node.kind === 'queue-select'
-                                    ? {
-                                      ...node,
-                                      rules: (node.rules ?? []).map(item => item.id === rule.id ? { ...item, enabled: checked } : item),
-                                    }
-                                    : node)}
-                                />
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </>
-                    )}
-
                     {logicalModels.length === 0 && <div className="rounded-lg bg-warning/14 px-3 py-2 text-xs text-warning-foreground">暂无可用逻辑队列，请先在队列控制中创建。</div>}
                   </div>
                 )}

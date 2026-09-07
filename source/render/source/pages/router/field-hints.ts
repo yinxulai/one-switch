@@ -5,6 +5,7 @@ import {
   type SchemaValueType,
   type WorkflowGraph,
   type WorkflowProtocol,
+  type WorkflowTransport,
 } from './types'
 
 export const WORKFLOW_PROTOCOLS: WorkflowProtocol[] = [
@@ -13,6 +14,8 @@ export const WORKFLOW_PROTOCOLS: WorkflowProtocol[] = [
   'anthropic-messages',
   'unknown',
 ]
+
+export const WORKFLOW_TRANSPORTS: WorkflowTransport[] = ['http', 'http-sse']
 
 export interface WorkflowConnection {
   sourceNodeId: string
@@ -123,6 +126,30 @@ export function resolveInputHints(graph: WorkflowGraph, targetNodeId: string, sa
 
     if (model.kind === 'input') {
       for (const field of flattenFields(samplePayload, '', model.id, 'context')) addUniqueField(fields, field)
+      addUniqueField(fields, {
+        path: 'queues',
+        valueType: 'array',
+        sourceNodeId: model.id,
+        sourcePort: 'context',
+      })
+      addUniqueField(fields, {
+        path: 'metadata.router.requestModelId',
+        valueType: 'string',
+        sourceNodeId: model.id,
+        sourcePort: 'context',
+      })
+      addUniqueField(fields, {
+        path: 'metadata.router.queueIds',
+        valueType: 'array',
+        sourceNodeId: model.id,
+        sourcePort: 'context',
+      })
+      addUniqueField(fields, {
+        path: 'metadata.router.requestModelInQueues',
+        valueType: 'boolean',
+        sourceNodeId: model.id,
+        sourcePort: 'context',
+      })
       continue
     }
 
@@ -148,13 +175,49 @@ export function resolveInputHints(graph: WorkflowGraph, targetNodeId: string, sa
       const reachablePorts = connections
         .filter(connection => connection.sourceNodeId === model.id)
         .map(connection => connection.sourcePort)
-        .filter((port): port is WorkflowProtocol => WORKFLOW_PROTOCOLS.includes(port as WorkflowProtocol))
+      const reachableProtocols = reachablePorts
+        .filter((protocol): protocol is WorkflowProtocol => WORKFLOW_PROTOCOLS.includes(protocol as WorkflowProtocol))
+      const protocolEnumOptions = [...new Set(reachableProtocols)]
+
       addUniqueField(fields, {
         path: 'metadata.protocol',
         valueType: 'enum',
         sourceNodeId: model.id,
         sourcePort: 'protocol',
-        enumOptions: [...new Set(reachablePorts)],
+        enumOptions: protocolEnumOptions,
+      })
+      addUniqueField(fields, {
+        path: 'metadata.transport',
+        valueType: 'enum',
+        sourceNodeId: model.id,
+        sourcePort: 'transport',
+        enumOptions: [...WORKFLOW_TRANSPORTS],
+      })
+      addUniqueField(fields, {
+        path: 'metadata.protocolOutput.protocol',
+        valueType: 'enum',
+        sourceNodeId: model.id,
+        sourcePort: 'protocol',
+        enumOptions: protocolEnumOptions,
+      })
+      addUniqueField(fields, {
+        path: 'metadata.protocolOutput.transport',
+        valueType: 'enum',
+        sourceNodeId: model.id,
+        sourcePort: 'transport',
+        enumOptions: [...WORKFLOW_TRANSPORTS],
+      })
+      addUniqueField(fields, {
+        path: 'metadata.protocolOutput.model',
+        valueType: 'string',
+        sourceNodeId: model.id,
+        sourcePort: 'protocol',
+      })
+      addUniqueField(fields, {
+        path: 'metadata.protocolOutput.messages',
+        valueType: 'array',
+        sourceNodeId: model.id,
+        sourcePort: 'protocol',
       })
       continue
     }

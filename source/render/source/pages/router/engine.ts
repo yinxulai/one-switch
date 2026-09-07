@@ -3,15 +3,17 @@ import type {
   ConditionOperator,
   ConditionRule,
   ControlInputNode,
-  QueueRouteRule,
   QueueSelection,
   QueueSelectNode,
   ProtocolDiscoveryNode,
   RouteContext,
   RouteContextEnvelope,
   RouteContextInput,
+  WorkflowQueueContext,
+  WorkflowRequestPayload,
   WorkflowGraph,
   WorkflowProtocol,
+  WorkflowTransport,
   WorkflowRunResult,
   WorkflowTrace,
 } from './types'
@@ -19,7 +21,6 @@ import type {
 export interface WorkflowRunOptions {}
 
 const MAX_STEPS = 80
-
 function generateTraceId(): string {
   const random = Math.random().toString(36).slice(2, 10)
   return `trace-${Date.now()}-${random}`
@@ -59,25 +60,93 @@ function normalizeInputPayload(inputPayload: unknown): RouteContextEnvelope {
 
   const request = (normalized.request && typeof normalized.request === 'object'
     ? normalized.request
-    : {}) as Record<string, unknown>
+    : {}) as WorkflowRequestPayload
 
   const metadata = (normalized.metadata && typeof normalized.metadata === 'object'
     ? normalized.metadata
     : {}) as Record<string, unknown>
 
+  const queues = (Array.isArray(normalized.queues)
+    ? normalized.queues.filter(item => item && typeof item === 'object').map(item => {
+      const queue = item as Record<string, unknown>
+      return {
+        id: String(queue.id ?? '').trim(),
+        name: String(queue.name ?? '').trim(),
+        enabled: Boolean(queue.enabled),
+      }
+    }).filter(queue => queue.id && queue.name)
+    : []) as WorkflowQueueContext[]
+
+  const requestModelId = typeof request.body?.model === 'string' ? request.body.model.trim() : ''
+  const queueIds = queues.map(queue => queue.id)
+  const queueNames = queues.map(queue => queue.name)
+  const modelInQueues = requestModelId ? queueIds.includes(requestModelId) : false
+
+  const routerMetadata = {
+    requestModelId,
+    queueIds,
+    queueNames,
+    requestModelInQueues: modelInQueues,
+  }
+
+  metadata.router = {
+    ...(metadata.router && typeof metadata.router === 'object' ? metadata.router as Record<string, unknown> : {}),
+    ...routerMetadata,
+  }
+
   const context: RouteContext = {
     request,
+    queues,
     metadata,
     traceId: typeof metadata.traceId === 'string' && metadata.traceId.trim() ? metadata.traceId : generateTraceId(),
   }
 
   normalized.request = request
+  normalized.queues = queues
   normalized.metadata = { ...metadata, traceId: context.traceId }
 
   return {
     payload: normalized,
     context,
   }
+}
+
+function normalizeHeaderValue(value: unknown): string {
+  if (Array.isArray(value)) {
+    return value.map(item => String(item)).join(',')
+  }
+  if (typeof value === 'string') return value
+  return ''
+}
+
+function getHeader(headers: Record<string, unknown>, name: string): string {
+  const lowered = name.toLowerCase()
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === lowered) {
+      return normalizeHeaderValue(value)
+    }
+  }
+  return ''
+}
+
+function detectTransport(payload: Record<string, unknown>): WorkflowTransport {
+  const headersValue = getByPath(payload, 'request.headers')
+  const headers = headersValue && typeof headersValue === 'object'
+    ? (headersValue as Record<string, unknown>)
+    : {}
+
+  const accept = getHeader(headers, 'accept').toLowerCase()
+  const contentType = getHeader(headers, 'content-type').toLowerCase()
+  const stream = getByPath(payload, 'request.body.stream')
+  if (accept.includes('text/event-stream') || contentType.includes('text/event-stream') || stream === true) {
+    return 'http-sse'
+  }
+
+  return 'http'
+}
+
+function resolveProtocolTarget(edges: Map<string, string>, nodeId: string, protocol: WorkflowProtocol): string | undefined {
+  return edgeTarget(edges, nodeId, protocol)
 }
 
 function applyControlInputs(payload: Record<string, unknown>, node: ControlInputNode): void {
@@ -209,29 +278,53 @@ function evaluateCase(caseNode: ConditionCase, payload: Record<string, unknown>)
     : results.some(Boolean)
 }
 
-function discoverProtocol(_node: ProtocolDiscoveryNode, payload: Record<string, unknown>): { protocol: WorkflowProtocol; reason: string } {
+function discoverProtocol(_node: ProtocolDiscoveryNode, payload: Record<string, unknown>): {
+  protocol: WorkflowProtocol
+  transport: WorkflowTransport
+  reason: string
+} {
   const path = String(getByPath(payload, 'request.path') ?? '').toLowerCase()
   const headersValue = getByPath(payload, 'request.headers')
   const headers = headersValue && typeof headersValue === 'object'
     ? (headersValue as Record<string, unknown>)
     : {}
 
-  const providerHeader = String(headers['x-provider'] ?? headers['X-Provider'] ?? '').toLowerCase()
+  const providerHeader = getHeader(headers, 'x-provider').toLowerCase()
   const modelId = String(getByPath(payload, 'request.body.model') ?? '').toLowerCase()
+  const transport = detectTransport(payload)
 
   if (providerHeader.includes('openai') || path.includes('/chat/completions')) {
-    return { protocol: 'openai-completions', reason: '根据 header/path 判定为 openai-completions' }
+    const protocol: WorkflowProtocol = 'openai-completions'
+    return {
+      protocol,
+      transport,
+      reason: `根据 header/path 判定为 openai-completions，传输 ${transport}`,
+    }
   }
 
   if (path.includes('/responses')) {
-    return { protocol: 'openai-responses', reason: '根据 path 判定为 openai-responses' }
+    const protocol: WorkflowProtocol = 'openai-responses'
+    return {
+      protocol,
+      transport,
+      reason: `根据 path 判定为 openai-responses，传输 ${transport}`,
+    }
   }
 
   if (providerHeader.includes('anthropic') || path.includes('/messages') || modelId.includes('claude')) {
-    return { protocol: 'anthropic-messages', reason: '根据 header/path/model 判定为 anthropic-messages' }
+    const protocol: WorkflowProtocol = 'anthropic-messages'
+    return {
+      protocol,
+      transport,
+      reason: `根据 header/path/model 判定为 anthropic-messages，传输 ${transport}`,
+    }
   }
 
-  return { protocol: 'unknown', reason: '自动识别未命中，归类 unknown' }
+  return {
+    protocol: 'unknown',
+    transport,
+    reason: `自动识别未命中，归类 unknown，传输 ${transport}`,
+  }
 }
 
 function normalizeProtocolMessageContent(content: unknown): unknown {
@@ -263,7 +356,7 @@ function normalizeProtocolMessages(candidate: unknown): Array<Record<string, unk
   })
 }
 
-function buildNormalizedProtocolOutput(protocol: WorkflowProtocol, payload: Record<string, unknown>): Record<string, unknown> {
+function buildNormalizedProtocolOutput(protocol: WorkflowProtocol, transport: WorkflowTransport, payload: Record<string, unknown>): Record<string, unknown> {
   const requestBody = (getByPath(payload, 'request.body') ?? {}) as Record<string, unknown>
   const model = typeof requestBody.model === 'string' ? requestBody.model : ''
   const bodyMessages = Array.isArray(requestBody.messages)
@@ -274,23 +367,25 @@ function buildNormalizedProtocolOutput(protocol: WorkflowProtocol, payload: Reco
 
   return {
     protocol,
+    transport,
     model,
     messages: normalizeProtocolMessages(bodyMessages),
     raw: requestBody,
   }
 }
 
-function recordProtocolOutput(payload: Record<string, unknown>, protocol: WorkflowProtocol): Record<string, unknown> {
+function recordProtocolOutput(payload: Record<string, unknown>, protocol: WorkflowProtocol, transport: WorkflowTransport): Record<string, unknown> {
   const metadata = (payload.metadata && typeof payload.metadata === 'object'
     ? payload.metadata
     : {}) as Record<string, unknown>
-  const normalized = buildNormalizedProtocolOutput(protocol, payload)
+  const normalized = buildNormalizedProtocolOutput(protocol, transport, payload)
   const branchOutputs = (metadata.protocolOutputs && typeof metadata.protocolOutputs === 'object'
     ? metadata.protocolOutputs
     : {}) as Record<string, unknown>
 
   branchOutputs[protocol] = normalized
   metadata.protocol = protocol
+  metadata.transport = transport
   metadata.protocolOutput = normalized
   metadata.protocolOutputs = branchOutputs
   payload.metadata = metadata
@@ -302,92 +397,9 @@ function normalizeQueueIds(queueIds: string[]): string[] {
   return [...new Set(queueIds.map(id => id.trim()).filter(Boolean))]
 }
 
-function controlBoolean(payload: Record<string, unknown>, key: string, fallback: boolean): boolean {
-  const raw = getByPath(payload, `metadata.controls.${key}`)
-  return typeof raw === 'boolean' ? raw : fallback
-}
-
-function controlString(payload: Record<string, unknown>, key: string): string | undefined {
-  const raw = getByPath(payload, `metadata.controls.${key}`)
-  return typeof raw === 'string' && raw.trim() ? raw.trim() : undefined
-}
-
-function evaluateRuleSpecificity(rule: QueueRouteRule): number {
-  if (rule.operator === 'equals' || rule.operator === 'in') return 400
-  if (rule.operator === 'startsWith' || rule.operator === 'endsWith') return 320
-  if (rule.operator === 'contains' || rule.operator === 'notContains') return 220
-  if (rule.operator === 'regex') return 120
-  return 180
-}
-
-function selectQueues(node: QueueSelectNode, payload: Record<string, unknown>): QueueSelection {
-  const fallbackQueueId = controlString(payload, 'defaultQueueId')
-    ?? (node.fallbackQueueId?.trim() || undefined)
-    ?? node.queueIds.map(id => id.trim()).find(Boolean)
-    ?? 'default'
-
-  if (node.mode !== 'rule-based') {
-    const staticQueueIds = normalizeQueueIds(node.queueIds)
-    if (staticQueueIds.length > 0) {
-      return { queueIds: staticQueueIds, reason: `静态选择 ${staticQueueIds.length} 个逻辑队列` }
-    }
-    return { queueIds: [fallbackQueueId], reason: `静态队列为空，回退到默认队列 ${fallbackQueueId}` }
-  }
-
-  const enableModelRouting = controlBoolean(payload, 'enableModelRouting', true)
-  const enableHeaderRouting = controlBoolean(payload, 'enableHeaderRouting', true)
-  const requestModel = String(getByPath(payload, 'request.body.model') ?? '').trim()
-
-  if (enableModelRouting && requestModel && node.modelQueueRoutes?.length) {
-    const hit = node.modelQueueRoutes.find(route => route.enabled && route.modelId.trim().toLowerCase() === requestModel.toLowerCase())
-    if (hit) {
-      const queueIds = normalizeQueueIds(hit.queueIds)
-      if (queueIds.length > 0) {
-        return { queueIds, reason: `模型直达命中 ${hit.modelId}` }
-      }
-    }
-  }
-
-  const matched = (node.rules ?? [])
-    .map((rule, index) => ({ rule, index }))
-    .filter(({ rule }) => {
-      if (!rule.enabled) return false
-      if (rule.scope === 'model' && !enableModelRouting) return false
-      if (rule.scope === 'header' && !enableHeaderRouting) return false
-      return true
-    })
-    .filter(({ rule }) => {
-      const actual = getByPath(payload, rule.fieldPath)
-      return evaluateCondition(rule, actual)
-    })
-    .map(({ rule, index }) => ({
-      rule,
-      index,
-      specificity: evaluateRuleSpecificity(rule),
-      queueIds: normalizeQueueIds(rule.queueIds),
-    }))
-    .filter(item => item.queueIds.length > 0)
-
-  if (matched.length > 0) {
-    matched.sort((a, b) => {
-      if (node.conflictStrategy === 'highest-priority') {
-        if (a.rule.priority !== b.rule.priority) return a.rule.priority - b.rule.priority
-        if (a.specificity !== b.specificity) return b.specificity - a.specificity
-      } else {
-        if (a.specificity !== b.specificity) return b.specificity - a.specificity
-        if (a.rule.priority !== b.rule.priority) return a.rule.priority - b.rule.priority
-      }
-      return a.index - b.index
-    })
-
-    const winner = matched[0]
-    return {
-      queueIds: winner?.queueIds ?? [fallbackQueueId],
-      reason: winner ? `规则命中 ${winner.rule.name}` : `回退到默认队列 ${fallbackQueueId}`,
-    }
-  }
-
-  return { queueIds: [fallbackQueueId], reason: `未命中规则，回退到默认队列 ${fallbackQueueId}` }
+function selectQueues(node: QueueSelectNode): QueueSelection {
+  const queueIds = normalizeQueueIds(node.queueIds)
+  return { queueIds, reason: `选择 ${queueIds.length} 个逻辑队列` }
 }
 
 function buildMissingInputTrace(message: string): WorkflowTrace {
@@ -420,7 +432,9 @@ export function runWorkflow(graph: WorkflowGraph, inputPayload: unknown, _option
 
       if (!current.enabled && current.kind !== 'input' && current.kind !== 'output') {
         trace.push({ nodeId: current.id, nodeName: current.name, kind: current.kind, success: true, message: '节点禁用，跳过' })
-        currentId = edgeTarget(edges, current.id, current.kind === 'protocol-discovery' ? 'unknown' : 'out')
+        currentId = current.kind === 'protocol-discovery'
+          ? resolveProtocolTarget(edges, current.id, 'unknown')
+          : edgeTarget(edges, current.id, 'out')
         continue
       }
 
@@ -444,16 +458,20 @@ export function runWorkflow(graph: WorkflowGraph, inputPayload: unknown, _option
       if (current.kind === 'protocol-discovery') {
         const discovered = discoverProtocol(current, outputPayload)
         protocol = discovered.protocol
-        const normalized = recordProtocolOutput(outputPayload, protocol)
+        const normalized = recordProtocolOutput(outputPayload, protocol, discovered.transport)
         trace.push({
           nodeId: current.id,
           nodeName: current.name,
           kind: current.kind,
           success: protocol !== 'unknown',
           message: discovered.reason,
-          details: { protocol, normalized },
+          details: {
+            protocol,
+            transport: discovered.transport,
+            normalized,
+          },
         })
-        currentId = edgeTarget(edges, current.id, protocol)
+        currentId = resolveProtocolTarget(edges, current.id, protocol)
         continue
       }
 
@@ -471,7 +489,7 @@ export function runWorkflow(graph: WorkflowGraph, inputPayload: unknown, _option
       }
 
       if (current.kind === 'queue-select') {
-        const selection = selectQueues(current, outputPayload)
+        const selection = selectQueues(current)
         queueSelections[current.id] = selection
         outputPayload.queueIds = selection.queueIds
         trace.push({ nodeId: current.id, nodeName: current.name, kind: current.kind, success: selection.queueIds.length > 0, message: selection.reason, details: { queueIds: selection.queueIds, reason: selection.reason } })
