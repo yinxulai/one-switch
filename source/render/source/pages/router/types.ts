@@ -4,6 +4,8 @@ export type WorkflowNodeKind = 'input' | 'control-input' | 'protocol-discovery' 
 
 export type WorkflowProtocol = Protocol | 'unknown'
 
+export type WorkflowTransport = 'http' | 'http-sse'
+
 export type SchemaValueType = 'string' | 'number' | 'boolean' | 'enum' | 'array' | 'unknown'
 
 export type ConditionOperator =
@@ -41,7 +43,12 @@ export interface WorkflowNodeBase {
   position: NodePosition
 }
 
-export type WorkflowSourcePort = 'out' | 'body' | 'else' | WorkflowProtocol | (string & {})
+export type WorkflowSourcePort =
+  | 'out'
+  | 'body'
+  | 'else'
+  | WorkflowProtocol
+  | (string & {})
 
 export interface WorkflowEdge {
   id: string
@@ -56,14 +63,30 @@ export interface WorkflowGraph {
   edges: WorkflowEdge[]
 }
 
+export interface WorkflowQueueContext {
+  id: string
+  name: string
+  enabled: boolean
+}
+
+export interface WorkflowRequestPayload {
+  path?: string
+  method?: string
+  headers?: Record<string, string | string[]>
+  body?: Record<string, unknown>
+  [key: string]: unknown
+}
+
 export interface RouteContext {
-  request: Record<string, unknown>
+  request: WorkflowRequestPayload
+  queues: WorkflowQueueContext[]
   metadata: Record<string, unknown>
   traceId: string
 }
 
 export interface RouteContextInput {
-  request: Record<string, unknown>
+  request: WorkflowRequestPayload
+  queues?: WorkflowQueueContext[]
   metadata?: Record<string, unknown>
 }
 
@@ -127,35 +150,6 @@ export interface ConditionNode extends WorkflowNodeBase {
 
 export interface QueueSelectNode extends WorkflowNodeBase {
   kind: 'queue-select'
-  queueIds: string[]
-  mode?: 'static' | 'rule-based'
-  fallbackQueueId?: string
-  modelQueueRoutes?: ModelQueueRoute[]
-  rules?: QueueRouteRule[]
-  conflictStrategy?: 'most-specific' | 'highest-priority'
-}
-
-export interface ModelQueueRoute {
-  id: string
-  modelId: string
-  enabled: boolean
-  queueIds: string[]
-}
-
-export type QueueRouteScope = 'header' | 'model' | 'custom'
-
-export interface QueueRouteRule {
-  id: string
-  name: string
-  enabled: boolean
-  priority: number
-  scope: QueueRouteScope
-  fieldPath: string
-  valueType: SchemaValueType
-  operator: ConditionOperator
-  value?: string
-  secondaryValue?: string
-  enumOptions?: string[]
   queueIds: string[]
 }
 

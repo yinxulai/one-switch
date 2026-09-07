@@ -23,6 +23,7 @@ describe('resolveInputHints', () => {
     const target = condition('target')
     const hints = resolveInputHints(graph([input(), protocol('protocol'), target, control('isolated'), output()], [edge('input', 'out', 'protocol'), edge('protocol', 'unknown', 'target')]), target.id, samplePayload)
     expect(hints.fields.find(field => field.path === 'metadata.protocol')?.enumOptions).toEqual(['unknown'])
+    expect(hints.fields.find(field => field.path === 'metadata.transport')?.enumOptions).toEqual(['http', 'http-sse'])
     expect(hints.fields.map(field => field.path)).not.toContain('metadata.controls.mode')
   })
   it('循环图不会无限遍历且禁用节点不产生字段', () => {
@@ -40,5 +41,31 @@ describe('resolveInputHints', () => {
     expect(hints.fields.map(field => field.path)).toContain('queueIds')
     expect(hints.fields.map(field => field.path)).not.toContain('metadata.iteration.current')
     expect(hints.fields.map(field => field.path)).not.toContain('metadata.loop.index')
+  })
+
+  it('提供 router 派生字段与协议输出字段用于通用条件判断', () => {
+    const target = condition('target')
+    const hints = resolveInputHints(
+      graph([input(), protocol('protocol'), target, output()], [edge('input', 'out', 'protocol'), edge('protocol', 'openai-completions', 'target')]),
+      target.id,
+      {
+        request: { body: { model: 'gpt-4o-mini', priority: 2 }, headers: { 'x-provider': ['openai'] } },
+        queues: [{ id: 'default', name: 'Default', enabled: true }],
+        metadata: { source: 'test' },
+      },
+    )
+
+    const paths = hints.fields.map(field => field.path)
+    expect(paths).toEqual(expect.arrayContaining([
+      'queues',
+      'metadata.router.requestModelId',
+      'metadata.router.queueIds',
+      'metadata.router.requestModelInQueues',
+      'metadata.transport',
+      'metadata.protocolOutput.protocol',
+      'metadata.protocolOutput.transport',
+      'metadata.protocolOutput.model',
+      'metadata.protocolOutput.messages',
+    ]))
   })
 })
