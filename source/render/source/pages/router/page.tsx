@@ -27,6 +27,7 @@ import {
   Plus,
   Save,
   Waypoints,
+  X,
 } from 'lucide-react'
 import { PageContent, PageHeader, PageLayout } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
@@ -51,6 +52,8 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Separator } from '@/components/ui/separator'
 import { useToast } from '@/components/ui/toast'
 import { useLogicalModels } from '@/features/logical-models/hooks'
 import { cn } from '@/lib/utils'
@@ -79,6 +82,23 @@ import { WorkflowGraphSchema } from './schemas'
 const routerStorageKey = 'one-switch.router.graph.v1'
 const protocolOptions = WORKFLOW_PROTOCOLS
 const routerLayoutOrder: WorkflowNodeKind[] = ['input', 'control-input', 'protocol-discovery', 'condition', 'queue-select', 'output']
+
+const routerLegend: Array<{ label: string; dot: string }> = [
+  { label: '输入', dot: 'bg-info' },
+  { label: '协议发现', dot: 'bg-cyan-500' },
+  { label: '条件', dot: 'bg-warning' },
+  { label: '队列选择', dot: 'bg-violet-500' },
+  { label: '输出', dot: 'bg-success' },
+]
+
+type AppendableKind = Extract<WorkflowNodeKind, 'control-input' | 'protocol-discovery' | 'condition' | 'queue-select'>
+
+const addNodeItems: Array<{ kind: AppendableKind; label: string; hint: string; icon: typeof ArrowRightLeft }> = [
+  { kind: 'control-input', label: '控制输入', hint: '注入开关或选项', icon: ArrowRightLeft },
+  { kind: 'protocol-discovery', label: '协议发现', hint: '识别协议并输出分支', icon: GitBranch },
+  { kind: 'condition', label: '条件', hint: 'IF / ELSE 分支', icon: Waypoints },
+  { kind: 'queue-select', label: '队列选择', hint: '选择一个或多个队列', icon: ArrowRightLeft },
+]
 
 function createConditionRule(): ConditionRule {
   return {
@@ -243,6 +263,7 @@ function createDefaultGraph(): WorkflowGraph {
 
 type WorkflowNodeData = {
   model: WorkflowNodeModel
+  isSelected: boolean
   onOpen: (nodeId: string) => void
   onUpdateNode: (nodeId: string, updater: (node: WorkflowNodeModel) => WorkflowNodeModel) => void
 }
@@ -368,10 +389,14 @@ const BaseNodeView = memo(function BaseNodeView(props: BaseNodeViewProps) {
       }}
       style={dynamicMinHeight ? { minHeight: `${dynamicMinHeight}px` } : undefined}
       className={cn(
-        'relative flex w-72 flex-col items-start justify-start overflow-visible rounded-xl bg-card px-3 py-2 text-left ring-1 ring-foreground/10 transition-colors hover:bg-card/85',
+        'relative flex w-72 flex-col items-start justify-start overflow-visible rounded-xl bg-popover px-3 py-2 text-left transition-colors hover:bg-popover/90',
+        data.isSelected && 'bg-accent/10 hover:bg-accent/15',
         !model.enabled && 'opacity-55',
       )}
     >
+      {data.isSelected && (
+        <span className="pointer-events-none absolute -left-px bottom-3 top-3 w-1 rounded-full bg-primary" />
+      )}
       <div className="mb-2 flex items-center gap-2">
         <span className={cn('inline-flex size-5 items-center justify-center rounded-md', kindTone(model.kind))}>
           <KindIcon className="size-3.5" />
@@ -413,7 +438,7 @@ const BaseNodeView = memo(function BaseNodeView(props: BaseNodeViewProps) {
                       }
                       : node)
                   }}
-                  className="h-6 rounded border border-foreground/10 bg-background px-1.5 text-[10px] text-foreground outline-none"
+                  className="h-6 rounded bg-muted px-1.5 text-[10px] text-foreground outline-none"
                 >
                   {(control.options ?? []).map(option => (
                     <option key={option.value} value={option.value}>{option.label}</option>
@@ -623,7 +648,6 @@ function WorkflowStudioCanvas() {
   const [dockMode, setDockMode] = useState<'select' | 'pan'>('select')
   const [addMenuOpen, setAddMenuOpen] = useState(false)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
-  const [drawerOpen, setDrawerOpen] = useState(false)
   const [testDrawerOpen, setTestDrawerOpen] = useState(false)
   const [payloadText, setPayloadText] = useState(JSON.stringify(samplePayload, null, 2))
   const [payloadError, setPayloadError] = useState('')
@@ -641,7 +665,6 @@ function WorkflowStudioCanvas() {
 
   const handleOpenNode = useCallback((nodeId: string) => {
     setSelectedNodeId(nodeId)
-    setDrawerOpen(true)
   }, [])
 
   const flowNodes = useMemo(() => {
@@ -651,8 +674,9 @@ function WorkflowStudioCanvas() {
 
     for (const model of models) {
       const draggable = dragEnabled && dockMode === 'select'
+      const isSelected = model.id === selectedNodeId
       const previousNode = previous.get(model.id)
-      if (previousNode && previousNode.data.model === model && previousNode.data.onOpen === handleOpenNode && previousNode.draggable === draggable) {
+      if (previousNode && previousNode.data.model === model && previousNode.data.onOpen === handleOpenNode && previousNode.draggable === draggable && previousNode.data.isSelected === isSelected) {
         nextCache.set(model.id, previousNode)
         result.push(previousNode)
         continue
@@ -663,7 +687,7 @@ function WorkflowStudioCanvas() {
         type: toCanvasNodeType(model.kind),
         position: model.position,
         draggable,
-        data: { model, onOpen: handleOpenNode, onUpdateNode: updateNode },
+        data: { model, isSelected, onOpen: handleOpenNode, onUpdateNode: updateNode },
       }
       nextCache.set(model.id, created)
       result.push(created)
@@ -671,7 +695,7 @@ function WorkflowStudioCanvas() {
 
     cachedNodesRef.current = nextCache
     return result
-  }, [dockMode, dragEnabled, handleOpenNode, models])
+  }, [dockMode, dragEnabled, handleOpenNode, models, selectedNodeId])
 
   const flowEdges = useMemo(() => buildFlowEdges(graph), [graph])
 
@@ -741,11 +765,10 @@ function WorkflowStudioCanvas() {
         .filter(edge => edge.sourceNodeId !== removedId && edge.targetNodeId !== removedId)
         .map(edge => edge.targetNodeId === removedId ? { ...edge, targetNodeId: 'output' } : edge),
     }))
-    setDrawerOpen(false)
     setSelectedNodeId(null)
   }, [])
 
-  const appendAtCanvasCenter = useCallback((kind: Extract<WorkflowNodeKind, 'control-input' | 'protocol-discovery' | 'condition' | 'queue-select'>) => {
+  const appendAtCanvasCenter = useCallback((kind: AppendableKind) => {
     const rect = canvasRef.current?.getBoundingClientRect()
     if (!rect) return
     const position = flow.screenToFlowPosition({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 })
@@ -839,7 +862,7 @@ function WorkflowStudioCanvas() {
     <PageLayout>
       <PageHeader
         title="Router"
-        description="Router 页面：核心 5 节点、协议分支端口、类型感知配置体验"
+        description="用基础节点组合出路由策略：输入 → 协议发现 → 条件 → 队列选择 → 输出"
         actions={(
           <div className="flex items-center gap-2">
             <Button
@@ -861,7 +884,17 @@ function WorkflowStudioCanvas() {
       />
 
       <PageContent>
-        <Card className="w-full">
+        <div className="flex items-center gap-4 text-[11px] text-muted-foreground">
+          {routerLegend.map(item => (
+            <span key={item.label} className="flex items-center gap-1.5">
+              <span className={cn('size-2 rounded-full', item.dot)} />
+              {item.label}
+            </span>
+          ))}
+          <span className="ml-auto hidden text-[11px] text-muted-foreground/70 sm:inline">拖动节点组合策略 · 拖拽端口连线 · 点击节点配置</span>
+        </div>
+
+        <Card className="w-full ring-0">
           <CardContent>
             <div ref={canvasRef} className="relative w-full overflow-hidden rounded-xl bg-muted/30" style={{ height: `${canvasHeight}px` }}>
               <ReactFlow
@@ -887,7 +920,7 @@ function WorkflowStudioCanvas() {
               </ReactFlow>
 
               <div className="pointer-events-none absolute inset-x-0 bottom-3 z-20 flex justify-center px-3">
-                <div className="pointer-events-auto inline-flex max-w-full items-center gap-1 rounded-2xl bg-popover/96 p-1.5 text-foreground ring-1 ring-foreground/10">
+                <div className="pointer-events-auto inline-flex max-w-full items-center gap-1 rounded-2xl bg-popover p-1.5 text-foreground">
                   <div className="relative">
                     <Button
                       type="button"
@@ -901,54 +934,27 @@ function WorkflowStudioCanvas() {
                     </Button>
 
                     {addMenuOpen && (
-                      <div className="absolute bottom-[calc(100%+0.5rem)] left-1/2 z-30 w-[20rem] -translate-x-1/2 rounded-xl bg-popover p-2 text-popover-foreground ring-1 ring-foreground/10">
-                        <div className="grid gap-2.5">
-                          <div className="space-y-1.5">
-                            <div className="px-1 text-[9px] font-medium uppercase tracking-[0.14em] text-muted-foreground">基础节点</div>
-                            <div className="grid gap-1 pl-1">
-                              <button type="button" className="flex items-center gap-2 rounded-md px-1.5 py-1.5 text-left hover:bg-muted" onClick={() => { appendAtCanvasCenter('control-input'); setAddMenuOpen(false) }}>
-                                <div className="flex size-5 items-center justify-center text-muted-foreground"><ArrowRightLeft className="size-3.5" /></div>
+                      <div className="absolute bottom-[calc(100%+0.5rem)] left-1/2 z-30 w-[20rem] -translate-x-1/2 rounded-xl bg-popover p-2 text-popover-foreground">
+                        <div className="px-1 pb-1 text-[9px] font-medium uppercase tracking-[0.14em] text-muted-foreground">添加节点</div>
+                        <div className="grid gap-1">
+                          {addNodeItems.map(item => {
+                            const ItemIcon = item.icon
+                            return (
+                              <button key={item.kind} type="button" className="flex items-center gap-2 rounded-md px-1.5 py-1.5 text-left hover:bg-muted" onClick={() => { appendAtCanvasCenter(item.kind); setAddMenuOpen(false) }}>
+                                <div className="flex size-5 items-center justify-center text-muted-foreground"><ItemIcon className="size-3.5" /></div>
                                 <div className="min-w-0 flex-1">
-                                  <div className="text-xs">控制输入</div>
-                                  <div className="mt-0.5 text-[10px] text-muted-foreground">注入开关或选项</div>
+                                  <div className="text-xs">{item.label}</div>
+                                  <div className="mt-0.5 text-[10px] text-muted-foreground">{item.hint}</div>
                                 </div>
                               </button>
-                            </div>
-                          </div>
-
-                          <div className="space-y-1.5">
-                            <div className="px-1 text-[9px] font-medium uppercase tracking-[0.14em] text-muted-foreground">路由节点</div>
-                            <div className="grid gap-1 pl-1">
-                              <button type="button" className="flex items-center gap-2 rounded-md px-1.5 py-1.5 text-left hover:bg-muted" onClick={() => { appendAtCanvasCenter('protocol-discovery'); setAddMenuOpen(false) }}>
-                                <div className="flex size-5 items-center justify-center text-muted-foreground"><GitBranch className="size-3.5" /></div>
-                                <div className="min-w-0 flex-1">
-                                  <div className="text-xs">协议发现</div>
-                                  <div className="mt-0.5 text-[10px] text-muted-foreground">识别协议并输出分支</div>
-                                </div>
-                              </button>
-                              <button type="button" className="flex items-center gap-2 rounded-md px-1.5 py-1.5 text-left hover:bg-muted" onClick={() => { appendAtCanvasCenter('condition'); setAddMenuOpen(false) }}>
-                                <div className="flex size-5 items-center justify-center text-muted-foreground"><Waypoints className="size-3.5" /></div>
-                                <div className="min-w-0 flex-1">
-                                  <div className="text-xs">条件</div>
-                                  <div className="mt-0.5 text-[10px] text-muted-foreground">IF / ELSE 多分支判定</div>
-                                </div>
-                              </button>
-                              <button type="button" className="flex items-center gap-2 rounded-md px-1.5 py-1.5 text-left hover:bg-muted" onClick={() => { appendAtCanvasCenter('queue-select'); setAddMenuOpen(false) }}>
-                                <div className="flex size-5 items-center justify-center text-muted-foreground"><ArrowRightLeft className="size-3.5" /></div>
-                                <div className="min-w-0 flex-1">
-                                  <div className="text-xs">队列选择</div>
-                                  <div className="mt-0.5 text-[10px] text-muted-foreground">选择一个或多个逻辑队列</div>
-                                </div>
-                              </button>
-                            </div>
-                          </div>
-
+                            )
+                          })}
                         </div>
                       </div>
                     )}
                   </div>
 
-                  <div className="mx-1 h-6 w-px bg-muted" />
+                  <Separator orientation="vertical" className="mx-1!" />
 
                   <Button
                     type="button"
@@ -983,7 +989,7 @@ function WorkflowStudioCanvas() {
                     {dragEnabled ? <LockOpen className="size-4" /> : <Lock className="size-4" />}
                   </Button>
 
-                  <div className="mx-1 h-6 w-px bg-muted" />
+                  <Separator orientation="vertical" className="mx-1!" />
 
                   <Button
                     type="button"
@@ -1003,7 +1009,7 @@ function WorkflowStudioCanvas() {
       </PageContent>
 
       <Drawer open={testDrawerOpen} onOpenChange={setTestDrawerOpen} direction="right">
-        <DrawerContent className="h-full w-208! max-w-[90vw]! border-l bg-popover">
+        <DrawerContent className="h-full w-208! max-w-[90vw]! bg-popover">
           <DrawerHeader>
             <DrawerTitle className="flex items-center gap-2"><ArrowRight className="size-4" /> 测试运行</DrawerTitle>
             <DrawerDescription>在此输入 JSON，执行路由并查看结果与完整轨迹。</DrawerDescription>
@@ -1041,7 +1047,7 @@ function WorkflowStudioCanvas() {
                     <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Trace</div>
                     <div className="max-h-[40vh] space-y-1.5 overflow-y-auto">
                       {runResult.trace.map(item => (
-                        <div key={`${item.nodeId}-${item.message}`} className="rounded-md bg-card/75 p-2 text-xs ring-1 ring-foreground/10">
+                        <div key={`${item.nodeId}-${item.message}`} className="rounded-md bg-muted p-2 text-xs">
                           <div className="mb-0.5 flex items-center gap-2">
                             <span className="font-medium">{item.nodeName}</span>
                             <Badge variant={item.success ? 'success' : 'warning'}>{item.kind}</Badge>
@@ -1063,15 +1069,8 @@ function WorkflowStudioCanvas() {
         </DrawerContent>
       </Drawer>
 
-      <Drawer open={drawerOpen} onOpenChange={setDrawerOpen} direction="right">
-        <DrawerContent className="h-full w-2xl! max-w-[88vw]! border-l bg-popover">
-          {!selectedNode && (
-            <DrawerHeader>
-              <DrawerTitle>未选中节点</DrawerTitle>
-              <DrawerDescription>点击画布中的节点后，可在此查看详情并编辑配置。</DrawerDescription>
-            </DrawerHeader>
-          )}
-
+      <Drawer open={selectedNode !== null} onOpenChange={open => { if (!open) setSelectedNodeId(null) }} direction="right">
+        <DrawerContent className="h-full w-2xl! max-w-[88vw]! bg-popover">
           {selectedNode && (
             <>
               <DrawerHeader>
@@ -1097,12 +1096,15 @@ function WorkflowStudioCanvas() {
                     {!isProtectedNode(selectedNode) && (
                       <Button type="button" size="sm" variant="destructive" onClick={() => rewireRemovedNode(selectedNode.id)}>删除节点</Button>
                     )}
-                    <Button type="button" size="sm" variant="outline" onClick={() => setDrawerOpen(false)}>关闭</Button>
+                    <Button type="button" size="icon" variant="ghost" onClick={() => setSelectedNodeId(null)} aria-label="关闭">
+                      <X className="size-4" />
+                    </Button>
                   </div>
                 </div>
               </DrawerHeader>
 
-              <div className="space-y-3 overflow-y-auto px-3 pb-3">
+              <ScrollArea className="min-h-0 flex-1 px-3 pb-3">
+                <div className="space-y-3">
                 <div className="rounded-xl bg-muted/35 px-2.5 py-2 text-xs text-muted-foreground">
                   <div className="font-medium text-foreground">节点说明</div>
                   <div className="mt-1">{selectedNode.description}</div>
@@ -1589,7 +1591,8 @@ function WorkflowStudioCanvas() {
                     </div>
                   </div>
                 )}
-              </div>
+                </div>
+              </ScrollArea>
             </>
           )}
         </DrawerContent>
