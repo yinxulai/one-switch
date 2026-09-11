@@ -42,9 +42,19 @@ import { cn } from '@/lib/utils'
 
 import { NodeSelector } from './components/node-selector'
 import { DifyButton } from './components/dify-button'
+import { VersionMenu } from './components/version-menu'
 import { WorkflowConnectionLine } from './components/workflow-connection-line'
 import { WorkflowNodePanel } from './components/workflow-node-panel'
 import { resolveInputHints } from './field-hints'
+import {
+  appendVersion,
+  createVersion,
+  isSameGraph,
+  nextSequence,
+  readVersions,
+  writeVersions,
+  type RouterGraphVersion,
+} from './graph-versions'
 import {
   buildFlowEdges,
   createDefaultGraph,
@@ -135,9 +145,12 @@ function WorkflowStudioCanvas() {
   const [payloadText, setPayloadText] = useState(() => JSON.stringify(samplePayload, null, 2))
   const [payloadError, setPayloadError] = useState('')
   const [runResult, setRunResult] = useState<WorkflowRunResult | null>(null)
+  const [versions, setVersions] = useState<RouterGraphVersion[]>(readVersions)
+  const versionsRef = useRef(versions)
+  versionsRef.current = versions
 
   const canvasRef = useRef<HTMLDivElement | null>(null)
-  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 620 })
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 620, top: 0 })
 
   useEffect(() => {
     const element = canvasRef.current
@@ -148,6 +161,8 @@ function WorkflowStudioCanvas() {
       setCanvasSize({
         width: rect.width,
         height: Math.max(420, window.innerHeight - rect.top - 28),
+        // 节点面板是窗口级固定定位，需要知道画布顶边，才能对齐到标题栏下方。
+        top: rect.top,
       })
     }
 
@@ -430,14 +445,45 @@ function WorkflowStudioCanvas() {
     }
   }, [graph, logicalModels, payloadText])
 
+  /**
+   * 保存 = 生成一个新版本。
+   * 工作副本仍然写入 `routerStorageKey`（刷新后据此恢复画布），
+   * 同时在版本列表里追加一条快照，供「历史版本」下拉回滚。
+   * 内容与最新版本一致时不再重复生成，避免连点保存堆出一串重复版本。
+   */
   const saveWorkflow = useCallback(() => {
     try {
-      localStorage.setItem(routerStorageKey, JSON.stringify(graph))
-      toast.success('路由已保存')
+      const current = graphRef.current
+      const existing = versionsRef.current
+      const latest = existing[0]
+      if (latest && isSameGraph(latest.graph, current)) {
+        toast.info(`当前内容与最新版本 v${latest.sequence} 一致，未生成新版本`)
+        return
+      }
+
+      const version = createVersion(current, nextSequence(existing))
+      const next = appendVersion(existing, version)
+      writeVersions(next)
+      setVersions(next)
+      localStorage.setItem(routerStorageKey, JSON.stringify(current))
+      toast.success(`已保存为新版本 v${version.sequence}`)
     } catch {
       toast.error('保存失败，请稍后重试')
     }
-  }, [graph, toast])
+  }, [toast])
+
+  /** 回到历史某个版本：画布与工作副本一起切过去，运行结果作废。 */
+  const restoreVersion = useCallback((version: RouterGraphVersion) => {
+    setGraph(version.graph)
+    setSelectedNodeId(null)
+    setRunResult(null)
+    try {
+      localStorage.setItem(routerStorageKey, JSON.stringify(version.graph))
+    } catch {
+      // 工作副本写入失败不影响画布切版
+    }
+    toast.success(`已回到版本 v${version.sequence}，未保存的改动已被替换`)
+  }, [toast])
 
   const draggable = dragEnabled && dockMode === 'select'
 
@@ -447,14 +493,16 @@ function WorkflowStudioCanvas() {
         title="Router"
         description="用基础节点组合出路由策略：输入 → 协议发现 → 条件 → 队列选择 → 输出"
         actions={(
-          <>
+          // 标题栏不提供 gap，两个按钮直接放在 Fragment 里会贴在一起。
+          <div className="flex items-center gap-2">
             <DifyButton size="medium" onClick={() => setTestDrawerOpen(true)}>
               <CirclePlay className="size-3.5" aria-hidden /> 测试运行
             </DifyButton>
             <DifyButton size="medium" variant="primary" onClick={saveWorkflow}>
               <Save className="size-3.5" aria-hidden /> 保存
             </DifyButton>
-          </>
+            <VersionMenu versions={versions} onRestore={restoreVersion} />
+          </div>
         )}
       />
 
@@ -466,9 +514,12 @@ function WorkflowStudioCanvas() {
               {NODE_KIND_META[kind].label}
             </span>
           ))}
-          <span className="ml-auto hidden text-text-quaternary sm:inline">
-            拖动节点组合策略 · 端口 + 号插入节点 · 拖拽端口连线 · 点击节点配置
-          </span>
+          {/* 节点面板是窗口级固定定位，展开后会盖住这一行右侧，说明文案先收起。 */}
+          {!selectedNode && (
+            <span className="ml-auto hidden text-text-quaternary sm:inline">
+              拖动节点组合策略 · 端口 + 号插入节点 · 拖拽端口连线 · 点击节点配置
+            </span>
+          )}
         </div>
 
         <Card className="w-full ring-0">
@@ -544,7 +595,7 @@ function WorkflowStudioCanvas() {
                     aria-label="框选模式"
                     className={cn(
                       'flex size-8 items-center justify-center rounded-lg transition-colors',
-                      dockMode === 'select' ? 'bg-state-accent-solid text-white' : 'text-text-tertiary hover:bg-state-base-hover hover:text-text-secondary',
+                      dockMode === 'select' ? 'bg-state-accent-solid text-components-button-primary-text' : 'text-text-tertiary hover:bg-state-base-hover hover:text-text-secondary',
                     )}
                     onClick={() => setDockMode('select')}
                   >
@@ -555,7 +606,7 @@ function WorkflowStudioCanvas() {
                     aria-label="平移模式"
                     className={cn(
                       'flex size-8 items-center justify-center rounded-lg transition-colors',
-                      dockMode === 'pan' ? 'bg-state-accent-solid text-white' : 'text-text-tertiary hover:bg-state-base-hover hover:text-text-secondary',
+                      dockMode === 'pan' ? 'bg-state-accent-solid text-components-button-primary-text' : 'text-text-tertiary hover:bg-state-base-hover hover:text-text-secondary',
                     )}
                     onClick={() => setDockMode('pan')}
                   >
@@ -566,7 +617,7 @@ function WorkflowStudioCanvas() {
                     aria-label={dragEnabled ? '锁定节点位置' : '解锁节点位置'}
                     className={cn(
                       'flex size-8 items-center justify-center rounded-lg transition-colors',
-                      dragEnabled ? 'text-text-tertiary hover:bg-state-base-hover hover:text-text-secondary' : 'bg-state-accent-solid text-white',
+                      dragEnabled ? 'text-text-tertiary hover:bg-state-base-hover hover:text-text-secondary' : 'bg-state-accent-solid text-components-button-primary-text',
                     )}
                     onClick={() => setDragEnabled(value => !value)}
                   >
@@ -590,6 +641,7 @@ function WorkflowStudioCanvas() {
                 <WorkflowNodePanel
                   model={selectedNode}
                   canvasWidth={canvasSize.width}
+                  viewportTop={canvasSize.top}
                   width={panelWidth}
                   onWidthChange={setPanelWidth}
                   nodeModels={graph.nodes}
@@ -613,13 +665,19 @@ function WorkflowStudioCanvas() {
           </DrawerHeader>
 
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden px-4 pb-4">
-            <div className="space-y-2">
+            {/* 输入与结果各占一半高度：输入框不再写死 `min-h-96`，
+                窗口高度变小时两者一起收缩，而不是把结果区顶出可视区。 */}
+            <div className="flex min-h-0 flex-1 flex-col gap-2">
               <div className="py-1 system-sm-medium text-text-secondary">测试输入</div>
-              <Textarea value={payloadText} onChange={event => setPayloadText(event.target.value)} className="min-h-96 font-mono text-[12px] leading-5" />
+              <Textarea
+                value={payloadText}
+                onChange={event => setPayloadText(event.target.value)}
+                className="min-h-24 flex-1 resize-none font-mono text-[12px] leading-5"
+              />
               {payloadError && <div className="system-xs-regular text-text-destructive">{payloadError}</div>}
             </div>
 
-            <div className="min-h-0 space-y-3 overflow-y-auto">
+            <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
               <div className="py-1 system-sm-medium text-text-secondary">测试结果</div>
               {!runResult && <div className="rounded-lg bg-workflow-block-parma-bg p-3 system-xs-regular text-text-tertiary">点击下方“运行测试”查看结果。</div>}
 

@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes } from 'react'
+import { forwardRef, type ButtonHTMLAttributes } from 'react'
 
 import { cn } from '@/lib/utils'
 
@@ -29,12 +29,14 @@ type DifyButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
  * 类名逐字复制自 `packages/dify-ui/src/button/index.tsx` 的 `buttonVariants`，
  * 只保留 primary / secondary / ghost / ghost-destructive 四个变体与 small / medium 两个尺寸，
  * 阴影按本仓库偏好换成 `inset-ring` 描边。
+ * 必须 `forwardRef`：Radix 的 `asChild` 触发器等浮层锚点要把 ref 落到真实 DOM 上，否则浮层拿不到锚点。
  */
-export function DifyButton(props: DifyButtonProps) {
-  const { variant = 'secondary', size = 'small', className, ...rest } = props
+export const DifyButton = forwardRef<HTMLButtonElement, DifyButtonProps>(function DifyButton(params, ref) {
+  const { variant = 'secondary', size = 'small', className, ...rest } = params
 
   return (
     <button
+      ref={ref}
       type="button"
       className={cn(
         'inline-flex w-fit cursor-pointer items-center justify-center overflow-hidden whitespace-nowrap transition-colors outline-none',
@@ -47,4 +49,4 @@ export function DifyButton(props: DifyButtonProps) {
       {...rest}
     />
   )
-}
+})

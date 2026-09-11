@@ -122,7 +122,7 @@ export const WorkflowEdge = memo(function WorkflowEdge(props: EdgeProps<Workflow
                   aria-label="在连线上插入节点"
                   className={cn(
                     'flex size-4 items-center justify-center rounded-full',
-                    'bg-components-button-primary-bg text-white',
+                    'bg-components-button-primary-bg text-components-button-primary-text',
                     'hover:bg-components-button-primary-bg-hover',
                     'transition-transform duration-150 hover:scale-150',
                   )}
