@@ -8,8 +8,8 @@ import {
 } from './node-meta'
 import type { NodeRunStatus } from './node-data'
 import {
-  DEFAULT_FALLBACK_QUEUE_IDS,
   DEFAULT_OPERATOR_SET,
+  DEFAULT_QUEUE_IDS,
   type ConditionCase,
   type ConditionOperator,
   type ConditionRule,
@@ -137,9 +137,10 @@ export function createNodeByKind(kind: AppendableKind, position: NodePosition): 
     enabled: true,
     description: '选择一个或多个逻辑队列，交由出口执行。',
     position,
-    mode: 'fixed',
+    source: 'fixed',
+    variablePath: '',
     queueIds: [],
-    fallbackQueueIds: [...DEFAULT_FALLBACK_QUEUE_IDS],
+    fallbackQueueIds: [],
   }
 }
 
@@ -199,29 +200,68 @@ export function createOutputNode(position: NodePosition): WorkflowNodeModel {
 /**
  * 默认策略：请求模型命中逻辑队列 id 就直连该队列，否则落到默认队列。
  *
- * 只用一个「跟随请求模型」的队列选择节点表达规则：不枚举模型、不随逻辑队列增减失效。
+ * 规则全部由基础节点组合而成，没有任何专用节点：
+ * 输入 → 条件（route.requestedModelInQueues）→ 队列选择（变量取值）→ 出口
+ *                                          └→ 队列选择（固定 default）→ 出口
  */
 export function createDefaultPolicyGraph(): WorkflowGraph {
+  const conditionCase: ConditionCase = {
+    ...createConditionCase('case-1'),
+    name: '请求模型是逻辑队列',
+    conditions: [
+      {
+        fieldPath: 'route.requestedModelInQueues',
+        valueType: 'boolean',
+        operator: 'isTrue',
+      },
+    ],
+  }
+
   return {
     version: 1,
     nodes: [
       createInputNode({ x: 80, y: 220 }),
       {
-        id: 'queue',
-        kind: 'queue-select',
-        name: '请求模型直连',
+        id: 'condition',
+        kind: 'condition',
+        name: '请求模型是否命中逻辑队列',
         enabled: true,
-        description: '请求模型命中逻辑队列，直接路由到该队列；否则落到默认队列。',
-        position: { x: 520, y: 220 },
-        mode: 'follow-request-model',
-        queueIds: [],
-        fallbackQueueIds: [...DEFAULT_FALLBACK_QUEUE_IDS],
+        description: 'route.requestedModelInQueues 为真时走直连分支，否则落到默认队列。',
+        position: { x: 460, y: 220 },
+        cases: [conditionCase],
       },
-      createOutputNode({ x: 960, y: 220 }),
+      {
+        id: 'queue-direct',
+        kind: 'queue-select',
+        name: '直连请求模型队列',
+        enabled: true,
+        description: '把 route.requestedModel 的取值直接当作队列 id。',
+        position: { x: 860, y: 110 },
+        source: 'variable',
+        variablePath: 'route.requestedModel',
+        queueIds: [],
+        fallbackQueueIds: [],
+      },
+      {
+        id: 'queue-default',
+        kind: 'queue-select',
+        name: '默认队列',
+        enabled: true,
+        description: '未命中逻辑队列时落到内置默认队列。',
+        position: { x: 860, y: 330 },
+        source: 'fixed',
+        variablePath: '',
+        queueIds: [...DEFAULT_QUEUE_IDS],
+        fallbackQueueIds: [],
+      },
+      createOutputNode({ x: 1260, y: 220 }),
     ],
     edges: [
-      { id: 'edge-input-queue', sourceNodeId: 'input', sourcePort: 'out', targetNodeId: 'queue' },
-      { id: 'edge-queue-output', sourceNodeId: 'queue', sourcePort: 'out', targetNodeId: 'output' },
+      { id: 'edge-input-condition', sourceNodeId: 'input', sourcePort: 'out', targetNodeId: 'condition' },
+      { id: 'edge-condition-direct', sourceNodeId: 'condition', sourcePort: conditionCase.id, targetNodeId: 'queue-direct' },
+      { id: 'edge-condition-else', sourceNodeId: 'condition', sourcePort: 'else', targetNodeId: 'queue-default' },
+      { id: 'edge-queue-direct-output', sourceNodeId: 'queue-direct', sourcePort: 'out', targetNodeId: 'output' },
+      { id: 'edge-queue-default-output', sourceNodeId: 'queue-default', sourcePort: 'out', targetNodeId: 'output' },
     ],
   }
 }
@@ -256,9 +296,10 @@ export function createDefaultGraph(): WorkflowGraph {
       enabled: true,
       description: '选择一个或多个逻辑队列，交由出口执行。',
       position: { x: 1100, y: 220 },
-      mode: 'fixed',
+      source: 'fixed',
+      variablePath: '',
       queueIds: [],
-      fallbackQueueIds: [...DEFAULT_FALLBACK_QUEUE_IDS],
+      fallbackQueueIds: [],
     },
     createOutputNode({ x: 1440, y: 220 }),
   ]
@@ -291,7 +332,7 @@ export const ROUTER_POLICY_PRESETS: RouterPolicyPreset[] = [
   {
     id: 'model-direct',
     name: '默认策略：模型直达',
-    description: '请求模型命中逻辑队列就直连该队列，否则落到默认队列。',
+    description: '请求模型命中逻辑队列就直连该队列，否则落到默认队列（由条件 + 队列选择基础节点组合而成）。',
     isDefault: true,
     createGraph: createDefaultPolicyGraph,
   },

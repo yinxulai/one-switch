@@ -441,9 +441,11 @@ function WorkflowStudioCanvas() {
   )
 
   const conditionFieldHints = useMemo(() => {
-    if (!selectedNode || selectedNode.kind !== 'condition') return []
+    if (!selectedNode) return []
+    // 条件节点用它挑字段，队列选择节点用它挑「变量取值」的来源字段。
+    if (selectedNode.kind !== 'condition' && selectedNode.kind !== 'queue-select') return []
     return resolveInputHints(graph, selectedNode.id, samplePayload).fields
-  }, [graph, selectedNode])
+  }, [graph, selectedNode, samplePayload])
 
   // ---- 运行与保存 ----------------------------------------------------------
 

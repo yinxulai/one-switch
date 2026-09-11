@@ -58,10 +58,12 @@ Iteration 和 Loop 是结构化控制流节点：
 - 引擎自己产出的数据统一写在顶层 `route` 命名空间（决策结果 + 决策依据），字段定义见 [route-design.md](./route-design.md) §2.6；
 - 协议归一化结果、每个节点的判定明细等过程性数据只进 `trace`。
 
-`queue-select` 节点的取值方式决定落点：
+`queue-select` 节点的取值来源决定落点：
 
 - `fixed`：使用节点上配置的队列列表；
-- `follow-request-model`：请求的 `body.model` 命中本次可用逻辑队列时直连该队列，否则使用节点上的兜底队列（默认为内置的 `default`）。
+- `variable`：读取 `variablePath` 指向字段的取值作为落点（字符串 → 单个队列 id，字符串数组 → 队列 id 列表），取不到时使用节点上的兜底队列；兜底队列为空则不产出落点。
+
+引擎不内置「跟随请求模型」这类专用语义，默认策略由 `Input → Condition → QueueSelect(变量) / QueueSelect(固定 default) → Output` 组合而成，见 [route-design.md](./route-design.md) §2.7。
 
 抓不到任何队列时该节点仍产出 trace，`success` 为 `false`，但不阻断执行。
 

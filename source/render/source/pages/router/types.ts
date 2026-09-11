@@ -149,18 +149,24 @@ export interface ConditionNode extends WorkflowNodeBase {
 }
 
 /**
- * 队列选择节点的取值方式。
+ * 队列选择节点的落点来源。
  * - `fixed`：使用配置好的固定队列列表；
- * - `follow-request-model`：跟随请求里的模型 id（默认策略），命中逻辑队列就直连该队列，否则落到兜底队列。
+ * - `variable`：把某个字段的取值直接当作队列 id（例如 `route.requestedModel`），
+ *   取不到值时使用兜底队列。
+ *
+ * 这里刻意不内置「跟随请求模型」这类专用语义：请求模型直连由
+ * 「条件 + 队列选择(变量) + 队列选择(固定 default)」等基础节点组合表达。
  */
-export type QueueSelectMode = 'fixed' | 'follow-request-model'
+export type QueueSelectSource = 'fixed' | 'variable'
 
 export interface QueueSelectNode extends WorkflowNodeBase {
   kind: 'queue-select'
-  mode: QueueSelectMode
-  /** 固定队列（`fixed` 模式使用） */
+  source: QueueSelectSource
+  /** `variable` 来源读取的字段路径，例如 `route.requestedModel` */
+  variablePath: string
+  /** 固定队列（`fixed` 来源使用） */
   queueIds: string[]
-  /** 兜底队列（`follow-request-model` 模式使用，为空时回落到默认队列） */
+  /** 兜底队列（`variable` 取不到值时使用；为空表示不兜底） */
   fallbackQueueIds: string[]
 }
 
@@ -172,13 +178,13 @@ export interface RuntimeLogicalModel {
 
 export interface QueueSelection {
   queueIds: string[]
-  /** 是否由节点上的显式规则命中（跟随请求模型时，回落到兜底队列为 `false`） */
+  /** 是否由节点上的显式取值命中（变量取不到值而回落到兜底队列时为 `false`） */
   matched: boolean
   reason: string
 }
 
-/** 跟随请求模型模式下没有配置兜底队列时使用的默认兜底队列。 */
-export const DEFAULT_FALLBACK_QUEUE_IDS: string[] = ['default']
+/** 内置默认队列：默认策略里「未命中逻辑队列」分支的落点。 */
+export const DEFAULT_QUEUE_IDS: string[] = ['default']
 
 /**
  * 引擎写入 payload 的 `route` 命名空间：路由决策 + 决策依据。
@@ -197,7 +203,7 @@ export interface RouteDecision {
   transport: WorkflowTransport
   /** 最终落点队列；既没有命中也没有兜底时为空数组 */
   queueIds: string[]
-  /** 是否走了兜底策略（跟随请求模型，但请求模型不是逻辑队列 id） */
+  /** 是否走了兜底策略（变量取值没有命中，转而使用兜底队列） */
   fallback: boolean
   /** 请求体里的模型 id（`request.body.model`） */
   requestedModel: string
