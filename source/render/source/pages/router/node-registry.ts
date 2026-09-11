@@ -15,6 +15,7 @@ const workflowNodeTypes = {
   'protocol-discovery': WorkflowNode,
   condition: WorkflowNode,
   'model-select': WorkflowNode,
+  iteration: WorkflowNode,
 }
 
 /**

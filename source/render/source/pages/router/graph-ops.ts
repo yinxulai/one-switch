@@ -17,6 +17,7 @@ export function primarySourcePort(node: WorkflowNodeModel): string | null {
     case 'input':
     case 'control-input':
     case 'model-select':
+    case 'iteration':
       return 'out'
     case 'condition':
       return node.cases[0]?.id ?? 'else'

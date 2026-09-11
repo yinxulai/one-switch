@@ -5,6 +5,7 @@ import type { RouteNodeProps } from '../node-data'
 import { ConditionNodeView } from './condition-node'
 import { ControlInputNodeView } from './control-input-node'
 import { InputNodeView } from './input-node'
+import { IterationNodeView } from './iteration-node'
 import { ModelSelectNodeView } from './model-select-node'
 import { OutputNodeView } from './output-node'
 import { ProtocolDiscoveryNodeView } from './protocol-discovery-node'
@@ -20,5 +21,6 @@ export const NODE_COMPONENT_MAP: Record<WorkflowNodeKind, ComponentType<RouteNod
   'protocol-discovery': ProtocolDiscoveryNodeView,
   condition: ConditionNodeView,
   'model-select': ModelSelectNodeView,
+  iteration: IterationNodeView,
   output: OutputNodeView,
 }

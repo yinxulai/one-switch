@@ -197,7 +197,7 @@ Electron + Node + TypeScript + React/Vite
 - `claude-sonnet-*` -> `reasoning-lane`
 - 其他 -> `default`
 
-这条规则是系统默认规则，开箱即用。在路由工作台里它以**默认策略预设**的形式内建，并且完全由基础节点组合而成：`input → condition(route.requestedModel in route.availableModelIds) → model-select(变量取值 route.requestedModel) / model-select(固定 default) → output`。命中判断由条件节点的「字段取值」比较完成，引擎不预计算布尔结果。不需要逐条维护模型映射表，逻辑模型增减时规则自动生效。页头的「策略」下拉可随时切回该默认策略，详见 [route-design.md](./route-design.md) §2.7。
+这条规则是系统默认规则，开箱即用。在路由工作台里它以**默认策略预设**的形式内建，并且完全由基础节点组合而成：`input → condition(route.requestedModel in logicalModels[*].id) → model-select(变量取值 route.requestedModel) / model-select(固定 default) → output`。命中判断由条件节点的「字段取值」比较完成，引擎不预计算布尔结果。不需要逐条维护模型映射表，逻辑模型增减时规则自动生效。页头的「策略」下拉可随时切回该默认策略，详见 [route-design.md](./route-design.md) §2.7。
 
 #### 规则 2：Header 来源分流
 

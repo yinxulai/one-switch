@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { runWorkflow } from './engine'
 import { appendNode, cloneNode, connectEdge, insertNode, portKey, primarySourcePort, removeEdges, removeNode, resolveInsertAnchor } from './graph-ops'
-import { createDefaultGraph, createDefaultPolicyGraph, createNodeByKind } from './graph-model'
+import { createDefaultGraph, createDefaultPolicyGraph, createIterationGraph, createNodeByKind } from './graph-model'
 import { APPENDABLE_KINDS } from './node-meta'
 import { WorkflowGraphSchema } from './schemas'
 import type { ConditionNode, ControlInputNode, WorkflowGraph, WorkflowNodeModel } from './types'
@@ -247,14 +247,34 @@ describe('图谱校验（回归）', () => {
     expect(WorkflowGraphSchema.safeParse(graph).error?.issues).toBeUndefined()
     // 规则完全由既有基础节点表达，没有任何专用节点类型。
     expect(new Set(graph.nodes.map(node => node.kind))).toEqual(new Set(['input', 'condition', 'model-select', 'output']))
-    // 命中判断是一条普通的「字段 in 字段」条件，不是引擎预计算的布尔字段。
+    // 命中判断是一条普通的「字段 in 字段」条件，不是引擎预计算的布尔字段；
+    // 右侧用通配投影读逻辑模型 id，不需要再派生一份 id 数组。
     const condition = graph.nodes.find(node => node.kind === 'condition')
     expect(condition?.cases[0].conditions[0]).toMatchObject({
       fieldPath: 'route.requestedModel',
       operator: 'in',
       valueSource: 'field',
-      valueFieldPath: 'route.availableModelIds',
+      valueFieldPath: 'logicalModels[*].id',
     })
+  })
+
+  it('遍历迭代模板必须通过 schema 校验，且循环体靠回边闭合', () => {
+    const graph = createIterationGraph()
+    expect(WorkflowGraphSchema.safeParse(graph).error?.issues).toBeUndefined()
+
+    const iteration = graph.nodes.find(node => node.kind === 'iteration')
+    expect(iteration).toBeDefined()
+    expect(iteration?.sourcePath).toBe('logicalModels')
+
+    // body 端口进循环体，循环体末端连回迭代节点自身表示「本轮结束」。
+    const bodyEdge = graph.edges.find(edge => edge.sourceNodeId === iteration?.id && edge.sourcePort === 'body')
+    expect(bodyEdge?.targetNodeId).toBe('iteration-condition')
+    const backEdges = graph.edges
+      .filter(edge => edge.targetNodeId === iteration?.id && edge.sourceNodeId !== 'input')
+      .map(edge => edge.sourceNodeId)
+    expect(backEdges.sort()).toEqual(['iteration-condition', 'iteration-model'])
+    // 从 body 端口往回走能回到本节点，说明循环是闭合的。
+    expect(graph.edges.some(edge => edge.sourceNodeId === 'iteration-model' && edge.targetNodeId === iteration?.id)).toBe(true)
   })
 
   it('旧图的 kind / mode / queueIds 会被迁移到 model-select', () => {

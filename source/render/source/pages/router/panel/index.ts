@@ -5,6 +5,7 @@ import type { NodePanelProps } from '../node-data'
 import { ConditionPanel } from './condition-panel'
 import { ControlInputPanel } from './control-input-panel'
 import { InputPanel } from './input-panel'
+import { IterationPanel } from './iteration-panel'
 import { ModelSelectPanel } from './model-select-panel'
 import { OutputPanel } from './output-panel'
 import { ProtocolDiscoveryPanel } from './protocol-discovery-panel'
@@ -19,5 +20,6 @@ export const PANEL_COMPONENT_MAP: Record<WorkflowNodeKind, ComponentType<NodePan
   'protocol-discovery': ProtocolDiscoveryPanel,
   condition: ConditionPanel,
   'model-select': ModelSelectPanel,
+  iteration: IterationPanel,
   output: OutputPanel,
 }
