@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNull, notInArray } from 'drizzle-orm'
 import { ProtocolConverterSchema, ProviderModelEndpointSchema } from '@common/schemas'
 import type {
   ProtocolConverter,
@@ -39,7 +39,7 @@ export async function listProviderModelsForLogicalModel(logicalModelId: string, 
   const rows = getDb().select({ model: providerModels, policy: schedulingPolicies })
     .from(schedulingPolicies)
     .innerJoin(providerModels, eq(schedulingPolicies.providerModelId, providerModels.id))
-    .where(eq(schedulingPolicies.logicalModelId, logicalModelId))
+    .where(and(eq(schedulingPolicies.logicalModelId, logicalModelId), isNull(schedulingPolicies.deletedTime)))
     .orderBy(asc(schedulingPolicies.priority), desc(schedulingPolicies.weight), asc(schedulingPolicies.createdTime), asc(schedulingPolicies.providerModelId))
     .all()
   return rows
@@ -105,34 +105,56 @@ export async function updateProviderModelRoute(id: string, updates: Partial<Omit
       updatedTime: time,
     }).where(eq(providerModels.id, id)).run()
     if (updates.endpoints !== undefined) {
-      transaction.delete(protocolConverters).where(sql`providerModelEndpointId IN (SELECT id FROM provider_model_endpoints WHERE providerModelId = ${id})`).run()
-      transaction.delete(providerModelEndpoints).where(eq(providerModelEndpoints.providerModelId, id)).run()
+      // 不再「先删后插」：端点集合变化交给 `replaceRouteEndpoints` 做差异更新，
+      // 没变的绑定原地保留（连同它的 id），只对增减做软删除/新增。
       replaceRouteEndpoints(transaction, id, updates.providerId ?? existing.providerId, updates.endpoints, time)
     }
   })
   return { ...existing, ...updates, id, updatedTime: time }
 }
 
+/**
+ * 删除模型：软删除模型本身，并把挂在它下面的东西一起打标。
+ *
+ * 绑定、协议转换器、调度策略全部以这个模型为主语，模型软删了它们就不该再被读到
+ * （队列里也不该再出现一个已删除的模型）。打标而不是删除，是为了之后仍能回答
+ * 「这个模型以前绑过哪个端点」。
+ */
 export async function deleteProviderModelRoute(id: string): Promise<void> {
   const time = now()
-  getDb().update(providerModels).set({ enabled: false, deletedTime: time, updatedTime: time }).where(and(eq(providerModels.id, id), isNull(providerModels.deletedTime))).run()
+  getDb().transaction(transaction => {
+    const bindingIds = transaction.select({ id: providerModelEndpoints.id }).from(providerModelEndpoints)
+      .where(and(eq(providerModelEndpoints.providerModelId, id), isNull(providerModelEndpoints.deletedTime))).all().map(row => row.id)
+    if (bindingIds.length > 0) {
+      transaction.update(protocolConverters).set({ enabled: false, deletedTime: time, updatedTime: time })
+        .where(and(inArray(protocolConverters.providerModelEndpointId, bindingIds), isNull(protocolConverters.deletedTime))).run()
+      transaction.update(providerModelEndpoints).set({ enabled: false, deletedTime: time, updatedTime: time })
+        .where(inArray(providerModelEndpoints.id, bindingIds)).run()
+    }
+    transaction.update(schedulingPolicies).set({ enabled: false, deletedTime: time, updatedTime: time })
+      .where(and(eq(schedulingPolicies.providerModelId, id), isNull(schedulingPolicies.deletedTime))).run()
+    transaction.update(providerModels).set({ enabled: false, deletedTime: time, updatedTime: time })
+      .where(and(eq(providerModels.id, id), isNull(providerModels.deletedTime))).run()
+  })
 }
 
 export async function listProviderModelEndpoints(providerModelId: string): Promise<ProviderModelEndpoint[]> {
-  return getDb().select().from(providerModelEndpoints).where(eq(providerModelEndpoints.providerModelId, providerModelId)).orderBy(providerModelEndpoints.createdTime, providerModelEndpoints.id).all().map(parseProviderModelEndpoint)
+  return getDb().select().from(providerModelEndpoints)
+    .where(and(eq(providerModelEndpoints.providerModelId, providerModelId), isNull(providerModelEndpoints.deletedTime)))
+    .orderBy(providerModelEndpoints.createdTime, providerModelEndpoints.id).all().map(parseProviderModelEndpoint)
 }
 
 export async function getProviderModelEndpoint(id: string): Promise<ProviderModelEndpoint | undefined> {
-  const row = getDb().select().from(providerModelEndpoints).where(eq(providerModelEndpoints.id, id)).get()
+  const row = getDb().select().from(providerModelEndpoints).where(and(eq(providerModelEndpoints.id, id), isNull(providerModelEndpoints.deletedTime))).get()
   return row ? parseProviderModelEndpoint(row) : undefined
 }
 
-type CreateProviderModelEndpointInput = Omit<ProviderModelEndpoint, 'id' | 'createdTime' | 'updatedTime' | 'url' | 'enabled'> & { url?: string | null; enabled?: boolean }
+type CreateProviderModelEndpointInput = Omit<ProviderModelEndpoint, 'id' | 'createdTime' | 'updatedTime' | 'deletedTime' | 'url' | 'enabled'> & { url?: string | null; enabled?: boolean }
 
 export async function createProviderModelEndpoint(input: CreateProviderModelEndpointInput): Promise<ProviderModelEndpoint> {
   const time = now()
   const endpoint = ProviderModelEndpointSchema.parse({ ...input, id: generateId('pme_'), url: input.url ?? null, enabled: input.enabled ?? true, createdTime: time, updatedTime: time })
-  getDb().insert(providerModelEndpoints).values(endpoint).run()
+  getDb().insert(providerModelEndpoints).values({ ...endpoint, deletedTime: null }).run()
   return endpoint
 }
 
@@ -140,32 +162,39 @@ export async function updateProviderModelEndpoint(id: string, updates: Partial<P
   const existing = await getProviderModelEndpoint(id)
   if (!existing) throw new Error(`provider model endpoint not found: ${id}`)
   const endpoint = ProviderModelEndpointSchema.parse({ ...existing, ...updates, id, updatedTime: now() })
-  getDb().update(providerModelEndpoints).set({ providerEndpointId: endpoint.providerEndpointId, url: endpoint.url, enabled: endpoint.enabled, updatedTime: endpoint.updatedTime }).where(eq(providerModelEndpoints.id, id)).run()
+  getDb().update(providerModelEndpoints).set({ providerEndpointId: endpoint.providerEndpointId, url: endpoint.url, enabled: endpoint.enabled, updatedTime: endpoint.updatedTime })
+    .where(and(eq(providerModelEndpoints.id, id), isNull(providerModelEndpoints.deletedTime))).run()
   return endpoint
 }
 
+/** 软删除一条绑定（连同它的协议转换器）：行留下来才能回答「这个模型以前绑过什么」。 */
 export async function deleteProviderModelEndpoint(id: string): Promise<void> {
+  const time = now()
   getDb().transaction(transaction => {
-    transaction.delete(protocolConverters).where(eq(protocolConverters.providerModelEndpointId, id)).run()
-    transaction.delete(providerModelEndpoints).where(eq(providerModelEndpoints.id, id)).run()
+    transaction.update(protocolConverters).set({ enabled: false, deletedTime: time, updatedTime: time })
+      .where(and(eq(protocolConverters.providerModelEndpointId, id), isNull(protocolConverters.deletedTime))).run()
+    transaction.update(providerModelEndpoints).set({ enabled: false, deletedTime: time, updatedTime: time })
+      .where(and(eq(providerModelEndpoints.id, id), isNull(providerModelEndpoints.deletedTime))).run()
   })
 }
 
 export async function listProtocolConverters(providerModelEndpointId: string): Promise<ProtocolConverter[]> {
-  return getDb().select().from(protocolConverters).where(eq(protocolConverters.providerModelEndpointId, providerModelEndpointId)).orderBy(protocolConverters.createdTime, protocolConverters.id).all().map(parseProtocolConverter)
+  return getDb().select().from(protocolConverters)
+    .where(and(eq(protocolConverters.providerModelEndpointId, providerModelEndpointId), isNull(protocolConverters.deletedTime)))
+    .orderBy(protocolConverters.createdTime, protocolConverters.id).all().map(parseProtocolConverter)
 }
 
 export async function getProtocolConverter(id: string): Promise<ProtocolConverter | undefined> {
-  const row = getDb().select().from(protocolConverters).where(eq(protocolConverters.id, id)).get()
+  const row = getDb().select().from(protocolConverters).where(and(eq(protocolConverters.id, id), isNull(protocolConverters.deletedTime))).get()
   return row ? parseProtocolConverter(row) : undefined
 }
 
-type CreateProtocolConverterInput = Omit<ProtocolConverter, 'id' | 'createdTime' | 'updatedTime' | 'enabled'> & { enabled?: boolean }
+type CreateProtocolConverterInput = Omit<ProtocolConverter, 'id' | 'createdTime' | 'updatedTime' | 'enabled' | 'deletedTime'> & { enabled?: boolean }
 
 export async function createProtocolConverter(input: CreateProtocolConverterInput): Promise<ProtocolConverter> {
   const time = now()
   const converter = ProtocolConverterSchema.parse({ ...input, id: generateId('conv_'), enabled: input.enabled ?? true, createdTime: time, updatedTime: time })
-  getDb().insert(protocolConverters).values(converter).run()
+  getDb().insert(protocolConverters).values({ ...converter, deletedTime: null }).run()
   return converter
 }
 
@@ -173,29 +202,84 @@ export async function updateProtocolConverter(id: string, updates: Partial<Pick<
   const existing = await getProtocolConverter(id)
   if (!existing) throw new Error(`protocol converter not found: ${id}`)
   const converter = ProtocolConverterSchema.parse({ ...existing, ...updates, id, updatedTime: now() })
-  getDb().update(protocolConverters).set({ clientProtocol: converter.clientProtocol, enabled: converter.enabled, updatedTime: converter.updatedTime }).where(eq(protocolConverters.id, id)).run()
+  getDb().update(protocolConverters).set({ clientProtocol: converter.clientProtocol, enabled: converter.enabled, updatedTime: converter.updatedTime })
+    .where(and(eq(protocolConverters.id, id), isNull(protocolConverters.deletedTime))).run()
   return converter
 }
 
 export async function deleteProtocolConverter(id: string): Promise<void> {
-  getDb().delete(protocolConverters).where(eq(protocolConverters.id, id)).run()
+  const time = now()
+  getDb().update(protocolConverters).set({ enabled: false, deletedTime: time, updatedTime: time })
+    .where(and(eq(protocolConverters.id, id), isNull(protocolConverters.deletedTime))).run()
 }
 
 type Transaction = Parameters<Parameters<ReturnType<typeof getDb>['transaction']>[0]>[0]
 
+/**
+ * 把模型的端点绑定调成给定集合。
+ *
+ * 「目标集合」是完整的：目标里没有的绑定一律软删除（连带它的转换器），
+ * 目标里有的则原地更新——能重用就不新增，行的 id 保持稳定。
+ * 这样频繁编辑模型不会再像以前那样每次把全部绑定删掉重建。
+ */
 function replaceRouteEndpoints(transaction: Transaction, modelId: string, providerId: string, endpoints: ProviderModelRouteEndpoint[], time: number): void {
+  const activeBindings = transaction.select().from(providerModelEndpoints)
+    .where(and(eq(providerModelEndpoints.providerModelId, modelId), isNull(providerModelEndpoints.deletedTime))).all()
+  const retainedBindingIds = new Set<string>()
+
   for (const endpoint of endpoints) {
-    const endpointRow = transaction.select().from(providerEndpoints).where(and(eq(providerEndpoints.providerId, providerId), eq(providerEndpoints.protocol, endpoint.protocol))).get()
+    const endpointRow = transaction.select().from(providerEndpoints)
+      .where(and(eq(providerEndpoints.providerId, providerId), eq(providerEndpoints.protocol, endpoint.protocol), isNull(providerEndpoints.deletedTime))).get()
     const endpointId = endpointRow?.id ?? generateId('end_')
-    if (!endpointRow) transaction.insert(providerEndpoints).values({ id: endpointId, providerId, protocol: endpoint.protocol, url: endpoint.endpointUrl || 'https://invalid.local', createdTime: time, updatedTime: time }).run()
-    const bindingId = generateId('pme_')
-    transaction.insert(providerModelEndpoints).values({ id: bindingId, providerModelId: modelId, providerEndpointId: endpointId, url: endpoint.endpointUrl || null, enabled: true, createdTime: time, updatedTime: time }).run()
-    if (endpoint.protocolConversionEnabled) {
-      for (const clientProtocol of CONVERTIBLE_PROTOCOLS[endpoint.protocol]) {
-        transaction.insert(protocolConverters).values({ id: generateId('conv_'), providerModelEndpointId: bindingId, clientProtocol, enabled: true, createdTime: time, updatedTime: time }).run()
-      }
-    }
+    if (!endpointRow) transaction.insert(providerEndpoints).values({ id: endpointId, providerId, protocol: endpoint.protocol, url: endpoint.endpointUrl || 'https://invalid.local', createdTime: time, updatedTime: time, deletedTime: null }).run()
+
+    const binding = activeBindings.find(item => item.providerEndpointId === endpointId)
+    const bindingId = binding?.id ?? generateId('pme_')
+    if (binding) transaction.update(providerModelEndpoints).set({ url: endpoint.endpointUrl || null, enabled: true, updatedTime: time }).where(eq(providerModelEndpoints.id, bindingId)).run()
+    else transaction.insert(providerModelEndpoints).values({ id: bindingId, providerModelId: modelId, providerEndpointId: endpointId, url: endpoint.endpointUrl || null, enabled: true, createdTime: time, updatedTime: time, deletedTime: null }).run()
+    retainedBindingIds.add(bindingId)
+
+    syncProtocolConverters(transaction, bindingId, endpoint.protocol, endpoint.protocolConversionEnabled, time)
   }
+
+  const removedBindings = activeBindings.filter(binding => !retainedBindingIds.has(binding.id))
+  if (removedBindings.length === 0) return
+  const removedBindingIds = removedBindings.map(binding => binding.id)
+  transaction.update(protocolConverters).set({ enabled: false, deletedTime: time, updatedTime: time })
+    .where(and(inArray(protocolConverters.providerModelEndpointId, removedBindingIds), isNull(protocolConverters.deletedTime))).run()
+  transaction.update(providerModelEndpoints).set({ enabled: false, deletedTime: time, updatedTime: time })
+    .where(inArray(providerModelEndpoints.id, removedBindingIds)).run()
+}
+
+/**
+ * 把一条绑定的协议转换器调成给定状态。
+ *
+ * 开启转换时目标集合是 `CONVERTIBLE_PROTOCOLS[protocol]`，关闭时是空集。
+ * 同 `replaceRouteEndpoints`：能重用就原地启用，多出来的软删除。
+ */
+function syncProtocolConverters(transaction: Transaction, providerModelEndpointId: string, protocol: ProviderModelRouteEndpoint['protocol'], enabled: boolean, time: number): void {
+  const desiredProtocols = enabled ? CONVERTIBLE_PROTOCOLS[protocol] : []
+  const activeConverters = transaction.select().from(protocolConverters)
+    .where(and(eq(protocolConverters.providerModelEndpointId, providerModelEndpointId), isNull(protocolConverters.deletedTime))).all()
+  const activeByProtocol = new Map(activeConverters.map(converter => [converter.clientProtocol, converter]))
+  const retainedProtocols: string[] = []
+
+  for (const clientProtocol of desiredProtocols) {
+    retainedProtocols.push(clientProtocol)
+    const active = activeByProtocol.get(clientProtocol)
+    if (active) {
+      if (!active.enabled) transaction.update(protocolConverters).set({ enabled: true, updatedTime: time }).where(eq(protocolConverters.id, active.id)).run()
+      continue
+    }
+    transaction.insert(protocolConverters).values({ id: generateId('conv_'), providerModelEndpointId, clientProtocol, enabled: true, createdTime: time, updatedTime: time, deletedTime: null }).run()
+  }
+
+  transaction.update(protocolConverters).set({ enabled: false, deletedTime: time, updatedTime: time })
+    .where(and(
+      eq(protocolConverters.providerModelEndpointId, providerModelEndpointId),
+      isNull(protocolConverters.deletedTime),
+      retainedProtocols.length === 0 ? undefined : notInArray(protocolConverters.clientProtocol, retainedProtocols),
+    )).run()
 }
 
 function parseProviderModelEndpoint(row: typeof providerModelEndpoints.$inferSelect): ProviderModelEndpoint {
@@ -210,7 +294,7 @@ function mapProviderModelView(row: typeof providerModels.$inferSelect): Provider
   const endpointRows = getDb().select({ endpoint: providerEndpoints, binding: providerModelEndpoints })
     .from(providerModelEndpoints)
     .innerJoin(providerEndpoints, eq(providerModelEndpoints.providerEndpointId, providerEndpoints.id))
-    .where(and(eq(providerModelEndpoints.providerModelId, row.id), eq(providerModelEndpoints.enabled, true), eq(providerEndpoints.enabled, true))).all()
+    .where(and(eq(providerModelEndpoints.providerModelId, row.id), eq(providerModelEndpoints.enabled, true), isNull(providerModelEndpoints.deletedTime), eq(providerEndpoints.enabled, true), isNull(providerEndpoints.deletedTime))).all()
   return {
     id: row.id,
     providerId: row.providerId,
@@ -222,7 +306,7 @@ function mapProviderModelView(row: typeof providerModels.$inferSelect): Provider
     endpoints: endpointRows.map(({ endpoint, binding }) => ({
       ...parseProviderModelEndpoint(binding),
       protocol: endpoint.protocol as ProviderModelRouteEndpoint['protocol'],
-      conversions: getDb().select().from(protocolConverters).where(eq(protocolConverters.providerModelEndpointId, binding.id)).all().map(parseProtocolConverter),
+      conversions: getDb().select().from(protocolConverters).where(and(eq(protocolConverters.providerModelEndpointId, binding.id), isNull(protocolConverters.deletedTime))).all().map(parseProtocolConverter),
     })),
   }
 }
@@ -231,7 +315,7 @@ function mapProviderModelRoute(row: typeof providerModels.$inferSelect): Provide
   const endpointRows = getDb().select({ endpoint: providerEndpoints, binding: providerModelEndpoints })
     .from(providerModelEndpoints)
     .innerJoin(providerEndpoints, eq(providerModelEndpoints.providerEndpointId, providerEndpoints.id))
-    .where(and(eq(providerModelEndpoints.providerModelId, row.id), eq(providerModelEndpoints.enabled, true), eq(providerEndpoints.enabled, true))).all()
+    .where(and(eq(providerModelEndpoints.providerModelId, row.id), eq(providerModelEndpoints.enabled, true), isNull(providerModelEndpoints.deletedTime), eq(providerEndpoints.enabled, true), isNull(providerEndpoints.deletedTime))).all()
   return {
     id: row.id,
     providerId: row.providerId,
@@ -240,7 +324,7 @@ function mapProviderModelRoute(row: typeof providerModels.$inferSelect): Provide
       protocol: endpoint.protocol as ProviderModelRouteEndpoint['protocol'],
       endpointUrl: binding.url ?? endpoint.url,
       customAuthHeader: null,
-      protocolConversionEnabled: getDb().select().from(protocolConverters).where(eq(protocolConverters.providerModelEndpointId, binding.id)).all().some(conversion => conversion.enabled),
+      protocolConversionEnabled: getDb().select().from(protocolConverters).where(and(eq(protocolConverters.providerModelEndpointId, binding.id), isNull(protocolConverters.deletedTime))).all().some(conversion => conversion.enabled),
     })),
     priority: 0,
     enabled: row.enabled,

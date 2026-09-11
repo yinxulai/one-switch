@@ -92,6 +92,7 @@ export const ProviderEndpointSchema = z.object({
   enabled: z.boolean().default(true),
   createdTime: z.number().int(),
   updatedTime: z.number().int(),
+  deletedTime: z.number().int().nullable().default(null),
 })
 export type ProviderEndpoint = z.infer<typeof ProviderEndpointSchema>
 
@@ -114,6 +115,7 @@ export const ProviderModelEndpointSchema = z.object({
   enabled: z.boolean().default(true),
   createdTime: z.number().int(),
   updatedTime: z.number().int(),
+  deletedTime: z.number().int().nullable().default(null),
 })
 export type ProviderModelEndpoint = z.infer<typeof ProviderModelEndpointSchema>
 
@@ -124,6 +126,7 @@ export const ProtocolConverterSchema = z.object({
   enabled: z.boolean().default(false),
   createdTime: z.number().int(),
   updatedTime: z.number().int(),
+  deletedTime: z.number().int().nullable().default(null),
 })
 export type ProtocolConverter = z.infer<typeof ProtocolConverterSchema>
 
@@ -136,6 +139,7 @@ export const SchedulingPolicySchema = z.object({
   enabled: z.boolean().default(true),
   createdTime: z.number().int(),
   updatedTime: z.number().int(),
+  deletedTime: z.number().int().nullable().default(null),
 })
 export type SchedulingPolicy = z.infer<typeof SchedulingPolicySchema>
 
