@@ -91,11 +91,11 @@ function mapLogicalModel(row: typeof logicalModels.$inferSelect): LogicalModel {
 }
 
 function mapSchedulingPolicy(row: typeof schedulingPolicies.$inferSelect): SchedulingPolicy {
-  return { ...row }
+  return { ...row, createdTime: Number(row.createdTime), updatedTime: Number(row.updatedTime), deletedTime: row.deletedTime === null ? null : Number(row.deletedTime) }
 }
 
 export async function listSchedulingPolicies(logicalModelId?: string): Promise<SchedulingPolicy[]> {
-  const condition = logicalModelId ? eq(schedulingPolicies.logicalModelId, logicalModelId) : undefined
+  const condition = and(isNull(schedulingPolicies.deletedTime), logicalModelId ? eq(schedulingPolicies.logicalModelId, logicalModelId) : undefined)
   return getDb().select().from(schedulingPolicies)
     .where(condition)
     .orderBy(asc(schedulingPolicies.priority), desc(schedulingPolicies.weight), asc(schedulingPolicies.createdTime), asc(schedulingPolicies.providerModelId))
@@ -118,14 +118,19 @@ export async function upsertSchedulingPolicy(input: UpsertSchedulingPolicyInput)
     enabled: input.enabled ?? true,
     createdTime: time,
     updatedTime: time,
+    deletedTime: null,
   }
   getDb().insert(schedulingPolicies).values(values).onConflictDoUpdate({
     target: [schedulingPolicies.logicalModelId, schedulingPolicies.providerModelId],
-    set: { strategy: values.strategy, priority: values.priority, weight: values.weight, enabled: values.enabled, updatedTime: time },
+    // 主键不含 `deletedTime`，所以「重新把模型加回队列」就是让同一行复活：
+    // 命中被软删除的历史行时把 `deletedTime` 清掉，而不是再插一条。
+    set: { strategy: values.strategy, priority: values.priority, weight: values.weight, enabled: values.enabled, updatedTime: time, deletedTime: null },
   }).run()
   return mapSchedulingPolicy(getDb().select().from(schedulingPolicies).where(and(eq(schedulingPolicies.logicalModelId, input.logicalModelId), eq(schedulingPolicies.providerModelId, input.providerModelId))).get()!)
 }
 
 export async function deleteSchedulingPolicy(logicalModelId: string, providerModelId: string): Promise<void> {
-  getDb().delete(schedulingPolicies).where(and(eq(schedulingPolicies.logicalModelId, logicalModelId), eq(schedulingPolicies.providerModelId, providerModelId))).run()
+  const time = now()
+  getDb().update(schedulingPolicies).set({ enabled: false, deletedTime: time, updatedTime: time })
+    .where(and(eq(schedulingPolicies.logicalModelId, logicalModelId), eq(schedulingPolicies.providerModelId, providerModelId), isNull(schedulingPolicies.deletedTime))).run()
 }

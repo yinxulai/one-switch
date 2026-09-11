@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "49a46818-becb-4d26-9c37-e1421919df50",
+  "id": "996d8366-7816-4b5d-a832-5f3edec73820",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -375,6 +375,16 @@
       "table": "protocol_converters"
     },
     {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "deletedTime",
+      "entityType": "columns",
+      "table": "protocol_converters"
+    },
+    {
       "type": "text",
       "notNull": false,
       "autoincrement": false,
@@ -441,6 +451,16 @@
       "default": null,
       "generated": null,
       "name": "updatedTime",
+      "entityType": "columns",
+      "table": "provider_endpoints"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "deletedTime",
       "entityType": "columns",
       "table": "provider_endpoints"
     },
@@ -571,6 +591,16 @@
       "default": null,
       "generated": null,
       "name": "updatedTime",
+      "entityType": "columns",
+      "table": "provider_model_endpoints"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "deletedTime",
       "entityType": "columns",
       "table": "provider_model_endpoints"
     },
@@ -1635,6 +1665,16 @@
       "table": "scheduling_policies"
     },
     {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "deletedTime",
+      "entityType": "columns",
+      "table": "scheduling_policies"
+    },
+    {
       "type": "text",
       "notNull": false,
       "autoincrement": false,
@@ -2245,10 +2285,6 @@
     {
       "columns": [
         {
-          "value": "type",
-          "isExpression": false
-        },
-        {
           "value": "createdTime",
           "isExpression": false
         }
@@ -2256,7 +2292,7 @@
       "isUnique": false,
       "where": null,
       "origin": "manual",
-      "name": "idx_attempt_usages_type_time",
+      "name": "idx_attempt_usages_created_time",
       "entityType": "indexes",
       "table": "attempt_usages"
     },
@@ -2300,9 +2336,9 @@
         }
       ],
       "isUnique": true,
-      "where": null,
+      "where": "deletedTime IS NULL",
       "origin": "manual",
-      "name": "idx_protocol_converters_unique",
+      "name": "idx_protocol_converters_unique_active",
       "entityType": "indexes",
       "table": "protocol_converters"
     },
@@ -2327,6 +2363,20 @@
     {
       "columns": [
         {
+          "value": "deletedTime",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_protocol_converters_deleted_time",
+      "entityType": "indexes",
+      "table": "protocol_converters"
+    },
+    {
+      "columns": [
+        {
           "value": "providerId",
           "isExpression": false
         },
@@ -2336,9 +2386,9 @@
         }
       ],
       "isUnique": true,
-      "where": null,
+      "where": "deletedTime IS NULL",
       "origin": "manual",
-      "name": "idx_provider_endpoints_provider_protocol",
+      "name": "idx_provider_endpoints_provider_protocol_active",
       "entityType": "indexes",
       "table": "provider_endpoints"
     },
@@ -2363,6 +2413,20 @@
     {
       "columns": [
         {
+          "value": "deletedTime",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_provider_endpoints_deleted_time",
+      "entityType": "indexes",
+      "table": "provider_endpoints"
+    },
+    {
+      "columns": [
+        {
           "value": "providerModelId",
           "isExpression": false
         },
@@ -2372,9 +2436,9 @@
         }
       ],
       "isUnique": true,
-      "where": null,
+      "where": "deletedTime IS NULL",
       "origin": "manual",
-      "name": "idx_provider_model_endpoints_unique",
+      "name": "idx_provider_model_endpoints_unique_active",
       "entityType": "indexes",
       "table": "provider_model_endpoints"
     },
@@ -2393,6 +2457,20 @@
       "where": null,
       "origin": "manual",
       "name": "idx_provider_model_endpoints_provider_endpoint",
+      "entityType": "indexes",
+      "table": "provider_model_endpoints"
+    },
+    {
+      "columns": [
+        {
+          "value": "deletedTime",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_provider_model_endpoints_deleted_time",
       "entityType": "indexes",
       "table": "provider_model_endpoints"
     },
@@ -2531,6 +2609,20 @@
     {
       "columns": [
         {
+          "value": "createdTime",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_request_attempts_created_time",
+      "entityType": "indexes",
+      "table": "request_attempts"
+    },
+    {
+      "columns": [
+        {
           "value": "providerId",
           "isExpression": false
         },
@@ -2629,12 +2721,16 @@
         {
           "value": "status",
           "isExpression": false
+        },
+        {
+          "value": "createdTime",
+          "isExpression": false
         }
       ],
       "isUnique": false,
       "where": null,
       "origin": "manual",
-      "name": "idx_request_logs_status",
+      "name": "idx_request_logs_status_created_time",
       "entityType": "indexes",
       "table": "request_logs"
     },
@@ -2711,10 +2807,6 @@
     {
       "columns": [
         {
-          "value": "type",
-          "isExpression": false
-        },
-        {
           "value": "createdTime",
           "isExpression": false
         }
@@ -2722,7 +2814,7 @@
       "isUnique": false,
       "where": null,
       "origin": "manual",
-      "name": "idx_request_usages_type_time",
+      "name": "idx_request_usages_created_time",
       "entityType": "indexes",
       "table": "request_usages"
     },
@@ -2781,6 +2873,20 @@
       "where": null,
       "origin": "manual",
       "name": "idx_scheduling_policies_route",
+      "entityType": "indexes",
+      "table": "scheduling_policies"
+    },
+    {
+      "columns": [
+        {
+          "value": "deletedTime",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_scheduling_policies_deleted_time",
       "entityType": "indexes",
       "table": "scheduling_policies"
     },
