@@ -79,6 +79,9 @@ import type { NodePosition, WorkflowGraph, WorkflowNodeKind, WorkflowNodeModel, 
 /** 画布下方的图例：只展示主干语义，控制输入与输出不重复色。 */
 const legendKinds: WorkflowNodeKind[] = ['input', 'protocol-discovery', 'condition', 'queue-select', 'output']
 
+/** 这些元素自身消费删除键，画布的键盘删除需要跳过。 */
+const EDITABLE_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT'])
+
 /** 读取本地缓存的图；缓存不合法时回落到默认图。 */
 function loadInitialGraph(): WorkflowGraph {
   try {
@@ -230,6 +233,27 @@ function WorkflowStudioCanvas() {
     setGraph(current => removableIds.reduce((acc, nodeId) => removeNode(acc, nodeId), current))
     setSelectedNodeId(current => current && removableIds.includes(current) ? null : current)
   }, [])
+
+  /**
+   * 工作台的选中态由页面自己维护（`selectedNodeId`），React Flow 内部并不知道，
+   * 因此 `deleteKeyCode` 交给页面处理：只删除当前选中且不受保护的节点，
+   * 输入 / 输出节点以及输入框内的删除一律放行给浏览器。
+   */
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Delete' && event.key !== 'Backspace') return
+      if (!selectedNodeId) return
+      const target = event.target as HTMLElement | null
+      if (target && (target.isContentEditable || EDITABLE_TAGS.has(target.tagName))) return
+      const node = graphRef.current.nodes.find(item => item.id === selectedNodeId)
+      if (!node || isProtectedNode(node)) return
+      event.preventDefault()
+      handleDeleteNode(selectedNodeId)
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [handleDeleteNode, selectedNodeId])
 
   const handleNodeMouseEnter = useCallback((_event: ReactMouseEvent, node: RouteFlowNode) => {
     setHoveredNodeId(node.id)
@@ -468,6 +492,7 @@ function WorkflowStudioCanvas() {
                 panOnDrag={dockMode === 'pan'}
                 selectionOnDrag={dockMode === 'select'}
                 selectionMode={SelectionMode.Partial}
+                deleteKeyCode={null}
                 multiSelectionKeyCode={null}
                 selectionKeyCode={null}
                 minZoom={0.25}
