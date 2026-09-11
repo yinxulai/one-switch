@@ -106,6 +106,74 @@ describe('analytics performance probe', () => {
     fs.rmSync(temporaryDirectory, { recursive: true, force: true })
   })
 
+  it('compares aggregation strategies', async () => {
+    const db = getDb().$client
+    const DAY = 24 * 60 * 60 * 1000
+    const variants = {
+      summaryJoins: "SELECT coalesce(sum(case when u.type in ('inputTokens','outputTokens') then u.value else 0 end),0) FROM request_usages u JOIN request_logs r ON u.requestId = r.id WHERE r.createdTime >= ?",
+      summaryPivotBounded: "SELECT coalesce(sum(p.tokens),0) FROM request_logs r LEFT JOIN (SELECT requestId, sum(case when type in ('inputTokens','outputTokens') then value else 0 end) AS tokens FROM request_usages WHERE createdTime >= ? GROUP BY requestId) p ON p.requestId = r.id WHERE r.createdTime >= ?",
+      summaryPivotUnbounded: "SELECT coalesce(sum(p.tokens),0) FROM request_logs r LEFT JOIN (SELECT requestId, sum(case when type in ('inputTokens','outputTokens') then value else 0 end) AS tokens FROM request_usages GROUP BY requestId) p ON p.requestId = r.id WHERE r.createdTime >= ?",
+      summaryPivotInSubquery: "SELECT coalesce(sum(p.tokens),0) FROM request_logs r LEFT JOIN (SELECT requestId, sum(case when type in ('inputTokens','outputTokens') then value else 0 end) AS tokens FROM request_usages WHERE requestId IN (SELECT id FROM request_logs WHERE createdTime >= ?) GROUP BY requestId) p ON p.requestId = r.id WHERE r.createdTime >= ?",
+      trendJoins: "SELECT strftime('%Y-%m-%d', r.createdTime/1000,'unixepoch','localtime') AS label, sum(case when u.type='inputTokens' then u.value else 0 end) AS inputTokens, sum(case when u.type='outputTokens' then u.value else 0 end) AS outputTokens FROM request_logs r LEFT JOIN request_usages u ON u.requestId = r.id WHERE r.createdTime >= ? GROUP BY label",
+      trendPivot: "SELECT strftime('%Y-%m-%d', r.createdTime/1000,'unixepoch','localtime') AS label, sum(p.inputTokens) AS inputTokens, sum(p.outputTokens) AS outputTokens FROM request_logs r LEFT JOIN (SELECT requestId, sum(case when type='inputTokens' then value else 0 end) AS inputTokens, sum(case when type='outputTokens' then value else 0 end) AS outputTokens FROM request_usages WHERE createdTime >= ? GROUP BY requestId) p ON p.requestId = r.id WHERE r.createdTime >= ? GROUP BY label",
+      sourceCorrelated: "SELECT coalesce((SELECT value FROM request_attributes a WHERE a.requestId=r.id AND a.key='request.source' LIMIT 1),'unknown') AS source, coalesce((SELECT value FROM request_attributes a WHERE a.requestId=r.id AND a.key='client.category' LIMIT 1),'unknown') AS category, count(*) AS requests, coalesce(sum((SELECT usage.value FROM request_usages usage WHERE usage.requestId=r.id AND usage.type IN ('inputTokens','outputTokens'))),0) AS totalTokens FROM request_logs r WHERE r.createdTime >= ? GROUP BY source, category ORDER BY requests DESC LIMIT 20",
+      sourceJoins: "SELECT coalesce(src.value,'unknown') AS source, coalesce(cat.value,'unknown') AS category, count(*) AS requests, coalesce(sum(p.tokens),0) AS totalTokens FROM request_logs r LEFT JOIN request_attributes src ON src.requestId=r.id AND src.key='request.source' LEFT JOIN request_attributes cat ON cat.requestId=r.id AND cat.key='client.category' LEFT JOIN (SELECT requestId, sum(case when type in ('inputTokens','outputTokens') then value else 0 end) AS tokens FROM request_usages WHERE createdTime >= ? GROUP BY requestId) p ON p.requestId=r.id WHERE r.createdTime >= ? GROUP BY source, category ORDER BY requests DESC LIMIT 20",
+      providerCorrelated: "SELECT a.providerId, max(a.providerName) AS name, count(*) AS attempts, sum(case when a.status='success' then 1 else 0 end) AS success, avg(case when a.status='success' then a.durationMilliseconds end) AS avgLatency FROM request_attempts a JOIN request_logs r ON a.requestId=r.id WHERE r.createdTime >= ? GROUP BY a.providerId ORDER BY attempts DESC",
+      providerBounded: "SELECT a.providerId, max(a.providerName) AS name, count(*) AS attempts, sum(case when a.status='success' then 1 else 0 end) AS success, avg(case when a.status='success' then a.durationMilliseconds end) AS avgLatency FROM request_attempts a JOIN request_logs r ON a.requestId=r.id WHERE r.createdTime >= ? AND a.createdTime >= ? GROUP BY a.providerId ORDER BY attempts DESC",
+      modelCorrelated: "SELECT a.providerModelId, count(*) AS attempts, sum(case when a.status='success' then 1 else 0 end) AS success, sum(case when a.status='success' then (SELECT sum(value) FROM attempt_usages u WHERE u.attemptId=a.id AND u.type='inputTokens') else 0 end) AS inputTokens, sum(case when a.status='success' then (SELECT sum(value) FROM attempt_usages u WHERE u.attemptId=a.id AND u.type='outputTokens') else 0 end) AS outputTokens FROM request_attempts a JOIN request_logs r ON a.requestId=r.id WHERE r.createdTime >= ? GROUP BY a.providerModelId, a.providerId ORDER BY attempts DESC LIMIT 10",
+      modelPivot: "SELECT a.providerModelId, count(*) AS attempts, sum(case when a.status='success' then 1 else 0 end) AS success, sum(case when a.status='success' then p.inputTokens else 0 end) AS inputTokens, sum(case when a.status='success' then p.outputTokens else 0 end) AS outputTokens FROM request_attempts a JOIN request_logs r ON a.requestId=r.id LEFT JOIN (SELECT attemptId, sum(case when type='inputTokens' then value else 0 end) AS inputTokens, sum(case when type='outputTokens' then value else 0 end) AS outputTokens FROM attempt_usages WHERE createdTime >= ? GROUP BY attemptId) p ON p.attemptId=a.id WHERE r.createdTime >= ? AND a.createdTime >= ? GROUP BY a.providerModelId, a.providerId ORDER BY attempts DESC LIMIT 10",
+      latencySql: "SELECT CASE WHEN a.ttftMilliseconds < 50 THEN 0 WHEN a.ttftMilliseconds < 100 THEN 1 WHEN a.ttftMilliseconds < 200 THEN 2 WHEN a.ttftMilliseconds < 500 THEN 3 WHEN a.ttftMilliseconds < 1000 THEN 4 WHEN a.ttftMilliseconds < 2000 THEN 5 WHEN a.ttftMilliseconds < 5000 THEN 6 ELSE 7 END AS bucket, count(*) AS samples FROM request_attempts a JOIN request_logs r ON a.requestId=r.id WHERE r.createdTime >= ? AND r.status='success' AND a.ttftMilliseconds IS NOT NULL GROUP BY bucket ORDER BY bucket",
+    } as const
+    const parameterCounts: Record<keyof typeof variants, number> = {
+      summaryJoins: 1, summaryPivotBounded: 2, summaryPivotUnbounded: 1, summaryPivotInSubquery: 2,
+      trendJoins: 1, trendPivot: 2, sourceCorrelated: 1, sourceJoins: 2, providerCorrelated: 1,
+      providerBounded: 2, modelCorrelated: 1, modelPivot: 3, latencySql: 1,
+    }
+
+    function runVariant(name: keyof typeof variants, since: number): void {
+      const parameters = Array.from({ length: parameterCounts[name] }, () => since)
+      db.prepare(variants[name]).all(...parameters)
+    }
+
+    function measure(name: keyof typeof variants, since: number): number {
+      runVariant(name, since)
+      const startedAt = performance.now()
+      runVariant(name, since)
+      return performance.now() - startedAt
+    }
+
+    for (const [rangeLabel, days] of [['7d', 7], ['30d', 30]] as const) {
+      const since = Date.now() - days * DAY
+      const results = Object.keys(variants).map(name => `${name}=${measure(name as keyof typeof variants, since).toFixed(1)}ms`)
+      logProbe(`PROBE variants-${rangeLabel}-before-index ${results.join(' ')}`)
+    }
+
+    for (const statement of [
+      'CREATE INDEX idx_probe_logs_status_created ON request_logs(status, createdTime)',
+      'CREATE INDEX idx_probe_attempts_created ON request_attempts(createdTime)',
+      'CREATE INDEX idx_probe_attempt_usages_created ON attempt_usages(createdTime)',
+      'CREATE INDEX idx_probe_request_usages_created ON request_usages(createdTime)',
+    ]) {
+      db.exec(statement)
+    }
+
+    for (const [rangeLabel, days] of [['7d', 7], ['30d', 30]] as const) {
+      const since = Date.now() - days * DAY
+      const results = Object.keys(variants).map(name => `${name}=${measure(name as keyof typeof variants, since).toFixed(1)}ms`)
+      logProbe(`PROBE variants-${rangeLabel}-after-index ${results.join(' ')}`)
+    }
+
+    for (const [label, sqlText] of [
+      ['plan-source-joins', variants.sourceJoins],
+      ['plan-model-pivot', variants.modelPivot],
+      ['plan-trend-pivot', variants.trendPivot],
+      ['plan-latency-sql', variants.latencySql],
+    ] as const) {
+      const plans = db.prepare(`EXPLAIN QUERY PLAN ${sqlText}`).all(...Array.from({ length: parameterCounts[label === 'plan-source-joins' ? 'sourceJoins' : label === 'plan-model-pivot' ? 'modelPivot' : label === 'plan-trend-pivot' ? 'trendPivot' : 'latencySql'] }, () => Date.now() - 7 * DAY))
+      logProbe(`PROBE ${label} ${plans.map(row => String((row as { detail?: unknown }).detail)).join(' | ')}`)
+    }
+  }, 600_000)
+
   it('measures the analytics page load', async () => {
     for (const [rangeLabel, days] of [['7d', 7], ['30d', 30]] as const) {
       const since = Date.now() - days * 24 * 60 * 60 * 1000
@@ -141,5 +209,5 @@ describe('analytics performance probe', () => {
       const plans = getDb().$client.prepare(`EXPLAIN QUERY PLAN ${sqlText}`).all()
       logProbe(`PROBE ${label} ${plans.map(row => String((row as { detail?: unknown }).detail)).join(' | ')}`)
     }
-  })
+  }, 600_000)
 })
