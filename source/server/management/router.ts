@@ -3,7 +3,7 @@ import type { ManagementHandler } from './core/response'
 import { sendError } from './core/response'
 import {
   analyticsRoutes,
-  configRoutes,
+  developmentRoutes,
   logRoutes,
   modelRoutes,
   modelTestRoutes,
@@ -33,13 +33,13 @@ const router = new HttpRouter<ManagementHandler>()
   .mount(logRoutes)
   .mount(requestLogRoutes)
   .mount(analyticsRoutes)
-  .mount(configRoutes)
   .mount(modelTestRoutes)
   .mount(outboundProxyTestRoutes)
   .mount(providerModelFetchRoutes)
   .mount(routerRunRoutes)
   .mount(relationRoutes)
   .mount(requestRewriteRuleRoutes)
+  .mount(developmentRoutes)
 
 export async function handleApiRequest(req: IncomingMessage, res: ServerResponse, environment: RuntimeEnvironment = 'production'): Promise<void> {
   const url = new URL(req.url!, 'http://localhost')

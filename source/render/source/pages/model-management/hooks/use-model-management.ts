@@ -11,6 +11,7 @@ import { useProviderDialog } from './use-provider-dialog'
 import { useProviderManagement } from './use-provider-management'
 import { useModelDialog } from './use-model-dialog'
 import { useModelReordering } from './use-model-reordering'
+import { useProviderTransfer } from './use-provider-transfer'
 import { PROTOCOL_OPTIONS } from '../lib/protocols'
 
 type UpdateModelEnabledVariables = { id: string; enabled: boolean }
@@ -25,6 +26,7 @@ export function useModelManagement() {
   const providerDialog = useProviderDialog({ reload: data.reload, selectProvider: data.setSelectedProviderId })
   const providerManagement = useProviderManagement({ reload: data.reload })
   const modelDialog = useModelDialog({ selectedProvider, models: data.models, reload: data.reload })
+  const providerTransfer = useProviderTransfer({ reload: data.reload })
 
   const invalidateModels = useCallback(async () => { await Promise.all([client.invalidateQueries({ queryKey: modelKeys.all }), client.invalidateQueries({ queryKey: ['queue-models'] })]) }, [client])
   const updateModelMutation = useMutation({ mutationFn: ({ id, enabled }: UpdateModelEnabledVariables) => unwrap(providerModelApi.update(id, { logicalModelId: 'default', enabled })), onMutate: async ({ id, enabled }) => { await client.cancelQueries({ queryKey: modelKeys.all }); const previous = client.getQueryData<ProviderModelRoute[]>(modelKeys.all); client.setQueryData<ProviderModelRoute[]>(modelKeys.all, current => current?.map(model => model.id === id ? { ...model, enabled } : model)); return { previous } }, onError: (error, _variables, context) => { client.setQueryData(modelKeys.all, context?.previous); toast.error(error.message) }, onSettled: invalidateModels })
@@ -103,6 +105,7 @@ export function useModelManagement() {
     ...providerDialog,
     ...providerManagement,
     ...modelDialog,
+    ...providerTransfer,
     updateModelEnabled,
     removeModel,
     removeModels,

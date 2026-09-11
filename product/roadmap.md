@@ -83,7 +83,7 @@
 - [x] 服务默认只监听 `127.0.0.1`
 - [x] 代理服务和管理服务分别执行 Host 头校验，拒绝不允许的 Host，覆盖 DNS rebinding 测试
 - [x] 若启用本地 Bearer Token，代理和管理 API 按明确配置边界校验 Token；Token 只存系统密钥环，并覆盖生成、轮换、删除和失效测试
-- [x] 导出配置时 API Key 已脱敏
+- [x] 导出供应商包时 API Key 默认脱敏（包含明文需显式勾选并提示）
 - [x] 本地日志中不出现明文密钥；正文记录关闭时不保存完整请求体和响应体
 - [x] 关闭应用后代理端口释放
 - [x] 开机自启设置生效
@@ -138,7 +138,7 @@
 
 - [x] 日志筛选已支持状态、逻辑模型、协议、供应商和时间范围，并保持 list/count 条件一致；请求 ID 贯穿仍待补齐
 - [x] 冷却/熔断状态可视化：队列页展示冷却状态与连续失败次数徽标
-- [x] 配置备份/恢复：导出脱敏配置文件，密钥仅存系统密钥环
+- [x] 供应商包备份/恢复：按供应商导出/导入端点、模型与自定义设置，密钥仅存系统密钥环
 - [ ] Token 用量统计：按 `request_usages.type` 聚合展示今日/本周用量（基础指标已存在，产品口径与专用 UI 仍需确认）
 - [ ] 协议兼容转换器补充验收（详见 [protocol-conversion.md](./protocol-conversion.md)）：核心转换和 UI 已落地，转换候选故障切换、转换错误 400、流式转换异常及各方向发布包验收仍待补齐
 - [ ] Responses API WebSocket 传输（设计详见 [websocket-transport.md](./websocket-transport.md)）：`/v1/responses` 的 `upgrade` 握手、WS→WS 透传中继、上游不支持时回 426 由客户端降级 HTTP、连接级日志与健康冷却；WS↔HTTP/SSE 桥接为 P2 可选项
@@ -157,7 +157,7 @@
 - [ ] 讨论请求/响应执行阶段，以及协议转换前后的字段形态
 - [ ] 讨论 `User-Agent`、Header、JSON Path 和 thinking/reasoning 的首期支持范围
 - [ ] 讨论流式响应规则的处理方式，不在当前实现中默认缓冲或改写 SSE
-- [ ] 设计 `request_rewrite_rules` 与 ProviderModel 规则关联表、迁移和配置导入导出
+- [ ] 设计 `request_rewrite_rules` 与 ProviderModel 规则关联表、迁移和规则独立的导入导出
 - [ ] 设计管理 API、规则管理菜单/编辑器和 ProviderModel 规则选择交互
 - [ ] 评审通过后再拆分数据库、代理执行引擎、管理 API、控制台和测试任务
 

@@ -34,7 +34,7 @@
 ### 为什么用 Zod 做 Schema
 
 - **单一真相源**：配置模型、API 请求/响应、数据库行都用 Zod schema 定义，TypeScript 类型从中推导
-- **运行时校验**：管理 API 的入参出参、配置导入导出、数据库读写都在边界处校验，保证数据一致性
+- **运行时校验**：管理 API 的入参出参、供应商包导入导出、数据库读写都在边界处校验，保证数据一致性
 - **边界明确**：当前使用 Zod 做运行时校验和共享契约；未来若接入 OpenAPI，必须以现有 Schema/路由为基础，不能反向虚构已生成的类型或接口文件
 - **零依赖膨胀**：Zod 体积小，不引入额外运行时
 
@@ -56,7 +56,7 @@ OpenAPI 目前未接入，项目没有 OpenAPI 文档、生成类型或 `openapi
 - **查询能力**：日志筛选、分页、统计用 SQL 比遍历 JSONL 高效得多
 - **事务一致性**：配置变更（如删除 Provider 级联禁用 Provider 模型）用事务保证原子性
 - **迁移可控**：首发前只保留最终基线，首发后冻结基线并追加事务化版本迁移
-- **单文件部署**：SQLite 是单个文件，和 JSON 一样便携，备份/导入导出都方便
+- **单文件部署**：SQLite 是单个文件，和 JSON 一样便携，备份/供应商包导入导出都方便
 - **Drizzle ORM**：提供类型安全的同步数据访问，SQLite 查询集中在 database store 边界；基于 Node 22.5+ 内置 `node:sqlite`，零原生依赖、无 ABI 问题
 
 ## 项目结构
@@ -200,6 +200,7 @@ one-switch/
 | `/api/provider/list`、`/api/provider/get`、`/api/provider/endpoints` | Provider 列表、详情、端点列表 |
 | `/api/provider/create`、`/api/provider/update`、`/api/provider/delete` | Provider 配置变更 |
 | `/api/provider/reset-health`、`/api/provider/fetch-models` | 重置健康状态、从 Provider 获取模型 |
+| `/api/provider/export`、`/api/provider/import` | 供应商包导出、导入（详见 [provider-model.md](./provider-model.md)） |
 | `/api/logical-model/list`、`/api/logical-model/get` | 逻辑模型列表、详情 |
 | `/api/logical-model/create`、`/api/logical-model/update`、`/api/logical-model/delete` | 逻辑模型配置变更 |
 | `/api/provider-model/list`、`/api/provider-model/queue`、`/api/provider-model/get` | Provider 模型列表、队列和详情 |
@@ -217,7 +218,7 @@ one-switch/
 | `/api/request-log/list`、`/api/request-log/detail`、`/api/request-log/prune` | 请求日志列表、详情、清理 |
 | `/api/analytics/summary` | 统计分析汇总 |
 | `/api/model-test/run` | 模型测试 |
-| `/api/config/export`、`/api/config/import`、`/api/config/seed-development` | 配置导出、导入、开发数据种子 |
+| `/api/development/seed` | 开发数据种子（仅开发环境可达） |
 
 通配符 `*` 表示表中同一资源下实际存在的 `list`、`get`、`create`、`update`、`delete` 或 `upsert` 路径；所有路由均由 `router.ts` 合并注册，未提供旧版兼容别名。
 
@@ -260,11 +261,11 @@ one-switch/
 React 18 + TypeScript + shadcn/ui + Tailwind。渲染层通过 `source/render/source/api/*.ts` 调用管理 API，按 `features/*` 和页面 hooks 组织领域状态；`infrastructure/polling-manager.ts` 提供共享轮询能力，`store/create-store.ts` 提供轻量外部 store 基础设施。当前没有单体 `app-service` 或 API 聚合出口。
 
 - **概览页**：服务状态、今日统计、供应商健康卡片
-- **供应商页**：列表、增删改查、测试连接、健康状态
+- **供应商页**：列表、增删改查、测试连接、健康状态、导入/导出供应商包
 - **模型路由页**：Provider 模型列表、端点管理、拖拽排序
 - **请求日志页**：列表、筛选、详情（尝试过程时间线）
 - **请求内容查看器**：使用 Drawer 或 Dialog 查看完整请求/响应，协议转换时展示转换前后内容
-- **设置页**：端口、开机自启、日志保留条数、日志保留天数、按天立即清理、请求内容记录、导入导出、关于
+- **设置页**：端口、开机自启、日志保留条数、日志保留天数、按天立即清理、请求内容记录、关于
 
 ## 构建与打包
 

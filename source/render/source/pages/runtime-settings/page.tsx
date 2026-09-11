@@ -10,7 +10,6 @@ import { OutboundProxyCard } from './components/outbound-proxy-card'
 import { FailoverCard } from './components/failover-card'
 import { LogRetentionCard } from './components/log-retention-card'
 import { GeneralCard } from './components/general-card'
-import { DataManagementCard } from './components/data-management-card'
 import { DevelopmentCard } from './components/development-card'
 import { UpdateCard } from './components/update-card'
 import { useAppUiStore } from '@/store/app-ui-store'
@@ -89,10 +88,6 @@ export function RuntimeSettingsPage() {
                 onRetentionDaysChange={value => service.updateField('logRetentionDays', value)}
                 onCaptureRequestContentChange={value => service.updateField('captureRequestContent', value)}
                 onPrune={service.pruneLogs}
-              />
-              <DataManagementCard
-                onExport={() => void service.exportConfig()}
-                onImport={file => void service.importConfig(file)}
               />
               {import.meta.env.DEV && (
                 <DevelopmentCard onSeedDevelopment={() => void service.seedDevelopmentData()} />

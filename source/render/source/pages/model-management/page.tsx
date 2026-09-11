@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { FlaskConical, Plus, MousePointerClick } from 'lucide-react'
+import { Download, FlaskConical, Plus, Upload, MousePointerClick } from 'lucide-react'
 import { ModelTestPanel } from '@/components/model-test-panel'
 import { PageContent, PageHeader, PageLayout } from '@/components/layout'
 import { Button } from '@/components/ui/button'
@@ -11,6 +11,8 @@ import { ProviderGrid } from './components/provider-grid'
 import { ProviderDetail } from './components/provider-detail'
 import { ProviderDialog } from './components/provider-dialog'
 import { ModelDialog } from './components/model-dialog'
+import { ProviderExportDialog } from './components/provider-export-dialog'
+import { ProviderImportDialog } from './components/provider-import-dialog'
 
 interface ModelManagementPageProps {
   onNavigateToProviderAnalytics?: (providerId: string) => void
@@ -22,6 +24,16 @@ export function ModelManagementPage(props: ModelManagementPageProps) {
 
   const renderHeaderActions = () => (
     <div className="flex items-center gap-2">
+      <Button variant="outline" onClick={service.openImportFilePicker}>
+        <Upload size={14} /> 导入供应商
+      </Button>
+      <Button
+        variant="outline"
+        disabled={service.providers.length === 0}
+        onClick={() => service.openExportDialog({ kind: 'all' })}
+      >
+        <Download size={14} /> 导出全部
+      </Button>
       <Button variant="outline" onClick={() => setTestPanelOpen(true)}>
         <FlaskConical size={14} /> 连接测试
       </Button>
@@ -29,6 +41,21 @@ export function ModelManagementPage(props: ModelManagementPageProps) {
         <Plus size={14} /> 新建供应商
       </Button>
     </div>
+  )
+
+  const renderImportFileInput = () => (
+    <input
+      ref={service.fileInputRef}
+      type="file"
+      accept=".json,application/json"
+      className="hidden"
+      onChange={event => {
+        const file = event.target.files?.[0]
+        if (file) void service.prepareImport(file)
+        // 重置 input，允许重复选择同一个文件
+        event.target.value = ''
+      }}
+    />
   )
 
   const renderLoading = () => (
@@ -66,6 +93,7 @@ export function ModelManagementPage(props: ModelManagementPageProps) {
           models={service.selectedModels}
           onToggleProviderEnabled={enabled => void service.updateProviderEnabled(service.selectedProvider!, enabled)}
           onEditProvider={() => service.openProviderDialog(service.selectedProvider)}
+          onExportProvider={() => service.openExportDialog({ kind: 'provider', provider: service.selectedProvider! })}
           onRemoveProvider={() => service.removeProvider(service.selectedProvider!)}
           onNavigateToAnalytics={props.onNavigateToProviderAnalytics}
           onAddModel={() => service.openModelDialog()}
@@ -167,6 +195,30 @@ export function ModelManagementPage(props: ModelManagementPageProps) {
         models={service.models}
         providers={service.providers}
       />
+
+      {renderImportFileInput()}
+
+      {service.exportScope && (
+        <ProviderExportDialog
+          scope={service.exportScope}
+          includeApiKeys={service.includeApiKeys}
+          exporting={service.exporting}
+          onIncludeApiKeysChange={service.setIncludeApiKeys}
+          onOpenChange={open => { if (!open) service.closeExportDialog() }}
+          onConfirm={() => void service.confirmExport()}
+        />
+      )}
+
+      {service.pendingImport && (
+        <ProviderImportDialog
+          fileName={service.pendingImport.fileName}
+          bundle={service.pendingImport.bundle}
+          existingProviderNames={service.providers.map(provider => provider.name)}
+          importing={service.importing}
+          onOpenChange={open => { if (!open) service.closeImportDialog() }}
+          onConfirm={() => void service.confirmImport()}
+        />
+      )}
     </>
   )
 
