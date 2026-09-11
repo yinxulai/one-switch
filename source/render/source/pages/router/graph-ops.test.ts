@@ -247,6 +247,14 @@ describe('图谱校验（回归）', () => {
     expect(WorkflowGraphSchema.safeParse(graph).error?.issues).toBeUndefined()
     // 规则完全由既有基础节点表达，没有任何专用节点类型。
     expect(new Set(graph.nodes.map(node => node.kind))).toEqual(new Set(['input', 'condition', 'queue-select', 'output']))
+    // 命中判断是一条普通的「字段 in 字段」条件，不是引擎预计算的布尔字段。
+    const condition = graph.nodes.find(node => node.kind === 'condition')
+    expect(condition?.cases[0].conditions[0]).toMatchObject({
+      fieldPath: 'route.requestedModel',
+      operator: 'in',
+      valueSource: 'field',
+      valueFieldPath: 'route.availableQueueIds',
+    })
   })
 
   it('旧版本的 mode 字段会被迁移到 source / variablePath', () => {

@@ -61,11 +61,12 @@ describe('resolveInputHints', () => {
       'queues',
       'route.traceId',
       'route.requestedModel',
-      'route.requestedModelInQueues',
       'route.availableQueueIds',
       'route.protocol',
       'route.transport',
     ]))
+    // 命中判断交给通用条件节点，引擎不再产出预计算布尔字段。
+    expect(paths).not.toContain('route.requestedModelInQueues')
     // 协议归一化的中间结果只进 trace，不再污染 payload。
     expect(paths).not.toContain('route.protocolOutput')
     expect(paths).not.toContain('metadata.protocolOutput')

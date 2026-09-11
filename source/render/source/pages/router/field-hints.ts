@@ -145,12 +145,6 @@ export function resolveInputHints(graph: WorkflowGraph, targetNodeId: string, sa
         sourcePort: 'context',
       })
       addUniqueField(fields, {
-        path: 'route.requestedModelInQueues',
-        valueType: 'boolean',
-        sourceNodeId: model.id,
-        sourcePort: 'context',
-      })
-      addUniqueField(fields, {
         path: 'route.availableQueueIds',
         valueType: 'array',
         sourceNodeId: model.id,

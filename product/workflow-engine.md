@@ -63,7 +63,9 @@ Iteration 和 Loop 是结构化控制流节点：
 - `fixed`：使用节点上配置的队列列表；
 - `variable`：读取 `variablePath` 指向字段的取值作为落点（字符串 → 单个队列 id，字符串数组 → 队列 id 列表），取不到时使用节点上的兜底队列；兜底队列为空则不产出落点。
 
-引擎不内置「跟随请求模型」这类专用语义，默认策略由 `Input → Condition → QueueSelect(变量) / QueueSelect(固定 default) → Output` 组合而成，见 [route-design.md](./route-design.md) §2.7。
+条件规则的比较值也支持来自字段（`valueSource: 'field'` + `valueFieldPath`），因此「请求模型是否在逻辑队列列表里」这类判断完全由条件节点完成，引擎不预计算业务结论。
+
+引擎不内置「跟随请求模型」这类专用语义，默认策略由 `Input → Condition(route.requestedModel in route.availableQueueIds) → QueueSelect(变量) / QueueSelect(固定 default) → Output` 组合而成，见 [route-design.md](./route-design.md) §2.7。
 
 抓不到任何队列时该节点仍产出 trace，`success` 为 `false`，但不阻断执行。
 

@@ -57,7 +57,9 @@ export function ConditionNodeView(props: RouteNodeProps) {
                     </span>
                     <span className="mx-1 shrink-0 text-xs font-medium text-text-primary">{condition.operator}</span>
                     <span className="min-w-0 grow truncate px-1.5 text-xs/6 text-text-secondary">
-                      {condition.value || '—'}
+                      {condition.valueSource === 'field'
+                        ? condition.valueFieldPath || '—'
+                        : condition.value || '—'}
                     </span>
                   </NodeConditionChip>
 

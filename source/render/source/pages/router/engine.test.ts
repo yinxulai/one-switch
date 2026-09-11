@@ -205,13 +205,15 @@ describe('router engine', () => {
     expect(result.protocol).toBe('openai-completions')
   })
 
-  it('exposes requestedModelInQueues for condition checks', () => {
+  it('用通用条件判断请求模型是否在可用逻辑队列里', () => {
     const graph = createBaseGraph({
       condition: {
-        cases: [singleCase([{ 
-          fieldPath: 'route.requestedModelInQueues',
-          valueType: 'boolean',
-          operator: 'isTrue',
+        cases: [singleCase([{
+          fieldPath: 'route.requestedModel',
+          valueType: 'string',
+          operator: 'in',
+          valueSource: 'field',
+          valueFieldPath: 'route.availableQueueIds',
         }])],
       },
       queueSelect: {
@@ -219,26 +221,97 @@ describe('router engine', () => {
       },
     })
 
+    const queues = [
+      { id: 'queue-hit', name: 'Queue Hit', enabled: true },
+      { id: 'queue-fallback', name: 'Queue Fallback', enabled: true },
+    ]
+
     const hit = runWorkflow(graph, {
       request: {
         path: '/v1/chat/completions',
         headers: { 'x-provider': ['openai'] },
         body: { tenant: 'any', model: 'queue-hit' },
       },
-      queues: [
-        { id: 'queue-hit', name: 'Queue Hit', enabled: true },
-        { id: 'queue-fallback', name: 'Queue Fallback', enabled: true },
-      ],
+      queues,
       metadata: {},
     })
 
     expect(hit.stopReason).toBe('output')
     expect(hit.queueSelections['queue-select']?.queueIds).toEqual(['queue-hit'])
+    expect(hit.trace.some(item => item.nodeId === 'condition-gate' && item.success)).toBe(true)
 
-    const payload = hit.outputPayload as { route: { requestedModel: string; requestedModelInQueues: boolean; availableQueueIds: string[] } }
+    const miss = runWorkflow(graph, {
+      request: {
+        path: '/v1/chat/completions',
+        headers: { 'x-provider': ['openai'] },
+        body: { tenant: 'any', model: 'gpt-4o-mini' },
+      },
+      queues,
+      metadata: {},
+    })
+
+    expect(miss.trace.some(item => item.nodeId === 'condition-gate' && !item.success)).toBe(true)
+
+    const payload = hit.outputPayload as { route: { requestedModel: string; availableQueueIds: string[] } }
     expect(payload.route.requestedModel).toBe('queue-hit')
-    expect(payload.route.requestedModelInQueues).toBe(true)
     expect(payload.route.availableQueueIds).toEqual(['queue-hit', 'queue-fallback'])
+    // 命中判断由条件节点完成，引擎不再预先算好布尔字段。
+    expect(payload.route).not.toHaveProperty('requestedModelInQueues')
+  })
+
+  it('字段右值：比较字段取不到值时按空集合判定', () => {
+    const graph = createBaseGraph({
+      condition: {
+        cases: [singleCase([{
+          fieldPath: 'route.requestedModel',
+          valueType: 'string',
+          operator: 'in',
+          valueSource: 'field',
+          valueFieldPath: 'route.availableQueueIds',
+        }])],
+      },
+    })
+
+    const result = runWorkflow(graph, {
+      request: {
+        path: '/v1/chat/completions',
+        headers: { 'x-provider': ['openai'] },
+        body: { tenant: 'any', model: 'gpt-4o-mini' },
+      },
+      metadata: {},
+    })
+
+    expect(result.trace.some(item => item.nodeId === 'condition-gate' && !item.success)).toBe(true)
+    expect(result.queueSelections).toEqual({})
+  })
+
+  it('字段右值：notIn 在比较字段取不到值时判定为真', () => {
+    const graph = createBaseGraph({
+      condition: {
+        cases: [singleCase([{
+          fieldPath: 'route.requestedModel',
+          valueType: 'string',
+          operator: 'notIn',
+          valueSource: 'field',
+          valueFieldPath: 'route.availableQueueIds',
+        }])],
+      },
+      queueSelect: {
+        queueIds: ['queue-x'],
+      },
+    })
+
+    const result = runWorkflow(graph, {
+      request: {
+        path: '/v1/chat/completions',
+        headers: { 'x-provider': ['openai'] },
+        body: { tenant: 'any', model: 'gpt-4o-mini' },
+      },
+      metadata: {},
+    })
+
+    expect(result.trace.some(item => item.nodeId === 'condition-gate' && item.success)).toBe(true)
+    expect(result.queueSelections['queue-select']?.queueIds).toEqual(['queue-x'])
   })
 
   it('exposes protocol discovery results for downstream conditions', () => {

@@ -91,7 +91,6 @@ interface RouteDecision {
   queueIds: string[]                   // 最终落点队列（决策结果）
   fallback: boolean                    // 是否走了兜底策略
   requestedModel: string               // request.body.model
-  requestedModelInQueues: boolean      // 请求模型是否命中可用逻辑队列
   availableQueueIds: string[]          // 本次运行可见的逻辑队列
   controls: Record<string, unknown>    // 控制输入节点注入的运行时取值
 }
@@ -101,6 +100,7 @@ interface RouteDecision {
 
 - **决策结果**（`queueIds`）与**决策依据**（`protocol` / `transport` / `requestedModel` / `controls` …）都放在 `route` 下，条件节点可直接按 `route.*` 选字段；
 - **过程性数据**只进 trace，不进 payload —— 例如协议归一化后的请求体（`{protocol, transport, model, messages}`）与每个节点的判定明细，避免 payload 里出现只有调试才看的字段；
+- **引擎不预计算业务判定**：像「请求模型是否命中逻辑队列」这种结论由条件节点在图上现场算出，引擎只提供原始字段（`requestedModel` / `availableQueueIds`）。
 - 旧版本图（没有 `route`）在运行时会被补齐，调用方无需迁移。
 
 ### 2.7 默认策略：模型直达
@@ -109,15 +109,24 @@ interface RouteDecision {
 
 > 请求里的 `model` 命中我们的逻辑队列 id 时，请求该队列；否则请求默认队列（`default`）。
 
-这条策略**不引入任何专用节点**，完全用基础节点拼出来：
+这条策略**不引入任何专用节点**，完全用基础节点拼出来，命中判断就是一条普通的「字段 in 字段」条件：
 
 ```text
-Input ─▶ Condition（route.requestedModelInQueues 为真）
+Input ─▶ Condition（route.requestedModel in route.availableQueueIds）
            ├─ IF   ─▶ QueueSelect（取值来源 = 变量 route.requestedModel）─▶ Output
            └─ ELSE ─▶ QueueSelect（取值来源 = 固定队列 default）────────▶ Output
 ```
 
-`queue-select` 的取值来源只有两种通用能力：
+两个基础节点各自提供一种通用能力：
+
+条件节点的**比较值来源**：
+
+| 比较值来源 | 语义 |
+| --- | --- |
+| `literal`（默认） | 与规则里写的固定值比较，`in` / `notIn` 按逗号拆成列表 |
+| `field` | 与另一个字段的实时取值比较，例如 `route.requestedModel in route.availableQueueIds`；`in` / `notIn` 取到数组时按成员判定，取到单值时直接比较，取不到值时按空集合处理 |
+
+`queue-select` 节点的**取值来源**：
 
 | 取值来源 | 语义 |
 | --- | --- |
@@ -126,8 +135,8 @@ Input ─▶ Condition（route.requestedModelInQueues 为真）
 
 这样做的好处：
 
-- **不枚举模型**：命中判断基于本次运行真正可用的队列集合（`route.requestedModelInQueues`），逻辑队列增减时规则自动生效，不需要改图；
-- **没有专用节点**：模型直达只是「条件 + 两次队列选择」的一种拼法，按协议、按租户、按控制输入等策略用同一组基础节点同样能表达。
+- **不枚举模型**：命中判断基于本次运行真正可用的队列集合（`route.availableQueueIds`），逻辑队列增减时规则自动生效，不需要改图；
+- **没有专用节点，也没有预计算字段**：模型直达只是「条件 + 两次队列选择」的一种拼法，按协议、按租户、按控制输入等策略用同一组基础节点同样能表达。
 
 旧图里用过的 `mode: 'follow-request-model'` 会在读取时迁移为「`source: 'variable'` + `variablePath: 'route.requestedModel'`」，行为不变。
 

@@ -125,10 +125,16 @@ export interface ProtocolDiscoveryNode extends WorkflowNodeBase {
   kind: 'protocol-discovery'
 }
 
+export type ConditionValueSource = 'literal' | 'field'
+
 export interface ConditionRule {
   fieldPath: string
   valueType: SchemaValueType
   operator: ConditionOperator
+  /** 比较值来源：`literal`（默认）用 `value` / `enumOptions`，`field` 读取 `valueFieldPath` 的实时取值 */
+  valueSource?: ConditionValueSource
+  /** `field` 来源的比较字段路径，例如 `route.availableQueueIds` */
+  valueFieldPath?: string
   value?: string
   secondaryValue?: string
   enumOptions?: string[]
@@ -155,7 +161,8 @@ export interface ConditionNode extends WorkflowNodeBase {
  *   取不到值时使用兜底队列。
  *
  * 这里刻意不内置「跟随请求模型」这类专用语义：请求模型直连由
- * 「条件 + 队列选择(变量) + 队列选择(固定 default)」等基础节点组合表达。
+ * 「条件（`route.requestedModel in route.availableQueueIds`） + 队列选择(变量) +
+ * 队列选择(固定 default)」等基础节点组合表达。
  */
 export type QueueSelectSource = 'fixed' | 'variable'
 
@@ -207,8 +214,6 @@ export interface RouteDecision {
   fallback: boolean
   /** 请求体里的模型 id（`request.body.model`） */
   requestedModel: string
-  /** 请求模型是否命中当前可用的逻辑队列 */
-  requestedModelInQueues: boolean
   /** 本次运行可见的逻辑队列 id */
   availableQueueIds: string[]
   /** 控制输入节点注入的运行时取值 */
@@ -267,3 +272,10 @@ export const DEFAULT_OPERATOR_SET: Record<SchemaValueType, ConditionOperator[]> 
   array: ['contains', 'notContains', 'empty', 'notEmpty', 'exists'],
   unknown: ['equals', 'notEquals', 'empty', 'notEmpty', 'exists'],
 }
+
+/**
+ * 支持「比较值来自另一个字段」的操作符。
+ * 例如 `route.requestedModel in route.availableQueueIds` —— 通用的成员判定，
+ * 不需要引擎为某个具体场景预先算好布尔结果。
+ */
+export const FIELD_OPERAND_OPERATORS: ConditionOperator[] = ['equals', 'notEquals', 'in', 'notIn', 'contains', 'notContains']
