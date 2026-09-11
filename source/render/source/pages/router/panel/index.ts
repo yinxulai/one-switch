@@ -5,9 +5,9 @@ import type { NodePanelProps } from '../node-data'
 import { ConditionPanel } from './condition-panel'
 import { ControlInputPanel } from './control-input-panel'
 import { InputPanel } from './input-panel'
+import { ModelSelectPanel } from './model-select-panel'
 import { OutputPanel } from './output-panel'
 import { ProtocolDiscoveryPanel } from './protocol-discovery-panel'
-import { QueueSelectPanel } from './queue-select-panel'
 
 /**
  * 节点种类 → 右侧面板内容。
@@ -18,6 +18,6 @@ export const PANEL_COMPONENT_MAP: Record<WorkflowNodeKind, ComponentType<NodePan
   'control-input': ControlInputPanel,
   'protocol-discovery': ProtocolDiscoveryPanel,
   condition: ConditionPanel,
-  'queue-select': QueueSelectPanel,
+  'model-select': ModelSelectPanel,
   output: OutputPanel,
 }

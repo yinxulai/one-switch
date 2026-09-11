@@ -3,14 +3,15 @@ import {
   type ConditionOperator,
   type ConditionRule,
   type ControlInputNode,
-  type QueueSelection,
-  type QueueSelectNode,
+  type LogicalModelContext,
+  type ModelSelection,
+  type ModelSelectNode,
+  type NodeOutputMap,
   type ProtocolDiscoveryNode,
   type RouteContext,
   type RouteContextEnvelope,
   type RouteContextInput,
   type RouteDecision,
-  type WorkflowQueueContext,
   type WorkflowRequestPayload,
   type WorkflowGraph,
   type WorkflowProtocol,
@@ -61,10 +62,10 @@ function createEmptyRoute(): RouteDecision {
     traceId: '',
     protocol: 'unknown',
     transport: 'http',
-    queueIds: [],
+    modelIds: [],
     fallback: false,
     requestedModel: '',
-    availableQueueIds: [],
+    availableModelIds: [],
     controls: {},
   }
 }
@@ -85,6 +86,22 @@ function routeOf(payload: Record<string, unknown>): RouteDecision {
   return objectField(payload, 'route') as unknown as RouteDecision
 }
 
+/** 归一化逻辑模型列表：运行时会传入主进程的逻辑模型（id / 名称 / 开关）。 */
+function readLogicalModels(source: unknown): LogicalModelContext[] {
+  if (!Array.isArray(source)) return []
+  return source
+    .filter(item => item && typeof item === 'object')
+    .map(item => {
+      const model = item as Record<string, unknown>
+      return {
+        id: String(model.id ?? '').trim(),
+        name: String(model.name ?? '').trim(),
+        enabled: Boolean(model.enabled),
+      }
+    })
+    .filter(model => model.id && model.name)
+}
+
 function normalizeInputPayload(inputPayload: unknown): RouteContextEnvelope {
   const normalized = (inputPayload && typeof inputPayload === 'object' ? clonePayload(inputPayload) : {}) as Record<string, unknown>
 
@@ -96,19 +113,11 @@ function normalizeInputPayload(inputPayload: unknown): RouteContextEnvelope {
     ? normalized.metadata
     : {}) as Record<string, unknown>
 
-  const queues = (Array.isArray(normalized.queues)
-    ? normalized.queues.filter(item => item && typeof item === 'object').map(item => {
-      const queue = item as Record<string, unknown>
-      return {
-        id: String(queue.id ?? '').trim(),
-        name: String(queue.name ?? '').trim(),
-        enabled: Boolean(queue.enabled),
-      }
-    }).filter(queue => queue.id && queue.name)
-    : []) as WorkflowQueueContext[]
+  // `queues` 是重命名前的旧 payload 键，这里兼容一次后直接丢弃。
+  const logicalModels = readLogicalModels(normalized.logicalModels ?? normalized.queues)
 
   const requestedModel = typeof request.body?.model === 'string' ? request.body.model.trim() : ''
-  const availableQueueIds = queues.map(queue => queue.id)
+  const availableModelIds = logicalModels.map(model => model.id)
   const traceId = typeof metadata.traceId === 'string' && metadata.traceId.trim() ? metadata.traceId : generateTraceId()
 
   /**
@@ -121,20 +130,21 @@ function normalizeInputPayload(inputPayload: unknown): RouteContextEnvelope {
     traceId,
     transport: detectTransport(normalized),
     requestedModel,
-    availableQueueIds,
+    availableModelIds,
     controls: objectField(normalized, 'controls'),
   } satisfies RouteDecision
 
   const context: RouteContext = {
     request,
-    queues,
+    logicalModels,
     metadata,
     traceId,
   }
 
   normalized.request = request
-  normalized.queues = queues
+  normalized.logicalModels = logicalModels
   normalized.metadata = metadata
+  delete normalized.queues
 
   return {
     payload: normalized,
@@ -142,6 +152,7 @@ function normalizeInputPayload(inputPayload: unknown): RouteContextEnvelope {
   }
 }
 
+/** 头部值统一成字符串（`headers` 只支持单值，数组仅为容错）。 */
 function normalizeHeaderValue(value: unknown): string {
   if (Array.isArray(value)) {
     return value.map(item => String(item)).join(',')
@@ -443,50 +454,61 @@ function writeRouteProtocol(payload: Record<string, unknown>, protocol: Workflow
   return buildNormalizedProtocolOutput(protocol, transport, payload)
 }
 
-function normalizeQueueIds(queueIds: string[]): string[] {
-  return [...new Set(queueIds.map(id => id.trim()).filter(Boolean))]
+/**
+ * 给某个节点登记一条输出数据。
+ * 结果按节点 id 聚合，渲染侧再查节点名称作为分组标题，
+ * 因此同一节点可以登记任意多条（控制项、条件分支、落点…）。
+ */
+function addNodeOutput(outputs: NodeOutputMap, nodeId: string, name: string, value: unknown, note?: string): void {
+  const list = outputs[nodeId] ?? []
+  list.push(note ? { name, value, note } : { name, value })
+  outputs[nodeId] = list
 }
 
-/** 变量取值 → 队列 id 列表。字段可以是单个 id（字符串），也可以是 id 列表（字符串数组）。 */
-function readQueueIdsFromValue(value: unknown): string[] {
-  if (Array.isArray(value)) return normalizeQueueIds(value.map(item => String(item)))
-  if (typeof value === 'string') return normalizeQueueIds([value])
+function normalizeModelIds(modelIds: string[]): string[] {
+  return [...new Set(modelIds.map(id => id.trim()).filter(Boolean))]
+}
+
+/** 变量取值 → 逻辑模型 id 列表。字段可以是单个 id（字符串），也可以是 id 列表（字符串数组）。 */
+function readModelIdsFromValue(value: unknown): string[] {
+  if (Array.isArray(value)) return normalizeModelIds(value.map(item => String(item)))
+  if (typeof value === 'string') return normalizeModelIds([value])
   return []
 }
 
 /**
- * 解析队列选择节点的落点。
- * - `fixed`：直接使用节点上配置的固定队列列表；
- * - `variable`：把 `variablePath` 指向的字段取值当作队列 id，取不到值时使用兜底队列
- *   （兜底队列为空表示不兜底，此时落点为空，由输出节点报「没有可用队列」）。
+ * 解析逻辑模型选择节点的落点。
+ * - `fixed`：直接使用节点上配置的固定逻辑模型列表；
+ * - `variable`：把 `variablePath` 指向的字段取值当作逻辑模型 id，取不到值时使用兜底列表
+ *   （兜底列表为空表示不兜底，此时落点为空，由输出节点报「没有可用逻辑模型」）。
  */
-function resolveQueueSelection(node: QueueSelectNode, payload: Record<string, unknown>): QueueSelection {
+function resolveModelSelection(node: ModelSelectNode, payload: Record<string, unknown>): ModelSelection {
   if (node.source === 'variable') {
     const variablePath = node.variablePath.trim()
-    const queueIds = variablePath ? readQueueIdsFromValue(getByPath(payload, variablePath)) : []
-    if (queueIds.length > 0) {
+    const modelIds = variablePath ? readModelIdsFromValue(getByPath(payload, variablePath)) : []
+    if (modelIds.length > 0) {
       return {
-        queueIds,
+        modelIds,
         matched: true,
-        reason: `字段 ${variablePath} 取值 ${queueIds.join('、')}，直连该队列`,
+        reason: `字段 ${variablePath} 取值 ${modelIds.join('、')}，直连该逻辑模型`,
       }
     }
 
-    const fallbackQueueIds = normalizeQueueIds(node.fallbackQueueIds)
+    const fallbackModelIds = normalizeModelIds(node.fallbackModelIds)
     return {
-      queueIds: fallbackQueueIds,
+      modelIds: fallbackModelIds,
       matched: false,
-      reason: fallbackQueueIds.length > 0
-        ? `字段 ${variablePath || '（未配置）'} 没有可用的队列取值，回落到兜底队列 ${fallbackQueueIds.join('、')}`
-        : `字段 ${variablePath || '（未配置）'} 没有可用的队列取值，且未配置兜底队列`,
+      reason: fallbackModelIds.length > 0
+        ? `字段 ${variablePath || '（未配置）'} 没有可用的逻辑模型取值，回落到兜底逻辑模型 ${fallbackModelIds.join('、')}`
+        : `字段 ${variablePath || '（未配置）'} 没有可用的逻辑模型取值，且未配置兜底逻辑模型`,
     }
   }
 
-  const queueIds = normalizeQueueIds(node.queueIds)
+  const modelIds = normalizeModelIds(node.modelIds)
   return {
-    queueIds,
-    matched: queueIds.length > 0,
-    reason: queueIds.length > 0 ? `选择 ${queueIds.length} 个指定队列` : '尚未选择任何逻辑队列',
+    modelIds,
+    matched: modelIds.length > 0,
+    reason: modelIds.length > 0 ? `选择 ${modelIds.length} 个指定逻辑模型` : '尚未选择任何逻辑模型',
   }
 }
 
@@ -506,7 +528,7 @@ export function runWorkflow(graph: WorkflowGraph, inputPayload: unknown, _option
   const edges = new Map<string, string>()
   for (const edge of graph.edges) edges.set(`${edge.sourceNodeId}:${edge.sourcePort}`, edge.targetNodeId)
   let protocol: WorkflowProtocol = 'unknown'
-  const queueSelections: Record<string, QueueSelection> = {}
+  const nodeOutputs: NodeOutputMap = {}
   let steps = 0
   let stopReason: WorkflowRunResult['stopReason'] = 'missing-next'
 
@@ -527,6 +549,10 @@ export function runWorkflow(graph: WorkflowGraph, inputPayload: unknown, _option
       }
 
       if (current.kind === 'input') {
+        // 输入节点的输出就是它交给下游的入口数据：请求模型与本次可见的逻辑模型。
+        const route = routeOf(outputPayload)
+        addNodeOutput(nodeOutputs, current.id, '请求模型', route.requestedModel)
+        addNodeOutput(nodeOutputs, current.id, '可用逻辑模型', route.availableModelIds)
         trace.push({ nodeId: current.id, nodeName: current.name, kind: current.kind, success: true, message: '输入进入路由流程' })
         currentId = edgeTarget(edges, current.id)
         continue
@@ -534,10 +560,13 @@ export function runWorkflow(graph: WorkflowGraph, inputPayload: unknown, _option
 
       if (current.kind === 'control-input') {
         applyControlInputs(outputPayload, current)
+        const activeControls = current.controls.filter(control => control.enabled)
+        // 每个启用的控制项各占一条输出，名称用控制项标签。
+        activeControls.forEach(control => addNodeOutput(nodeOutputs, current.id, control.label, control.defaultValue, control.key))
         trace.push({
           nodeId: current.id, nodeName: current.name, kind: current.kind, success: true,
           message: '控制输入已写入 route.controls',
-          details: { controls: current.controls.filter(control => control.enabled).map(control => ({ key: control.key, kind: control.kind, value: control.defaultValue })) },
+          details: { controls: activeControls.map(control => ({ key: control.key, kind: control.kind, value: control.defaultValue })) },
         })
         currentId = edgeTarget(edges, current.id)
         continue
@@ -547,6 +576,8 @@ export function runWorkflow(graph: WorkflowGraph, inputPayload: unknown, _option
         const discovered = discoverProtocol(current, outputPayload)
         protocol = discovered.protocol
         const normalized = writeRouteProtocol(outputPayload, protocol, discovered.transport)
+        addNodeOutput(nodeOutputs, current.id, '协议', protocol)
+        addNodeOutput(nodeOutputs, current.id, '传输方式', discovered.transport)
         trace.push({
           nodeId: current.id,
           nodeName: current.name,
@@ -567,6 +598,8 @@ export function runWorkflow(graph: WorkflowGraph, inputPayload: unknown, _option
         const caseResults = current.cases.map(caseNode => ({ caseId: caseNode.id, name: caseNode.name, passed: evaluateCase(caseNode, outputPayload) }))
         const matchedCase = current.cases.find((_case, index) => caseResults[index]?.passed)
         const port = matchedCase?.id ?? 'else'
+        // 每个分支各占一条输出：分支名 → 命中 / 未命中。
+        caseResults.forEach(item => addNodeOutput(nodeOutputs, current.id, item.name, item.passed ? '命中' : '未命中'))
         currentId = edgeTarget(edges, current.id, port)
         trace.push({
           nodeId: current.id, nodeName: current.name, kind: current.kind, success: Boolean(matchedCase),
@@ -576,20 +609,23 @@ export function runWorkflow(graph: WorkflowGraph, inputPayload: unknown, _option
         continue
       }
 
-      if (current.kind === 'queue-select') {
+      if (current.kind === 'model-select') {
         const route = routeOf(outputPayload)
-        const selection = resolveQueueSelection(current, outputPayload)
-        queueSelections[current.id] = selection
-        route.queueIds = selection.queueIds
-        route.fallback = !selection.matched && selection.queueIds.length > 0
+        const selection = resolveModelSelection(current, outputPayload)
+        route.modelIds = selection.modelIds
+        route.fallback = !selection.matched && selection.modelIds.length > 0
+        if (current.source === 'variable') {
+          addNodeOutput(nodeOutputs, current.id, '取值字段', current.variablePath || '（未配置）')
+        }
+        addNodeOutput(nodeOutputs, current.id, '落点逻辑模型', selection.modelIds, route.fallback ? '兜底' : undefined)
         trace.push({
           nodeId: current.id,
           nodeName: current.name,
           kind: current.kind,
-          success: selection.queueIds.length > 0,
+          success: selection.modelIds.length > 0,
           message: selection.reason,
           details: {
-            queueIds: selection.queueIds,
+            modelIds: selection.modelIds,
             matched: selection.matched,
             source: current.source,
             variablePath: current.variablePath,
@@ -601,16 +637,17 @@ export function runWorkflow(graph: WorkflowGraph, inputPayload: unknown, _option
 
       if (current.kind === 'output') {
         const route = routeOf(outputPayload)
+        addNodeOutput(nodeOutputs, current.id, '最终落点', route.modelIds, route.fallback ? '兜底' : undefined)
         trace.push({
           nodeId: current.id,
           nodeName: current.name,
           kind: current.kind,
-          success: route.queueIds.length > 0,
-          message: route.queueIds.length > 0
-            ? `到达输出节点，落点队列 ${route.queueIds.join('、')}`
-            : '到达输出节点，但没有得到任何可用队列',
+          success: route.modelIds.length > 0,
+          message: route.modelIds.length > 0
+            ? `到达输出节点，落点逻辑模型 ${route.modelIds.join('、')}`
+            : '到达输出节点，但没有得到任何可用逻辑模型',
           details: {
-            queueIds: route.queueIds,
+            modelIds: route.modelIds,
             fallback: route.fallback,
             includeTrace: current.includeTrace,
             summaryLevel: current.summaryLevel,
@@ -625,9 +662,9 @@ export function runWorkflow(graph: WorkflowGraph, inputPayload: unknown, _option
   }
 
   const start = graph.nodes.find(node => node.kind === 'input')
-  if (!start) return { outputPayload, protocol: 'unknown', queueSelections: {}, stopReason: 'error', trace: [buildMissingInputTrace('缺少输入节点')] }
+  if (!start) return { outputPayload, protocol: 'unknown', nodeOutputs: {}, stopReason: 'error', trace: [buildMissingInputTrace('缺少输入节点')] }
   execute(start.id)
-  return { outputPayload, protocol, queueSelections, stopReason, trace }
+  return { outputPayload, protocol, nodeOutputs, stopReason, trace }
 }
 
 export function createRouteContextInput(payload: RouteContextInput): RouteContextEnvelope {

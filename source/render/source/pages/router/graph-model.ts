@@ -8,8 +8,8 @@ import {
 } from './node-meta'
 import type { NodeRunStatus } from './node-data'
 import {
+  DEFAULT_MODEL_IDS,
   DEFAULT_OPERATOR_SET,
-  DEFAULT_QUEUE_IDS,
   type ConditionCase,
   type ConditionOperator,
   type ConditionRule,
@@ -25,22 +25,24 @@ import {
 
 export const routerStorageKey = 'one-switch.router.graph.v1'
 
+/**
+ * 测试运行用的示例原始输入。
+ * 保持最小形态：只有路由真正会读到的请求事实（路径 / 方法 / 头 / 体），
+ * 不再预置业务字段。`logicalModels` 由页面在运行时注入真实模型列表。
+ */
 export const samplePayload = {
   request: {
     path: '/v1/chat/completions',
     method: 'POST',
     headers: {
-      'x-provider': ['openai'],
-      userAgent: 'OneSwitch/1.0',
+      'content-type': 'application/json',
+      'x-provider': 'openai',
     },
     body: {
       model: 'gpt-4o-mini',
       tenant: 'vip-cn',
-      priority: 2,
-      messages: [{ role: 'user', content: 'Summarize this article in Chinese.' }],
     },
   },
-  metadata: { source: 'desktop-app' },
 }
 
 export function createId(prefix: string): string {
@@ -134,15 +136,15 @@ export function createNodeByKind(kind: AppendableKind, position: NodePosition): 
 
   return {
     id,
-    kind: 'queue-select',
-    name: '队列选择节点',
+    kind: 'model-select',
+    name: '逻辑模型选择节点',
     enabled: true,
-    description: '选择一个或多个逻辑队列，交由出口执行。',
+    description: '选择一个或多个逻辑模型，交由出口执行。',
     position,
     source: 'fixed',
     variablePath: '',
-    queueIds: [],
-    fallbackQueueIds: [],
+    modelIds: [],
+    fallbackModelIds: [],
   }
 }
 
@@ -200,25 +202,25 @@ export function createOutputNode(position: NodePosition): WorkflowNodeModel {
 }
 
 /**
- * 默认策略：请求模型命中逻辑队列 id 就直连该队列，否则落到默认队列。
+ * 默认策略：请求模型命中逻辑模型 id 就直连它，否则落到默认逻辑模型。
  *
  * 规则全部由基础节点组合而成，没有任何专用节点，
  * 命中判断就是一条普通的「字段 in 字段」条件：
- * 输入 → 条件（route.requestedModel in route.availableQueueIds）
- *        ├─ IF   → 队列选择（变量取值 route.requestedModel）→ 出口
- *        └─ ELSE → 队列选择（固定 default）→ 出口
+ * 输入 → 条件（route.requestedModel in route.availableModelIds）
+ *        ├─ IF   → 逻辑模型选择（变量取值 route.requestedModel）→ 出口
+ *        └─ ELSE → 逻辑模型选择（固定 default）→ 出口
  */
 export function createDefaultPolicyGraph(): WorkflowGraph {
   const conditionCase: ConditionCase = {
     ...createConditionCase('case-1'),
-    name: '请求模型在逻辑队列列表里',
+    name: '请求模型在逻辑模型列表里',
     conditions: [
       {
         fieldPath: 'route.requestedModel',
         valueType: 'string',
         operator: 'in',
         valueSource: 'field',
-        valueFieldPath: 'route.availableQueueIds',
+        valueFieldPath: 'route.availableModelIds',
       },
     ],
   }
@@ -230,49 +232,49 @@ export function createDefaultPolicyGraph(): WorkflowGraph {
       {
         id: 'condition',
         kind: 'condition',
-        name: '请求模型是否命中逻辑队列',
+        name: '请求模型是否命中逻辑模型',
         enabled: true,
-        description: 'route.requestedModel 在 route.availableQueueIds 里时走直连分支，否则落到默认队列。',
+        description: 'route.requestedModel 在 route.availableModelIds 里时走直连分支，否则落到默认逻辑模型。',
         position: { x: 460, y: 220 },
         cases: [conditionCase],
       },
       {
-        id: 'queue-direct',
-        kind: 'queue-select',
-        name: '直连请求模型队列',
+        id: 'model-direct',
+        kind: 'model-select',
+        name: '直连请求模型',
         enabled: true,
-        description: '把 route.requestedModel 的取值直接当作队列 id。',
+        description: '把 route.requestedModel 的取值直接当作逻辑模型 id。',
         position: { x: 860, y: 110 },
         source: 'variable',
         variablePath: 'route.requestedModel',
-        queueIds: [],
-        fallbackQueueIds: [],
+        modelIds: [],
+        fallbackModelIds: [],
       },
       {
-        id: 'queue-default',
-        kind: 'queue-select',
-        name: '默认队列',
+        id: 'model-default',
+        kind: 'model-select',
+        name: '默认逻辑模型',
         enabled: true,
-        description: '未命中逻辑队列时落到内置默认队列。',
+        description: '未命中时落到内置的默认逻辑模型。',
         position: { x: 860, y: 330 },
         source: 'fixed',
         variablePath: '',
-        queueIds: [...DEFAULT_QUEUE_IDS],
-        fallbackQueueIds: [],
+        modelIds: [...DEFAULT_MODEL_IDS],
+        fallbackModelIds: [],
       },
       createOutputNode({ x: 1260, y: 220 }),
     ],
     edges: [
       { id: 'edge-input-condition', sourceNodeId: 'input', sourcePort: 'out', targetNodeId: 'condition' },
-      { id: 'edge-condition-direct', sourceNodeId: 'condition', sourcePort: conditionCase.id, targetNodeId: 'queue-direct' },
-      { id: 'edge-condition-else', sourceNodeId: 'condition', sourcePort: 'else', targetNodeId: 'queue-default' },
-      { id: 'edge-queue-direct-output', sourceNodeId: 'queue-direct', sourcePort: 'out', targetNodeId: 'output' },
-      { id: 'edge-queue-default-output', sourceNodeId: 'queue-default', sourcePort: 'out', targetNodeId: 'output' },
+      { id: 'edge-condition-direct', sourceNodeId: 'condition', sourcePort: conditionCase.id, targetNodeId: 'model-direct' },
+      { id: 'edge-condition-else', sourceNodeId: 'condition', sourcePort: 'else', targetNodeId: 'model-default' },
+      { id: 'edge-model-direct-output', sourceNodeId: 'model-direct', sourcePort: 'out', targetNodeId: 'output' },
+      { id: 'edge-model-default-output', sourceNodeId: 'model-default', sourcePort: 'out', targetNodeId: 'output' },
     ],
   }
 }
 
-/** 协议分流模板：先识别协议，再按条件分流，最后落到不同队列。 */
+/** 协议分流模板：先识别协议，再按条件分流，最后落到不同逻辑模型。 */
 export function createDefaultGraph(): WorkflowGraph {
   // 分支 id 固定，保证同一预设每次生成的图完全一致（否则「当前策略」永远匹配不上）。
   const conditionCase = createConditionCase('case-1')
@@ -296,16 +298,16 @@ export function createDefaultGraph(): WorkflowGraph {
       cases: [conditionCase],
     },
     {
-      id: 'queue',
-      kind: 'queue-select',
-      name: '队列选择',
+      id: 'model',
+      kind: 'model-select',
+      name: '逻辑模型选择',
       enabled: true,
-      description: '选择一个或多个逻辑队列，交由出口执行。',
+      description: '选择一个或多个逻辑模型，交由出口执行。',
       position: { x: 1100, y: 220 },
       source: 'fixed',
       variablePath: '',
-      queueIds: [],
-      fallbackQueueIds: [],
+      modelIds: [],
+      fallbackModelIds: [],
     },
     createOutputNode({ x: 1440, y: 220 }),
   ]
@@ -315,10 +317,10 @@ export function createDefaultGraph(): WorkflowGraph {
     { id: 'edge-protocol-completions', sourceNodeId: 'protocol', sourcePort: 'openai-completions', targetNodeId: 'condition' },
     { id: 'edge-protocol-responses', sourceNodeId: 'protocol', sourcePort: 'openai-responses', targetNodeId: 'condition' },
     { id: 'edge-protocol-anthropic', sourceNodeId: 'protocol', sourcePort: 'anthropic-messages', targetNodeId: 'condition' },
-    { id: 'edge-protocol-unknown', sourceNodeId: 'protocol', sourcePort: 'unknown', targetNodeId: 'queue' },
-    { id: 'edge-condition-case', sourceNodeId: 'condition', sourcePort: conditionCase.id, targetNodeId: 'queue' },
-    { id: 'edge-condition-else', sourceNodeId: 'condition', sourcePort: 'else', targetNodeId: 'queue' },
-    { id: 'edge-queue-output', sourceNodeId: 'queue', sourcePort: 'out', targetNodeId: 'output' },
+    { id: 'edge-protocol-unknown', sourceNodeId: 'protocol', sourcePort: 'unknown', targetNodeId: 'model' },
+    { id: 'edge-condition-case', sourceNodeId: 'condition', sourcePort: conditionCase.id, targetNodeId: 'model' },
+    { id: 'edge-condition-else', sourceNodeId: 'condition', sourcePort: 'else', targetNodeId: 'model' },
+    { id: 'edge-model-output', sourceNodeId: 'model', sourcePort: 'out', targetNodeId: 'output' },
   ]
 
   return { version: 1, nodes, edges }
@@ -338,14 +340,14 @@ export const ROUTER_POLICY_PRESETS: RouterPolicyPreset[] = [
   {
     id: 'model-direct',
     name: '默认策略：模型直达',
-    description: '请求模型命中逻辑队列就直连该队列，否则落到默认队列（条件 + 两次队列选择）。',
+    description: '请求模型命中逻辑模型列表就直连该模型，否则落到默认逻辑模型（条件 + 两次逻辑模型选择）。',
     isDefault: true,
     createGraph: createDefaultPolicyGraph,
   },
   {
     id: 'protocol-then-condition',
     name: '协议分流模板',
-    description: '先识别协议，再按条件分流，最后落到指定队列。',
+    description: '先识别协议，再按条件分流，最后落到指定逻辑模型。',
     isDefault: false,
     createGraph: createDefaultGraph,
   },

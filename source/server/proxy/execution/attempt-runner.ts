@@ -16,7 +16,7 @@ export interface AttemptRunnerOptions<T, O extends AttemptRunnerResult> {
   onExhausted(lastError: Error | null): Promise<void>
 }
 
-export async function runAttemptQueue<T, O extends AttemptRunnerResult>(options: AttemptRunnerOptions<T, O>): Promise<void> {
+export async function runAttempts<T, O extends AttemptRunnerResult>(options: AttemptRunnerOptions<T, O>): Promise<void> {
   let attemptIndex = 0
   let lastError: Error | null = null
 

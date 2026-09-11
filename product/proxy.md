@@ -151,49 +151,49 @@ proxy/
 
 ## 路由策略
 
-### 单队列模型
+### 单逻辑模型
 
-v0.3 MVP 只有兜底逻辑模型 `default`。ProviderModel 通过 `scheduling_policies` 绑定到逻辑模型；每个请求根据解析后的逻辑模型绑定关系和客户端协议动态计算一个**自动切换候选队列**。请求中的 `model` 字段必须是非空字符串，但不需要等于逻辑模型 ID；当前版本没有其他逻辑模型，因此任意模型名都解析到 `default`。转发时，客户端模型名会被替换为当前 ProviderModel 的 `modelName`。
+v0.3 MVP 只有兜底逻辑模型 `default`。ProviderModel 通过 `scheduling_policies` 绑定到逻辑模型；每个请求根据解析后的逻辑模型绑定关系和客户端协议动态计算一个**自动切换候选列表**。请求中的 `model` 字段必须是非空字符串，但不需要等于逻辑模型 ID；当前版本没有其他逻辑模型，因此任意模型名都解析到 `default`。转发时，客户端模型名会被替换为当前 ProviderModel 的 `modelName`。
 
 - 所有未匹配请求只使用 `scheduling_policies` 中绑定到 `default` 的候选项；后续每个逻辑模型都可以维护自己的绑定集合和顺序
 - 同一个 ProviderModel 可以绑定到多个逻辑模型，并在不同逻辑模型中拥有不同的优先级、权重和启用状态
-- 候选队列中的每个 ProviderModel 都通过端点绑定获得 upstream 协议、有效 URL、upstream API 模型名和所属 Provider。
-- 请求来时，自动根据协议过滤队列，按顺序尝试，失败自动切换到下一个
+- 候选列表中的每个 ProviderModel 都通过端点绑定获得 upstream 协议、有效 URL、upstream API 模型名和所属 Provider。
+- 请求来时，自动根据协议过滤候选，按顺序尝试，失败自动切换到下一个
 - 转发到上游时，`model` 字段会被替换为当前 ProviderModel 的 **modelName**
-- 支持用户手动切换到队列中的某个 ProviderModel：新请求使用新模型，正在进行的请求不中断
+- 支持用户手动切换到候选列表中的某个 ProviderModel：新请求使用新模型，正在进行的请求不中断
 
 > ProviderModel 是可复用的供应商模型实体，但调度资格和顺序由 `scheduling_policies(logicalModelId, providerModelId)` 决定；MVP 中只有绑定到 `default`、绑定启用且存在可用端点的 ProviderModel 才进入候选池。
 
 ### 路由步骤
 
 1. **协议识别**：根据请求 path 自动匹配协议类型
-2. **逻辑模型解析与队列过滤**：将未匹配的非空客户端模型名解析为 `default`，再从其自动切换队列中筛选出**协议匹配**且**可用**的 ProviderModel（未禁用、ProviderModel 未冷却、Provider 未冷却）
-3. **确定起始位置**：如果用户手动指定了当前 ProviderModel，则从该模型开始；目标已禁用、冷却或协议不匹配时返回明确错误，不静默选择其他起始项；否则从队列头部开始
+2. **逻辑模型解析与候选过滤**：将未匹配的非空客户端模型名解析为 `default`，再从其自动切换候选列表中筛选出**协议匹配**且**可用**的 ProviderModel（未禁用、ProviderModel 未冷却、Provider 未冷却）
+3. **确定起始位置**：如果用户手动指定了当前 ProviderModel，则从该模型开始；目标已禁用、冷却或协议不匹配时返回明确错误，不静默选择其他起始项；否则从候选列表头部开始
 4. **顺序尝试**：按当前逻辑模型绑定行的 `priority ASC, weight DESC, createdTime ASC, providerModelId ASC` 稳定排序依次尝试；v0.3 `priority` 策略不使用权重做随机调度。不同逻辑模型分别读取自己的绑定行，因此可以拥有不同顺序
 5. **模型名替换**：每个 ProviderModel 转发前，将请求体中的 model 替换为该模型的 `modelName`
-6. **失败切换**：遇到可切换错误时，自动尝试队列中的下一个 ProviderModel
+6. **失败切换**：遇到可切换错误时，自动尝试候选列表中的下一个 ProviderModel
 
 ### 过滤规则
 
 - 协议不匹配的 ProviderModel 跳过（例如 OpenAI 协议的请求不会尝试只有 Anthropic 端点的 ProviderModel）
 - 被标记为冷却、禁用或达到手动额度阈值的 Provider 或 ProviderModel 跳过
-- 如果过滤后队列为空，返回“当前协议下无可用 ProviderModel”的错误响应
+- 如果过滤后候选为空，返回“当前协议下无可用 ProviderModel”的错误响应
 
 ### 自动切换规则
 
 - 同一请求不在同一 ProviderModel 上重复重试
-- 按队列顺序依次尝试，遇到可切换错误则切到下一个
+- 按候选顺序依次尝试，遇到可切换错误则切到下一个
 - 所有候选都失败时，返回最后一个上游错误，并在日志中聚合所有尝试
 
 ### 手动切换（核心特性）
 
-用户可以在控制台手动指定当前使用队列中的哪个 ProviderModel：
+用户可以在控制台手动指定当前使用候选列表中的哪个 ProviderModel：
 
 - **新请求立即生效**：切换后发起的新请求，从指定的 ProviderModel 开始尝试
 - **进行中请求不中断**：已经在转发的请求（包括流式）继续使用原来的 ProviderModel，不受切换影响
-- **自动切换仍有效**：手动指定的 ProviderModel 失败后，仍按队列顺序自动往下切换
-- **手动切换不改变队列顺序**：优先级排序不变，只是设置一个「当前起始点」
-- 手动切换是运行时状态，不持久化，重启后恢复为从队列头部开始
+- **自动切换仍有效**：手动指定的 ProviderModel 失败后，仍按候选顺序自动往下切换
+- **手动切换不改变候选顺序**：优先级排序不变，只是设置一个「当前起始点」
+- 手动切换是运行时状态，不持久化，重启后恢复为从候选列表头部开始
 
 ## 可切换错误分类
 

@@ -65,10 +65,10 @@ export type NodePanelUpdate = (updater: (node: WorkflowNodeModel) => WorkflowNod
 export interface NodePanelProps {
   model: WorkflowNodeModel
   update: NodePanelUpdate
-  /** 当前图上的全部节点，用于展示字段 / 队列来源 */
+  /** 当前图上的全部节点，用于展示字段 / 逻辑模型来源 */
   nodeModels: WorkflowNodeModel[]
-  /** 可选逻辑队列 */
+  /** 可选逻辑模型 */
   logicalModels: RuntimeLogicalModel[]
-  /** 上游 schema 推出的可用字段（条件节点与队列选择节点的变量取值共用） */
+  /** 上游 schema 推出的可用字段（条件节点与逻辑模型选择节点的变量取值共用） */
   conditionFieldHints: SchemaFieldDescriptor[]
 }

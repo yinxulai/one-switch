@@ -2,11 +2,11 @@ import { Activity, Clock3, Layers3, Zap } from 'lucide-react'
 import { MetricGrid } from '@/components/metric-grid'
 import { NumberTicker } from '@/components/ui/number-ticker'
 import type { ProviderModelRoute } from '@common/schemas'
-import type { QueueSummaryMetrics } from '../lib/model-metrics'
+import type { LogicalModelSummaryMetrics } from '../lib/model-metrics'
 
-interface QueueSummaryProps {
+interface LogicalModelSummaryProps {
   models: ProviderModelRoute[]
-  summaryMetrics?: QueueSummaryMetrics
+  summaryMetrics?: LogicalModelSummaryMetrics
 }
 
 type TickerValueProps = {
@@ -20,7 +20,7 @@ function TickerValue(props: TickerValueProps) {
   return <><NumberTicker value={props.value} decimalPlaces={props.decimalPlaces} />{props.suffix}</>
 }
 
-export function QueueSummary(props: QueueSummaryProps) {
+export function LogicalModelSummary(props: LogicalModelSummaryProps) {
   const enabledCount = props.models.filter(model => model.enabled).length
   const metrics = props.summaryMetrics
 

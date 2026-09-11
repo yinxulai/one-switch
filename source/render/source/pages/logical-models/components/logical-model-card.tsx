@@ -15,22 +15,22 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { SortableQueueModel } from './sortable-queue-model'
-import { QueueModelRow } from './queue-model-row'
-import { queueModelMetricKey, type QueueModelMetrics } from '../lib/model-metrics'
+import { SortableProviderModel } from './sortable-provider-model'
+import { ProviderModelRow } from './provider-model-row'
+import { providerModelMetricKey, type ProviderModelMetrics } from '../lib/model-metrics'
 import type { ProviderModelRoute, Provider, ProviderHealth, ProviderModelHealth } from '@common/schemas'
 
 export type ProviderMap = Record<string, Provider>
 export type HealthMap = Record<string, ProviderHealth>
 export type ProviderModelHealthMap = Record<string, ProviderModelHealth>
 
-interface QueueListCardProps {
+interface LogicalModelCardProps {
   logicalModelName: string
   models: ProviderModelRoute[]
   providers: ProviderMap
   health: HealthMap
   providerModelHealth: ProviderModelHealthMap
-  modelMetrics: Record<string, QueueModelMetrics>
+  modelMetrics: Record<string, ProviderModelMetrics>
   mode: 'auto' | 'manual'
   manualModelId: string
   switchingMode: boolean
@@ -44,7 +44,7 @@ interface QueueListCardProps {
   onRemoveModel?: (model: ProviderModelRoute) => void
 }
 
-export function QueueListCard(props: QueueListCardProps) {
+export function LogicalModelCard(props: LogicalModelCardProps) {
   const {
     logicalModelName,
     models,
@@ -82,7 +82,7 @@ export function QueueListCard(props: QueueListCardProps) {
     <CardHeader className="group/header relative flex-row items-center justify-between gap-4 border-b border-border/60 pb-4">
       <div className="min-w-0">
         <div className="flex items-center gap-2">
-          <CardTitle>{logicalModelName} 队列</CardTitle>
+          <CardTitle>{logicalModelName} 逻辑模型</CardTitle>
         </div>
         <CardDescription className="mt-1">
           {models.length ? `${models.length} 个模型 · ${enabledCount} 个已启用` : '添加模型后配置优先级和故障转移'}
@@ -101,7 +101,7 @@ export function QueueListCard(props: QueueListCardProps) {
     </CardHeader>
   )
 
-  const renderQueueTable = () => (
+  const renderProviderModelTable = () => (
     <DndContext
       sensors={sensors}
       collisionDetection={closestCenter}
@@ -111,14 +111,14 @@ export function QueueListCard(props: QueueListCardProps) {
       <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
         <div className="max-h-96 overflow-x-auto overflow-y-auto rounded-b-lg">
           {rows.map(row => (
-            <SortableQueueModel key={row.model.id} id={row.model.id}>
+            <SortableProviderModel key={row.model.id} id={row.model.id}>
               {(handleProps, dragging) => (
-                <QueueModelRow
+                <ProviderModelRow
                   model={row.model}
                   provider={providers[row.model.providerId]}
                   providerHealth={health[row.model.providerId]}
                   providerModelHealth={providerModelHealth[row.model.id]}
-                  metrics={modelMetrics[queueModelMetricKey(row.model.providerId, row.model.id)]}
+                  metrics={modelMetrics[providerModelMetricKey(row.model.providerId, row.model.id)]}
                   mode={mode}
                   selected={row.selected}
                   cooling={row.cooling}
@@ -130,7 +130,7 @@ export function QueueListCard(props: QueueListCardProps) {
                   onRemove={() => onRemoveModel?.(row.model)}
                 />
               )}
-            </SortableQueueModel>
+            </SortableProviderModel>
           ))}
         </div>
       </SortableContext>
@@ -140,8 +140,8 @@ export function QueueListCard(props: QueueListCardProps) {
   const renderEmptyState = () => (
     <EmptyState
       icon={ListTree}
-      title="队列中还没有模型"
-      description="为这个队列显式添加模型后，模型才会参与请求。"
+      title="逻辑模型中还没有模型"
+      description="为这个逻辑模型显式添加模型后，模型才会参与请求。"
       action={onAddModel && (
         <Button variant="outline" size="sm" onClick={onAddModel}>添加模型</Button>
       )}
@@ -151,7 +151,7 @@ export function QueueListCard(props: QueueListCardProps) {
 
   const renderContent = () => {
     if (models.length === 0) return renderEmptyState()
-    return renderQueueTable()
+    return renderProviderModelTable()
   }
 
   return (

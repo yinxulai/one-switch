@@ -127,7 +127,7 @@ export function ConditionPanel(props: NodePanelProps) {
                 && rule.operator !== 'empty'
                 && rule.operator !== 'notEmpty'
 
-              /** 比较值可以来自另一个字段，例如 `route.requestedModel in route.availableQueueIds`。 */
+              /** 比较值可以来自另一个字段，例如 `route.requestedModel in route.availableModelIds`。 */
               const supportsFieldOperand = FIELD_OPERAND_OPERATORS.includes(rule.operator)
               const usesFieldOperand = supportsFieldOperand && rule.valueSource === 'field'
 

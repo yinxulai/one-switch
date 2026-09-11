@@ -122,7 +122,7 @@ export async function upsertSchedulingPolicy(input: UpsertSchedulingPolicyInput)
   }
   getDb().insert(schedulingPolicies).values(values).onConflictDoUpdate({
     target: [schedulingPolicies.logicalModelId, schedulingPolicies.providerModelId],
-    // 主键不含 `deletedTime`，所以「重新把模型加回队列」就是让同一行复活：
+    // 主键不含 `deletedTime`，所以「重新把模型加回逻辑模型」就是让同一行复活：
     // 命中被软删除的历史行时把 `deletedTime` 清掉，而不是再插一条。
     set: { strategy: values.strategy, priority: values.priority, weight: values.weight, enabled: values.enabled, updatedTime: time, deletedTime: null },
   }).run()

@@ -14,15 +14,15 @@ export interface ModelWithProvider {
 }
 
 export interface AvailableModelsOptions {
-  /** 手动模式精确指定的模型；忽略模型、供应商及健康状态�?*/
+  /** 手动模式精确指定的模型；忽略模型、供应商及健康状态。 */
   manualModelId?: string | null
 }
 
 /**
- * 获取逻辑模型绑定?ProviderModel 列表，按数据库返回的队列顺序排列�?
+ * 获取逻辑模型绑定的 ProviderModel 列表，按数据库返回的调度顺序排列。
  * 自动模式保持用户指定的原始顺序：可用模型排在前面，不可用模型整体后移；
  * 两个分组内部都保持用户设置的先后级别。
- * 手动模式只返回指定模型，不受启用状态或健康冷却影响�?
+ * 手动模式只返回指定模型，不受启用状态或健康冷却影响。
  */
 export async function getAvailableModels(logicalModelId = 'default', options: AvailableModelsOptions = {}): Promise<ModelWithProvider[]> {
   const manualModelId = options.manualModelId ?? null

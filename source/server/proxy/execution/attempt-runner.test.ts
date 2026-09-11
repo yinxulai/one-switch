@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { runAttemptQueue } from '@server/proxy/execution/attempt-runner'
+import { runAttempts } from '@server/proxy/execution/attempt-runner'
 
 describe('attempt runner', () => {
   it('fails over to targets in order and stops on success', async () => {
     const events: string[] = []
-    await runAttemptQueue<string, { disposition: 'success' | 'failover' | 'terminal'; statusCode: number }>({
+    await runAttempts<string, { disposition: 'success' | 'failover' | 'terminal'; statusCode: number }>({
       signal: new AbortController().signal,
       targets: ['first', 'second'],
       attempt: async target => {
@@ -26,7 +26,7 @@ describe('attempt runner', () => {
 
   it('stops when an error handler declines continuation', async () => {
     const events: string[] = []
-    await runAttemptQueue<string, { disposition: 'success' | 'failover' | 'terminal'; statusCode: number }>({
+    await runAttempts<string, { disposition: 'success' | 'failover' | 'terminal'; statusCode: number }>({
       signal: new AbortController().signal,
       targets: ['only'],
       attempt: async () => { throw new Error('failed') },

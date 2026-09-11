@@ -43,6 +43,13 @@ function inferType(value: unknown): SchemaValueType {
   return 'unknown'
 }
 
+/**
+ * 按「整体字段」暴露、不再往里展开的路径。
+ * `request.headers` 是扁平的字符串字典（`Record<string, string>`），
+ * 展开成 `request.headers.x-provider` 既不准也没意义。
+ */
+const OPAQUE_PATHS = new Set(['request.headers'])
+
 function flattenFields(source: unknown, prefix: string, sourceNodeId: string, sourcePort: string): SchemaFieldDescriptor[] {
   if (!source || typeof source !== 'object' || Array.isArray(source)) {
     return prefix
@@ -53,7 +60,7 @@ function flattenFields(source: unknown, prefix: string, sourceNodeId: string, so
   const fields: SchemaFieldDescriptor[] = []
   for (const [key, value] of Object.entries(source as Record<string, unknown>)) {
     const nextPath = prefix ? `${prefix}.${key}` : key
-    if (value && typeof value === 'object' && !Array.isArray(value)) {
+    if (value && typeof value === 'object' && !Array.isArray(value) && !OPAQUE_PATHS.has(nextPath)) {
       fields.push(...flattenFields(value, nextPath, sourceNodeId, sourcePort))
     } else {
       fields.push({
@@ -127,14 +134,8 @@ export function resolveInputHints(graph: WorkflowGraph, targetNodeId: string, sa
     if (model.kind === 'input') {
       for (const field of flattenFields(samplePayload, '', model.id, 'context')) addUniqueField(fields, field)
       addUniqueField(fields, {
-        path: 'queues',
+        path: 'logicalModels',
         valueType: 'array',
-        sourceNodeId: model.id,
-        sourcePort: 'context',
-      })
-      addUniqueField(fields, {
-        path: 'route.traceId',
-        valueType: 'string',
         sourceNodeId: model.id,
         sourcePort: 'context',
       })
@@ -145,7 +146,7 @@ export function resolveInputHints(graph: WorkflowGraph, targetNodeId: string, sa
         sourcePort: 'context',
       })
       addUniqueField(fields, {
-        path: 'route.availableQueueIds',
+        path: 'route.availableModelIds',
         valueType: 'array',
         sourceNodeId: model.id,
         sourcePort: 'context',
@@ -196,9 +197,9 @@ export function resolveInputHints(graph: WorkflowGraph, targetNodeId: string, sa
       continue
     }
 
-    if (model.kind === 'queue-select') {
+    if (model.kind === 'model-select') {
       addUniqueField(fields, {
-        path: 'route.queueIds',
+        path: 'route.modelIds',
         valueType: 'array',
         sourceNodeId: model.id,
         sourcePort: 'out',

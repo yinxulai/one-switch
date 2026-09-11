@@ -5,9 +5,9 @@ import type { RouteNodeProps } from '../node-data'
 import { ConditionNodeView } from './condition-node'
 import { ControlInputNodeView } from './control-input-node'
 import { InputNodeView } from './input-node'
+import { ModelSelectNodeView } from './model-select-node'
 import { OutputNodeView } from './output-node'
 import { ProtocolDiscoveryNodeView } from './protocol-discovery-node'
-import { QueueSelectNodeView } from './queue-select-node'
 
 /**
  * 节点种类 → 节点内部视图。
@@ -19,6 +19,6 @@ export const NODE_COMPONENT_MAP: Record<WorkflowNodeKind, ComponentType<RouteNod
   'control-input': ControlInputNodeView,
   'protocol-discovery': ProtocolDiscoveryNodeView,
   condition: ConditionNodeView,
-  'queue-select': QueueSelectNodeView,
+  'model-select': ModelSelectNodeView,
   output: OutputNodeView,
 }

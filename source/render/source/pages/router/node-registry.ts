@@ -14,7 +14,7 @@ const workflowNodeTypes = {
   'route-output': WorkflowNode,
   'protocol-discovery': WorkflowNode,
   condition: WorkflowNode,
-  'queue-select': WorkflowNode,
+  'model-select': WorkflowNode,
 }
 
 /**

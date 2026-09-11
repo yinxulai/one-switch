@@ -17,7 +17,7 @@ import type { WorkflowNodeKind, WorkflowNodeModel } from './types'
  */
 export type AppendableKind = Extract<
   WorkflowNodeKind,
-  'control-input' | 'protocol-discovery' | 'condition' | 'queue-select'
+  'control-input' | 'protocol-discovery' | 'condition' | 'model-select'
 >
 
 /** React Flow 中注册的节点类型名。 */
@@ -27,13 +27,13 @@ export type CanvasNodeType =
   | 'route-output'
   | 'protocol-discovery'
   | 'condition'
-  | 'queue-select'
+  | 'model-select'
 
 export const APPENDABLE_KINDS: AppendableKind[] = [
   'control-input',
   'protocol-discovery',
   'condition',
-  'queue-select',
+  'model-select',
 ]
 
 /** 画布默认列顺序：既用于图例排序，也用于旧数据的自动布局。 */
@@ -42,7 +42,7 @@ export const NODE_KIND_ORDER: WorkflowNodeKind[] = [
   'control-input',
   'protocol-discovery',
   'condition',
-  'queue-select',
+  'model-select',
   'output',
 ]
 
@@ -89,16 +89,16 @@ export const NODE_KIND_META: Record<WorkflowNodeKind, NodeKindMeta> = {
     tone: 'bg-util-colors-cyan-cyan-500',
     accent: 'bg-util-colors-cyan-cyan-500',
   },
-  'queue-select': {
-    label: '队列选择',
-    hint: '决定请求落到哪个逻辑队列',
+  'model-select': {
+    label: '逻辑模型选择',
+    hint: '决定请求落到哪个逻辑模型',
     icon: ArrowRightLeft,
     tone: 'bg-util-colors-indigo-indigo-500',
     accent: 'bg-util-colors-indigo-indigo-500',
   },
   output: {
     label: '路由结果出口',
-    hint: '输出可用队列，交由代理执行',
+    hint: '输出可用逻辑模型，交由代理执行',
     icon: ArrowRight,
     tone: 'bg-util-colors-warning-warning-500',
     accent: 'bg-util-colors-warning-warning-500',
@@ -134,12 +134,12 @@ export function nodeSummary(model: WorkflowNodeModel): string {
   if (model.kind === 'control-input') return `${model.controls.filter(control => control.enabled).length} 个控制项`
   if (model.kind === 'protocol-discovery') return NODE_KIND_META['protocol-discovery'].hint
   if (model.kind === 'condition') return `${model.cases.length} 个分支 + ELSE`
-  if (model.kind === 'queue-select') {
+  if (model.kind === 'model-select') {
     if (model.source === 'variable') {
       const variablePath = model.variablePath.trim()
       return variablePath ? `取值字段 ${variablePath}` : '未选择取值字段'
     }
-    return `${model.queueIds.length} 个逻辑队列`
+    return `${model.modelIds.length} 个逻辑模型`
   }
   return NODE_KIND_META.output.hint
 }
@@ -150,8 +150,8 @@ export function nodePanelHint(model: WorkflowNodeModel): string {
   if (model.kind === 'control-input') return '控制输入节点会把开关、下拉等值写入 route.controls，供条件节点和其他逻辑引用。'
   if (model.kind === 'protocol-discovery') return '该节点无配置项，系统会自动分析请求并输出 openai-completions/openai-responses/anthropic-messages/unknown 分支。'
   if (model.kind === 'condition') return '字段来源于上游 schema，每个分支可包含多个条件，按 AND / OR 组合判定；首个命中的分支生效，否则走 ELSE。'
-  if (model.kind === 'queue-select') return '取值来源决定落点：固定队列直接用勾选的队列；变量取值则把指定字段当作队列 id（字符串或字符串数组），取不到时用兜底队列。'
-  return '该节点不会直接返回模型响应，而是返回一个可用队列交由代理执行。'
+  if (model.kind === 'model-select') return '取值来源决定落点：固定选择直接用勾选的逻辑模型；变量取值则把指定字段当作逻辑模型 id（字符串或字符串数组），取不到时用兜底逻辑模型。'
+  return '该节点不会直接返回模型响应，而是返回一个可用逻辑模型交由代理执行。'
 }
 
 /** 输入 / 输出节点为固定节点：名称与描述不可修改，也不可删除。 */
@@ -185,7 +185,7 @@ export function edgeStrokeColor(sourceKind: WorkflowNodeKind, sourcePort: string
   if (sourceKind === 'condition') {
     return sourcePort === 'else' ? EDGE_STROKE_NORMAL : 'var(--color-util-colors-green-green-500)'
   }
-  if (sourceKind === 'queue-select') return violetStroke
+  if (sourceKind === 'model-select') return violetStroke
   if (sourceKind === 'control-input') return emeraldStroke
   return EDGE_STROKE_NORMAL
 }

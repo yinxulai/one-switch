@@ -190,7 +190,7 @@ export async function handleProxyRequest(req: IncomingMessage, res: ServerRespon
   if (targets.length === 0) {
     const configuredProtocols = [...new Set(availableModels.flatMap(candidate => candidate.model.endpoints.map(endpoint => endpoint.protocol)))]
     const reason = availableModels.length === 0
-      ? '该逻辑模型队列没有已启用且健康的供应商模型'
+      ? '该逻辑模型没有已启用且健康的供应商模型'
       : `可用供应商模型未配置 ${protocol} 协议且未开启协议转换（当前配置协议: ${configuredProtocols.join(', ') || '无'}）`
     const availableTargets = availableModels.length > 0
       ? `，已发现: ${availableModels.map(target => `${target.provider.name}/${target.model.modelName}`).join(', ')}`

@@ -90,10 +90,22 @@ import { WorkflowGraphSchema } from './schemas'
 import type { NodePosition, WorkflowGraph, WorkflowNodeKind, WorkflowNodeModel, WorkflowRunResult } from './types'
 
 /** 画布下方的图例：只展示主干语义，控制输入与输出不重复色。 */
-const legendKinds: WorkflowNodeKind[] = ['input', 'protocol-discovery', 'condition', 'queue-select', 'output']
+const legendKinds: WorkflowNodeKind[] = ['input', 'protocol-discovery', 'condition', 'model-select', 'output']
 
 /** 这些元素自身消费删除键，画布的键盘删除需要跳过。 */
 const EDITABLE_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT'])
+
+/** 单条节点输出的值转成一行文本：字符串直出，数组用逗号连接，其余走 JSON。 */
+function formatNodeOutputValue(value: unknown): string {
+  if (value === null || value === undefined) return '—'
+  if (typeof value === 'string') return value.length === 0 ? '—' : value
+  if (typeof value === 'boolean' || typeof value === 'number') return String(value)
+  if (Array.isArray(value)) {
+    if (value.length === 0) return '—'
+    return value.map(item => (typeof item === 'string' ? item : JSON.stringify(item))).join(', ')
+  }
+  return JSON.stringify(value)
+}
 
 /** 读取本地缓存的图；缓存不合法时回落到默认图。 */
 function loadInitialGraph(): WorkflowGraph {
@@ -349,6 +361,20 @@ function WorkflowStudioCanvas() {
     return map
   }, [runResult])
 
+  /**
+   * 运行结果按节点分组呈现。
+   * 数据本身挂在节点 id 上（同一节点可能产出多条），所以这里只负责把 id 翻译成节点名称。
+   */
+  const nodeOutputGroups = useMemo(() => {
+    if (!runResult) return []
+    const nameById = new Map(graph.nodes.map(node => [node.id, node.name]))
+    return Object.entries(runResult.nodeOutputs).map(([nodeId, outputs]) => ({
+      nodeId,
+      nodeName: nameById.get(nodeId) ?? nodeId,
+      outputs,
+    }))
+  }, [graph.nodes, runResult])
+
   const nodeCacheRef = useRef(new Map<string, { model: WorkflowNodeModel; flags: string; node: RouteFlowNode }>())
 
   const flowNodes = useMemo<RouteFlowNode[]>(() => {
@@ -442,8 +468,8 @@ function WorkflowStudioCanvas() {
 
   const conditionFieldHints = useMemo(() => {
     if (!selectedNode) return []
-    // 条件节点用它挑字段，队列选择节点用它挑「变量取值」的来源字段。
-    if (selectedNode.kind !== 'condition' && selectedNode.kind !== 'queue-select') return []
+    // 条件节点用它挑字段，逻辑模型选择节点用它挑「变量取值」的来源字段。
+    if (selectedNode.kind !== 'condition' && selectedNode.kind !== 'model-select') return []
     return resolveInputHints(graph, selectedNode.id, samplePayload).fields
   }, [graph, selectedNode, samplePayload])
 
@@ -453,7 +479,7 @@ function WorkflowStudioCanvas() {
     try {
       const payload = JSON.parse(payloadText) as unknown
       const normalizedPayload = (payload && typeof payload === 'object' ? payload : {}) as Record<string, unknown>
-      normalizedPayload.queues = logicalModels.map(model => ({ id: model.id, name: model.name, enabled: model.enabled }))
+      normalizedPayload.logicalModels = logicalModels.map(model => ({ id: model.id, name: model.name, enabled: model.enabled }))
 
       const result = await unwrap(routerApi.run(graph, normalizedPayload))
       setRunResult(result)
@@ -536,7 +562,7 @@ function WorkflowStudioCanvas() {
     <PageLayout>
       <PageHeader
         title="Router"
-        description="用基础节点组合出路由策略：输入 → 协议发现 → 条件 → 队列选择 → 输出"
+        description="用基础节点组合出路由策略：输入 → 协议发现 → 条件 → 逻辑模型选择 → 输出"
         // 面板占掉右侧后标题栏会变窄，说明文案保持单行截断，避免换行把标题栏撑高、
         // 进而让画布高度在「选中/取消选中节点」之间跳动。
         className="[&_p]:truncate"
@@ -740,9 +766,33 @@ function WorkflowStudioCanvas() {
                     <Badge variant="info">协议：{runResult.protocol}</Badge>
                     <Badge variant="muted">节点数：{runResult.trace.length}</Badge>
                   </div>
-                  <div className="rounded-lg bg-workflow-block-parma-bg p-2 font-mono system-2xs-regular">
-                    <div className="mb-1 system-2xs-medium-uppercase text-text-tertiary">解析结果（调试详情）</div>
-                    <pre className="whitespace-pre-wrap break-all">{JSON.stringify(runResult.queueSelections, null, 2)}</pre>
+                  <div className="space-y-1.5 rounded-lg bg-workflow-block-parma-bg p-2">
+                    <div className="system-2xs-medium-uppercase text-text-tertiary">节点输出</div>
+                    {nodeOutputGroups.length === 0
+                      ? <div className="system-xs-regular text-text-tertiary">本次运行没有产生节点输出。</div>
+                      : (
+                        <div className="space-y-1.5">
+                          {nodeOutputGroups.map(group => (
+                            <div key={group.nodeId} className="rounded-md bg-workflow-block-bg p-2">
+                              <div className="mb-1 flex items-center gap-2">
+                                <span className="system-xs-medium text-text-primary">{group.nodeName}</span>
+                                <span className="font-mono system-2xs-regular text-text-tertiary">{group.nodeId}</span>
+                              </div>
+                              <div className="space-y-0.5">
+                                {group.outputs.map((output, index) => (
+                                  <div key={`${output.name}-${index}`} className="flex items-start gap-2">
+                                    <span className="shrink-0 system-xs-regular text-text-tertiary">{output.name}</span>
+                                    <span className="min-w-0 flex-1 break-all font-mono system-2xs-regular text-text-secondary">
+                                      {formatNodeOutputValue(output.value)}
+                                    </span>
+                                    {output.note && <Badge variant="muted">{output.note}</Badge>}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                   </div>
                   <div className="rounded-lg bg-workflow-block-parma-bg p-2 font-mono system-2xs-regular">
                     <div className="mb-1 system-2xs-medium-uppercase text-text-tertiary">Output</div>

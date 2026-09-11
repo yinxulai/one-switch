@@ -16,7 +16,7 @@ export function primarySourcePort(node: WorkflowNodeModel): string | null {
   switch (node.kind) {
     case 'input':
     case 'control-input':
-    case 'queue-select':
+    case 'model-select':
       return 'out'
     case 'condition':
       return node.cases[0]?.id ?? 'else'

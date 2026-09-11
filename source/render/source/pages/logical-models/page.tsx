@@ -5,34 +5,34 @@ import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Plug, Plus } from 'lucide-react'
 import { useState } from 'react'
-import { useQueueControlService } from './service'
+import { useLogicalModelControlService } from './service'
 import { useLogicalModels, useLogicalModelsActions } from '@/features/logical-models/hooks'
-import { QueueListCard } from './components/queue-list-card'
-import { QueueSummary } from './components/queue-summary'
-import { AddQueueModelDialog } from './components/add-queue-model-dialog'
-import { CreateQueueDialog } from './components/create-queue-dialog'
+import { LogicalModelCard } from './components/logical-model-card'
+import { LogicalModelSummary } from './components/logical-model-summary'
+import { AddProviderModelDialog } from './components/add-provider-model-dialog'
+import { CreateLogicalModelDialog } from './components/create-logical-model-dialog'
 import { schedulingPolicyApi } from '@/api/models'
 import { unwrap } from '@/api/unwrap'
 import type { ProviderModelRoute } from '@common/schemas'
 
-interface QueueControlPageProps {
+interface LogicalModelsPageProps {
   onNavigateToModels?: () => void
   onNavigateToAccess?: () => void
   onNavigateToProviderAnalytics?: (providerId: string) => void
 }
 
-interface QueueColumnProps {
+interface LogicalModelColumnProps {
   logicalModelId: string
   logicalModelName: string
   onNavigateToProviderAnalytics?: (providerId: string) => void
 }
 
-function QueueColumn(props: QueueColumnProps) {
+function LogicalModelColumn(props: LogicalModelColumnProps) {
   const { logicalModelId, logicalModelName, onNavigateToProviderAnalytics } = props
-  const service = useQueueControlService(logicalModelId)
+  const service = useLogicalModelControlService(logicalModelId)
   const [addModelOpen, setAddModelOpen] = useState(false)
   const removeModel = async (model: ProviderModelRoute) => {
-    if (!window.confirm(`确定从“${logicalModelName}”队列移除 ${model.modelName} 吗？`)) return
+    if (!window.confirm(`确定从“${logicalModelName}”逻辑模型移除 ${model.modelName} 吗？`)) return
     try {
       await unwrap(schedulingPolicyApi.remove(logicalModelId, model.id))
       await service.reload()
@@ -42,7 +42,7 @@ function QueueColumn(props: QueueColumnProps) {
   }
   return (
     <>
-      <QueueListCard
+      <LogicalModelCard
         logicalModelName={logicalModelName}
         models={service.models}
         providers={service.providers}
@@ -61,29 +61,29 @@ function QueueColumn(props: QueueColumnProps) {
         onAddModel={() => setAddModelOpen(true)}
         onRemoveModel={model => void removeModel(model)}
       />
-      <AddQueueModelDialog open={addModelOpen} logicalModelId={logicalModelId} onOpenChange={setAddModelOpen} onAdded={() => void service.reload()} />
+      <AddProviderModelDialog open={addModelOpen} logicalModelId={logicalModelId} onOpenChange={setAddModelOpen} onAdded={() => void service.reload()} />
     </>
   )
 }
 
-export function QueueControlPage(props: QueueControlPageProps) {
+export function LogicalModelsPage(props: LogicalModelsPageProps) {
   const { onNavigateToAccess, onNavigateToProviderAnalytics } = props
   const logicalModels = useLogicalModels()
   const { refresh: refreshLogicalModels } = useLogicalModelsActions()
-  const service = useQueueControlService('default')
-  const [createQueueOpen, setCreateQueueOpen] = useState(false)
+  const service = useLogicalModelControlService('default')
+  const [createLogicalModelOpen, setCreateLogicalModelOpen] = useState(false)
   const proxyRunning = service.proxyStatus?.running ?? false
   const enabledLogicalModels = logicalModels.filter(model => model.enabled)
 
   return (
     <PageLayout>
       <PageHeader
-        title="模型队列"
+        title="逻辑模型"
         description="管理请求优先级、切换模式和模型启停"
         actions={(
           <div className="flex items-center gap-2">
-            <Button onClick={() => setCreateQueueOpen(true)}>
-              <Plus size={13} /> 创建队列
+            <Button onClick={() => setCreateLogicalModelOpen(true)}>
+              <Plus size={13} /> 创建逻辑模型
             </Button>
             {onNavigateToAccess && (
               <Button variant="outline" onClick={onNavigateToAccess}>
@@ -124,11 +124,11 @@ export function QueueControlPage(props: QueueControlPageProps) {
           </div>
         ) : (
           <>
-            <QueueSummary models={service.models} summaryMetrics={service.summaryMetrics} />
+            <LogicalModelSummary models={service.models} summaryMetrics={service.summaryMetrics} />
 
             <div className={`grid gap-4 ${enabledLogicalModels.length === 1 ? 'md:grid-cols-1' : 'md:grid-cols-2'}`}>
               {enabledLogicalModels.map(model => (
-                <QueueColumn
+                <LogicalModelColumn
                   key={model.id}
                   logicalModelId={model.id}
                   logicalModelName={model.name}
@@ -136,9 +136,9 @@ export function QueueControlPage(props: QueueControlPageProps) {
                 />
               ))}
             </div>
-            <CreateQueueDialog
-              open={createQueueOpen}
-              onOpenChange={setCreateQueueOpen}
+            <CreateLogicalModelDialog
+              open={createLogicalModelOpen}
+              onOpenChange={setCreateLogicalModelOpen}
               onCreated={refreshLogicalModels}
             />
           </>

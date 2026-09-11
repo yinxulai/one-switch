@@ -144,7 +144,7 @@ describe('soft deletion', () => {
 
   it('cascades model deletion into bindings, converters and scheduling policies', async () => {
     const provider = await createTestProvider('Model Cascade', 'key_model_cascade')
-    const logicalModel = await createLogicalModel({ id: 'cascade-queue', name: 'cascade-queue', description: 'cascade test' })
+    const logicalModel = await createLogicalModel({ id: 'cascade-model', name: 'cascade-model', description: 'cascade test' })
     const route = await createRouteWithOpenAiEndpoint(provider.id, 'cascade-model')
     await upsertSchedulingPolicy({ logicalModelId: logicalModel.id, providerModelId: route.id, priority: 1, weight: 50, enabled: true })
     const binding = (await getProviderModel(route.id))!.endpoints[0]
@@ -165,7 +165,7 @@ describe('soft deletion', () => {
       expect.objectContaining({ providerModelId: route.id, enabled: false, deletedTime: expect.any(Number) }),
     ])
 
-    // 主键不含 deletedTime，所以「重新把模型加回队列」是同一行复活，而不是插一条新策略。
+    // 主键不含 deletedTime，所以「重新把模型加回逻辑模型」是同一行复活，而不是插一条新策略。
     await upsertSchedulingPolicy({ logicalModelId: logicalModel.id, providerModelId: route.id, priority: 1, weight: 50, enabled: true })
     expect(schedulingPolicyRows(logicalModel.id)).toHaveLength(1)
     expect(await listSchedulingPolicies(logicalModel.id)).toEqual([
@@ -173,9 +173,9 @@ describe('soft deletion', () => {
     ])
   })
 
-  it('keeps scheduling policy rows when a model is removed from a queue', async () => {
+  it('keeps scheduling policy rows when a model is removed from a logical model', async () => {
     const provider = await createTestProvider('Policy Soft Delete', 'key_policy_soft_delete')
-    const logicalModel = await createLogicalModel({ id: 'policy-queue', name: 'policy-queue', description: 'policy test' })
+    const logicalModel = await createLogicalModel({ id: 'policy-model', name: 'policy-model', description: 'policy test' })
     const route = await createRouteWithOpenAiEndpoint(provider.id, 'policy-model')
     await upsertSchedulingPolicy({ logicalModelId: logicalModel.id, providerModelId: route.id, priority: 1, weight: 50, enabled: true })
 

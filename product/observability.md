@@ -94,7 +94,7 @@
 | responseRewriteRuleIds | `request_attempts.responseRewriteRuleIds` | 本次尝试响应阶段命中的改写规则 id |
 | errorCode | `request_attempts.errorCode` | 结构化错误码 |
 | errorMessage | `request_attempts.errorMessage` | 错误摘要 |
-| switched | 服务层派生 | `attemptIndex > 0` 或后续存在尝试时，表示发生过队列切换 |
+| switched | 服务层派生 | `attemptIndex > 0` 或后续存在尝试时，表示发生过上游模型切换 |
 | url | `request_attempts.url` | 写入时的实际 URL 快照，不能从当前配置反推 |
 
 ### 日志策略

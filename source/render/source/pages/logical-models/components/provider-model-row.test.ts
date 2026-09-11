@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ProviderHealth, ProviderModelHealth } from '@common/schemas'
-import { resolveQueueModelHealthDisplay } from './queue-model-row'
+import { resolveProviderModelHealthDisplay } from './provider-model-row'
 
 function providerHealth(overrides: Partial<ProviderHealth> = {}): ProviderHealth {
   return {
@@ -26,9 +26,9 @@ function providerModelHealth(overrides: Partial<ProviderModelHealth> = {}): Prov
   }
 }
 
-describe('resolveQueueModelHealthDisplay', () => {
+describe('resolveProviderModelHealthDisplay', () => {
   it('prefers model-level health when model has any health signal', () => {
-    const result = resolveQueueModelHealthDisplay({
+    const result = resolveProviderModelHealthDisplay({
       providerModelHealth: providerModelHealth({ lastSuccessTime: 2_000 }),
       providerHealth: providerHealth({ lastSuccessTime: 1_000 }),
     })
@@ -41,7 +41,7 @@ describe('resolveQueueModelHealthDisplay', () => {
   })
 
   it('falls back to provider health when model has no health signal', () => {
-    const result = resolveQueueModelHealthDisplay({
+    const result = resolveProviderModelHealthDisplay({
       providerModelHealth: providerModelHealth(),
       providerHealth: providerHealth({ lastSuccessTime: 3_000 }),
     })
@@ -54,7 +54,7 @@ describe('resolveQueueModelHealthDisplay', () => {
   })
 
   it('returns none when both model and provider have no health signal', () => {
-    const result = resolveQueueModelHealthDisplay({
+    const result = resolveProviderModelHealthDisplay({
       providerModelHealth: providerModelHealth(),
       providerHealth: providerHealth(),
     })

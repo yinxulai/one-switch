@@ -10,7 +10,7 @@ OpenAI Responses API 除 HTTP POST + SSE 外，还提供 **WebSocket mode**：�
 - 事件参考：[Responses WebSocket events](https://developers.openai.com/api/reference/resources/responses/websocket-events)
 - Codex 配置：`model_providers.<id>.supports_websockets`（[Config Reference](https://learn.chatgpt.com/docs/config-file/config-reference)）
 
-**定位：WebSocket 是 `openai-responses` 协议的一种传输方式，不是新协议，也不是独立功能。** 帧 payload 与 HTTP Responses 请求体 / SSE 事件是同一套 schema，不进入 [protocol-conversion.md](./protocol-conversion.md) 的转换矩阵，不新增 `Protocol` 枚举值。本文是 [proxy.md](./proxy.md)（本地代理服务）透传骨架的传输层补充，与协议兼容转换器有本质区别：转换器是**可选功能**——有开关、解析并改写报文、有转换矩阵与 UI 配置；WS 传输是**原生透传的传输扩展**——无开关、不解析帧语义、不改变任何报文，协议识别、候选队列、鉴权注入、健康冷却全部复用 proxy 主链路，本文只描述 WS 握手与帧中继相对 HTTP 透传的差异部分。
+**定位：WebSocket 是 `openai-responses` 协议的一种传输方式，不是新协议，也不是独立功能。** 帧 payload 与 HTTP Responses 请求体 / SSE 事件是同一套 schema，不进入 [protocol-conversion.md](./protocol-conversion.md) 的转换矩阵，不新增 `Protocol` 枚举值。本文是 [proxy.md](./proxy.md)（本地代理服务）透传骨架的传输层补充，与协议兼容转换器有本质区别：转换器是**可选功能**——有开关、解析并改写报文、有转换矩阵与 UI 配置；WS 传输是**原生透传的传输扩展**——无开关、不解析帧语义、不改变任何报文，协议识别、候选模型、鉴权注入、健康冷却全部复用 proxy 主链路，本文只描述 WS 握手与帧中继相对 HTTP 透传的差异部分。
 
 > 与 OpenAI Realtime API（`/v1/realtime`，语音双向音频会话）无关。Realtime 是独立的交互模型，不在本文范围。
 
@@ -74,7 +74,7 @@ flowchart TD
 ```
 
 - 在 `ProxyRuntime` 的 HTTP server 上注册 `server.on('upgrade')`；HTTP 请求入口保持不变。
-- 握手阶段没有请求体，路由按逻辑模型 `default` 的候选队列选择当前最高优先级原生 `openai-responses` 候选（MVP 下所有非空模型名均由 `default` 处理，与 HTTP 路径一致）。手动切换、健康冷却规则与 HTTP 路径共用。
+- 握手阶段没有请求体，路由按逻辑模型 `default` 的候选列表选择当前最高优先级原生 `openai-responses` 候选（MVP 下所有非空模型名均由 `default` 处理，与 HTTP 路径一致）。手动切换、健康冷却规则与 HTTP 路径共用。
 - 新增依赖 `ws`：服务端握手接受 + 上游 WS 客户端连接。Node 22（Electron 37）内置 WebSocket 为客户端能力，服务端升级握手仍需 `ws`。
 
 ### 帧中继
@@ -87,7 +87,7 @@ flowchart TD
 ### 握手失败与降级
 
 - 上游返回 426 / 404 / 非 101 响应：把该状态码与响应体作为 HTTP 拒绝响应回给客户端（`socket.write` HTTP 响应后销毁），客户端据此降级 HTTP。
-- 上游网络不可达 / 超时 / TLS 失败：按现有错误分类计入 Provider / ProviderModel 健康与冷却，回 426（优先）或 503；客户端降级后 HTTP 链路会重新走完整候选队列。
+- 上游网络不可达 / 超时 / TLS 失败：按现有错误分类计入 Provider / ProviderModel 健康与冷却，回 426（优先）或 503；客户端降级后 HTTP 链路会重新走完整候选列表。
 - 路由无候选：回 426，使客户端降级到 HTTP 后返回"当前协议下无可用 ProviderModel"的既有错误。
 
 ### 生命周期
@@ -120,7 +120,7 @@ flowchart TD
 
 - P1 无数据库 schema 变更；连接级日志先走运行日志，若需持久化再在 P2 随 turn 级观测一起设计。
 - 接入配置页：Base URL 不变，WS 与 HTTP 共用同一监听地址和路径（`ws://127.0.0.1:port/v1/responses`），无需单独展示；可在协议说明中补充 WS 支持状态。
-- 队列控制页 / 日志页 P1 无变化；P2 再考虑连接视图与 turn 级记录。
+- 逻辑模型页 / 日志页 P1 无变化；P2 再考虑连接视图与 turn 级记录。
 - Codex 侧配置：自定义 provider 指向本地 Base URL，并设置 `supports_websockets = true`、`wire_api = "responses"`。
 
 ## 验收标准

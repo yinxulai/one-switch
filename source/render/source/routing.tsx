@@ -10,7 +10,7 @@ import {
 } from '@tanstack/react-router'
 import type { AnalyticsRange } from '@common/schemas'
 import App from './App'
-import { QueueControlPage } from './pages/queue-control/page'
+import { LogicalModelsPage } from './pages/logical-models/page'
 import { ModelManagementPage } from './pages/model-management/page'
 import { OverviewPage } from './pages/overview/page'
 import { RuntimeSettingsPage } from './pages/runtime-settings/page'
@@ -25,19 +25,19 @@ const rootRoute = createRootRoute({ component: App })
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
-  beforeLoad: () => { throw redirect({ to: '/queue', replace: true }) },
+  beforeLoad: () => { throw redirect({ to: '/logical-models', replace: true }) },
 })
 
-const queueRoute = createRoute({
+const logicalModelsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/queue',
-  component: QueueRoute,
+  path: '/logical-models',
+  component: LogicalModelsRoute,
 })
 
-function QueueRoute() {
+function LogicalModelsRoute() {
   const navigate = useNavigate()
   return (
-    <QueueControlPage
+    <LogicalModelsPage
       onNavigateToModels={() => void navigate({ to: '/providers' })}
       onNavigateToAccess={() => void navigate({ to: '/access' })}
       onNavigateToProviderAnalytics={providerId => void navigate({ to: '/overview/$providerId', params: { providerId }, search: { range: '7d' } })}
@@ -147,7 +147,7 @@ const overviewRouteTree = overviewRoute.addChildren([overviewIndexRoute, overvie
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
-  queueRoute,
+  logicalModelsRoute,
   providersRoute,
   accessRoute,
   rulesRoute,
@@ -162,7 +162,7 @@ export const router = createRouter({
   routeTree,
   history: createHashHistory(),
   defaultPreload: 'intent',
-  defaultNotFoundComponent: () => <Navigate to="/queue" replace />,
+  defaultNotFoundComponent: () => <Navigate to="/logical-models" replace />,
 })
 
 declare module '@tanstack/react-router' {

@@ -160,7 +160,7 @@ one-switch/
 
 **`proxy/manual-routing.ts`** — 当前逻辑模型手动指定的 ProviderModel 状态
 - 维护当前用户手动指定的 Provider 模型 ID（运行时状态，不持久化）
-- 新请求从当前 ProviderModel 开始尝试，失败后仍按队列顺序自动切换
+- 新请求从当前 ProviderModel 开始尝试，失败后仍按候选顺序自动切换
 - 进行中的请求持有自己的 ProviderModel 引用，不受外部切换影响
 
 `proxy/server.ts` 内置 `/v1/models` 本地接口，仅返回当前 `default` 逻辑模型可见的模型信息。
@@ -203,7 +203,7 @@ one-switch/
 | `/api/provider/export`、`/api/provider/import` | 供应商包导出、导入（详见 [provider-model.md](./provider-model.md)） |
 | `/api/logical-model/list`、`/api/logical-model/get` | 逻辑模型列表、详情 |
 | `/api/logical-model/create`、`/api/logical-model/update`、`/api/logical-model/delete` | 逻辑模型配置变更 |
-| `/api/provider-model/list`、`/api/provider-model/queue`、`/api/provider-model/get` | Provider 模型列表、队列和详情 |
+| `/api/provider-model/list`、`/api/provider-model/list-by-logical-model`、`/api/provider-model/get` | Provider 模型列表、按逻辑模型的绑定列表和详情 |
 | `/api/provider-model/create`、`/api/provider-model/update`、`/api/provider-model/delete` | Provider 模型配置变更 |
 | `/api/scheduling-policy/list`、`/api/scheduling-policy/update`、`/api/scheduling-policy/delete` | 调度策略查询与变更 |
 | `/api/relation/provider-setting/*` | Provider 设置的 list/get/upsert/delete |
@@ -211,7 +211,7 @@ one-switch/
 | `/api/relation/provider-model-endpoint/*` | Provider 模型端点的 list/get/create/update/delete |
 | `/api/relation/protocol-converter/*` | 协议转换器的 list/get/create/update/delete |
 | `/api/settings/get`、`/api/settings/update` | 全局设置查询与更新 |
-| `/api/queue/status`、`/api/queue/switch` | 队列状态与手动切换 |
+| `/api/logical-model/status`、`/api/logical-model/switch` | 逻辑模型状态与手动切换 |
 | `/api/health/list` | Provider/模型健康状态列表 |
 | `/api/proxy/status`、`/api/proxy/start`、`/api/proxy/stop`、`/api/proxy/restart` | 代理服务生命周期控制 |
 | `/api/logs/list`、`/api/logs/export`、`/api/logs/clear` | 实时运行日志查询、导出、清空 |
@@ -301,6 +301,6 @@ React 18 + TypeScript + shadcn/ui + Tailwind。渲染层通过 `source/render/so
 1. **代理服务纯 Node 化**：不依赖 Electron，可独立测试、未来抽 CLI
 2. **管理 API 走 HTTP**：React UI 和未来 CLI/Web 控制台复用同一套 API
 3. **原生 http 不引入框架**：减少依赖、完全控制流式行为
-4. **轻量外部 Store 管理共享状态**：集中缓存 Provider、健康状态、`default` 队列和设置，避免页面重复请求与轮询闪烁
+4. **轻量外部 Store 管理共享状态**：集中缓存 Provider、健康状态、`default` 逻辑模型和设置，避免页面重复请求与轮询闪烁
 5. **shadcn/ui + Tailwind**：组件按需复制、体积小、定制灵活
 6. **Vite 统一构建**：一套配置管三个进程，开发体验好

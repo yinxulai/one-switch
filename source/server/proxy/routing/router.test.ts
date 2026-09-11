@@ -155,7 +155,7 @@ describe('getAvailableModels', () => {
     expect(available.map(entry => entry.model.id)).toEqual(['model_ready', 'model_cooled'])
   })
 
-  it('returns the full queue in order when every model is unavailable', async () => {
+  it('returns the full candidate list in order when every model is unavailable', async () => {
     const time = Date.now()
     mocks.provider = {
       id: 'prov_shared',

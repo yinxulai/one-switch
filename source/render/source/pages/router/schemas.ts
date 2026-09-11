@@ -1,8 +1,6 @@
 import { z } from 'zod'
 
-const HeaderValueSchema = z.union([z.string(), z.array(z.string())])
-
-const WorkflowQueueContextSchema = z.object({
+const LogicalModelContextSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   enabled: z.boolean(),
@@ -11,7 +9,7 @@ const WorkflowQueueContextSchema = z.object({
 const RequestPayloadSchema = z.object({
   path: z.string().optional(),
   method: z.string().optional(),
-  headers: z.record(z.string(), HeaderValueSchema).optional(),
+  headers: z.record(z.string(), z.string()).optional(),
   body: z.record(z.string(), z.unknown()).optional(),
 }).catchall(z.unknown())
 
@@ -22,7 +20,7 @@ const NodePositionSchema = z.object({
 
 const WorkflowNodeBaseSchema = z.object({
   id: z.string(),
-  kind: z.enum(['input', 'control-input', 'protocol-discovery', 'condition', 'queue-select', 'output']),
+  kind: z.enum(['input', 'control-input', 'protocol-discovery', 'condition', 'model-select', 'output']),
   name: z.string(),
   enabled: z.boolean(),
   description: z.string(),
@@ -81,15 +79,15 @@ const ConditionNodeSchema = WorkflowNodeBaseSchema.extend({
   cases: z.array(ConditionCaseSchema).min(1),
 })
 
-const QueueSelectNodeSchema = WorkflowNodeBaseSchema.extend({
-  kind: z.literal('queue-select'),
+const ModelSelectNodeSchema = WorkflowNodeBaseSchema.extend({
+  kind: z.literal('model-select'),
   // 旧版本保存的图没有这些字段，用默认值补齐，避免历史版本全部失效。
   source: z.enum(['fixed', 'variable']).default('fixed'),
   variablePath: z.string().default(''),
-  // 允许空数组：刚插入、尚未选择队列的节点是合法的编辑中间态，
+  // 允许空数组：刚插入、尚未选择逻辑模型的节点是合法的编辑中间态，
   // 运行时会产出 success: false 的 trace，而不是让整张图校验失败。
-  queueIds: z.array(z.string().min(1)).default([]),
-  fallbackQueueIds: z.array(z.string().min(1)).default([]),
+  modelIds: z.array(z.string().min(1)).default([]),
+  fallbackModelIds: z.array(z.string().min(1)).default([]),
 })
 
 const OutputNodeSchema = WorkflowNodeBaseSchema.extend({
@@ -103,7 +101,7 @@ export const WorkflowNodeModelSchema = z.discriminatedUnion('kind', [
   ControlInputNodeSchema,
   ProtocolDiscoveryNodeSchema,
   ConditionNodeSchema,
-  QueueSelectNodeSchema,
+  ModelSelectNodeSchema,
   OutputNodeSchema,
 ])
 
@@ -115,9 +113,12 @@ export const WorkflowEdgeSchema = z.object({
 })
 
 /**
- * 历史数据迁移：早期队列选择节点用 `mode` 表达取值方式，
- * 现在统一为 `source` + `variablePath`。
- * 在这里做一次字段改写，老图与历史版本就能继续通过校验、行为保持不变。
+ * 历史数据迁移：老图与历史版本里的字段名会在这里改写成当前命名，
+ * 确保 localStorage 里的工作副本与已保存版本不会因为重命名而失效。
+ *
+ * - `queue-select` → `model-select`；
+ * - `mode: 'follow-request-model'` → `source: 'variable'` + `variablePath`；
+ * - `queueIds` / `fallbackQueueIds` → `modelIds` / `fallbackModelIds`。
  */
 function migrateGraphInput(raw: unknown): unknown {
   if (!raw || typeof raw !== 'object') return raw
@@ -129,10 +130,20 @@ function migrateGraphInput(raw: unknown): unknown {
   const nodes = graph.nodes.map((item) => {
     if (!item || typeof item !== 'object') return item
     const node = item as Record<string, unknown>
-    if (node.kind !== 'queue-select' || !('mode' in node)) return item
+    if (node.kind !== 'queue-select') return item
 
     changed = true
-    const rest: Record<string, unknown> = { ...node }
+    const rest: Record<string, unknown> = { ...node, kind: 'model-select' }
+    if ('queueIds' in rest) {
+      rest.modelIds = rest.queueIds
+      delete rest.queueIds
+    }
+    if ('fallbackQueueIds' in rest) {
+      rest.fallbackModelIds = rest.fallbackQueueIds
+      delete rest.fallbackQueueIds
+    }
+
+    if (!('mode' in rest)) return rest
     delete rest.mode
     if (node.mode === 'follow-request-model') {
       return { ...rest, source: 'variable', variablePath: 'route.requestedModel' }
@@ -151,6 +162,6 @@ export const WorkflowGraphSchema = z.preprocess(migrateGraphInput, z.object({
 
 export const RouteContextInputSchema = z.object({
   request: RequestPayloadSchema,
-  queues: z.array(WorkflowQueueContextSchema).optional(),
+  logicalModels: z.array(LogicalModelContextSchema).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 })

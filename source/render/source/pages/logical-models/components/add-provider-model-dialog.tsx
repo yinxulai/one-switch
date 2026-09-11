@@ -10,14 +10,14 @@ import { useToast } from '@/components/ui/toast'
 
 type ProviderModelOption = { id: string; providerId: string; providerName: string; modelName: string }
 
-interface AddQueueModelDialogProps {
+interface AddProviderModelDialogProps {
   open: boolean
   logicalModelId: string
   onOpenChange: (open: boolean) => void
   onAdded: () => void
 }
 
-export function AddQueueModelDialog(props: AddQueueModelDialogProps) {
+export function AddProviderModelDialog(props: AddProviderModelDialogProps) {
   const { open, logicalModelId, onOpenChange, onAdded } = props
   const toast = useToast()
   const [models, setModels] = useState<ProviderModelOption[]>([])
@@ -70,7 +70,7 @@ export function AddQueueModelDialog(props: AddQueueModelDialogProps) {
     setSaving(true)
     try {
       await Promise.all(selectedIds.map((providerModelId, index) => unwrap(schedulingPolicyApi.update({ logicalModelId, providerModelId, priority: models.length + index + 1, enabled: true }))))
-      toast.success(`已添加 ${selectedIds.length} 个模型到队列，并创建调度配置`)
+      toast.success(`已添加 ${selectedIds.length} 个模型到逻辑模型，并创建调度配置`)
       onAdded()
       onOpenChange(false)
       setSelectedIds([])
@@ -82,8 +82,8 @@ export function AddQueueModelDialog(props: AddQueueModelDialogProps) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>添加模型到队列</DialogTitle>
-          <DialogDescription>添加模型会为当前队列创建一条调度配置；未显式添加的模型不会参与请求。</DialogDescription>
+          <DialogTitle>添加模型到逻辑模型</DialogTitle>
+          <DialogDescription>添加模型会为当前逻辑模型创建一条调度配置；未显式添加的模型不会参与请求。</DialogDescription>
         </DialogHeader>
         {loading ? <p className="text-sm text-muted-foreground">正在加载可添加模型…</p> : models.length === 0 ? <p className="text-sm text-muted-foreground">没有可添加的供应商模型，请先在模型管理中创建模型。</p> : (
           <div className="flex min-h-0 flex-col gap-2">
@@ -115,7 +115,7 @@ export function AddQueueModelDialog(props: AddQueueModelDialogProps) {
         )}
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
-          <Button disabled={selectedIds.length === 0 || saving || loading} onClick={() => void addModels()}>{saving ? '添加中…' : `添加到队列${selectedIds.length > 0 ? ` (${selectedIds.length})` : ''}`}</Button>
+          <Button disabled={selectedIds.length === 0 || saving || loading} onClick={() => void addModels()}>{saving ? '添加中…' : `添加到逻辑模型${selectedIds.length > 0 ? ` (${selectedIds.length})` : ''}`}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

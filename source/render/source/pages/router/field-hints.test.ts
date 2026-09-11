@@ -34,11 +34,11 @@ describe('resolveInputHints', () => {
     expect(hints.upstreamNodeIds).not.toContain('target')
     expect(hints.fields.map(field => field.path)).not.toContain('route.controls.mode')
   })
-  it('声明队列选择节点的落点队列字段', () => {
+  it('声明逻辑模型选择节点的落点逻辑模型字段', () => {
     const target = condition('target')
-    const queueSelect: WorkflowNodeModel = { id: 'queue-select', kind: 'queue-select', name: '队列选择', enabled: true, description: '', position, source: 'fixed', variablePath: '', queueIds: ['model-a', 'model-b'], fallbackQueueIds: [] }
-    const hints = resolveInputHints(graph([input(), queueSelect, target, output()], [edge('input', 'out', 'queue-select'), edge('queue-select', 'out', 'target')]), target.id, samplePayload)
-    expect(hints.fields.map(field => field.path)).toContain('route.queueIds')
+    const modelSelect: WorkflowNodeModel = { id: 'model-select', kind: 'model-select', name: '逻辑模型选择', enabled: true, description: '', position, source: 'fixed', variablePath: '', modelIds: ['model-a', 'model-b'], fallbackModelIds: [] }
+    const hints = resolveInputHints(graph([input(), modelSelect, target, output()], [edge('input', 'out', 'model-select'), edge('model-select', 'out', 'target')]), target.id, samplePayload)
+    expect(hints.fields.map(field => field.path)).toContain('route.modelIds')
     expect(hints.fields.map(field => field.path)).toContain('route.fallback')
     expect(hints.fields.map(field => field.path)).not.toContain('metadata.iteration.current')
     expect(hints.fields.map(field => field.path)).not.toContain('metadata.loop.index')
@@ -51,22 +51,24 @@ describe('resolveInputHints', () => {
       target.id,
       {
         request: { body: { model: 'gpt-4o-mini', priority: 2 }, headers: { 'x-provider': ['openai'] } },
-        queues: [{ id: 'default', name: 'Default', enabled: true }],
+        logicalModels: [{ id: 'default', name: 'Default', enabled: true }],
         metadata: { source: 'test' },
       },
     )
 
     const paths = hints.fields.map(field => field.path)
     expect(paths).toEqual(expect.arrayContaining([
-      'queues',
-      'route.traceId',
+      'logicalModels',
       'route.requestedModel',
-      'route.availableQueueIds',
+      'route.availableModelIds',
       'route.protocol',
       'route.transport',
     ]))
     // 命中判断交给通用条件节点，引擎不再产出预计算布尔字段。
-    expect(paths).not.toContain('route.requestedModelInQueues')
+    expect(paths.filter(path => path.startsWith('route.requestedModel'))).toEqual(['route.requestedModel'])
+    // 请求头整体作为一个不透明字段暴露，不再展开成用不了的点路径。
+    expect(paths).toContain('request.headers')
+    expect(paths).not.toContain('request.headers.x-provider')
     // 协议归一化的中间结果只进 trace，不再污染 payload。
     expect(paths).not.toContain('route.protocolOutput')
     expect(paths).not.toContain('metadata.protocolOutput')

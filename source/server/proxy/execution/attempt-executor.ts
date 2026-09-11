@@ -17,7 +17,7 @@ import { createRequestContext, type RequestContext } from '@server/proxy/request
 import { protocolAdapters } from '@server/proxy/protocols/registry'
 import { ResponsePipeline } from '@server/proxy/response/response-pipeline'
 import type { ProxyObservationHooks } from '@server/proxy/observability/hooks'
-import { runAttemptQueue } from '@server/proxy/execution/attempt-runner'
+import { runAttempts } from '@server/proxy/execution/attempt-runner'
 import type { ProxyResponse } from '@server/proxy/response/proxy-response'
 import { resolveAttemptSnapshot } from '@server/proxy/routing/routing'
 import { listRulesForProviderModel } from '@server/database/request-rewrite-rule-store'
@@ -181,8 +181,8 @@ export async function executeProxyRequest(options: ProxyExecutionOptions): Promi
   })
   // 回调放在落库之后：消费者在回调里回读这次请求时，行必须已经存在。
   await hooks.onRequestStarted?.(context)
-  console.debug(`[proxy] attempt queue started requestId=${requestId} targets=${targets.length} captureContent=${settings.captureRequestContent}`)
-  await runAttemptQueue<ModelWithProvider, AttemptOutcome>({
+  console.debug(`[proxy] attempt sequence started requestId=${requestId} targets=${targets.length} captureContent=${settings.captureRequestContent}`)
+  await runAttempts<ModelWithProvider, AttemptOutcome>({
     signal: context.signal,
     targets,
     attempt: (target, attemptIndex) => attemptRequest(context, response, target, attemptIndex, hooks),

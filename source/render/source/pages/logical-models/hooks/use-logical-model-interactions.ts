@@ -5,7 +5,7 @@ import { schedulingPolicyApi } from '@/api/models'
 import { useToast } from '@/components/ui/toast'
 import type { ProviderModelRoute } from '@common/schemas'
 
-export function useQueueInteractions(logicalModelId: string, models: ProviderModelRoute[], updateModels: (update: (models: ProviderModelRoute[]) => ProviderModelRoute[]) => void, loadModels: () => Promise<boolean>, proxyBaseUrl: string) {
+export function useLogicalModelInteractions(logicalModelId: string, models: ProviderModelRoute[], updateModels: (update: (models: ProviderModelRoute[]) => ProviderModelRoute[]) => void, loadModels: () => Promise<boolean>, proxyBaseUrl: string) {
   const toast = useToast()
   const [copied, setCopied] = useState(false)
   const copyTimerRef = useRef<number | null>(null)
@@ -36,7 +36,7 @@ export function useQueueInteractions(logicalModelId: string, models: ProviderMod
       priority: model.priority,
     })))
     if (results.some(result => !result.success)) {
-      toast.error('队列顺序保存失败，已恢复服务端数据')
+      toast.error('逻辑模型顺序保存失败，已恢复服务端数据')
       await loadModels()
     }
   }, [loadModels, logicalModelId, models, toast, updateModels])
