@@ -149,6 +149,8 @@ interface PromptNode extends WorkflowNodeBase {
 
 运行时语义是类型感知的：`empty` 看数组长度 / 对象键数 / 去空白后的字符串，`contains` 在数组上比较元素、在对象上比较键名、其余退化成子串，`equals` 对对象 / 数组先按结构化序列化比较。详见 [route-design.md](./route-design.md) §2.9。
 
+操作符在界面上始终以**中文名称 + 一句话语义说明**呈现（`CONDITION_OPERATOR_META`），标识符只作为次要信息：用户读到的说明就是他对判定行为的唯一预期，因此说明文字必须与 `evaluateCondition` 保持一致。完整对照表见 [route-design.md](./route-design.md) §2.9.1。
+
 ## 校验层次
 
 1. **形状校验**：`WorkflowNodeModelSchema` 与 `WorkflowEdgeSchema` 校验节点和边的字段类型。
