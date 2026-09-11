@@ -162,7 +162,7 @@ function WorkflowStudioCanvas() {
   )
 
   const canvasRef = useRef<HTMLDivElement | null>(null)
-  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 620, top: 0 })
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 620 })
 
   useEffect(() => {
     const element = canvasRef.current
@@ -173,8 +173,6 @@ function WorkflowStudioCanvas() {
       setCanvasSize({
         width: rect.width,
         height: Math.max(420, window.innerHeight - rect.top - 28),
-        // 节点面板是窗口级固定定位，需要知道画布顶边，才能对齐到标题栏下方。
-        top: rect.top,
       })
     }
 
@@ -529,14 +527,21 @@ function WorkflowStudioCanvas() {
 
   const draggable = dragEnabled && dockMode === 'select'
 
+  /** 节点面板贴满窗口右侧，标题栏按钮需要让出它的宽度，否则会被面板盖住。 */
+  const headerInset = selectedNode ? panelWidth : 0
+
   return (
     <PageLayout>
       <PageHeader
         title="Router"
         description="用基础节点组合出路由策略：输入 → 协议发现 → 条件 → 队列选择 → 输出"
+        // 面板占掉右侧后标题栏会变窄，说明文案保持单行截断，避免换行把标题栏撑高、
+        // 进而让画布高度在「选中/取消选中节点」之间跳动。
+        className="[&_p]:truncate"
         actions={(
           // 标题栏不提供 gap，两个按钮直接放在 Fragment 里会贴在一起。
-          <div className="flex items-center gap-2">
+          // 节点面板是贴满整窗高度的窗口级面板，这里给它让出宽度，免得面板把按钮盖住。
+          <div className="flex items-center gap-2" style={{ paddingRight: headerInset }}>
             <PolicyMenu activePolicyId={activePolicyId} onApply={applyPolicy} />
             <DifyButton size="medium" onClick={() => setTestDrawerOpen(true)}>
               <CirclePlay className="size-3.5" aria-hidden /> 测试运行
@@ -684,7 +689,6 @@ function WorkflowStudioCanvas() {
                 <WorkflowNodePanel
                   model={selectedNode}
                   canvasWidth={canvasSize.width}
-                  viewportTop={canvasSize.top}
                   width={panelWidth}
                   onWidthChange={setPanelWidth}
                   nodeModels={graph.nodes}
