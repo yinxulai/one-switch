@@ -92,16 +92,17 @@ interface RouteDecision {
   modelIds: string[]                   // 最终落点逻辑模型（决策结果）
   fallback: boolean                    // 是否走了兜底策略
   requestedModel: string               // request.body.model
-  availableModelIds: string[]          // 本次运行可见的逻辑模型
   controls: Record<string, unknown>    // 控制输入节点注入的运行时取值
+  iteration?: RouteIterationScope      // 遍历迭代节点写下的「当前轮」作用域
 }
 ```
 
 约定：
 
 - **决策结果**（`modelIds`）与**决策依据**（`protocol` / `transport` / `requestedModel` / `controls` …）都放在 `route` 下，条件节点可直接按 `route.*` 选字段；
+- **可推导的数据不落库**：像「本次可见的逻辑模型 id 列表」这种由 `logicalModels` 直接推出来的数组不再单独写进 `route`，需要时用通配投影 `logicalModels[*].id` 现算（见 §2.8）；
 - **过程性数据**只进 trace，不进 payload —— 例如协议归一化后的请求体（`{protocol, transport, model, messages}`）与每个节点的判定明细，避免 payload 里出现只有调试才看的字段；
-- **引擎不预计算业务判定**：像「请求模型是否命中逻辑模型列表」这种结论由条件节点在图上现场算出，引擎只提供原始字段（`requestedModel` / `availableModelIds`）；
+- **引擎不预计算业务判定**：像「请求模型是否命中逻辑模型列表」这种结论由条件节点在图上现场算出，引擎只提供原始字段（`requestedModel` / `logicalModels`）；
 - **运行结果按节点组织**：`runWorkflow` 返回的 `nodeOutputs` 是 `Record<节点 id, NodeOutput[]>`，每个节点可以登记多条输出（控制项、条件分支、落点…），渲染时再查节点名称作为分组标题，因此「谁产出了什么」看得见；
 - 旧版本图（没有 `route`）在运行时会被补齐，调用方无需迁移；重命名前的 payload 键（`queues`、`route.queueIds`）读取时兼容一次后丢弃。
 
@@ -114,7 +115,7 @@ interface RouteDecision {
 这条策略**不引入任何专用节点**，完全用基础节点拼出来，命中判断就是一条普通的「字段 in 字段」条件：
 
 ```text
-Input ─▶ Condition（route.requestedModel in route.availableModelIds）
+Input ─▶ Condition（route.requestedModel in logicalModels[*].id）
            ├─ IF   ─▶ ModelSelect（取值来源 = 变量 route.requestedModel）─▶ Output
            └─ ELSE ─▶ ModelSelect（取值来源 = 固定逻辑模型 default）───▶ Output
 ```
@@ -126,7 +127,7 @@ Input ─▶ Condition（route.requestedModel in route.availableModelIds）
 | 比较值来源 | 语义 |
 | --- | --- |
 | `literal`（默认） | 与规则里写的固定值比较，`in` / `notIn` 按逗号拆成列表 |
-| `field` | 与另一个字段的实时取值比较，例如 `route.requestedModel in route.availableModelIds`；`in` / `notIn` 取到数组时按成员判定，取到单值时直接比较，取不到值时按空集合处理 |
+| `field` | 与另一个字段的实时取值比较，例如 `route.requestedModel in logicalModels[*].id`；`in` / `notIn` 取到数组时按成员判定，取到单值时直接比较，取不到值时按空集合处理 |
 
 `model-select` 节点的**取值来源**：
 
@@ -137,12 +138,48 @@ Input ─▶ Condition（route.requestedModel in route.availableModelIds）
 
 这样做的好处：
 
-- **不枚举模型**：命中判断基于本次运行真正可见的逻辑模型集合（`route.availableModelIds`），逻辑模型增减时规则自动生效，不需要改图；
+- **不枚举模型**：命中判断基于本次运行真正可见的逻辑模型集合（用通配投影 `logicalModels[*].id` 现算），逻辑模型增减时规则自动生效，不需要改图；
 - **没有专用节点，也没有预计算字段**：模型直达只是「条件 + 两次逻辑模型选择」的一种拼法，按协议、按租户、按控制输入等策略用同一组基础节点同样能表达。
 
 旧图里用过的 `mode: 'follow-request-model'` 会在读取时迁移为「`source: 'variable'` + `variablePath: 'route.requestedModel'`」，行为不变；旧的 `queue-select` 节点同样会在解析时迁移成 `model-select`。
 
-预设策略放在 `graph-model.ts` 的 `ROUTER_POLICY_PRESETS` 中，第一个即默认策略，UI 侧由 `components/policy-menu.tsx` 呈现。
+预设策略放在 `graph-model.ts` 的 `ROUTER_POLICY_PRESETS` 中，第一个即默认策略，其它预设（如遍历迭代模板）同样由基础节点拼成，UI 侧由 `components/policy-menu.tsx` 呈现。
+
+### 2.8 路径取值与通配投影
+
+条件节点、逻辑模型选择节点、遍历迭代节点都靠同一套「路径取值」读数据，语法只有两条：
+
+| 语法 | 语义 |
+| --- | --- |
+| `a.b.c` | 逐层取字段，任一层取不到就是 `undefined` |
+| `a[*].b` | **通配投影**：把 `a` 当集合展开，对每个元素取 `b`，最后拍平成一个数组 |
+
+通配投影让数组 / 对象的「内容判断」不需要新节点类型：
+
+- `logicalModels[*].id` → 本次可见逻辑模型的 id 数组（默认策略的 `in` 判定就用它）；
+- `request.body.items[*].type` → 每个元素的 `type` 组成的数组，可直接用 `contains` / `notIn` 判定；
+- 投影目标是对象、整个对象本身就是数组时按需继续递归，深度上限由字段候选表的展开策略控制（`MAX_FLATTEN_DEPTH = 4`）。
+
+字段候选表（`field-hints.ts`）与引擎（`engine.ts`）共用这条约定：候选表对数组字段同时给出「整体数组」和「`path[*].key` 投影」两类候选，用户选到的路径一定能在运行时取到值。
+
+### 2.9 类型系统与运行时语义
+
+字段类型由路径取值推断，共 7 类：
+
+| 类型 | 来源 | 可用操作符 |
+| --- | --- | --- |
+| `string` / `number` / `boolean` / `enum` | 示例数据推断、控制项定义、协议枚举 | 对应类型的子集 |
+| `array` | 数组整体字段 | `contains` / `notContains` / `empty` / `notEmpty` / `exists` / `equals` / `notEquals` |
+| `object` | 对象整体字段（`request.headers`、采样到的嵌套对象） | `contains`（按键名） / `empty` / `notEmpty` / `exists` / `equals` / `notEquals` |
+| `unknown` | 推不出类型：数组元素、未定义字段、动态脚本产出 | **不限制**，全部操作符可选，语义完全交给运行时按实际取值决定 |
+
+运行时语义按**实际取值**判定，不按静态类型：
+
+- `empty` / `notEmpty`：`undefined` / `null` 为空；数组看 `length`；对象看有没有键；字符串看去掉空白后是否为空；
+- `contains`：数组比较每个元素（对象元素按结构化序列化比较，便于按内容筛选）；对象比较键名；其余退化成子串包含；
+- `equals` / `notEquals`：对象 / 数组先按结构化序列化比较，再退化成字符串比较。
+
+这条「`unknown` 不限制操作符 + 运行时按实际取值决定」的设计，等价于把条件判断当成动态脚本处理：类型只是给 UI 的提示，不是运行时约束。
 
 ---
 

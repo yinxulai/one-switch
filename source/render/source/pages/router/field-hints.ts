@@ -1,5 +1,6 @@
 import {
   DEFAULT_OPERATOR_SET,
+  PATH_WILDCARD_SUFFIX,
   type ConfigHints,
   type SchemaFieldDescriptor,
   type SchemaValueType,
@@ -37,10 +38,15 @@ export function buildWorkflowConnections(graph: WorkflowGraph): WorkflowConnecti
 
 function inferType(value: unknown): SchemaValueType {
   if (Array.isArray(value)) return 'array'
+  if (value && typeof value === 'object') return 'object'
   if (typeof value === 'string') return 'string'
   if (typeof value === 'number') return 'number'
   if (typeof value === 'boolean') return 'boolean'
   return 'unknown'
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
 /**
@@ -50,26 +56,86 @@ function inferType(value: unknown): SchemaValueType {
  */
 const OPAQUE_PATHS = new Set(['request.headers'])
 
-function flattenFields(source: unknown, prefix: string, sourceNodeId: string, sourcePort: string): SchemaFieldDescriptor[] {
-  if (!source || typeof source !== 'object' || Array.isArray(source)) {
+/** 展开递归深度上限，防止深层嵌套数据把候选列表撑爆。 */
+const MAX_FLATTEN_DEPTH = 4
+
+/** 数组采样上限：只看前若干条推断元素结构。 */
+const MAX_ARRAY_SAMPLE = 20
+
+function flattenFields(source: unknown, prefix: string, sourceNodeId: string, sourcePort: string, depth = 0): SchemaFieldDescriptor[] {
+  if (!isPlainObject(source)) {
     return prefix
       ? [{ path: prefix, valueType: inferType(source), sourceNodeId, sourcePort }]
       : []
   }
 
   const fields: SchemaFieldDescriptor[] = []
-  for (const [key, value] of Object.entries(source as Record<string, unknown>)) {
+  for (const [key, value] of Object.entries(source)) {
     const nextPath = prefix ? `${prefix}.${key}` : key
-    if (value && typeof value === 'object' && !Array.isArray(value) && !OPAQUE_PATHS.has(nextPath)) {
-      fields.push(...flattenFields(value, nextPath, sourceNodeId, sourcePort))
-    } else {
+    if (Array.isArray(value)) {
+      fields.push(...flattenArrayFields(value, nextPath, sourceNodeId, sourcePort, depth))
+      continue
+    }
+    if (isPlainObject(value) && !OPAQUE_PATHS.has(nextPath)) {
+      // 对象字段同时给出「整体」和「细化」两种选择：
+      // 整体用于 `empty` / `notEmpty` / `contains`（按键名）这类整块判断，
+      // 细化用于逐字段比较。数组也走同一套「整体 + 通配投影」约定。
       fields.push({
         path: nextPath,
-        valueType: inferType(value),
+        valueType: 'object',
         sourceNodeId,
         sourcePort,
+        note: '整体对象；要按具体属性比较请选下面的字段',
       })
+      fields.push(...flattenFields(value, nextPath, sourceNodeId, sourcePort, depth + 1))
+      continue
     }
+    fields.push({
+      path: nextPath,
+      valueType: inferType(value),
+      sourceNodeId,
+      sourcePort,
+    })
+  }
+  return fields
+}
+
+/**
+ * 数组字段的展开策略（「判断对象或者数组内容」用得上）：
+ * - 元素是对象 → 额外展开出 `path[*].key` 形式的通配投影字段，
+ *   引擎按元素取值后再取字段，条件判断表里就能直接选到「每个元素的某个属性」；
+ * - 元素不是对象 / 采不到样本 → 只留一个 `array` 字段，
+ *   交给 `contains`、`empty`、`notEmpty` 对整体判定。
+ */
+function flattenArrayFields(items: unknown[], prefix: string, sourceNodeId: string, sourcePort: string, depth: number): SchemaFieldDescriptor[] {
+  const arrayField: SchemaFieldDescriptor = { path: prefix, valueType: 'array', sourceNodeId, sourcePort }
+  if (items.length === 0 || depth >= MAX_FLATTEN_DEPTH) return [arrayField]
+
+  // 元素结构可能不一致：把可采样到的对象元素的键并起来，尽量不漏字段。
+  const merged: Record<string, unknown> = {}
+  for (const item of items.slice(0, MAX_ARRAY_SAMPLE)) {
+    if (!isPlainObject(item)) continue
+    for (const [key, value] of Object.entries(item)) {
+      if (!(key in merged)) merged[key] = value
+    }
+  }
+  if (Object.keys(merged).length === 0) return [arrayField]
+
+  const wildcardPath = `${prefix}${PATH_WILDCARD_SUFFIX}`
+  const fields: SchemaFieldDescriptor[] = [
+    { ...arrayField, note: '整体数组；要按元素比较请选下面的通配投影字段' },
+  ]
+  for (const [key, value] of Object.entries(merged)) {
+    const nextPath = `${wildcardPath}.${key}`
+    if (Array.isArray(value)) {
+      fields.push(...flattenArrayFields(value, nextPath, sourceNodeId, sourcePort, depth + 1))
+      continue
+    }
+    if (isPlainObject(value)) {
+      fields.push(...flattenFields(value, nextPath, sourceNodeId, sourcePort, depth + 1))
+      continue
+    }
+    fields.push({ path: nextPath, valueType: inferType(value), sourceNodeId, sourcePort })
   }
   return fields
 }
@@ -138,16 +204,11 @@ export function resolveInputHints(graph: WorkflowGraph, targetNodeId: string, sa
         valueType: 'array',
         sourceNodeId: model.id,
         sourcePort: 'context',
+        note: '可用逻辑模型列表；取 id 请用通配投影 logicalModels[*].id',
       })
       addUniqueField(fields, {
         path: 'route.requestedModel',
         valueType: 'string',
-        sourceNodeId: model.id,
-        sourcePort: 'context',
-      })
-      addUniqueField(fields, {
-        path: 'route.availableModelIds',
-        valueType: 'array',
         sourceNodeId: model.id,
         sourcePort: 'context',
       })
@@ -210,6 +271,67 @@ export function resolveInputHints(graph: WorkflowGraph, targetNodeId: string, sa
         sourceNodeId: model.id,
         sourcePort: 'out',
       })
+      continue
+    }
+
+    if (model.kind === 'iteration') {
+      // 循环体里的条件判断靠这组作用域字段：`route.iteration.*` 每轮都会被重写。
+      // `item` 的静态类型跟着 `sourcePath` 指向的字段走，能在候选表里给出更准的操作符集合。
+      const sourcePath = model.sourcePath.trim()
+      const sourceField = sourcePath ? fields.find(field => field.path === sourcePath) : undefined
+      const itemType: SchemaValueType = sourceField && sourceField.valueType !== 'array' ? sourceField.valueType : 'unknown'
+
+      addUniqueField(fields, {
+        path: 'route.iteration.item',
+        valueType: itemType,
+        sourceNodeId: model.id,
+        sourcePort: 'body',
+        note: sourcePath ? `当前轮的元素（来自 ${sourcePath}）` : '当前轮的元素（尚未配置遍历来源）',
+      })
+      addUniqueField(fields, {
+        path: 'route.iteration.index',
+        valueType: 'number',
+        sourceNodeId: model.id,
+        sourcePort: 'body',
+        note: '当前轮序号：数组是下标，对象是键在 Object.keys 里的位置',
+      })
+      addUniqueField(fields, {
+        path: 'route.iteration.key',
+        valueType: 'string',
+        sourceNodeId: model.id,
+        sourcePort: 'body',
+        note: '当前轮的键名；数组模式是下标字符串',
+      })
+      addUniqueField(fields, {
+        path: 'route.iteration.total',
+        valueType: 'number',
+        sourceNodeId: model.id,
+        sourcePort: 'body',
+        note: '遍历来源的总条数',
+      })
+
+      const resultPath = model.resultPath.trim()
+      if (resultPath) {
+        addUniqueField(fields, {
+          path: resultPath,
+          valueType: 'unknown',
+          sourceNodeId: model.id,
+          sourcePort: 'out',
+          note: '遍历完成后写回的汇总结果',
+        })
+      }
+
+      const collectPath = model.collectPath.trim()
+      if (collectPath) {
+        const collectField = fields.find(field => field.path === collectPath)
+        addUniqueField(fields, {
+          path: collectPath,
+          valueType: collectField?.valueType ?? 'unknown',
+          sourceNodeId: model.id,
+          sourcePort: 'out',
+          note: '每轮结束后读取的结果路径（迭代节点判定本轮是否命中）',
+        })
+      }
       continue
     }
   }

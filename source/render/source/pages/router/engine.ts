@@ -1,8 +1,10 @@
 import {
+  PATH_WILDCARD_SUFFIX,
   type ConditionCase,
   type ConditionOperator,
   type ConditionRule,
   type ControlInputNode,
+  type IterationNode,
   type LogicalModelContext,
   type ModelSelection,
   type ModelSelectNode,
@@ -12,6 +14,7 @@ import {
   type RouteContextEnvelope,
   type RouteContextInput,
   type RouteDecision,
+  type RouteIterationScope,
   type WorkflowRequestPayload,
   type WorkflowGraph,
   type WorkflowProtocol,
@@ -22,7 +25,8 @@ import {
 
 export interface WorkflowRunOptions {}
 
-const MAX_STEPS = 80
+const MAX_STEPS = 2000
+
 function generateTraceId(): string {
   const random = Math.random().toString(36).slice(2, 10)
   return `trace-${Date.now()}-${random}`
@@ -35,26 +39,86 @@ function clonePayload<T>(payload: T): T {
   return JSON.parse(JSON.stringify(payload)) as T
 }
 
-function parsePath(path: string): string[] {
+/**
+ * 路径段：`a[*].b` 拆成 `[{ key: 'a', wildcard: true }, { key: 'b' }]`。
+ * 通配段表示「读 key 之后，对数组每一项继续解析剩下的路径，最后拍平一层」，
+ * 例如 `logicalModels[*].id` 取到的是全部逻辑模型 id 组成的字符串数组。
+ */
+interface PathSegment {
+  key: string
+  wildcard: boolean
+}
+
+function parsePath(path: string): PathSegment[] {
   return path
     .split('.')
     .map(segment => segment.trim())
     .filter(Boolean)
+    .map((segment) => {
+      if (!segment.endsWith(PATH_WILDCARD_SUFFIX)) return { key: segment, wildcard: false }
+      return { key: segment.slice(0, -PATH_WILDCARD_SUFFIX.length), wildcard: true }
+    })
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function resolveSegments(current: unknown, segments: PathSegment[], index: number): unknown {
+  if (!isPlainObject(current)) return undefined
+  const segment = segments[index]
+  if (!(segment.key in current)) return undefined
+
+  const value = current[segment.key]
+  const remaining = index + 1
+  if (!segment.wildcard) {
+    return remaining >= segments.length ? value : resolveSegments(value, segments, remaining)
+  }
+
+  if (!Array.isArray(value)) return undefined
+  if (remaining >= segments.length) return value
+
+  const projected: unknown[] = []
+  for (const item of value) {
+    const resolved = resolveSegments(item, segments, remaining)
+    if (resolved === undefined) continue
+    // 拍平一层：内层再取到数组时直接展开，避免出现「数组的数组」。
+    if (Array.isArray(resolved)) projected.push(...resolved)
+    else projected.push(resolved)
+  }
+  return projected
+}
+
+/** 按路径取值，支持 `a[*].b` 通配投影；路径不存在时返回 `undefined`。 */
 function getByPath(payload: unknown, path: string): unknown {
   const segments = parsePath(path)
   if (!segments.length) return undefined
-  let current: unknown = payload
+  return resolveSegments(payload, segments, 0)
+}
 
-  for (const segment of segments) {
-    if (!current || typeof current !== 'object' || !(segment in current)) {
-      return undefined
+/** 按路径写值；中间缺失的对象会被就地创建，数组段不支持写入。 */
+function setByPath(payload: unknown, path: string, value: unknown): boolean {
+  const segments = parsePath(path)
+  if (!segments.length || segments.some(segment => segment.wildcard)) return false
+
+  let current: Record<string, unknown> | undefined
+  if (isPlainObject(payload)) current = payload
+
+  for (let index = 0; current && index < segments.length - 1; index += 1) {
+    const key = segments[index].key
+    const next = current[key]
+    if (isPlainObject(next)) {
+      current = next
+      continue
     }
-    current = (current as Record<string, unknown>)[segment]
+    const created: Record<string, unknown> = {}
+    current[key] = created
+    current = created
   }
 
-  return current
+  if (!current) return false
+  current[segments[segments.length - 1].key] = value
+  return true
 }
 
 function createEmptyRoute(): RouteDecision {
@@ -65,7 +129,6 @@ function createEmptyRoute(): RouteDecision {
     modelIds: [],
     fallback: false,
     requestedModel: '',
-    availableModelIds: [],
     controls: {},
   }
 }
@@ -117,20 +180,21 @@ function normalizeInputPayload(inputPayload: unknown): RouteContextEnvelope {
   const logicalModels = readLogicalModels(normalized.logicalModels ?? normalized.queues)
 
   const requestedModel = typeof request.body?.model === 'string' ? request.body.model.trim() : ''
-  const availableModelIds = logicalModels.map(model => model.id)
   const traceId = typeof metadata.traceId === 'string' && metadata.traceId.trim() ? metadata.traceId : generateTraceId()
 
   /**
    * `metadata` 归调用方所有：引擎只读不写。
    * 路由自己产生的数据（决策 + 决策依据）统一写在 `route` 命名空间下，
    * 过程性数据（协议归一化结果、节点判定明细）只进 trace。
+   *
+   * 「可用逻辑模型 id」不再单独落盘：它是 `logicalModels` 的投影，
+   * 需要时用通配投影取值（`logicalModels[*].id`）即可。
    */
   normalized.route = {
     ...createEmptyRoute(),
     traceId,
     transport: detectTransport(normalized),
     requestedModel,
-    availableModelIds,
     controls: objectField(normalized, 'controls'),
   } satisfies RouteDecision
 
@@ -249,6 +313,50 @@ function resolveExpectedText(rule: ConditionRule, payload: Record<string, unknow
   return rule.value ?? ''
 }
 
+/** 对象 / 数组的结构化序列化；失败（循环引用等）时返回 null。 */
+function safeStringify(value: unknown): string | null {
+  try {
+    return JSON.stringify(value) ?? null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 判空：类型感知，对象看有没有键、数组看长度、字符串看去掉空白后是否为空。
+ * 「判断对象或者数组内容」的场景全靠这里，不再退化成 `String(value)` 比较。
+ */
+function isEmptyValue(value: unknown): boolean {
+  if (value === undefined || value === null) return true
+  if (Array.isArray(value)) return value.length === 0
+  if (isPlainObject(value)) return Object.keys(value).length === 0
+  if (typeof value === 'string') return value.trim() === ''
+  return false
+}
+
+/**
+ * 包含判定：
+ * - 数组：比较每个元素（对象元素按结构化序列化比较）；
+ * - 对象：比较键名；
+ * - 其余（含 `unknown` 取到的标量）：退化成子串包含。
+ */
+function containsValue(actual: unknown, expected: string): boolean {
+  if (Array.isArray(actual)) {
+    return actual.some(item => String(item) === expected || safeStringify(item) === expected)
+  }
+  if (isPlainObject(actual)) return Object.keys(actual).includes(expected)
+  return String(actual ?? '').includes(expected)
+}
+
+/** 相等判定：对象 / 数组按结构化序列化比较，同时兼容「数组按逗号连接后比较」。 */
+function equalsValue(actual: unknown, expected: string): boolean {
+  if (Array.isArray(actual) || isPlainObject(actual)) {
+    const serialized = safeStringify(actual)
+    if (serialized !== null && serialized === expected.trim()) return true
+  }
+  return String(actual ?? '') === expected
+}
+
 function evaluateCondition(rule: ConditionRule, actual: unknown, payload: Record<string, unknown>): boolean {
   const operator: ConditionOperator = rule.operator
   const expected = resolveExpectedText(rule, payload)
@@ -258,11 +366,11 @@ function evaluateCondition(rule: ConditionRule, actual: unknown, payload: Record
   }
 
   if (operator === 'empty') {
-    return actual === undefined || actual === null || String(actual).trim() === ''
+    return isEmptyValue(actual)
   }
 
   if (operator === 'notEmpty') {
-    return actual !== undefined && actual !== null && String(actual).trim() !== ''
+    return !isEmptyValue(actual)
   }
 
   if (operator === 'isTrue') {
@@ -282,17 +390,11 @@ function evaluateCondition(rule: ConditionRule, actual: unknown, payload: Record
   }
 
   if (operator === 'contains') {
-    if (Array.isArray(actual)) {
-      return actual.map(item => String(item)).includes(expected)
-    }
-    return String(actual ?? '').includes(expected)
+    return containsValue(actual, expected)
   }
 
   if (operator === 'notContains') {
-    if (Array.isArray(actual)) {
-      return !actual.map(item => String(item)).includes(expected)
-    }
-    return !String(actual ?? '').includes(expected)
+    return !containsValue(actual, expected)
   }
 
   if (operator === 'startsWith') {
@@ -332,9 +434,8 @@ function evaluateCondition(rule: ConditionRule, actual: unknown, payload: Record
     return current <= expectedNumber
   }
 
-  const left = String(actual ?? '')
-  if (operator === 'equals') return left === expected
-  if (operator === 'notEquals') return left !== expected
+  if (operator === 'equals') return equalsValue(actual, expected)
+  if (operator === 'notEquals') return !equalsValue(actual, expected)
   return false
 }
 
@@ -520,6 +621,33 @@ function edgeTarget(edges: Map<string, string>, nodeId: string, port = 'out'): s
   return edges.get(`${nodeId}:${port}`)
 }
 
+/** 一轮迭代：对象模式下带键名，数组 / 标量模式下键名是下标或空串。 */
+interface IterationEntry {
+  key: string
+  value: unknown
+}
+
+/**
+ * 解析迭代来源。
+ * 数组按元素遍历，对象按键值对遍历；标量当成「只有一项的集合」，
+ * 这样把 `sourcePath` 指到单个对象或单值时不会静默不执行。
+ */
+function collectIterationItems(payload: Record<string, unknown>, sourcePath: string): IterationEntry[] {
+  const raw = getByPath(payload, sourcePath.trim())
+  if (Array.isArray(raw)) return raw.map((value, index) => ({ key: String(index), value }))
+  if (isPlainObject(raw)) return Object.entries(raw).map(([key, value]) => ({ key, value }))
+  if (raw === undefined || raw === null) return []
+  return [{ key: '', value: raw }]
+}
+
+/** 汇总迭代结果：`count` 写轮数，其余模式写命中值。 */
+function summarizeIteration(collected: unknown[], executed: number, mode: IterationNode['collectMode']): unknown {
+  if (mode === 'count') return executed
+  if (mode === 'list') return collected
+  if (mode === 'last') return collected.length ? collected[collected.length - 1] : []
+  return collected.length ? collected[0] : []
+}
+
 export function runWorkflow(graph: WorkflowGraph, inputPayload: unknown, _options: WorkflowRunOptions = {}): WorkflowRunResult {
   const envelope = normalizeInputPayload(inputPayload)
   const outputPayload = envelope.payload
@@ -530,11 +658,18 @@ export function runWorkflow(graph: WorkflowGraph, inputPayload: unknown, _option
   let protocol: WorkflowProtocol = 'unknown'
   const nodeOutputs: NodeOutputMap = {}
   let steps = 0
+  let budgetExhausted = false
   let stopReason: WorkflowRunResult['stopReason'] = 'missing-next'
 
   const execute = (startId: string | undefined, stopAt?: string): string | undefined => {
     let currentId = startId
-    while (currentId && steps < MAX_STEPS) {
+    while (currentId) {
+      if (steps >= MAX_STEPS) {
+        budgetExhausted = true
+        stopReason = 'max-steps'
+        return currentId
+      }
+      // 回到循环节点本身就代表「本轮结束」，用 stopAt 做边界，不需要隐式子图。
       if (currentId === stopAt) return currentId
       const current = byId.get(currentId)
       if (!current) { stopReason = 'missing-next'; return undefined }
@@ -550,9 +685,10 @@ export function runWorkflow(graph: WorkflowGraph, inputPayload: unknown, _option
 
       if (current.kind === 'input') {
         // 输入节点的输出就是它交给下游的入口数据：请求模型与本次可见的逻辑模型。
+        // 「可用逻辑模型 id」不再单列，需要时用 `logicalModels[*].id` 投影取值。
         const route = routeOf(outputPayload)
         addNodeOutput(nodeOutputs, current.id, '请求模型', route.requestedModel)
-        addNodeOutput(nodeOutputs, current.id, '可用逻辑模型', route.availableModelIds)
+        addNodeOutput(nodeOutputs, current.id, '逻辑模型', envelope.context.logicalModels.map(model => model.id))
         trace.push({ nodeId: current.id, nodeName: current.name, kind: current.kind, success: true, message: '输入进入路由流程' })
         currentId = edgeTarget(edges, current.id)
         continue
@@ -635,6 +771,105 @@ export function runWorkflow(graph: WorkflowGraph, inputPayload: unknown, _option
         continue
       }
 
+      if (current.kind === 'iteration') {
+        const route = routeOf(outputPayload)
+        const items = collectIterationItems(outputPayload, current.sourcePath)
+        const bodyEntry = edgeTarget(edges, current.id, 'body')
+        const limit = Math.max(1, Math.floor(current.maxIterations))
+        const planned = Math.min(items.length, limit)
+        const collected: unknown[] = []
+        const collectedKeys: string[] = []
+        let executed = 0
+        let stoppedReason = '全部遍历完成'
+        let escapedToOutput = false
+
+        if (!bodyEntry) {
+          stoppedReason = '未连接循环体（body 端口），本轮跳过'
+          trace.push({
+            nodeId: current.id, nodeName: current.name, kind: current.kind, success: false,
+            message: '遍历迭代节点没有连接循环体，无法执行',
+            details: { sourcePath: current.sourcePath, itemCount: items.length, bodyConnected: false, executed: 0, hitCount: 0 },
+          })
+        } else {
+          for (let index = 0; index < planned; index += 1) {
+            const entry = items[index]
+            // 每轮把当前作用域投影写进 `route.iteration`，循环体里用 `route.iteration.*` 取值。
+            route.iteration = {
+              source: current.sourcePath,
+              item: entry.value,
+              index,
+              key: entry.key,
+              total: items.length,
+            } satisfies RouteIterationScope
+            executed += 1
+
+            execute(bodyEntry, current.id)
+            if (budgetExhausted) {
+              stoppedReason = '达到步数上限（MAX_STEPS），提前结束'
+              break
+            }
+            if (stopReason === 'output') {
+              // 循环体直接连到出口：整轮运行结束，不再继续迭代。
+              escapedToOutput = true
+              break
+            }
+
+            const value = getByPath(outputPayload, current.collectPath)
+            const hit = !isEmptyValue(value)
+            if (hit) {
+              collected.push(value)
+              collectedKeys.push(entry.key)
+            }
+            addNodeOutput(
+              nodeOutputs,
+              current.id,
+              `第 ${index + 1} 轮${entry.key ? `（${entry.key}）` : ''}`,
+              hit ? value : '未命中',
+              hit ? undefined : current.collectPath,
+            )
+            if (hit && current.collectMode === 'first') {
+              stoppedReason = `第 ${index + 1} 轮首次命中，提前结束`
+              break
+            }
+          }
+
+          if (executed >= limit && limit < items.length) {
+            stoppedReason = `达到迭代上限 ${limit} 轮，剩余 ${items.length - limit} 项未遍历`
+          }
+        }
+
+        const result = summarizeIteration(collected, executed, current.collectMode)
+        const resultPath = current.resultPath.trim()
+        if (resultPath) setByPath(outputPayload, resultPath, result)
+
+        addNodeOutput(nodeOutputs, current.id, '遍历轮数', executed)
+        addNodeOutput(nodeOutputs, current.id, '汇总结果', result)
+        trace.push({
+          nodeId: current.id,
+          nodeName: current.name,
+          kind: current.kind,
+          success: Boolean(bodyEntry),
+          message: bodyEntry
+            ? `迭代完成：来源 ${current.sourcePath || '（未配置）'} 共 ${items.length} 项，执行 ${executed} 轮`
+            : '遍历迭代节点没有连接循环体，无法执行',
+          details: {
+            sourcePath: current.sourcePath,
+            collectPath: current.collectPath,
+            collectMode: current.collectMode,
+            resultPath,
+            itemCount: items.length,
+            executed,
+            hitCount: collected.length,
+            hitKeys: collectedKeys,
+            stoppedReason,
+          },
+        })
+
+        if (escapedToOutput) return undefined
+        currentId = edgeTarget(edges, current.id, 'out')
+        continue
+      }
+
       if (current.kind === 'output') {
         const route = routeOf(outputPayload)
         addNodeOutput(nodeOutputs, current.id, '最终落点', route.modelIds, route.fallback ? '兜底' : undefined)
@@ -657,7 +892,6 @@ export function runWorkflow(graph: WorkflowGraph, inputPayload: unknown, _option
         return undefined
       }
     }
-    if (steps >= MAX_STEPS) stopReason = 'max-steps'
     return currentId
   }
 

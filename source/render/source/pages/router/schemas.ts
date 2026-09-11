@@ -20,7 +20,7 @@ const NodePositionSchema = z.object({
 
 const WorkflowNodeBaseSchema = z.object({
   id: z.string(),
-  kind: z.enum(['input', 'control-input', 'protocol-discovery', 'condition', 'model-select', 'output']),
+  kind: z.enum(['input', 'control-input', 'protocol-discovery', 'condition', 'model-select', 'iteration', 'output']),
   name: z.string(),
   enabled: z.boolean(),
   description: z.string(),
@@ -57,7 +57,7 @@ const ProtocolDiscoveryNodeSchema = WorkflowNodeBaseSchema.extend({
 
 const ConditionRuleSchema = z.object({
   fieldPath: z.string().min(1),
-  valueType: z.enum(['string', 'number', 'boolean', 'enum', 'array', 'unknown']),
+  valueType: z.enum(['string', 'number', 'boolean', 'enum', 'array', 'object', 'unknown']),
   operator: z.enum(['equals', 'notEquals', 'contains', 'notContains', 'startsWith', 'endsWith', 'in', 'notIn', 'regex', 'gt', 'gte', 'lt', 'lte', 'between', 'isTrue', 'isFalse', 'empty', 'notEmpty', 'exists']),
   // 旧版本保存的图没有这两项，默认按字面量比较。
   valueSource: z.enum(['literal', 'field']).default('literal'),
@@ -90,6 +90,20 @@ const ModelSelectNodeSchema = WorkflowNodeBaseSchema.extend({
   fallbackModelIds: z.array(z.string().min(1)).default([]),
 })
 
+const IterationNodeSchema = WorkflowNodeBaseSchema.extend({
+  kind: z.literal('iteration'),
+  // 旧版本保存的图没有这些字段，用默认值补齐（与 model-select 的处理保持一致）。
+  // 遍历来源：支持通配投影（`logicalModels[*].id`）；数组按元素、对象按键值对遍历。
+  sourcePath: z.string().default(''),
+  // 每轮结束后读取这条路径判断本轮是否命中；空值视为未命中。
+  collectPath: z.string().default('route.modelIds'),
+  collectMode: z.enum(['first', 'last', 'list', 'count']).default('first'),
+  // 汇总结果写回路径；count 模式写入轮数。
+  resultPath: z.string().default('route.modelIds'),
+  // 业务预算：轮数上限（全局 MAX_STEPS 是另一层兜底）。
+  maxIterations: z.number().int().positive().default(10),
+})
+
 const OutputNodeSchema = WorkflowNodeBaseSchema.extend({
   kind: z.literal('output'),
   includeTrace: z.boolean(),
@@ -102,6 +116,7 @@ export const WorkflowNodeModelSchema = z.discriminatedUnion('kind', [
   ProtocolDiscoveryNodeSchema,
   ConditionNodeSchema,
   ModelSelectNodeSchema,
+  IterationNodeSchema,
   OutputNodeSchema,
 ])
 

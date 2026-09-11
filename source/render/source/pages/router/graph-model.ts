@@ -134,6 +134,22 @@ export function createNodeByKind(kind: AppendableKind, position: NodePosition): 
     }
   }
 
+  if (kind === 'iteration') {
+    return {
+      id,
+      kind,
+      name: '遍历迭代节点',
+      enabled: true,
+      description: '遍历数组 / 对象，逐项执行循环体并汇总结果。',
+      position,
+      sourcePath: 'logicalModels',
+      collectPath: 'route.modelIds',
+      collectMode: 'first',
+      resultPath: 'route.modelIds',
+      maxIterations: 10,
+    }
+  }
+
   return {
     id,
     kind: 'model-select',
@@ -206,9 +222,12 @@ export function createOutputNode(position: NodePosition): WorkflowNodeModel {
  *
  * 规则全部由基础节点组合而成，没有任何专用节点，
  * 命中判断就是一条普通的「字段 in 字段」条件：
- * 输入 → 条件（route.requestedModel in route.availableModelIds）
+ * 输入 → 条件（route.requestedModel in logicalModels[*].id）
  *        ├─ IF   → 逻辑模型选择（变量取值 route.requestedModel）→ 出口
  *        └─ ELSE → 逻辑模型选择（固定 default）→ 出口
+ *
+ * 注意比较右侧用的是通配投影 `logicalModels[*].id`：
+ * 上下文里本来就带着完整的逻辑模型列表，没必要再派生一份 id 数组。
  */
 export function createDefaultPolicyGraph(): WorkflowGraph {
   const conditionCase: ConditionCase = {
@@ -220,7 +239,7 @@ export function createDefaultPolicyGraph(): WorkflowGraph {
         valueType: 'string',
         operator: 'in',
         valueSource: 'field',
-        valueFieldPath: 'route.availableModelIds',
+        valueFieldPath: 'logicalModels[*].id',
       },
     ],
   }
@@ -234,7 +253,7 @@ export function createDefaultPolicyGraph(): WorkflowGraph {
         kind: 'condition',
         name: '请求模型是否命中逻辑模型',
         enabled: true,
-        description: 'route.requestedModel 在 route.availableModelIds 里时走直连分支，否则落到默认逻辑模型。',
+        description: 'route.requestedModel 在 logicalModels[*].id 里时走直连分支，否则落到默认逻辑模型。',
         position: { x: 460, y: 220 },
         cases: [conditionCase],
       },
@@ -335,6 +354,83 @@ export interface RouterPolicyPreset {
   createGraph: () => WorkflowGraph
 }
 
+/**
+ * 遍历迭代模板：逐个检查逻辑模型，挑出第一个启用的。
+ *
+ * 展示迭代节点的完整用法：
+ * - `body` 端口进循环体（条件判定），循环体末端连回迭代节点即「本轮结束」；
+ * - `route.iteration.item` 是当前轮元素，可以继续取字段（`route.iteration.item.id`）；
+ * - `collectMode: 'first'` 表示首次命中就收工，`collectPath` 读的是本轮结果。
+ */
+export function createIterationGraph(): WorkflowGraph {
+  const iterationCase: ConditionCase = {
+    id: 'case-1',
+    name: '本轮模型已启用',
+    logicalOperator: 'and',
+    conditions: [
+      {
+        fieldPath: 'route.iteration.item.enabled',
+        valueType: 'boolean',
+        operator: 'isTrue',
+        valueSource: 'literal',
+        valueFieldPath: '',
+        value: '',
+      },
+    ],
+  }
+
+  const nodes: WorkflowNodeModel[] = [
+    createInputNode({ x: 80, y: 320 }),
+    {
+      id: 'iteration',
+      kind: 'iteration',
+      name: '遍历逻辑模型',
+      enabled: true,
+      description: '逐个遍历 logicalModels，找出第一个启用中的模型。',
+      position: { x: 440, y: 320 },
+      sourcePath: 'logicalModels',
+      collectPath: 'route.modelIds',
+      collectMode: 'first',
+      resultPath: 'route.modelIds',
+      maxIterations: 10,
+    },
+    {
+      id: 'iteration-condition',
+      kind: 'condition',
+      name: '本轮模型是否启用',
+      enabled: true,
+      description: '读取 route.iteration.item.enabled，命中说明本轮可用。',
+      position: { x: 800, y: 140 },
+      cases: [iterationCase],
+    },
+    {
+      id: 'iteration-model',
+      kind: 'model-select',
+      name: '取本轮模型 id',
+      enabled: true,
+      description: '把 route.iteration.item.id 当成本轮落点逻辑模型。',
+      position: { x: 1160, y: 40 },
+      source: 'variable',
+      variablePath: 'route.iteration.item.id',
+      modelIds: [],
+      fallbackModelIds: [],
+    },
+    createOutputNode({ x: 1160, y: 480 }),
+  ]
+
+  const edges: WorkflowEdge[] = [
+    { id: 'edge-input-iteration', sourceNodeId: 'input', sourcePort: 'out', targetNodeId: 'iteration' },
+    { id: 'edge-iteration-body', sourceNodeId: 'iteration', sourcePort: 'body', targetNodeId: 'iteration-condition' },
+    { id: 'edge-iteration-case', sourceNodeId: 'iteration-condition', sourcePort: iterationCase.id, targetNodeId: 'iteration-model' },
+    // 循环体末端连回迭代节点：这一条边代表「本轮结束」，不是死循环。
+    { id: 'edge-iteration-model-back', sourceNodeId: 'iteration-model', sourcePort: 'out', targetNodeId: 'iteration' },
+    { id: 'edge-iteration-else-back', sourceNodeId: 'iteration-condition', sourcePort: 'else', targetNodeId: 'iteration' },
+    { id: 'edge-iteration-output', sourceNodeId: 'iteration', sourcePort: 'out', targetNodeId: 'output' },
+  ]
+
+  return { version: 1, nodes, edges }
+}
+
 /** 策略预设：一键把画布换成某种内置规则，随时可切回默认策略。 */
 export const ROUTER_POLICY_PRESETS: RouterPolicyPreset[] = [
   {
@@ -350,6 +446,13 @@ export const ROUTER_POLICY_PRESETS: RouterPolicyPreset[] = [
     description: '先识别协议，再按条件分流，最后落到指定逻辑模型。',
     isDefault: false,
     createGraph: createDefaultGraph,
+  },
+  {
+    id: 'iteration-first-enabled',
+    name: '遍历迭代模板：首个启用模型',
+    description: '遍历 logicalModels，逐项判断是否启用，首次命中即停止并把该模型作为落点。',
+    isDefault: false,
+    createGraph: createIterationGraph,
   },
 ]
 

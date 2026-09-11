@@ -5,11 +5,12 @@ import {
   Braces,
   CirclePlay,
   GitBranch,
+  Repeat2,
   Waypoints,
 } from 'lucide-react'
 
 import type { NodeRunStatus } from './node-data'
-import type { WorkflowNodeKind, WorkflowNodeModel } from './types'
+import type { IterationCollectMode, WorkflowNodeKind, WorkflowNodeModel } from './types'
 
 /**
  * 可以新增到画布上的节点类型。
@@ -17,7 +18,7 @@ import type { WorkflowNodeKind, WorkflowNodeModel } from './types'
  */
 export type AppendableKind = Extract<
   WorkflowNodeKind,
-  'control-input' | 'protocol-discovery' | 'condition' | 'model-select'
+  'control-input' | 'protocol-discovery' | 'condition' | 'model-select' | 'iteration'
 >
 
 /** React Flow 中注册的节点类型名。 */
@@ -28,12 +29,14 @@ export type CanvasNodeType =
   | 'protocol-discovery'
   | 'condition'
   | 'model-select'
+  | 'iteration'
 
 export const APPENDABLE_KINDS: AppendableKind[] = [
   'control-input',
   'protocol-discovery',
   'condition',
   'model-select',
+  'iteration',
 ]
 
 /** 画布默认列顺序：既用于图例排序，也用于旧数据的自动布局。 */
@@ -42,6 +45,7 @@ export const NODE_KIND_ORDER: WorkflowNodeKind[] = [
   'control-input',
   'protocol-discovery',
   'condition',
+  'iteration',
   'model-select',
   'output',
 ]
@@ -96,6 +100,13 @@ export const NODE_KIND_META: Record<WorkflowNodeKind, NodeKindMeta> = {
     tone: 'bg-util-colors-indigo-indigo-500',
     accent: 'bg-util-colors-indigo-indigo-500',
   },
+  iteration: {
+    label: '遍历迭代',
+    hint: '遍历数组 / 对象，逐项跑循环体',
+    icon: Repeat2,
+    tone: 'bg-util-colors-violet-violet-500',
+    accent: 'bg-util-colors-violet-violet-500',
+  },
   output: {
     label: '路由结果出口',
     hint: '输出可用逻辑模型，交由代理执行',
@@ -106,6 +117,22 @@ export const NODE_KIND_META: Record<WorkflowNodeKind, NodeKindMeta> = {
 }
 
 export const FALLBACK_NODE_ICON = Braces
+
+/** 迭代节点的结果收集模式文案（节点视图、面板、Trace 共用）。 */
+export const ITERATION_COLLECT_MODE_LABELS: Record<IterationCollectMode, string> = {
+  first: '取首个命中',
+  last: '取最后一个命中',
+  list: '汇总为列表',
+  count: '只统计轮数',
+}
+
+/** 迭代节点的结果收集模式说明，用于面板里的候选项补充解释。 */
+export const ITERATION_COLLECT_MODE_HINTS: Record<IterationCollectMode, string> = {
+  first: '命中即停止遍历，结果写命中的那一个值',
+  last: '遍历到底，结果写最后一个命中的值',
+  list: '遍历到底，结果写所有命中值组成的数组',
+  count: '不收集值，结果写实际执行的轮数',
+}
 
 export function toCanvasNodeType(kind: WorkflowNodeKind): CanvasNodeType {
   if (kind === 'input') return 'route-input'
@@ -141,6 +168,11 @@ export function nodeSummary(model: WorkflowNodeModel): string {
     }
     return `${model.modelIds.length} 个逻辑模型`
   }
+  if (model.kind === 'iteration') {
+    const sourcePath = model.sourcePath.trim()
+    if (!sourcePath) return '未配置遍历来源'
+    return `遍历 ${sourcePath} · 上限 ${model.maxIterations} 轮`
+  }
   return NODE_KIND_META.output.hint
 }
 
@@ -151,6 +183,7 @@ export function nodePanelHint(model: WorkflowNodeModel): string {
   if (model.kind === 'protocol-discovery') return '该节点无配置项，系统会自动分析请求并输出 openai-completions/openai-responses/anthropic-messages/unknown 分支。'
   if (model.kind === 'condition') return '字段来源于上游 schema，每个分支可包含多个条件，按 AND / OR 组合判定；首个命中的分支生效，否则走 ELSE。'
   if (model.kind === 'model-select') return '取值来源决定落点：固定选择直接用勾选的逻辑模型；变量取值则把指定字段当作逻辑模型 id（字符串或字符串数组），取不到时用兜底逻辑模型。'
+  if (model.kind === 'iteration') return '遍历来源支持通配投影（如 logicalModels[*].id）；数组按元素、对象按键值对遍历，每轮把当前项写入 route.iteration 后从 body 端口进入循环体，循环体末端连回本节点即视为本轮结束。'
   return '该节点不会直接返回模型响应，而是返回一个可用逻辑模型交由代理执行。'
 }
 
@@ -176,6 +209,7 @@ export const EDGE_STROKE_HANDLE = 'var(--color-workflow-link-line-handle)'
 const cyanStroke = 'var(--color-util-colors-cyan-cyan-500)'
 const violetStroke = 'var(--color-util-colors-indigo-indigo-500)'
 const emeraldStroke = 'var(--color-util-colors-blue-blue-500)'
+const iterationStroke = 'var(--color-util-colors-violet-violet-500)'
 
 /** 连线颜色：按上游节点的类型与端口区分分支语义。 */
 export function edgeStrokeColor(sourceKind: WorkflowNodeKind, sourcePort: string): string {
@@ -187,6 +221,7 @@ export function edgeStrokeColor(sourceKind: WorkflowNodeKind, sourcePort: string
   }
   if (sourceKind === 'model-select') return violetStroke
   if (sourceKind === 'control-input') return emeraldStroke
+  if (sourceKind === 'iteration') return sourcePort === 'body' ? iterationStroke : EDGE_STROKE_NORMAL
   return EDGE_STROKE_NORMAL
 }
 
