@@ -4,6 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { closeDatabase, initDatabase } from './database'
+import { TEST_DATABASE_FILE_NAME } from './database/test-support'
 import { updateSettings } from './database/settings-store'
 import { startServer, stopServer } from './index'
 import { getProxyServerStatus, startProxyServer, stopProxyServer } from './proxy/runtime/server'
@@ -32,7 +33,7 @@ afterEach(async () => {
 describe('server lifecycle', () => {
   it('reports the port actually bound by the proxy server', async () => {
     const proxyPort = await getAvailablePort()
-    await initDatabase(temporaryDirectory)
+    await initDatabase(temporaryDirectory, TEST_DATABASE_FILE_NAME)
     await updateSettings({ listenHost: '127.0.0.1', listenPort: 9300 })
 
     try {
@@ -50,11 +51,12 @@ describe('server lifecycle', () => {
 
   it('keeps management available while the proxy is stopped and restarted', async () => {
     const [managementPort, proxyPort] = await Promise.all([getAvailablePort(), getAvailablePort()])
-    await initDatabase(temporaryDirectory)
+    await initDatabase(temporaryDirectory, TEST_DATABASE_FILE_NAME)
     await updateSettings({ listenHost: '127.0.0.1', listenPort: proxyPort })
     await closeDatabase()
     await startServer({
       dataDir: temporaryDirectory,
+      databaseFileName: TEST_DATABASE_FILE_NAME,
       secretStore,
       runtimeProfile: createTestRuntimeProfile(proxyPort, managementPort),
     })
@@ -107,11 +109,12 @@ describe('server lifecycle', () => {
 
   it('isolates manual queue selection by logical model through the management API', async () => {
     const [managementPort, proxyPort] = await Promise.all([getAvailablePort(), getAvailablePort()])
-    await initDatabase(temporaryDirectory)
+    await initDatabase(temporaryDirectory, TEST_DATABASE_FILE_NAME)
     await updateSettings({ listenHost: '127.0.0.1', listenPort: proxyPort })
     await closeDatabase()
     const runtimeOptions = {
       dataDir: temporaryDirectory,
+      databaseFileName: TEST_DATABASE_FILE_NAME,
       secretStore,
       runtimeProfile: createTestRuntimeProfile(proxyPort, managementPort),
     }

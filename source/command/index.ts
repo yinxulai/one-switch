@@ -4,6 +4,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { startServer, stopServer } from '@server/index'
 import { installLogCapture } from '@server/management/infrastructure/log-buffer'
+import { createDatabaseFileName } from '@common/database-file'
 import { getRuntimeProfile } from '@common/runtime-profile'
 import { ElectronSecretStore } from './secret-store'
 import { TrayManager } from './tray-manager'
@@ -29,6 +30,8 @@ const __dirname = path.dirname(__filename)
 
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL)
 const runtimeProfile = getRuntimeProfile(isDevelopment ? 'development' : 'production')
+// 数据文件名带主版本号：换了不兼容的结构就换一个文件，旧库原样留在磁盘上，不需要写迁移。
+const databaseFileName = createDatabaseFileName(app.getVersion())
 
 process.env.DIST = path.join(__dirname, '..')
 process.env.VITE_PUBLIC = isDevelopment
@@ -158,6 +161,7 @@ function logStartupBanner() {
     `  CPU Cores   :  ${os.cpus().length} (${os.cpus()[0]?.model ?? 'unknown'})`,
     `  Memory      :  ${Math.round(os.totalmem() / 1024 / 1024)} MB total`,
     `  User Data   :  ${app.getPath('userData')}`,
+    `  Data File   :  ${databaseFileName}`,
     `  Proxy Port  :  ${runtimeProfile.proxyPort}`,
     `  Admin Port  :  ${runtimeProfile.managementPort}`,
     `  PID         :  ${process.pid}`,
@@ -280,6 +284,7 @@ app.whenReady().then(async () => {
   try {
     await startServer({
       dataDir: userDataDir,
+      databaseFileName,
       secretStore: new ElectronSecretStore(path.join(userDataDir, 'secrets.json')),
       runtimeProfile,
       systemProxyResolver: targetUrl => session.defaultSession.resolveProxy(targetUrl),

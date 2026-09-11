@@ -1,12 +1,12 @@
 import * as React from 'react'
 import { AlertCircle, ChevronDown, LoaderCircle, Search } from 'lucide-react'
-import type { AppliedRequestRewriteRule, RequestContent, RequestConversion, RequestLogEntryAttempt } from '@common/schemas'
+import type { AppliedRequestRewriteRule, AttemptContent, RequestContent, RequestLogEntryAttempt } from '@common/schemas'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
-import { formatContent } from '../lib/format-content'
+import { formatContent, isLocalFailureBody } from '../lib/format-content'
 import { PROTOCOL_LABEL } from '../lib/format'
 
 interface ContentSectionProps {
@@ -25,7 +25,10 @@ interface RequestStageSection {
 
 interface RequestStageProps {
   title: string
+  /** 已经本地化的协议名。 */
   protocol: string
+  /** 该阶段的响应状态；`null` 表示该阶段没有可展示的状态（如尚未拿到正文）。 */
+  statusLabel: string | null
   sections: RequestStageSection[]
   sectionStates: Record<string, boolean>
   onSectionOpenChange: (id: string, open: boolean) => void
@@ -41,11 +44,14 @@ interface AttemptErrorProps {
 }
 
 interface RequestContentsSheetProps {
+  /** 客户端视角正文；每个请求至多一行。 */
   contents: RequestContent[] | null
-  conversions: RequestConversion[] | null
+  /** 上游视角正文；每次尝试至多一行。 */
+  attemptContents: AttemptContent[] | null
   attempts: RequestLogEntryAttempt[]
   requestRewriteRules: AppliedRequestRewriteRule[] | null
-  clientProtocol: string
+  /** 客户端协议；`null` 表示该请求连 API 路径都未识别。 */
+  clientProtocol: string | null
   upstreamProtocol?: string | null
   loading: boolean
   error: string | null
@@ -55,6 +61,71 @@ interface RequestContentsSheetProps {
 
 function sectionKey(title: string, label: string) {
   return `${title}::${label}`
+}
+
+/** 协议枚举值转展示名；`null` 表示这次请求根本没识别出该协议。 */
+function protocolLabel(protocol: string | null): string {
+  if (protocol === null) return '未知协议'
+  return PROTOCOL_LABEL[protocol] ?? protocol
+}
+
+interface AttemptFactsProps {
+  attempt: RequestLogEntryAttempt
+}
+
+interface FactItem {
+  label: string
+  value: string
+}
+
+/** 时间戳是事实本身，展示时才变成可读时间。 */
+function formatCreatedTime(time: number): string {
+  const date = new Date(time)
+  return Number.isNaN(date.getTime()) ? String(time) : date.toLocaleString('zh-CN', { hour12: false })
+}
+
+function factsOf(attempt: RequestLogEntryAttempt): FactItem[] {
+  return [
+    { label: '尝试 ID', value: attempt.id },
+    { label: '尝试序号', value: String(attempt.attemptIndex + 1) },
+    { label: '状态', value: attempt.status },
+    { label: 'Provider ID', value: attempt.providerId },
+    { label: '供应商模型 ID', value: attempt.providerModelId },
+    { label: '上游协议', value: attempt.upstreamProtocol ?? '未识别' },
+    { label: '上游 request ID', value: attempt.upstreamRequestId ?? '无' },
+    { label: '上游 URL', value: attempt.url },
+    { label: 'HTTP 状态', value: attempt.httpStatus === null ? '未收到响应' : String(attempt.httpStatus) },
+    { label: '可重试', value: attempt.retryable ? '是' : '否' },
+    { label: '上游流式', value: attempt.streaming === null ? '未知' : attempt.streaming ? 'SSE' : '非流式' },
+    { label: '首字延迟', value: attempt.ttftMilliseconds === null ? '无输出' : `${attempt.ttftMilliseconds} ms` },
+    { label: '耗时', value: `${attempt.durationMilliseconds} ms` },
+    { label: '错误码', value: attempt.errorCode ?? '无' },
+    { label: '错误信息', value: attempt.errorMessage ?? '无' },
+    { label: '命中的请求改写规则', value: attempt.requestRewriteRuleIds.join(', ') || '无' },
+    { label: '命中的响应改写规则', value: attempt.responseRewriteRuleIds.join(', ') || '无' },
+    { label: '创建时间', value: formatCreatedTime(attempt.createdTime) },
+  ]
+}
+
+/**
+ * 尝试级的事实清单。
+ *
+ * 这些字段单独看都很小，但排障时缺任何一个都会让人回头去查库，因此整体列出。
+ */
+function AttemptFacts(props: AttemptFactsProps) {
+  return (
+    <section className="overflow-hidden rounded-md bg-inset">
+      <div className="bg-muted/30 px-3 py-2 text-xs font-medium">本次尝试事实</div>
+      <dl className="grid gap-x-4 gap-y-1.5 px-3 py-2.5 md:grid-cols-2">
+        {factsOf(props.attempt).map(fact => (
+          <div key={fact.label} className="flex min-w-0 items-baseline gap-2 text-[11px]">
+            <dt className="shrink-0 text-muted-foreground">{fact.label}</dt>
+            <dd className="min-w-0 wrap-break-word font-mono text-foreground/90">{fact.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  )
 }
 
 function ContentSection(props: ContentSectionProps) {
@@ -98,7 +169,12 @@ function RequestStage(props: RequestStageProps) {
     <section className="overflow-hidden rounded-lg border border-border/70 bg-muted/20">
       <div className="flex items-center gap-2 border-b border-border/70 px-3 py-2.5 text-sm font-medium">
         <span>{props.title}</span>
-        <span className="font-mono text-xs text-muted-foreground">· {PROTOCOL_LABEL[props.protocol] ?? props.protocol}</span>
+        <span className="font-mono text-xs text-muted-foreground">· {props.protocol}</span>
+        {props.statusLabel && (
+          <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] font-normal text-muted-foreground">
+            {props.statusLabel}
+          </span>
+        )}
       </div>
       <div className="space-y-2 px-2 pb-2 pt-2">
         {sections.map(section => (
@@ -135,52 +211,70 @@ function AttemptError(props: AttemptErrorProps) {
 type RequestStageData = Omit<RequestStageProps, 'sectionStates' | 'onSectionOpenChange'>
 
 type RequestStageBuilderInput = {
+  /** 客户端视角正文。 */
   clientContent: RequestContent | null
-  selectedContent: RequestContent | null
-  conversion: RequestConversion | null
-  clientProtocol: string
-  upstreamProtocol: string
+  /** 选中尝试对应的上游视角正文。 */
+  attemptContent: AttemptContent | null
+  /** 本次尝试的客户端协议；未知时为 `null`。 */
+  clientProtocol: string | null
+  /** 本次尝试实际发往上游的协议。 */
+  upstreamProtocol: string | null
+  /** 客户端协议与上游协议不一致，即发生过协议转换。 */
+  converted: boolean
 }
 
 function buildRequestStages(input: RequestStageBuilderInput): RequestStageData[] {
-  const { clientContent, selectedContent, conversion, clientProtocol, upstreamProtocol } = input
-  const clientLabel = PROTOCOL_LABEL[clientProtocol] ?? clientProtocol
-  const upstreamLabel = PROTOCOL_LABEL[upstreamProtocol] ?? upstreamProtocol
-  const converted = Boolean(conversion && conversion.clientProtocol !== conversion.upstreamProtocol)
+  const { clientContent, attemptContent, clientProtocol, upstreamProtocol, converted } = input
+  const clientLabel = protocolLabel(clientProtocol)
+  const upstreamLabel = protocolLabel(upstreamProtocol)
   const upstreamRequestTitle = converted ? '协议转换后的上游请求' : '发送到真实供应商的请求'
   const clientResponseTitle = converted ? '协议转换后的客户端响应' : '返回客户端的响应'
+  // 本地失败时上游一个字节都没回。这条正文记的是本地观察到的失败原因，
+  // 叫它「上游响应」会让人以为是上游回的内容。
+  const upstreamResponseBodyIsLocalFailure = isLocalFailureBody(attemptContent?.responseBody ?? null)
 
+  // 四个阶段的取值直接来自它所属的表：
+  //   客户端原始请求 / 返回客户端的响应 -> request_contents（客户端视角）
+  //   发送到供应商的请求 / 供应商响应   -> attempt_contents（上游视角）
   return [
     {
       title: '客户端原始请求',
-      protocol: clientProtocol,
+      protocol: clientLabel,
+      statusLabel: null,
       sections: [
-        { id: sectionKey('客户端原始请求', `请求头 · ${clientLabel}`), label: `请求头 · ${clientLabel}`, value: conversion?.clientRequestHeaders ?? clientContent?.requestHeaders ?? null },
+        { id: sectionKey('客户端原始请求', `请求头 · ${clientLabel}`), label: `请求头 · ${clientLabel}`, value: clientContent?.requestHeaders ?? null },
         { id: sectionKey('客户端原始请求', `请求 Body · ${clientLabel}`), label: `请求 Body · ${clientLabel}`, value: clientContent?.requestBody ?? null },
       ],
     },
     {
       title: upstreamRequestTitle,
-      protocol: upstreamProtocol,
+      protocol: upstreamLabel,
+      statusLabel: null,
       sections: [
-        { id: sectionKey(upstreamRequestTitle, `请求头 · ${upstreamLabel}`), label: `请求头 · ${upstreamLabel}`, value: conversion?.upstreamRequestHeaders ?? selectedContent?.requestHeaders ?? null },
-        { id: sectionKey(upstreamRequestTitle, `请求 Body · ${upstreamLabel}`), label: `请求 Body · ${upstreamLabel}`, value: conversion?.requestBody ?? selectedContent?.requestBody ?? null },
+        { id: sectionKey(upstreamRequestTitle, `请求头 · ${upstreamLabel}`), label: `请求头 · ${upstreamLabel}`, value: attemptContent?.requestHeaders ?? null },
+        { id: sectionKey(upstreamRequestTitle, `请求 Body · ${upstreamLabel}`), label: `请求 Body · ${upstreamLabel}`, value: attemptContent?.requestBody ?? null },
       ],
     },
     {
       title: '真实供应商响应',
-      protocol: upstreamProtocol,
+      protocol: upstreamLabel,
+      statusLabel: attemptContent ? (attemptContent.responseStatus === null ? '上游未返回响应' : `HTTP ${attemptContent.responseStatus}`) : null,
       sections: [
-        { id: sectionKey('真实供应商响应', `响应头 · ${upstreamLabel}`), label: `响应头 · ${upstreamLabel}`, value: conversion?.upstreamResponseHeaders ?? selectedContent?.upstreamResponseHeaders ?? selectedContent?.responseHeaders ?? null },
-        { id: sectionKey('真实供应商响应', `响应 Body · ${upstreamLabel}`), label: `响应 Body · ${upstreamLabel}`, value: selectedContent?.responseBody ?? null },
+        { id: sectionKey('真实供应商响应', `响应头 · ${upstreamLabel}`), label: `响应头 · ${upstreamLabel}`, value: attemptContent?.responseHeaders ?? null },
+        {
+          id: sectionKey('真实供应商响应', `响应 Body · ${upstreamLabel}`),
+          label: upstreamResponseBodyIsLocalFailure ? '本地失败原因 · 上游未返回响应' : `响应 Body · ${upstreamLabel}`,
+          value: attemptContent?.responseBody ?? null,
+        },
       ],
     },
     {
       title: clientResponseTitle,
-      protocol: clientProtocol,
+      protocol: clientLabel,
+      statusLabel: clientContent ? (clientContent.responseStatus === null ? '未返回响应' : `HTTP ${clientContent.responseStatus}`) : null,
       sections: [
-        { id: sectionKey(clientResponseTitle, `响应头 · ${clientLabel}`), label: `响应头 · ${clientLabel}`, value: conversion?.clientResponseHeaders ?? selectedContent?.clientResponseHeaders ?? selectedContent?.responseHeaders ?? null },
-        { id: sectionKey(clientResponseTitle, `响应 Body · ${clientLabel}`), label: `响应 Body · ${clientLabel}`, value: conversion?.responseBody ?? selectedContent?.responseBody ?? null },
+        { id: sectionKey(clientResponseTitle, `响应头 · ${clientLabel}`), label: `响应头 · ${clientLabel}`, value: clientContent?.responseHeaders ?? null },
+        { id: sectionKey(clientResponseTitle, `响应 Body · ${clientLabel}`), label: `响应 Body · ${clientLabel}`, value: clientContent?.responseBody ?? null },
       ],
     },
   ]
@@ -188,14 +282,16 @@ function buildRequestStages(input: RequestStageBuilderInput): RequestStageData[]
 
 export function RequestContentsSheet(props: RequestContentsSheetProps) {
   const selectedAttempt = props.attempts.find(attempt => attempt.id === props.selectedAttemptId) ?? null
-  const selectedContent = props.contents?.find(content => content.attemptId === props.selectedAttemptId) ?? null
-  const clientContent = props.contents?.find(content => content.attemptId === null) ?? null
-  const conversion = props.conversions?.find(item => item.attemptId === props.selectedAttemptId) ?? null
+  const attemptContent = props.attemptContents?.find(content => content.attemptId === props.selectedAttemptId) ?? null
+  // 客户端视角每个请求只有一行，不需要按 attemptId 筛选。
+  const clientContent = props.contents?.[0] ?? null
   const [search, setSearch] = React.useState('')
   const [sectionStates, setSectionStates] = React.useState<Record<string, boolean>>({})
 
-  const clientProtocol = conversion?.clientProtocol ?? props.clientProtocol
-  const upstreamProtocol = conversion?.upstreamProtocol ?? props.upstreamProtocol ?? clientProtocol
+  // 「发生过协议转换」不是独立事实：客户端协议与本次尝试的上游协议不同即为转换。
+  const clientProtocol = props.clientProtocol
+  const upstreamProtocol = selectedAttempt?.upstreamProtocol ?? null
+  const converted = clientProtocol !== null && upstreamProtocol !== null && clientProtocol !== upstreamProtocol
 
   React.useEffect(() => {
     setSearch('')
@@ -204,10 +300,10 @@ export function RequestContentsSheet(props: RequestContentsSheetProps) {
 
   const stages: RequestStageProps[] = buildRequestStages({
     clientContent,
-    selectedContent,
-    conversion,
+    attemptContent,
     clientProtocol,
     upstreamProtocol,
+    converted,
   }).map(stage => ({
     ...stage,
     sectionStates,
@@ -287,7 +383,8 @@ export function RequestContentsSheet(props: RequestContentsSheetProps) {
         </div>
         <div className="min-h-0 flex-1 space-y-3 overflow-auto px-4 pb-4 pt-3">
           {selectedAttempt && <AttemptError attempt={selectedAttempt} />}
-          <AppliedRules ruleIds={selectedContent?.requestRewriteRuleIds ?? []} rules={props.requestRewriteRules} />
+          {selectedAttempt && <AttemptFacts attempt={selectedAttempt} />}
+          <AppliedRules ruleIds={selectedAttempt ? [...selectedAttempt.requestRewriteRuleIds, ...selectedAttempt.responseRewriteRuleIds] : []} rules={props.requestRewriteRules} />
           {filteredStages.length > 0 ? (
             filteredStages.map(stage => <RequestStage key={stage.title} {...stage} />)
           ) : (

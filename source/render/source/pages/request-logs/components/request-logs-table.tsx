@@ -29,7 +29,7 @@ interface RequestLogsTableProps {
   details: Record<string, RequestLogDetail>
   detailLoadingIds: Record<string, boolean>
   detailErrors: Record<string, string>
-  getModelName: (id: string) => string
+  getModelName: (id: string | null) => string
   toggleExpand: (id: string) => void
 }
 

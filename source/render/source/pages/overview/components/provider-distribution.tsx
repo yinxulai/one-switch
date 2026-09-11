@@ -38,7 +38,7 @@ export function ProviderDistribution(props: ProviderDistributionProps) {
                     <span className="truncate">{p.providerName}</span>
                   </span>
                   <span className="flex shrink-0 items-center gap-1 text-muted-foreground tabular-nums">
-                    {p.percent}% · {p.requests.toLocaleString()}
+                    {p.percent}% · {p.attempts.toLocaleString()}
                     {props.onSelectProvider && <ChevronRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />}
                   </span>
                 </div>

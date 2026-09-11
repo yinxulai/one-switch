@@ -21,7 +21,7 @@ export async function exportConfig(): Promise<{ config: ConfigDocument; content:
       outboundProxyBypass: settings.outboundProxyBypass, autoLaunch: settings.autoLaunch,
     },
     providers: await Promise.all(providers.map(async (p: Provider): Promise<ConfigProvider> => ({
-      id: p.id, name: p.name, timeoutMilliseconds: p.timeoutMilliseconds, enabled: p.enabled,
+      id: p.id, name: p.name, description: p.description ?? '', timeoutMilliseconds: p.timeoutMilliseconds, enabled: p.enabled,
       apiKeyPlaceholder: '***',
       endpoints: Object.fromEntries((await listProviderEndpoints(p.id)).filter(endpoint => endpoint.enabled).map(endpoint => [endpoint.protocol, endpoint.url])),
     }))),

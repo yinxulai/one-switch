@@ -218,7 +218,9 @@ thinking/reasoning 不是三个协议中完全同构的字段。当前实现尚�
 
 ### 7.3 观测数据
 
-当前实现不新增完整规则执行正文表。请求详情 UI 按阶段展示已有的采集内容和转换内容；规则执行结果会把命中的规则 ID 写入 `request_contents.requestRewriteRuleIds`，转换记录仍由 `request_conversions` 保存。暂未记录：
+当前实现不新增完整规则执行正文表。请求详情 UI 按阶段展示已有的采集内容。规则按 ProviderModel 匹配，归属单位是「尝试」，因此命中的规则 ID 写入 `request_attempts.requestRewriteRuleIds`（请求阶段）和 `request_attempts.responseRewriteRuleIds`（响应阶段），客户端视角的 `request_contents` 不保存规则 ID。
+
+规则命中是**事实**而不是载荷：`captureRequestContent` 关闭时它依然完整落库。正因为如此，它不能寄居在 `attempt_contents` 上——正文表会随采集开关整体消失，把事实和载荷放在同一张表里等于让开关决定事实是否可查。协议转换同理，由 `request_logs.clientProtocol` 与 `request_attempts.upstreamProtocol` 对比得出，不单独建表。暂未记录：
 
 - 规则链版本或快照摘要；
 - 跳过、失败的规则明细；

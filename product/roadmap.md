@@ -8,15 +8,16 @@
 
 当前实现进度：Provider 默认端点已从 Provider JSON 完全迁移到 `provider_endpoints`；ProviderModel 通过端点绑定和 `scheduling_policies` 参与路由；Provider 与 ProviderModel 双层健康冷却已接入候选过滤和请求尝试。
 
-- [x] [data-model.md](./data-model.md)：17 张核心表基线，含 provider_settings、provider_endpoints、provider_model_endpoints、provider_model_health、scheduling_policies、protocol_converters、request_metrics、request_usages、request_conversions；采用标准字段结构化列、多值关系表、受限 JSON 正文/协议详情、请求观测分层、软删除和 Unix 毫秒时间戳。
+- [x] [data-model.md](./data-model.md)：22 张核心表基线，含 provider_settings、provider_endpoints、provider_model_endpoints、provider_model_health、scheduling_policies、protocol_converters、request_logs、request_attributes、request_usages、attempt_usages、request_attempts、request_contents、attempt_contents、runtime_logs；采用标准字段结构化列、多值关系表、受限 JSON 正文/协议详情、请求观测分层、软删除和 Unix 毫秒时间戳。
 - [x] [proxy.md](./proxy.md)：协议适配器（ProtocolAdapter）+ 共享骨架（请求入口/尝试编排 / transport I/O / hooks 观测订阅）的代理管线架构。
 - [x] [protocol-conversion.md](./protocol-conversion.md)、[server-architecture.md](./server-architecture.md)、[tech-architecture.md](./tech-architecture.md)、[security-privacy.md](./security-privacy.md)、[observability.md](./observability.md)。
 
 ### 当前实现结论（2026-08-22）
 
 - v0.3 的数据库基线、关系模型、分域 Store、路由、协议适配器、请求观测分层、管理 API 和控制台主流程已落地。
-- 请求链路统一使用 `client*` / `upstream*` 边界：`clientProtocol` 表示客户端协议，`request_attempts.upstreamProtocol` 表示每次真实远端尝试，`request_conversions` 独立记录转换前后内容；不再使用 `providerProtocol` 表示运行时链路。
-- 完整源码验证已通过：`pnpm typecheck`、`pnpm test:server`（31 个测试文件、228 个测试）、`pnpm lint`；Vite bundling 也已通过。
+- 请求链路统一使用 `client*` / `upstream*` 边界：`clientProtocol` 表示客户端协议，`request_attempts.upstreamProtocol` 表示每次真实远端尝试；正文按视角拆为 `request_contents`（客户端）与 `attempt_contents`（上游），不再使用 `providerProtocol` 表示运行时链路。
+- 观测数据遵循两条硬约束：**一张表 = 一个视角**（列名不带视角前缀，用量同样拆为 `request_usages` / `attempt_usages`，不用可空列判别归属）；**事实永远写入、载荷才受开关控制**（协议转换由两侧协议对比得出而不单独建表，是否流式、TTFT、命中的改写规则 id 与尝试级原始 usage 写在 `request_attempts` 上，`captureRequestContent` 关闭时依然完整落库）。
+- 完整源码验证已通过：`node scripts/typecheck.mjs`、`node scripts/test.mjs`（72 个测试文件、456 个测试）、`node scripts/lint.mjs`；Vite bundling 也已通过。
 - Windows electron-builder 当前受符号链接权限限制，发布包安装验证仍未完成；该环境问题不改变源码验证结论。
 
 ### 产品与设计原则（摘要）
@@ -95,7 +96,7 @@
 ### MVP（P0）：请求正文调试能力
 
 - [x] 代理链路采集客户端请求和最终响应正文
-- [x] 在 `request_contents` 中按 `attemptId` 采集每次上游尝试的请求、响应和错误正文
+- [x] 在 `attempt_contents` 中按 `attemptId` 采集每次上游尝试的请求、响应和错误正文（客户端侧正文在 `request_contents`）
 - [x] 采集协议转换前后的请求/响应内容
 - [x] 通过 `/api/request-log/detail` 按需查询 request-level 与 attempt-level 正文
 - [x] 增加 `RequestContentSchema` 和正文 CRUD/映射逻辑

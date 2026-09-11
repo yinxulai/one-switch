@@ -44,7 +44,13 @@ export async function listProviderModelsForLogicalModel(logicalModelId: string, 
     .all()
   return rows
     .filter(({ model }) => (includeDeleted || model.deletedTime === null) && (includeDisabled || model.enabled))
-    .map(({ model, policy }) => ({ ...mapProviderModelRoute(model), priority: policy.priority, enabled: policy.enabled }))
+    .map(({ model, policy }) => ({
+      ...mapProviderModelRoute(model),
+      priority: policy.priority,
+      // enabled 反映模型自身状态：管理队列需要展示被禁用的模型，
+      // 调度筛选已在上面的 filter 中完成，不能被策略的 enabled 覆盖。
+      enabled: model.enabled,
+    }))
 }
 
 export async function getProviderModel(id: string): Promise<ProviderModelView | undefined> {

@@ -135,6 +135,15 @@ export class ResponsePipeline {
       : (this.responseBuffer || null)
   }
 
+  /**
+   * 已写到客户端的部分内容；未采集或尚未写出任何内容时为 `null`。
+   *
+   * 与 {@link partialBody} 相对：那个是上游视角，这个是客户端视角。
+   */
+  partialDownstreamBody(): string | null {
+    return this.downstreamChunks.length > 0 ? this.downstreamChunks.join('') : null
+  }
+
   getUsage(): ExtractedUsage {
     return this.usage
   }

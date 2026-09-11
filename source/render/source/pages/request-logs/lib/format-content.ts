@@ -8,11 +8,34 @@ interface CapturedStreamingBody {
   chunks?: unknown
 }
 
+interface LocalFailureBody {
+  localFailure?: unknown
+  errorCode?: unknown
+  errorMessage?: unknown
+}
+
+/** 本地失败的上游视角响应：连接被拒、超时这类情况下游一个字节都没回。 */
+export function isLocalFailureBody(value: string | null): boolean {
+  if (!value) return false
+  try {
+    return (JSON.parse(value) as LocalFailureBody).localFailure === true
+  } catch {
+    return false
+  }
+}
+
 export function formatContent(value: string): FormattedContent {
   try {
-    const parsed = JSON.parse(value) as CapturedStreamingBody
+    const parsed = JSON.parse(value) as CapturedStreamingBody & LocalFailureBody
     if (parsed.schemaVersion === 1 && Array.isArray(parsed.chunks) && parsed.chunks.every(chunk => typeof chunk === 'string')) {
       return { value: parsed.chunks.join(''), isJson: true }
+    }
+    // 本地失败的「响应」不是上游报文，而是一句失败原因。按 JSON 展开会把它埋进键值对里，
+    // 而「为什么失败」恰恰是这次请求唯一需要回答的问题。
+    if (parsed.localFailure === true) {
+      const message = typeof parsed.errorMessage === 'string' ? parsed.errorMessage : '原因未知'
+      const code = typeof parsed.errorCode === 'string' ? `（${parsed.errorCode}）` : ''
+      return { value: `上游没有返回任何响应：${message}${code}`, isJson: false }
     }
     return { value: JSON.stringify(parsed, null, 2), isJson: true }
   } catch {

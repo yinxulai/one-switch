@@ -13,7 +13,8 @@ export function RequestRow(props: RequestRowProps) {
 
   const succeeded = log.status === 'success'
   const lastAttempt = log.attempts[log.attempts.length - 1]
-  const upstreamProtocol = log.upstreamProtocol ?? lastAttempt?.upstreamProtocol
+  // 上游协议只是尝试级事实：一次请求可能先后走过不同协议的尝试。
+  const upstreamProtocol = lastAttempt?.upstreamProtocol
 
   return (
     <div className="flex items-start gap-3 border-b border-border px-4 py-3 last:border-b-0">
@@ -34,7 +35,7 @@ export function RequestRow(props: RequestRowProps) {
             {STATUS_LABEL[log.status] ?? log.status}
           </Badge>
           <span className="text-muted-foreground">
-            {PROTOCOL_LABEL[log.clientProtocol] ?? log.clientProtocol}
+            {log.clientProtocol === null ? '未识别' : PROTOCOL_LABEL[log.clientProtocol] ?? log.clientProtocol}
             {upstreamProtocol && upstreamProtocol !== log.clientProtocol && (
               <>
                 {' '}

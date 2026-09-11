@@ -231,9 +231,10 @@ one-switch/
 - 提供数据库实例（`getDb`）
 
 **`schema.ts`** — Drizzle 表定义
-- 新版本 v0.3 16 张核心表（包含 `request_usages`）的 `sqliteTable` 定义；其中 `scheduling_policies` 是 LogicalModel-ProviderModel 调度绑定表；这是实施目标，不代表当前源码已完成迁移。
+、- 新版本 v0.3 核心表的 `sqliteTable` 定义，观测侧包含 `request_logs`、`request_attributes`、`request_usages`、`attempt_usages`、`request_attempts`、`request_contents`、`attempt_contents`、`runtime_logs`；其中 `scheduling_policies` 是 LogicalModel-ProviderModel 调度绑定表。
 - `settings` 按命名空间 key 逐项保存全局配置，标量按类型保存，数组/对象才使用 JSON 编码
-- `request_contents` 独立保存可选的请求/响应正文，避免大字段影响日志列表查询
+- `request_contents` 与 `attempt_contents` 按视角分别保存可选的客户端正文和上游正文，避免大字段影响日志列表查询
+- 用量按视角拆为 `request_usages`（`(requestId, type)`）与 `attempt_usages`（`(attemptId, type)`）；不单独建协议转换表，转换由两侧协议对比得出
 - 从表定义推导行类型（`$inferSelect`）
 
 **`*-store.ts`** — 按领域拆分的数据访问层

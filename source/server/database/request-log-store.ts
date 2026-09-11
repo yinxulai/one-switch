@@ -1,32 +1,118 @@
-import { and, desc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray, lt, min, sql } from 'drizzle-orm'
 import type {
+  AttemptContent,
+  AttemptStatus,
+  Protocol,
   RawUsage,
   RequestAttempt,
   RequestAttribute,
-  RequestAttributeValueType,
   RequestContent,
   RequestContentCaptureStatus,
-  RequestConversion,
   RequestLog,
   RequestLogUpdate,
   RequestStatus,
 } from '@common/schemas'
+import { AttemptStatusSchema, ProtocolSchema, RequestContentCaptureStatusSchema, RequestStatusSchema } from '@common/schemas'
 import { generateId, now } from '@common/utils'
 import { getDb } from './index'
-import { requestAttributes, requestAttempts, requestContents, requestConversions, requestLogs, requestMetrics, requestUsages } from './schema'
+import { attemptContents, attemptUsages, requestAttributes, requestAttempts, requestContents, requestLogs, requestUsages } from './schema'
 
-type CreateRequestLogInput = Omit<RequestLog, 'id' | 'createdTime' | 'reasoningTokens'> & { id?: string; reasoningTokens?: number | null; attributes?: Array<Omit<RequestAttribute, 'requestId' | 'createdTime'>> }
+/**
+ * 新建请求日志的入参。
+ *
+ * 只有「请求身份 + 请求级结果」，没有任何用量字段：请求级用量的唯一写入点是
+ * {@link recordAttemptUsage}（服务该请求的那次尝试落库时镜像过来）。
+ */
+interface CreateRequestLogInput {
+  id?: string
+  logicalModelId: string | null
+  clientProtocol: Protocol | null
+  /** 客户端是否要求流式响应。 */
+  streaming: boolean
+  status: RequestStatus
+  totalDurationMilliseconds?: number
+  attributes?: Array<Omit<RequestAttribute, 'requestId' | 'createdTime'>>
+}
 
-export interface RequestUsageSnapshot {
-  requestId: string
-  attemptId: string | null
+/** 用量数值。请求级与尝试级共用同一形状，只是存在不同的表里。 */
+export interface UsageValues {
   inputTokens: number | null
   outputTokens: number | null
-  totalTokens: number | null
   cachedInputTokens: number | null
   cacheCreationInputTokens: number | null
-  reasoningTokens?: number | null
+  reasoningTokens: number | null
+  /** 上游返回的原始 usage 报文（原样保存）；未返回时为 `null`。 */
   rawUsage: RawUsage | null
+}
+
+/** 对外暴露的用量：在 {@link UsageValues} 之上补一个派生字段。 */
+export interface RequestUsageValues extends UsageValues {
+  /**
+   * 派生值：`inputTokens + outputTokens`。
+   *
+   * 不落库：上游给的 `total_tokens` 有时与两个分量对不上，再存一份就会出现
+   * 「总量 ≠ 明细之和」的第三个数。两个分量都拿到时才有值，否则为 `null`。
+   */
+  totalTokens: number | null
+}
+
+/** 用量表中以数值保存的类型。`raw` 不在其中——原始报文不是数值。 */
+const USAGE_NUMERIC_TYPES = ['inputTokens', 'outputTokens', 'cachedInputTokens', 'cacheCreationInputTokens', 'reasoningTokens'] as const
+
+/** 用量表中承载原始 usage 报文的类型标记。 */
+const RAW_USAGE_TYPE = 'raw'
+
+/**
+ * 用量表的一行：类型 + 数值 / 原始报文，两者互斥（由表的 CHECK 约束保证）。
+ *
+ * `type` 按字符串收窄：写入侧取自上面两个字面量，读取侧由 SQLite 回传字符串，
+ * 两边用同一形状才能让「写入即读出」这条闭环不用任何断言。
+ */
+type UsageRow = { type: string; value: number | null; rawValue: string | null }
+
+/** 尝试级用量写入入参。归属由 `attemptId` 唯一确定。 */
+export interface AttemptUsageWriteInput extends UsageValues {
+  attemptId: string
+  /**
+   * 这次尝试是否就是「服务该请求」的那次尝试。
+   *
+   * 为真时同一事务里把同一组数值镜像成请求级用量：请求级用量因此没有独立写入点，
+   * 不可能与尝试级数据漂移。
+   */
+  servesRequest: boolean
+}
+
+const EMPTY_USAGE_VALUES: UsageValues = { inputTokens: null, outputTokens: null, cachedInputTokens: null, cacheCreationInputTokens: null, reasoningTokens: null, rawUsage: null }
+
+/** 把用量数值摊成用量表的行：每种数值类型一行，原始报文另占一行。 */
+function usageRows(values: UsageValues): UsageRow[] {
+  const rows: UsageRow[] = USAGE_NUMERIC_TYPES.flatMap(type => {
+    const value = values[type]
+    return value == null ? [] : [{ type, value, rawValue: null }]
+  })
+  const rawValue = serializeRawUsage(values.rawUsage)
+  if (rawValue !== null) rows.push({ type: RAW_USAGE_TYPE, value: null, rawValue })
+  return rows
+}
+
+/** 把用量表的行收成用量数值。 */
+function usageValues(rows: UsageRow[]): UsageValues {
+  const byType = new Map(rows.map(row => [row.type, row]))
+  const numeric = (type: (typeof USAGE_NUMERIC_TYPES)[number]): number | null => byType.get(type)?.value ?? null
+  return {
+    inputTokens: numeric('inputTokens'),
+    outputTokens: numeric('outputTokens'),
+    cachedInputTokens: numeric('cachedInputTokens'),
+    cacheCreationInputTokens: numeric('cacheCreationInputTokens'),
+    reasoningTokens: numeric('reasoningTokens'),
+    rawUsage: parseRawUsage(byType.get(RAW_USAGE_TYPE)?.rawValue),
+  }
+}
+
+/** `totalTokens` 是派生值：两个分量都拿到才给数。 */
+function totalTokensOf(values: UsageValues): number | null {
+  const { inputTokens, outputTokens } = values
+  return inputTokens === null || outputTokens === null ? null : inputTokens + outputTokens
 }
 
 export interface RequestLogFilter {
@@ -42,50 +128,42 @@ export interface RequestLogFilter {
 export async function createRequestLog(input: CreateRequestLogInput): Promise<RequestLog> {
   const id = input.id ?? generateId('req_')
   const time = now()
-  getDb().insert(requestLogs).values({ id, logicalModelId: input.logicalModelId, clientProtocol: input.clientProtocol, upstreamProtocol: input.upstreamProtocol ?? null, status: input.status, metadata: null, createdTime: time }).run()
-  const metricValues: Array<typeof requestMetrics.$inferInsert> = []
-  if (input.totalDurationMilliseconds != null) metricValues.push({ requestId: id, key: 'durationMilliseconds', value: input.totalDurationMilliseconds, unit: 'milliseconds', updatedTime: time })
-  if (input.ttftMilliseconds != null) metricValues.push({ requestId: id, key: 'ttftMilliseconds', value: input.ttftMilliseconds, unit: 'milliseconds', updatedTime: time })
-  if (input.promptCacheHit != null) metricValues.push({ requestId: id, key: 'promptCacheHit', value: input.promptCacheHit ? 1 : 0, unit: 'boolean', updatedTime: time })
-  if (input.cacheHit != null) metricValues.push({ requestId: id, key: 'cacheHit', value: input.cacheHit ? 1 : 0, unit: 'boolean', updatedTime: time })
-  if (metricValues.length > 0) getDb().insert(requestMetrics).values(metricValues).run()
+  const totalDurationMilliseconds = input.totalDurationMilliseconds ?? 0
+  getDb().insert(requestLogs).values({
+    id,
+    logicalModelId: input.logicalModelId,
+    clientProtocol: input.clientProtocol,
+    streaming: input.streaming,
+    status: input.status,
+    totalDurationMilliseconds,
+    createdTime: time,
+  }).run()
   if (input.attributes && input.attributes.length > 0) {
     getDb().insert(requestAttributes).values(input.attributes.map(attribute => ({ ...attribute, requestId: id, createdTime: time }))).run()
   }
-  await replaceRequestUsage({
-    requestId: id,
-    attemptId: null,
-    inputTokens: input.inputTokens ?? null,
-    outputTokens: input.outputTokens ?? null,
-    reasoningTokens: input.reasoningTokens ?? null,
-    totalTokens: input.totalTokens ?? null,
-    cachedInputTokens: input.cachedInputTokens ?? null,
-    cacheCreationInputTokens: input.cacheCreationInputTokens ?? null,
-    rawUsage: input.rawUsage ?? null,
-  })
   return {
     id,
     logicalModelId: input.logicalModelId,
     clientProtocol: input.clientProtocol,
-    upstreamProtocol: input.upstreamProtocol ?? null,
+    streaming: input.streaming,
     status: input.status,
-    totalDurationMilliseconds: input.totalDurationMilliseconds,
-    totalTokens: input.totalTokens ?? null,
-    inputTokens: input.inputTokens ?? null,
-    outputTokens: input.outputTokens ?? null,
-    reasoningTokens: input.reasoningTokens ?? null,
-    cachedInputTokens: input.cachedInputTokens ?? null,
-    cacheCreationInputTokens: input.cacheCreationInputTokens ?? null,
-    promptCacheHit: input.promptCacheHit ?? null,
-    rawUsage: input.rawUsage ?? null,
-    ttftMilliseconds: input.ttftMilliseconds ?? null,
-    cacheHit: input.cacheHit ?? null,
+    totalDurationMilliseconds,
+    // 刚建立的请求还没有任何尝试，用量与 TTFT 都只能是「还不知道」。
+    totalTokens: null,
+    inputTokens: null,
+    outputTokens: null,
+    reasoningTokens: null,
+    cachedInputTokens: null,
+    cacheCreationInputTokens: null,
+    promptCacheHit: null,
+    rawUsage: null,
+    ttftMilliseconds: null,
     createdTime: time,
   }
 }
 
 export async function listRequestAttributes(requestId: string): Promise<RequestAttribute[]> {
-  return getDb().select().from(requestAttributes).where(eq(requestAttributes.requestId, requestId)).orderBy(requestAttributes.key).all().map(row => ({ ...row, valueType: row.valueType as RequestAttributeValueType, createdTime: Number(row.createdTime) }))
+  return getDb().select().from(requestAttributes).where(eq(requestAttributes.requestId, requestId)).orderBy(requestAttributes.key).all().map(row => ({ ...row, createdTime: Number(row.createdTime) }))
 }
 
 export async function replaceRequestAttributes(requestId: string, attributes: Array<Omit<RequestAttribute, 'requestId' | 'createdTime'>>): Promise<void> {
@@ -96,96 +174,65 @@ export async function replaceRequestAttributes(requestId: string, attributes: Ar
   })
 }
 
-export async function replaceRequestUsage(input: RequestUsageSnapshot): Promise<void> {
+/**
+ * 写入一次尝试的用量。
+ *
+ * 归属由 `attemptId` 唯一确定。当这次尝试就是「服务该请求」的那次尝试时，
+ * 同一事务里把同一组数值镜像到 `request_usages`：请求级用量因此没有独立的
+ * 写入点，也就不可能出现第二份会漂移的数字。
+ *
+ * 请求归属不从参数传入，而是从 `request_attempts.requestId` 读——归属关系只有一处。
+ */
+export async function recordAttemptUsage(input: AttemptUsageWriteInput): Promise<void> {
   const time = now()
-  const scope = input.attemptId === null
-    ? and(eq(requestUsages.requestId, input.requestId), isNull(requestUsages.attemptId))
-    : and(eq(requestUsages.requestId, input.requestId), eq(requestUsages.attemptId, input.attemptId))
-  const values: Array<{ type: string; value: number; unit: string; rawValue?: string | null }> = []
-  const tokenValues: Array<readonly [string, number | null]> = [
-    ['inputTokens', input.inputTokens],
-    ['outputTokens', input.outputTokens],
-    ['reasoningTokens', input.reasoningTokens ?? null],
-    ['totalTokens', input.totalTokens],
-    ['cachedInputTokens', input.cachedInputTokens],
-    ['cacheCreationInputTokens', input.cacheCreationInputTokens],
-  ]
-  for (const [type, value] of tokenValues) {
-    if (value != null) values.push({ type, value, unit: 'tokens' })
-  }
-  if (input.rawUsage !== null) values.push({ type: 'raw', value: 0, unit: 'string', rawValue: serializeRawUsage(input.rawUsage) })
+  const rows = usageRows(input)
   getDb().transaction(transaction => {
-    transaction.delete(requestUsages).where(scope).run()
-    if (values.length > 0) transaction.insert(requestUsages).values(values.map(value => ({ id: generateId('usage_'), requestId: input.requestId, attemptId: input.attemptId, ...value, createdTime: time }))).run()
+    transaction.delete(attemptUsages).where(eq(attemptUsages.attemptId, input.attemptId)).run()
+    if (rows.length > 0) transaction.insert(attemptUsages).values(rows.map(row => ({ attemptId: input.attemptId, ...row, createdTime: time }))).run()
+    if (!input.servesRequest) return
+    const attempt = transaction.select({ requestId: requestAttempts.requestId }).from(requestAttempts).where(eq(requestAttempts.id, input.attemptId)).get()
+    if (!attempt) return
+    transaction.delete(requestUsages).where(eq(requestUsages.requestId, attempt.requestId)).run()
+    if (rows.length > 0) transaction.insert(requestUsages).values(rows.map(row => ({ requestId: attempt.requestId, ...row, createdTime: time }))).run()
   })
 }
 
-export async function listRequestUsages(requestId: string): Promise<RequestUsageSnapshot[]> {
-  const rows = getDb().select().from(requestUsages).where(eq(requestUsages.requestId, requestId)).all()
-  const scopes = new Map<string, typeof rows>()
-  for (const row of rows) scopes.set(row.attemptId ?? 'request', [...(scopes.get(row.attemptId ?? 'request') ?? []), row])
-  return [...scopes.entries()].map(([key, usages]) => {
-    const value = (type: string) => usages.find(usage => usage.type === type)?.value ?? null
-    return {
-      requestId,
-      attemptId: key === 'request' ? null : key,
-      inputTokens: value('inputTokens'),
-      outputTokens: value('outputTokens'),
-      reasoningTokens: value('reasoningTokens'),
-      totalTokens: value('totalTokens'),
-      cachedInputTokens: value('cachedInputTokens'),
-      cacheCreationInputTokens: value('cacheCreationInputTokens'),
-      rawUsage: parseRawUsage(usages.find(usage => usage.type === 'raw')?.rawValue),
-    }
-  })
+export async function getRequestUsage(requestId: string): Promise<RequestUsageValues> {
+  const rows = getDb().select({ type: requestUsages.type, value: requestUsages.value, rawValue: requestUsages.rawValue }).from(requestUsages).where(eq(requestUsages.requestId, requestId)).all()
+  const values = usageValues(rows)
+  return { ...values, totalTokens: totalTokensOf(values) }
 }
 
+export async function getAttemptUsage(attemptId: string): Promise<RequestUsageValues> {
+  const rows = getDb().select({ type: attemptUsages.type, value: attemptUsages.value, rawValue: attemptUsages.rawValue }).from(attemptUsages).where(eq(attemptUsages.attemptId, attemptId)).all()
+  const values = usageValues(rows)
+  return { ...values, totalTokens: totalTokensOf(values) }
+}
+
+/**
+ * 更新请求级结果：状态与总耗时。
+ *
+ * 用量不在这里写——它由 `recordAttemptUsage` 在服务该请求的那次尝试落库时写入。
+ */
 export async function updateRequestLogStatus(id: string, update: RequestLogUpdate): Promise<void> {
-  const time = now()
-  getDb().transaction(transaction => {
-    const logUpdates: Partial<typeof requestLogs.$inferInsert> = {}
-    if (update.status !== undefined) logUpdates.status = update.status
-    if (update.upstreamProtocol !== undefined) logUpdates.upstreamProtocol = update.upstreamProtocol
-    if (Object.keys(logUpdates).length > 0) transaction.update(requestLogs).set(logUpdates).where(eq(requestLogs.id, id)).run()
-    const metrics: Array<{ key: string; value: number; unit: string }> = []
-    if (update.totalDurationMilliseconds !== undefined) metrics.push({ key: 'durationMilliseconds', value: update.totalDurationMilliseconds, unit: 'milliseconds' })
-    for (const [field, key, unit] of [['ttftMilliseconds', 'ttftMilliseconds', 'milliseconds']] as const) {
-      const value = update[field]
-      if (value === null) transaction.delete(requestMetrics).where(and(eq(requestMetrics.requestId, id), eq(requestMetrics.key, key))).run()
-      else if (value !== undefined) metrics.push({ key, value, unit })
-    }
-    for (const [field, key] of [['promptCacheHit', 'promptCacheHit'], ['cacheHit', 'cacheHit']] as const) {
-      const value = update[field]
-      if (value === null) transaction.delete(requestMetrics).where(and(eq(requestMetrics.requestId, id), eq(requestMetrics.key, key))).run()
-      else if (value !== undefined) metrics.push({ key, value: value ? 1 : 0, unit: 'boolean' })
-    }
-    for (const metric of metrics) transaction.insert(requestMetrics).values({ requestId: id, ...metric, updatedTime: time }).onConflictDoUpdate({ target: [requestMetrics.requestId, requestMetrics.key], set: { value: metric.value, unit: metric.unit, updatedTime: time } }).run()
-    const requestScope = and(eq(requestUsages.requestId, id), isNull(requestUsages.attemptId))
-    for (const [field, type] of [['inputTokens', 'inputTokens'], ['outputTokens', 'outputTokens'], ['totalTokens', 'totalTokens'], ['cachedInputTokens', 'cachedInputTokens'], ['cacheCreationInputTokens', 'cacheCreationInputTokens'], ['reasoningTokens', 'reasoningTokens']] as const) {
-      const value = update[field]
-      if (value === null) transaction.delete(requestUsages).where(and(requestScope, eq(requestUsages.type, type))).run()
-      else if (value !== undefined) {
-        transaction.delete(requestUsages).where(and(requestScope, eq(requestUsages.type, type))).run()
-        transaction.insert(requestUsages).values({ id: generateId('usage_'), requestId: id, attemptId: null, type, value, unit: 'tokens', createdTime: time }).run()
-      }
-    }
-    if (update.rawUsage !== undefined) {
-      transaction.delete(requestUsages).where(and(requestScope, eq(requestUsages.type, 'raw'))).run()
-      if (update.rawUsage !== null) transaction.insert(requestUsages).values({ id: generateId('usage_'), requestId: id, attemptId: null, type: 'raw', value: 0, unit: 'string', rawValue: serializeRawUsage(update.rawUsage), createdTime: time }).run()
-    }
-  })
+  const fields: Partial<typeof requestLogs.$inferInsert> = {}
+  if (update.status !== undefined) fields.status = update.status
+  if (update.totalDurationMilliseconds !== undefined) fields.totalDurationMilliseconds = update.totalDurationMilliseconds
+  if (Object.keys(fields).length === 0) return
+  getDb().update(requestLogs).set(fields).where(eq(requestLogs.id, id)).run()
 }
 
 export async function listRequestLogs(limit = 50, offset = 0, filter?: RequestLogFilter): Promise<RequestLog[]> {
   const conditions = requestLogFilterConditions(filter)
-  return getDb().select().from(requestLogs)
+  const rows = getDb().select().from(requestLogs)
     .where(conditions.length > 0 ? and(...conditions) : undefined)
-    .orderBy(desc(requestLogs.createdTime)).limit(limit).offset(offset).all().map(mapRequestLog)
+    .orderBy(desc(requestLogs.createdTime)).limit(limit).offset(offset).all()
+  return mapRequestLogs(rows)
 }
 
 export async function getRequestLog(id: string): Promise<RequestLog | null> {
   const row = getDb().select().from(requestLogs).where(eq(requestLogs.id, id)).get()
-  return row ? mapRequestLog(row) : null
+  return row ? mapRequestLogs([row])[0] ?? null : null
 }
 
 export async function countRequestLogs(filter?: RequestLogFilter): Promise<number> {
@@ -202,25 +249,50 @@ export async function pruneRequestLogsBefore(retentionDays: number): Promise<num
   return pruneRequestLogsInternal(retentionDays)
 }
 
-type CreateRequestAttemptInput = Omit<RequestAttempt, 'id' | 'createdTime' | 'errorCode' | 'errorMessage'> & Partial<Pick<RequestAttempt, 'errorCode' | 'errorMessage'>>
+type CreateRequestAttemptInput = Omit<RequestAttempt, 'id' | 'createdTime' | 'errorCode' | 'errorMessage' | 'requestRewriteRuleIds' | 'responseRewriteRuleIds' | 'ttftMilliseconds'> & Partial<Pick<RequestAttempt, 'errorCode' | 'errorMessage' | 'requestRewriteRuleIds' | 'responseRewriteRuleIds' | 'ttftMilliseconds'>>
 
-export async function createRequestAttempt(input: CreateRequestAttemptInput): Promise<RequestAttempt> {
-  const id = generateId('att_')
-  const time = now()
-  const attempt = { id, ...input, errorCode: input.errorCode ?? null, errorMessage: input.errorMessage ?? null, createdTime: time }
-  getDb().insert(requestAttempts).values(attempt).run()
-  return attempt
+/**
+ * 写入一次尝试。
+ *
+ * 返回 `null` 表示这次尝试已经落库——取消竞态下，「上游正常结束」与「客户端断开」
+ * 两条路径会先后写同一个 `(requestId, attemptIndex)`，唯一索引会拦住后到的那次。
+ * 把冲突变成显式信号而不是静默吞掉的异常：后到的路径携带的是更弱的「取消」事实，
+ * 不该覆盖已经落库的结果（尤其是它的用量与正文）。
+ */
+export async function createRequestAttempt(input: CreateRequestAttemptInput): Promise<RequestAttempt | null> {
+  const attempt: RequestAttempt = {
+    ...input,
+    id: generateId('att_'),
+    errorCode: input.errorCode ?? null,
+    errorMessage: input.errorMessage ?? null,
+    ttftMilliseconds: input.ttftMilliseconds ?? null,
+    requestRewriteRuleIds: input.requestRewriteRuleIds ?? [],
+    responseRewriteRuleIds: input.responseRewriteRuleIds ?? [],
+    createdTime: now(),
+  }
+  const inserted = getDb().insert(requestAttempts).values({
+    ...attempt,
+    requestRewriteRuleIds: JSON.stringify(attempt.requestRewriteRuleIds),
+    responseRewriteRuleIds: JSON.stringify(attempt.responseRewriteRuleIds),
+  // 唯一索引 idx_request_attempts_request_order：(requestId, attemptIndex)
+  }).onConflictDoNothing().returning({ id: requestAttempts.id }).all()
+  return inserted.length > 0 ? attempt : null
 }
 
-type CreateRequestContentInput = Omit<RequestContent, 'id' | 'createdTime' | 'updatedTime' | 'requestRewriteRuleIds' | 'upstreamResponseHeaders' | 'clientResponseHeaders'> & Partial<Pick<RequestContent, 'requestRewriteRuleIds' | 'upstreamResponseHeaders' | 'clientResponseHeaders'>>
-type UpdateRequestContentInput = Partial<Pick<RequestContent, 'captureStatus' | 'responseStatus' | 'responseHeaders' | 'upstreamResponseHeaders' | 'clientResponseHeaders' | 'responseBody'>>
+type CreateRequestContentInput = Omit<RequestContent, 'id' | 'createdTime' | 'updatedTime' | 'responseStatus' | 'responseHeaders' | 'responseBody'> & Partial<Pick<RequestContent, 'responseStatus' | 'responseHeaders' | 'responseBody'>>
+type UpdateRequestContentInput = Partial<Pick<RequestContent, 'captureStatus' | 'responseStatus' | 'responseHeaders' | 'responseBody'>>
 
 export async function createRequestContent(input: CreateRequestContentInput): Promise<RequestContent> {
   const id = generateId('content_')
   const time = now()
-  const content = { ...input, upstreamResponseHeaders: input.upstreamResponseHeaders ?? null, clientResponseHeaders: input.clientResponseHeaders ?? null }
-  getDb().insert(requestContents).values({ id, ...content, requestRewriteRuleIds: JSON.stringify(input.requestRewriteRuleIds ?? []), createdTime: time, updatedTime: time }).run()
-  return { id, ...content, requestRewriteRuleIds: input.requestRewriteRuleIds ?? [], createdTime: time, updatedTime: time }
+  const content = {
+    ...input,
+    responseStatus: input.responseStatus ?? null,
+    responseHeaders: input.responseHeaders ?? null,
+    responseBody: input.responseBody ?? null,
+  }
+  getDb().insert(requestContents).values({ id, ...content, createdTime: time, updatedTime: time }).run()
+  return { id, ...content, createdTime: time, updatedTime: time }
 }
 
 export async function updateRequestContent(id: string, input: UpdateRequestContentInput): Promise<void> {
@@ -231,20 +303,51 @@ export async function listRequestContents(requestId: string): Promise<RequestCon
   return getDb().select().from(requestContents).where(eq(requestContents.requestId, requestId)).orderBy(requestContents.createdTime).all().map(mapRequestContent)
 }
 
-export type CreateRequestConversionInput = Omit<RequestConversion, 'id' | 'createdTime'>
+type CreateAttemptContentInput = Omit<AttemptContent, 'id' | 'createdTime' | 'updatedTime' | 'responseStatus' | 'responseHeaders' | 'responseBody'> & Partial<Pick<AttemptContent, 'responseStatus' | 'responseHeaders' | 'responseBody'>>
+type UpdateAttemptContentInput = Partial<Pick<AttemptContent, 'captureStatus' | 'responseStatus' | 'responseHeaders' | 'responseBody'>>
 
-export async function createRequestConversion(input: CreateRequestConversionInput): Promise<RequestConversion> {
-  const conversion = { id: generateId('conversion_'), ...input, createdTime: now() }
-  getDb().insert(requestConversions).values(conversion).run()
-  return conversion
+export async function createAttemptContent(input: CreateAttemptContentInput): Promise<AttemptContent> {
+  const id = generateId('attempt_content_')
+  const time = now()
+  const content = {
+    ...input,
+    responseStatus: input.responseStatus ?? null,
+    responseHeaders: input.responseHeaders ?? null,
+    responseBody: input.responseBody ?? null,
+  }
+  getDb().insert(attemptContents).values({ id, ...content, createdTime: time, updatedTime: time }).run()
+  return { id, ...content, createdTime: time, updatedTime: time }
 }
 
-export async function listRequestConversions(requestId: string): Promise<RequestConversion[]> {
-  return getDb().select().from(requestConversions).where(eq(requestConversions.requestId, requestId)).orderBy(requestConversions.createdTime).all().map(mapRequestConversion)
+export async function updateAttemptContent(id: string, input: UpdateAttemptContentInput): Promise<void> {
+  getDb().update(attemptContents).set({ ...input, updatedTime: now() }).where(eq(attemptContents.id, id)).run()
+}
+
+/**
+ * 按请求列出上游视角正文。
+ *
+ * `attempt_contents` 不保存 `requestId`，归属由 `request_attempts` 唯一
+ * 持有，因此这里通过 `attemptId` 关联查询，不会出现两份归属不一致。
+ */
+export async function listAttemptContents(requestId: string): Promise<AttemptContent[]> {
+  return getDb()
+    .select({ content: attemptContents })
+    .from(attemptContents)
+    .innerJoin(requestAttempts, eq(attemptContents.attemptId, requestAttempts.id))
+    .where(eq(requestAttempts.requestId, requestId))
+    .orderBy(attemptContents.createdTime)
+    .all()
+    .map(row => mapAttemptContent(row.content))
 }
 
 export async function listAttemptsByRequest(requestId: string): Promise<RequestAttempt[]> {
   return getDb().select().from(requestAttempts).where(eq(requestAttempts.requestId, requestId)).orderBy(requestAttempts.attemptIndex).all().map(mapRequestAttempt)
+}
+
+/** 批量列出一批请求的尝试：列表页一行一次查询会放大成上百次往返。 */
+export async function listAttemptsByRequests(requestIds: string[]): Promise<RequestAttempt[]> {
+  if (requestIds.length === 0) return []
+  return getDb().select().from(requestAttempts).where(inArray(requestAttempts.requestId, requestIds)).orderBy(requestAttempts.requestId, requestAttempts.attemptIndex).all().map(mapRequestAttempt)
 }
 
 function requestLogFilterConditions(filter?: RequestLogFilter) {
@@ -263,58 +366,113 @@ function requestLogFilterConditions(filter?: RequestLogFilter) {
 function pruneRequestLogsInternal(retentionDays: number): number {
   if (!Number.isInteger(retentionDays) || retentionDays < 1) return 0
   const cutoffTime = Date.now() - retentionDays * 24 * 60 * 60 * 1000
+  // 过期集合用子查询表达，而不是把 id 拉回内存再 `IN (...)` 展开：
+  // 既不撞 SQLite 的绑定变量上限，也不随数据量线性膨胀。
+  const staleRequests = sql`(SELECT ${requestLogs.id} FROM ${requestLogs} WHERE ${requestLogs.createdTime} < ${cutoffTime})`
+  const staleAttempts = sql`(SELECT ${requestAttempts.id} FROM ${requestAttempts} WHERE ${requestAttempts.requestId} IN ${staleRequests})`
   return getDb().transaction(transaction => {
-    const staleIds = transaction.select({ id: requestLogs.id }).from(requestLogs).where(lt(requestLogs.createdTime, cutoffTime)).all().map(row => row.id)
-    if (staleIds.length === 0) return 0
-    transaction.delete(requestContents).where(inArray(requestContents.requestId, staleIds)).run()
-    transaction.delete(requestUsages).where(inArray(requestUsages.requestId, staleIds)).run()
-    transaction.delete(requestMetrics).where(inArray(requestMetrics.requestId, staleIds)).run()
-    transaction.delete(requestAttributes).where(inArray(requestAttributes.requestId, staleIds)).run()
-    transaction.delete(requestConversions).where(inArray(requestConversions.requestId, staleIds)).run()
-    transaction.delete(requestAttempts).where(inArray(requestAttempts.requestId, staleIds)).run()
-    transaction.delete(requestLogs).where(inArray(requestLogs.id, staleIds)).run()
-    return staleIds.length
+    const staleCount = Number(transaction.select({ count: sql<number>`count(*)` }).from(requestLogs).where(lt(requestLogs.createdTime, cutoffTime)).get()?.count ?? 0)
+    if (staleCount === 0) return 0
+    // 先按外键倒序删子表，再删父表。
+    transaction.delete(attemptContents).where(sql`${attemptContents.attemptId} IN ${staleAttempts}`).run()
+    transaction.delete(attemptUsages).where(sql`${attemptUsages.attemptId} IN ${staleAttempts}`).run()
+    transaction.delete(requestContents).where(sql`${requestContents.requestId} IN ${staleRequests}`).run()
+    transaction.delete(requestUsages).where(sql`${requestUsages.requestId} IN ${staleRequests}`).run()
+    transaction.delete(requestAttributes).where(sql`${requestAttributes.requestId} IN ${staleRequests}`).run()
+    transaction.delete(requestAttempts).where(sql`${requestAttempts.requestId} IN ${staleRequests}`).run()
+    transaction.delete(requestLogs).where(sql`${requestLogs.id} IN ${staleRequests}`).run()
+    return staleCount
   })
 }
 
-function serializeRawUsage(rawUsage: RequestLog['rawUsage'] | undefined): string | null {
+function serializeRawUsage(rawUsage: RawUsage | null | undefined): string | null {
   return rawUsage == null ? null : JSON.stringify(rawUsage)
 }
 
-function parseRawUsage(rawUsage: string | null | undefined): RequestLog['rawUsage'] {
+function parseRawUsage(rawUsage: string | null | undefined): RawUsage | null {
   if (!rawUsage) return null
   try {
-    const parsed = JSON.parse(rawUsage)
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as RequestLog['rawUsage'] : null
+    const parsed = JSON.parse(rawUsage) as unknown
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as RawUsage : null
   } catch {
     return null
   }
 }
 
-function mapRequestLog(row: typeof requestLogs.$inferSelect): RequestLog {
-  const metrics = new Map(getDb().select().from(requestMetrics).where(eq(requestMetrics.requestId, row.id)).all().map(metric => [metric.key, metric]))
-  const usages = getDb().select().from(requestUsages).where(and(eq(requestUsages.requestId, row.id), isNull(requestUsages.attemptId))).all()
-  const usageValue = (type: string) => usages.find(usage => usage.type === type)?.value ?? null
-  const metricValue = (key: string) => metrics.get(key)?.value ?? null
-  return {
-    id: row.id,
-    logicalModelId: row.logicalModelId,
-    clientProtocol: row.clientProtocol as RequestLog['clientProtocol'],
-    upstreamProtocol: row.upstreamProtocol as RequestLog['upstreamProtocol'],
-    status: row.status as RequestStatus,
-    totalDurationMilliseconds: Number(metricValue('durationMilliseconds') ?? 0),
-    totalTokens: usageValue('totalTokens'),
-    inputTokens: usageValue('inputTokens'),
-    reasoningTokens: usageValue('reasoningTokens'),
-    outputTokens: usageValue('outputTokens'),
-    cachedInputTokens: usageValue('cachedInputTokens'),
-    cacheCreationInputTokens: usageValue('cacheCreationInputTokens'),
-    promptCacheHit: metricValue('promptCacheHit') == null ? null : metricValue('promptCacheHit') === 1,
-    rawUsage: parseRawUsage(usages.find(usage => usage.type === 'raw')?.rawValue),
-    ttftMilliseconds: metricValue('ttftMilliseconds'),
-    cacheHit: metricValue('cacheHit') == null ? null : metricValue('cacheHit') === 1,
-    createdTime: Number(row.createdTime),
+// 读侧不使用 `as` 强转：数据库里的字符串可能来自更早的版本，先用 schema 校验，
+// 失败时回退到保守值，而不是把错误类型静默带到上层。
+function parseCaptureStatus(value: string): RequestContentCaptureStatus {
+  const parsed = RequestContentCaptureStatusSchema.safeParse(value)
+  return parsed.success ? parsed.data : 'partial'
+}
+
+function parseRequestStatus(value: string): RequestStatus {
+  const parsed = RequestStatusSchema.safeParse(value)
+  return parsed.success ? parsed.data : 'failed'
+}
+
+function parseAttemptStatus(value: string): AttemptStatus {
+  const parsed = AttemptStatusSchema.safeParse(value)
+  return parsed.success ? parsed.data : 'failed'
+}
+
+function parseProtocol(value: string | null): Protocol | null {
+  if (value === null) return null
+  const parsed = ProtocolSchema.safeParse(value)
+  return parsed.success ? parsed.data : null
+}
+
+/**
+ * 批量把请求行映射成契约对象。
+ *
+ * 用量与 TTFT 都是**派生视图**，不是存储事实：
+ * - 用量事实属于「尝试」，这里读的是服务该请求的那次尝试镜像过来的行；
+ * - 首字延迟的归属单位也是「尝试」，取最小值表达「这个请求多久拿到了第一个 token」。
+ *
+ * 两个派生字段各自一批只查一次：列表页有 50 行时逐行查询会放大成上百次数据库往返。
+ */
+function mapRequestLogs(rows: Array<typeof requestLogs.$inferSelect>): RequestLog[] {
+  if (rows.length === 0) return []
+  const ids = rows.map(row => row.id)
+  const usageByRequest = new Map<string, UsageValues>()
+  const usageRows = getDb().select({ requestId: requestUsages.requestId, type: requestUsages.type, value: requestUsages.value, rawValue: requestUsages.rawValue }).from(requestUsages).where(inArray(requestUsages.requestId, ids)).all()
+  for (const [requestId, group] of groupBy(usageRows, row => row.requestId)) usageByRequest.set(requestId, usageValues(group))
+  const ttftByRequest = new Map<string, number | null>()
+  const ttftRows = getDb().select({ requestId: requestAttempts.requestId, value: min(requestAttempts.ttftMilliseconds) }).from(requestAttempts).where(inArray(requestAttempts.requestId, ids)).groupBy(requestAttempts.requestId).all()
+  for (const row of ttftRows) ttftByRequest.set(row.requestId, row.value == null ? null : Number(row.value))
+  return rows.map(row => {
+    const usage = usageByRequest.get(row.id) ?? EMPTY_USAGE_VALUES
+    return {
+      id: row.id,
+      logicalModelId: row.logicalModelId,
+      clientProtocol: parseProtocol(row.clientProtocol),
+      streaming: row.streaming,
+      status: parseRequestStatus(row.status),
+      totalDurationMilliseconds: Number(row.totalDurationMilliseconds),
+      totalTokens: totalTokensOf(usage),
+      inputTokens: usage.inputTokens,
+      reasoningTokens: usage.reasoningTokens,
+      outputTokens: usage.outputTokens,
+      cachedInputTokens: usage.cachedInputTokens,
+      cacheCreationInputTokens: usage.cacheCreationInputTokens,
+      // 是否命中缓存是派生判断：拿到了缓存输入 token 就是命中；没拿到就不下结论。
+      promptCacheHit: usage.cachedInputTokens === null ? null : usage.cachedInputTokens > 0,
+      rawUsage: usage.rawUsage,
+      ttftMilliseconds: ttftByRequest.get(row.id) ?? null,
+      createdTime: Number(row.createdTime),
+    }
+  })
+}
+
+function groupBy<T>(items: T[], keyOf: (item: T) => string): Map<string, T[]> {
+  const groups = new Map<string, T[]>()
+  for (const item of items) {
+    const key = keyOf(item)
+    const bucket = groups.get(key)
+    if (bucket) bucket.push(item)
+    else groups.set(key, [item])
   }
+  return groups
 }
 
 function mapRequestAttempt(row: typeof requestAttempts.$inferSelect): RequestAttempt {
@@ -325,35 +483,20 @@ function mapRequestAttempt(row: typeof requestAttempts.$inferSelect): RequestAtt
     providerModelId: row.providerModelId,
     providerName: row.providerName,
     providerModelName: row.providerModelName,
-    upstreamProtocol: row.upstreamProtocol as RequestAttempt['upstreamProtocol'],
+    upstreamProtocol: parseProtocol(row.upstreamProtocol),
     upstreamRequestId: row.upstreamRequestId,
     url: row.url,
     attemptIndex: row.attemptIndex,
-    status: row.status as RequestStatus,
+    status: parseAttemptStatus(row.status),
     httpStatus: row.httpStatus,
     retryable: row.retryable,
+    streaming: row.streaming,
     errorCode: row.errorCode,
     errorMessage: row.errorMessage,
     durationMilliseconds: row.durationMilliseconds,
-    createdTime: Number(row.createdTime),
-  }
-}
-
-function mapRequestConversion(row: typeof requestConversions.$inferSelect): RequestConversion {
-  return {
-    id: row.id,
-    requestId: row.requestId,
-    attemptId: row.attemptId,
-    clientProtocol: row.clientProtocol as RequestConversion['clientProtocol'],
-    upstreamProtocol: row.upstreamProtocol as RequestConversion['upstreamProtocol'],
-    clientRequestHeaders: row.clientRequestHeaders,
-    upstreamRequestHeaders: row.upstreamRequestHeaders,
-    upstreamResponseHeaders: row.upstreamResponseHeaders,
-    clientResponseHeaders: row.clientResponseHeaders,
-    requestBody: row.requestBody,
-    responseBody: row.responseBody,
-    streaming: row.streaming,
-    durationMilliseconds: row.durationMilliseconds,
+    ttftMilliseconds: row.ttftMilliseconds,
+    requestRewriteRuleIds: parseStringArray(row.requestRewriteRuleIds),
+    responseRewriteRuleIds: parseStringArray(row.responseRewriteRuleIds),
     createdTime: Number(row.createdTime),
   }
 }
@@ -371,18 +514,29 @@ function mapRequestContent(row: typeof requestContents.$inferSelect): RequestCon
   return {
     id: row.id,
     requestId: row.requestId,
-    attemptId: row.attemptId,
-    captureStatus: row.captureStatus as RequestContentCaptureStatus,
+    captureStatus: parseCaptureStatus(row.captureStatus),
     requestMethod: row.requestMethod,
     requestPath: row.requestPath,
     requestHeaders: row.requestHeaders,
     requestBody: row.requestBody,
     responseStatus: row.responseStatus,
     responseHeaders: row.responseHeaders,
-    upstreamResponseHeaders: row.upstreamResponseHeaders,
-    clientResponseHeaders: row.clientResponseHeaders,
     responseBody: row.responseBody,
-    requestRewriteRuleIds: row.requestRewriteRuleIds ? parseStringArray(row.requestRewriteRuleIds) : [],
+    createdTime: row.createdTime,
+    updatedTime: row.updatedTime,
+  }
+}
+
+function mapAttemptContent(row: typeof attemptContents.$inferSelect): AttemptContent {
+  return {
+    id: row.id,
+    attemptId: row.attemptId,
+    captureStatus: parseCaptureStatus(row.captureStatus),
+    requestHeaders: row.requestHeaders,
+    requestBody: row.requestBody,
+    responseStatus: row.responseStatus,
+    responseHeaders: row.responseHeaders,
+    responseBody: row.responseBody,
     createdTime: row.createdTime,
     updatedTime: row.updatedTime,
   }

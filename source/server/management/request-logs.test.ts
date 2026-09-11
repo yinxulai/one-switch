@@ -4,25 +4,30 @@ import path from 'node:path'
 import type { ServerResponse } from 'node:http'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { closeDatabase, initDatabase } from '../database'
+import { TEST_DATABASE_FILE_NAME } from '../database/test-support'
 import { createProvider } from '@server/database/provider-store'
-import { createRequestAttempt, createRequestContent, createRequestLog } from '@server/database/request-log-store'
+import { createAttemptContent, createRequestAttempt, createRequestContent, createRequestLog } from '@server/database/request-log-store'
 import { createRequestRewriteRule, deleteRequestRewriteRule } from '@server/database/request-rewrite-rule-store'
 import { requestLogRoutes } from './routes/observability/request-logs'
-
-function mockResponse() {
-  return { setHeader: vi.fn(), end: vi.fn() } as unknown as ServerResponse
-}
+import { mockResponse } from './test-support'
 
 function responseData(res: ServerResponse): unknown {
   const body = vi.mocked(res.end).mock.calls[0]?.[0]
   return JSON.parse(String(body))
 }
 
+/** 同一请求的同一次序号只能落一行，冲突时 store 返回 `null`。 */
+async function createAttemptOrThrow(input: Parameters<typeof createRequestAttempt>[0]) {
+  const attempt = await createRequestAttempt(input)
+  if (!attempt) throw new Error('expected attempt to be created')
+  return attempt
+}
+
 let temporaryDirectory: string
 
 beforeEach(async () => {
   temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-request-log-'))
-  await initDatabase(temporaryDirectory)
+  await initDatabase(temporaryDirectory, TEST_DATABASE_FILE_NAME)
 })
 
 afterEach(async () => {
@@ -37,38 +42,20 @@ describe('request log management', () => {
       id: 'req_model_match',
       logicalModelId: 'default',
       clientProtocol: 'openai-responses',
-      upstreamProtocol: null,
+      streaming: false,
       status: 'success',
       totalDurationMilliseconds: 10,
-      totalTokens: null,
-      inputTokens: null,
-      outputTokens: null,
-      cachedInputTokens: null,
-      cacheCreationInputTokens: null,
-      promptCacheHit: null,
-      rawUsage: null,
-      ttftMilliseconds: null,
-      cacheHit: null,
     })
     const other = await createRequestLog({
       id: 'req_model_other',
       logicalModelId: 'default',
       clientProtocol: 'openai-responses',
-      upstreamProtocol: null,
+      streaming: false,
       status: 'success',
       totalDurationMilliseconds: 10,
-      totalTokens: null,
-      inputTokens: null,
-      outputTokens: null,
-      cachedInputTokens: null,
-      cacheCreationInputTokens: null,
-      promptCacheHit: null,
-      rawUsage: null,
-      ttftMilliseconds: null,
-      cacheHit: null,
     })
 
-    await createRequestAttempt({
+    await createAttemptOrThrow({
       requestId: matched.id,
       providerId: provider.id,
       providerModelId: 'model_match',
@@ -79,11 +66,12 @@ describe('request log management', () => {
       url: 'https://example.com/match',
       httpStatus: 200,
       retryable: false,
+      streaming: false,
       attemptIndex: 0,
       status: 'success',
       durationMilliseconds: 10,
     })
-    await createRequestAttempt({
+    await createAttemptOrThrow({
       requestId: other.id,
       providerId: provider.id,
       providerModelId: 'model_other',
@@ -94,6 +82,7 @@ describe('request log management', () => {
       url: 'https://example.com/other',
       httpStatus: 200,
       retryable: false,
+      streaming: false,
       attemptIndex: 0,
       status: 'success',
       durationMilliseconds: 10,
@@ -118,20 +107,11 @@ describe('request log management', () => {
       id: 'req_detail',
       logicalModelId: 'default',
       clientProtocol: 'openai-responses',
-      upstreamProtocol: null,
+      streaming: true,
       status: 'success',
       totalDurationMilliseconds: 10,
-      totalTokens: null,
-      inputTokens: null,
-      outputTokens: null,
-      cachedInputTokens: null,
-      cacheCreationInputTokens: null,
-      promptCacheHit: null,
-      rawUsage: null,
-      ttftMilliseconds: null,
-      cacheHit: null,
     })
-    const attempt = await createRequestAttempt({
+    const attempt = await createAttemptOrThrow({
       requestId: log.id,
       providerId: provider.id,
       providerModelId: 'model_detail',
@@ -142,6 +122,8 @@ describe('request log management', () => {
       url: 'https://example.com/v1/responses',
       httpStatus: 200,
       retryable: false,
+      streaming: true,
+      ttftMilliseconds: 42,
       attemptIndex: 0,
       status: 'success',
       durationMilliseconds: 10,
@@ -157,18 +139,44 @@ describe('request log management', () => {
       actions: [{ type: 'header-set', stage: 'request', name: 'x-test', value: 'true' }],
       testCases: [],
     })
+    // 规则命中是尝试自身的事实，与是否采集正文无关，因此写在 request_attempts 上。
+    await createAttemptOrThrow({
+      requestId: log.id,
+      providerId: provider.id,
+      providerModelId: 'model_detail_second',
+      providerName: provider.name,
+      providerModelName: 'detail-model-second',
+      upstreamProtocol: 'openai-responses',
+      upstreamRequestId: null,
+      url: 'https://example.com/v1/responses',
+      httpStatus: 200,
+      retryable: false,
+      streaming: false,
+      attemptIndex: 1,
+      status: 'success',
+      durationMilliseconds: 6,
+      requestRewriteRuleIds: [rule.id, 'rule_missing'],
+      responseRewriteRuleIds: ['rule_response'],
+    })
     await createRequestContent({
       requestId: log.id,
-      attemptId: attempt.id,
       captureStatus: 'captured',
       requestMethod: 'POST',
       requestPath: '/v1/responses',
       requestHeaders: '{"authorization":"[REDACTED]"}',
       requestBody: '{"model":"detail-model"}',
       responseStatus: 200,
+      responseHeaders: '{"content-type":"application/json","x-client":"1"}',
+      responseBody: '{"ok":true}',
+    })
+    await createAttemptContent({
+      attemptId: attempt.id,
+      captureStatus: 'captured',
+      requestHeaders: '{"x-upstream":"1"}',
+      requestBody: '{"model":"detail-model"}',
+      responseStatus: 200,
       responseHeaders: '{"content-type":"application/json"}',
       responseBody: '{"ok":true}',
-      requestRewriteRuleIds: [rule.id, 'rule_missing'],
     })
     await deleteRequestRewriteRule(rule.id)
     const res = mockResponse()
@@ -180,8 +188,12 @@ describe('request log management', () => {
       success: true,
       data: expect.objectContaining({
         id: log.id,
-        attempts: [expect.objectContaining({ providerModelName: 'detail-model' })],
-        contents: [expect.objectContaining({ attemptId: attempt.id, responseBody: '{"ok":true}', requestRewriteRuleIds: [rule.id, 'rule_missing'] })],
+        attempts: [
+          expect.objectContaining({ id: attempt.id, providerModelName: 'detail-model', streaming: true, ttftMilliseconds: 42 }),
+          expect.objectContaining({ streaming: false, requestRewriteRuleIds: [rule.id, 'rule_missing'], responseRewriteRuleIds: ['rule_response'] }),
+        ],
+        contents: [expect.objectContaining({ captureStatus: 'captured', responseHeaders: '{"content-type":"application/json","x-client":"1"}' })],
+        attemptContents: [expect.objectContaining({ attemptId: attempt.id, responseBody: '{"ok":true}' })],
         requestRewriteRules: [{ id: rule.id, name: '请求日志规则名称' }],
       }),
     })
@@ -205,18 +217,9 @@ describe('request log management', () => {
       id: 'diagnostic_detail',
       logicalModelId: 'diagnostic',
       clientProtocol: 'openai-responses',
-      upstreamProtocol: null,
+      streaming: false,
       status: 'failed',
       totalDurationMilliseconds: 10,
-      totalTokens: null,
-      inputTokens: null,
-      outputTokens: null,
-      cachedInputTokens: null,
-      cacheCreationInputTokens: null,
-      promptCacheHit: null,
-      rawUsage: null,
-      ttftMilliseconds: null,
-      cacheHit: null,
     })
     const res = mockResponse()
 

@@ -8,8 +8,26 @@ import {
   updateRequestContent,
   updateRequestLogStatus,
 } from '@server/database/request-log-store'
-import { redactHeaders } from '@server/proxy/response/headers'
-import type { RequestLogMetrics, RequestLogOutcome, RequestLogger, RequestLoggingInput } from '@server/proxy/observability/logging-types'
+import { serializeCapturedHeaders } from '@server/proxy/response/headers'
+import { NOOP_PROXY_OBSERVATION_HOOKS } from '@server/proxy/observability/hooks'
+import { isStreamingRequest } from '@server/proxy/request/request'
+import type { RequestContentOutcome, RequestLogger, RequestLoggingInput } from '@server/proxy/observability/logging-types'
+
+/**
+ * 过期清理的节流间隔。
+ *
+ * 保留期清理是维护动作，没必要每个请求都扫一遍全表；一分钟一次已经足够及时。
+ */
+const PRUNE_INTERVAL_MS = 60_000
+let lastPruneTime = 0
+
+async function pruneRequestLogsThrottled(): Promise<void> {
+  const time = Date.now()
+  if (time - lastPruneTime < PRUNE_INTERVAL_MS) return
+  lastPruneTime = time
+  const settings = await getSettings()
+  await pruneRequestLogs(settings.logRetentionDays)
+}
 
 export async function initializeRequestLogger(input: RequestLoggingInput): Promise<RequestLogger> {
   let requestContentId: string | null = null
@@ -18,35 +36,20 @@ export async function initializeRequestLogger(input: RequestLoggingInput): Promi
       id: input.requestId,
       logicalModelId: input.logicalModelId,
       clientProtocol: input.clientProtocol,
-      upstreamProtocol: null,
+      // 客户端是否要求流式是一句话就能定下的事实，而它的写入点只此一处。
+      streaming: isStreamingRequest(input.requestBody),
       status: 'pending',
       totalDurationMilliseconds: 0,
-      totalTokens: null,
-      inputTokens: null,
-      outputTokens: null,
-      reasoningTokens: null,
-      cachedInputTokens: null,
-      cacheCreationInputTokens: null,
-      promptCacheHit: null,
-      rawUsage: null,
-      ttftMilliseconds: null,
-      cacheHit: null,
       attributes: input.attributes,
     })
     if (input.captureRequestContent) {
       const content = await createRequestContent({
         requestId: input.requestId,
-        attemptId: null,
         captureStatus: 'partial',
         requestMethod: input.method,
         requestPath: input.path,
-        requestHeaders: JSON.stringify(redactHeaders(input.headers)),
+        requestHeaders: serializeCapturedHeaders(input.headers),
         requestBody: input.requestBody.toString('utf8'),
-        responseStatus: null,
-        responseHeaders: null,
-        upstreamResponseHeaders: null,
-        clientResponseHeaders: null,
-        responseBody: null,
       })
       requestContentId = content.id
     }
@@ -58,43 +61,38 @@ export async function initializeRequestLogger(input: RequestLoggingInput): Promi
 }
 
 function createRequestLogger(requestContentId: string | null, input: RequestLoggingInput): RequestLogger {
-  const finalizeRequestLog = async (status: RequestStatus, startedAt: number, metrics?: RequestLogMetrics) => {
+  const hooks = input.hooks ?? NOOP_PROXY_OBSERVATION_HOOKS
+  /** 已经收尾过：取消竞态下两条路径会先后调用同一个 logger。 */
+  let finalized = false
+
+  const finalizeRequestLog = async (status: RequestStatus, startedAt: number) => {
+    // 后到的收尾是重复的事实，不是新的事实：不重写状态，也不重复触发清理。
+    if (finalized) return
+    finalized = true
     try {
-      const totalDuration = Date.now() - startedAt
-      const hasTokens = metrics?.inputTokens != null && metrics?.outputTokens != null
       await updateRequestLogStatus(input.requestId, {
         status,
-        totalDurationMilliseconds: totalDuration,
-        ...(metrics ? {
-          totalTokens: hasTokens ? metrics.inputTokens! + metrics.outputTokens! : null,
-          inputTokens: metrics.inputTokens ?? null,
-          outputTokens: metrics.outputTokens ?? null,
-          reasoningTokens: metrics.reasoningTokens ?? null,
-          cachedInputTokens: metrics.cachedInputTokens ?? null,
-          cacheCreationInputTokens: metrics.cacheCreationInputTokens ?? null,
-          promptCacheHit: metrics.promptCacheHit ?? null,
-          rawUsage: metrics.rawUsage ?? null,
-          ttftMilliseconds: metrics.ttftMilliseconds ?? null,
-          upstreamProtocol: metrics.upstreamProtocol ?? null,
-        } : {}),
+        totalDurationMilliseconds: Date.now() - startedAt,
       })
-      const settings = await getSettings()
-      await pruneRequestLogs(settings.logRetentionDays)
+      await pruneRequestLogsThrottled()
     } catch (error) {
       console.error(`[proxy] 更新请求日志失败: ${(error as Error).message}`)
     }
   }
 
-  const finalizeRequestContent = async (outcome: RequestLogOutcome) => {
+  /**
+   * 写入客户端视角的最终响应。列名不带 `client` 前缀——表本身就代表客户端视角。
+   */
+  const finalizeRequestContent = async (outcome: RequestContentOutcome) => {
     if (!requestContentId) return
     try {
       await updateRequestContent(requestContentId, {
         captureStatus: outcome.captureStatus ?? 'captured',
-        responseStatus: outcome.responseStatus ?? outcome.statusCode,
+        responseStatus: outcome.statusCode,
         responseHeaders: outcome.responseHeaders ?? null,
-        clientResponseHeaders: outcome.clientResponseHeaders ?? outcome.responseHeaders ?? null,
         responseBody: outcome.responseBody ?? null,
       })
+      await hooks.onContentCaptured?.({ requestId: input.requestId, perspective: 'client' })
     } catch (error) {
       console.error(`[proxy] 更新请求正文失败: ${(error as Error).message}`)
     }
@@ -102,9 +100,10 @@ function createRequestLogger(requestContentId: string | null, input: RequestLogg
 
   const finalizeLocalErrorContent = async (statusCode: number, responseHeaders: IncomingHttpHeaders | OutgoingHttpHeaders, responseBody: string) => {
     await finalizeRequestContent({
+      perspective: 'client',
       statusCode,
       captureStatus: 'captured',
-      responseHeaders: JSON.stringify(redactHeaders(responseHeaders)),
+      responseHeaders: serializeCapturedHeaders(responseHeaders),
       responseBody,
     })
   }
@@ -114,7 +113,5 @@ function createRequestLogger(requestContentId: string | null, input: RequestLogg
     finalizeRequestLog,
     finalizeRequestContent,
     finalizeLocalErrorContent,
-    recordAttempt: async () => null,
-    recordAttemptContent: async () => undefined,
   }
 }

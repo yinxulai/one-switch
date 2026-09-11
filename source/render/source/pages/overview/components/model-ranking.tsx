@@ -51,7 +51,7 @@ export function ModelRanking(props: ModelRankingProps) {
                   </td>
                   <td className={cn(tableCellClass, 'font-medium')}>{m.providerModelName}</td>
                   <td className={cn(tableCellClass, 'text-muted-foreground')}>{m.providerName}</td>
-                  <td className={cn(tableCellClass, 'text-right tabular-nums')}>{m.requests.toLocaleString()}</td>
+                  <td className={cn(tableCellClass, 'text-right tabular-nums')}>{m.attempts.toLocaleString()}</td>
                   <td className={cn(tableCellClass, 'text-right tabular-nums')}>{formatLatency(m.avgLatencyMs)}</td>
                   <td className={cn(tableCellClass, 'text-right tabular-nums')}>{m.avgTtftMs == null ? '—' : formatLatency(m.avgTtftMs)}</td>
                   <td className={cn(tableCellClass, 'text-right tabular-nums')}>{m.avgTps == null ? '—' : m.avgTps.toFixed(1)}</td>

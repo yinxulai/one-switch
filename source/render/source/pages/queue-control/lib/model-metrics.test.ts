@@ -19,6 +19,10 @@ function attempt(overrides: Partial<RequestLogEntryAttempt> = {}): RequestLogEnt
     errorCode: null,
     errorMessage: null,
     durationMilliseconds: 2_000,
+    streaming: false,
+    ttftMilliseconds: 500,
+    requestRewriteRuleIds: [],
+    responseRewriteRuleIds: [],
     createdTime: 1,
     ...overrides,
   }
@@ -29,7 +33,7 @@ function log(overrides: Partial<RequestLogEntry> = {}): RequestLogEntry {
     id: 'req_test',
     logicalModelId: 'model_default',
     clientProtocol: 'openai-responses',
-    upstreamProtocol: null,
+    streaming: false,
     status: 'success',
     totalDurationMilliseconds: 2_500,
     totalTokens: 120,
@@ -40,8 +44,7 @@ function log(overrides: Partial<RequestLogEntry> = {}): RequestLogEntry {
     cacheCreationInputTokens: null,
     promptCacheHit: null,
     rawUsage: null,
-    ttftMilliseconds: 500,
-    cacheHit: null,
+    ttftMilliseconds: null,
     createdTime: 1,
     attempts: [attempt()],
     ...overrides,
@@ -50,9 +53,10 @@ function log(overrides: Partial<RequestLogEntry> = {}): RequestLogEntry {
 
 describe('calculateQueueModelMetrics', () => {
   it('attributes metrics to the successful failover target and uses total duration for TPS', () => {
+    // 首个尝试先拿到过首字然后又失败：它的 100ms 不能算到最终生效的 model-b 头上。
     const metrics = calculateQueueModelMetrics([log({
       attempts: [
-        attempt({ status: 'failed', providerId: 'prov_primary', providerModelId: 'model-a' }),
+        attempt({ status: 'failed', providerId: 'prov_primary', providerModelId: 'model-a', ttftMilliseconds: 100 }),
         attempt({ attemptIndex: 1, providerId: 'prov_backup', providerName: 'Backup', providerModelId: 'model-b', providerModelName: 'model-b' }),
       ],
     })])
@@ -70,8 +74,8 @@ describe('calculateQueueModelMetrics', () => {
       log({
         id: 'req_missing',
         outputTokens: null,
-        ttftMilliseconds: null,
         totalDurationMilliseconds: 1_000,
+        attempts: [attempt({ ttftMilliseconds: null })],
       }),
     ])
 

@@ -12,6 +12,7 @@
     "source/command/**/*.ts",
     "vite.config.ts",
     "vitest.config.ts",
+    "vitest.setup.ts",
     "electron-builder.config.ts"
   ],
   "references": []

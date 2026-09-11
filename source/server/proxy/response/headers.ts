@@ -35,6 +35,17 @@ export function redactHeaders(source: IncomingHttpHeaders | OutgoingHttpHeaders,
   )
 }
 
+/**
+ * 把 header 对象序列化为脱敏后的 JSON 字符串，用于正文记录的 header 列。
+ *
+ * 空对象（例如响应头尚未写出时的 `response.headers()`）归一化为 `null`，
+ * 让「没有头信息」与「从没采集过」在存储层保持一致，避免写入无意义的 `'{}'`。
+ */
+export function serializeCapturedHeaders(headers: IncomingHttpHeaders | OutgoingHttpHeaders | null): string | null {
+  if (!headers || Object.keys(headers).length === 0) return null
+  return JSON.stringify(redactHeaders(headers))
+}
+
 export function createUpstreamRequestHeaders(source: IncomingHttpHeaders, authHeaders: Record<string, string>, contentLength: number): Record<string, string | string[]> {
   const headers: Record<string, string | string[]> = {}
   const connectionHeaders = parseConnectionHeaders(source.connection)

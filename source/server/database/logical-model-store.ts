@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, isNull } from 'drizzle-orm'
 import type { LogicalModel, SchedulingPolicy } from '@common/schemas'
-import { generateId, now } from '@common/utils'
+import { now } from '@common/utils'
 import { getDb } from './index'
 import { logicalModels, schedulingPolicies } from './schema'
 
@@ -27,11 +27,12 @@ type CreateLogicalModelInput = Pick<LogicalModel, 'id'> & Partial<Pick<LogicalMo
 export async function createLogicalModel(input: CreateLogicalModelInput): Promise<LogicalModel> {
   const id = input.id
   const time = now()
+  const name = input.name ?? id
   getDb()
     .insert(logicalModels)
     .values({
       id,
-      name: input.name,
+      name,
       description: input.description ?? '',
       enabled: input.enabled ?? true,
       createdTime: time,
@@ -40,7 +41,7 @@ export async function createLogicalModel(input: CreateLogicalModelInput): Promis
     .run()
   return {
     id,
-    name: input.name,
+    name,
     description: input.description ?? '',
     enabled: input.enabled ?? true,
     createdTime: time,
