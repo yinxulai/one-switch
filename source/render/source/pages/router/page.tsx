@@ -90,7 +90,7 @@ import { WorkflowGraphSchema } from './schemas'
 import type { NodePosition, WorkflowGraph, WorkflowNodeKind, WorkflowNodeModel, WorkflowRunResult } from './types'
 
 /** 画布下方的图例：只展示主干语义，控制输入与输出不重复色。 */
-const legendKinds: WorkflowNodeKind[] = ['input', 'protocol-discovery', 'condition', 'iteration', 'model-select', 'output']
+const legendKinds: WorkflowNodeKind[] = ['input', 'protocol-discovery', 'condition', 'iteration', 'script', 'prompt', 'model-select', 'output']
 
 /** 这些元素自身消费删除键，画布的键盘删除需要跳过。 */
 const EDITABLE_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT'])
@@ -469,11 +469,13 @@ function WorkflowStudioCanvas() {
   const conditionFieldHints = useMemo(() => {
     if (!selectedNode) return []
     // 条件节点用它挑字段，逻辑模型选择节点用它挑「变量取值」的来源字段，
-    // 遍历迭代节点用它挑遍历来源与结果写回路径。
+    // 遍历迭代节点用它挑遍历来源与结果写回路径，脚本与 LLM 节点用它挑结果写回路径。
     if (
       selectedNode.kind !== 'condition'
       && selectedNode.kind !== 'model-select'
       && selectedNode.kind !== 'iteration'
+      && selectedNode.kind !== 'script'
+      && selectedNode.kind !== 'prompt'
     ) return []
     return resolveInputHints(graph, selectedNode.id, samplePayload).fields
   }, [graph, selectedNode, samplePayload])

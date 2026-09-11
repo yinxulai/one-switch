@@ -1,5 +1,7 @@
 import {
   PATH_WILDCARD_SUFFIX,
+  PROMPT_TIMEOUT_LIMIT,
+  SCRIPT_TIMEOUT_LIMIT,
   type ConditionCase,
   type ConditionOperator,
   type ConditionRule,
@@ -9,12 +11,15 @@ import {
   type ModelSelection,
   type ModelSelectNode,
   type NodeOutputMap,
+  type PromptInvocationResult,
   type ProtocolDiscoveryNode,
   type RouteContext,
   type RouteContextEnvelope,
   type RouteContextInput,
   type RouteDecision,
   type RouteIterationScope,
+  type RunCapabilities,
+  type ScriptInvocationResult,
   type WorkflowRequestPayload,
   type WorkflowGraph,
   type WorkflowProtocol,
@@ -23,7 +28,13 @@ import {
   type WorkflowTrace,
 } from './types'
 
-export interface WorkflowRunOptions {}
+export interface WorkflowRunOptions {
+  /**
+   * 需要外部资源（沙箱 / 网络）的节点由调用方注入实现。
+   * 缺省时引擎照常跑完整张图，命中这些节点时记录 `success: false` 的 trace。
+   */
+  capabilities?: RunCapabilities
+}
 
 const MAX_STEPS = 2000
 
@@ -90,7 +101,7 @@ function resolveSegments(current: unknown, segments: PathSegment[], index: numbe
 }
 
 /** 按路径取值，支持 `a[*].b` 通配投影；路径不存在时返回 `undefined`。 */
-function getByPath(payload: unknown, path: string): unknown {
+export function getByPath(payload: unknown, path: string): unknown {
   const segments = parsePath(path)
   if (!segments.length) return undefined
   return resolveSegments(payload, segments, 0)
@@ -648,7 +659,50 @@ function summarizeIteration(collected: unknown[], executed: number, mode: Iterat
   return collected.length ? collected[0] : []
 }
 
-export function runWorkflow(graph: WorkflowGraph, inputPayload: unknown, _options: WorkflowRunOptions = {}): WorkflowRunResult {
+/**
+ * 提示词模板插值：`${path}` 按当前 payload 取值。
+ *
+ * 与条件节点的字段路径共用同一套解析（含 `a[*].b` 通配投影），
+ * 因此「把遍历到的元素拼进提示词」（`${route.iteration.item}`）不需要额外机制。
+ * 取值不存在的变量渲染成空串，不会打断整条链路。
+ */
+function renderTemplate(template: string, payload: Record<string, unknown>): string {
+  return template.replace(/\$\{([^}]+)\}/g, (_matched, rawPath: string) => {
+    const path = rawPath.trim()
+    if (!path) return ''
+    const value = getByPath(payload, path)
+    if (value === undefined || value === null) return ''
+    if (typeof value === 'string') return value
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+    return safeStringify(value) ?? ''
+  })
+}
+
+/** 能力执行抛出的异常统一转成一句可读的错误文案，进 trace 而不是打断整轮运行。 */
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message
+  return String(error)
+}
+
+/** 节点输出里展示的取值摘要：短标量原样显示，对象 / 数组序列化后截断。 */
+function summarizeValue(value: unknown, maxLength = 200): string {
+  if (value === undefined) return 'undefined'
+  if (value === null) return 'null'
+  if (typeof value === 'string') {
+    return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  const serialized = safeStringify(value) ?? String(value)
+  return serialized.length > maxLength ? `${serialized.slice(0, maxLength)}…` : serialized
+}
+
+/** 夹住能力调用的超时：节点上配的值可以调，但不允许配出「无上限」。 */
+function clampDuration(value: number, max: number): number {
+  if (!Number.isFinite(value) || value <= 0) return max
+  return Math.min(Math.round(value), max)
+}
+
+export async function runWorkflow(graph: WorkflowGraph, inputPayload: unknown, options: WorkflowRunOptions = {}): Promise<WorkflowRunResult> {
   const envelope = normalizeInputPayload(inputPayload)
   const outputPayload = envelope.payload
   const trace: WorkflowTrace[] = []
@@ -661,7 +715,7 @@ export function runWorkflow(graph: WorkflowGraph, inputPayload: unknown, _option
   let budgetExhausted = false
   let stopReason: WorkflowRunResult['stopReason'] = 'missing-next'
 
-  const execute = (startId: string | undefined, stopAt?: string): string | undefined => {
+  const execute = async (startId: string | undefined, stopAt?: string): Promise<string | undefined> => {
     let currentId = startId
     while (currentId) {
       if (steps >= MAX_STEPS) {
@@ -803,7 +857,7 @@ export function runWorkflow(graph: WorkflowGraph, inputPayload: unknown, _option
             } satisfies RouteIterationScope
             executed += 1
 
-            execute(bodyEntry, current.id)
+            await execute(bodyEntry, current.id)
             if (budgetExhausted) {
               stoppedReason = '达到步数上限（MAX_STEPS），提前结束'
               break
@@ -870,6 +924,146 @@ export function runWorkflow(graph: WorkflowGraph, inputPayload: unknown, _option
         continue
       }
 
+      if (current.kind === 'script') {
+        const capability = options.capabilities?.runScript
+        if (!capability) {
+          trace.push({
+            nodeId: current.id, nodeName: current.name, kind: current.kind, success: false,
+            message: '脚本节点需要沙箱运行时，当前运行环境没有注入该能力',
+            details: { code: current.code, resultPath: current.resultPath },
+          })
+          currentId = edgeTarget(edges, current.id)
+          continue
+        }
+
+        const timeout = clampDuration(current.timeoutMilliseconds, SCRIPT_TIMEOUT_LIMIT)
+        let outcome: ScriptInvocationResult
+        if (!current.code.trim()) {
+          outcome = { success: false, logs: [], error: '脚本内容为空', durationMilliseconds: 0 }
+        } else {
+          const startedAt = Date.now()
+          try {
+            outcome = await capability({
+              nodeId: current.id,
+              nodeName: current.name,
+              code: current.code,
+              timeoutMilliseconds: timeout,
+              // 传深拷贝：脚本里的赋值不会污染引擎正在使用的决策数据。
+              payload: clonePayload(outputPayload),
+            })
+          } catch (error) {
+            outcome = { success: false, logs: [], error: errorMessage(error), durationMilliseconds: Date.now() - startedAt }
+          }
+        }
+
+        const resultPath = current.resultPath.trim()
+        const written = outcome.success && resultPath ? setByPath(outputPayload, resultPath, outcome.value) : false
+        const succeeded = outcome.success && written && Boolean(resultPath)
+
+        addNodeOutput(nodeOutputs, current.id, '脚本结果', succeeded ? outcome.value : (outcome.error ?? '未写入'))
+        addNodeOutput(nodeOutputs, current.id, '耗时', `${outcome.durationMilliseconds} ms`)
+        if (outcome.logs.length) addNodeOutput(nodeOutputs, current.id, '控制台', outcome.logs)
+        trace.push({
+          nodeId: current.id,
+          nodeName: current.name,
+          kind: current.kind,
+          success: succeeded,
+          message: !outcome.success
+            ? `脚本执行失败：${outcome.error ?? '未知错误'}`
+            : succeeded
+              ? `脚本执行完成，结果写入 ${resultPath}`
+              : `脚本结果无法写入路径 ${resultPath || '（未配置）'}`,
+          details: {
+            resultPath,
+            value: outcome.value,
+            summary: summarizeValue(outcome.value),
+            logs: outcome.logs,
+            error: outcome.error ?? null,
+            timeoutMilliseconds: timeout,
+            durationMilliseconds: outcome.durationMilliseconds,
+          },
+        })
+        currentId = edgeTarget(edges, current.id)
+        continue
+      }
+
+      if (current.kind === 'prompt') {
+        const capability = options.capabilities?.runPrompt
+        const logicalModelId = current.logicalModelId.trim()
+        const prompt = renderTemplate(current.promptTemplate, outputPayload)
+
+        if (!capability) {
+          trace.push({
+            nodeId: current.id, nodeName: current.name, kind: current.kind, success: false,
+            message: 'LLM 节点需要服务端执行能力，当前运行环境没有注入该能力',
+            details: { logicalModelId, prompt },
+          })
+          currentId = edgeTarget(edges, current.id)
+          continue
+        }
+
+        if (!logicalModelId) {
+          trace.push({
+            nodeId: current.id, nodeName: current.name, kind: current.kind, success: false,
+            message: 'LLM 节点尚未选择逻辑模型',
+            details: { logicalModelId: '', prompt },
+          })
+          currentId = edgeTarget(edges, current.id)
+          continue
+        }
+
+        const timeout = clampDuration(current.timeoutMilliseconds, PROMPT_TIMEOUT_LIMIT)
+        let outcome: PromptInvocationResult
+        try {
+          outcome = await capability({
+            nodeId: current.id,
+            nodeName: current.name,
+            logicalModelId,
+            systemPrompt: renderTemplate(current.systemPrompt, outputPayload),
+            prompt,
+            temperature: current.temperature,
+            maxTokens: current.maxTokens,
+            timeoutMilliseconds: timeout,
+            protocol,
+          })
+        } catch (error) {
+          outcome = { success: false, text: '', error: errorMessage(error), durationMilliseconds: 0 }
+        }
+
+        const resultPath = current.resultPath.trim()
+        const written = outcome.success && resultPath ? setByPath(outputPayload, resultPath, outcome.text) : false
+        const succeeded = outcome.success && written && Boolean(resultPath)
+
+        addNodeOutput(nodeOutputs, current.id, '逻辑模型', logicalModelId)
+        addNodeOutput(nodeOutputs, current.id, '提示词', prompt)
+        addNodeOutput(nodeOutputs, current.id, '回复', succeeded ? outcome.text : (outcome.error ?? '未写入'))
+        addNodeOutput(nodeOutputs, current.id, '耗时', `${outcome.durationMilliseconds} ms`)
+        trace.push({
+          nodeId: current.id,
+          nodeName: current.name,
+          kind: current.kind,
+          success: succeeded,
+          message: !outcome.success
+            ? `LLM 节点执行失败：${outcome.error ?? '未知错误'}`
+            : succeeded
+              ? `LLM 节点执行完成，回复写入 ${resultPath}`
+              : `LLM 回复无法写入路径 ${resultPath || '（未配置）'}`,
+          details: {
+            logicalModelId,
+            target: outcome.target ?? null,
+            prompt,
+            resultPath,
+            reply: summarizeValue(outcome.text),
+            raw: outcome.raw ?? null,
+            error: outcome.error ?? null,
+            timeoutMilliseconds: timeout,
+            durationMilliseconds: outcome.durationMilliseconds,
+          },
+        })
+        currentId = edgeTarget(edges, current.id)
+        continue
+      }
+
       if (current.kind === 'output') {
         const route = routeOf(outputPayload)
         addNodeOutput(nodeOutputs, current.id, '最终落点', route.modelIds, route.fallback ? '兜底' : undefined)
@@ -897,7 +1091,7 @@ export function runWorkflow(graph: WorkflowGraph, inputPayload: unknown, _option
 
   const start = graph.nodes.find(node => node.kind === 'input')
   if (!start) return { outputPayload, protocol: 'unknown', nodeOutputs: {}, stopReason: 'error', trace: [buildMissingInputTrace('缺少输入节点')] }
-  execute(start.id)
+  await execute(start.id)
   return { outputPayload, protocol, nodeOutputs, stopReason, trace }
 }
 

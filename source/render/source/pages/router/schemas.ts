@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+import { PROMPT_TIMEOUT_DEFAULT, PROMPT_TIMEOUT_LIMIT, SCRIPT_TIMEOUT_DEFAULT, SCRIPT_TIMEOUT_LIMIT } from './types'
+
 const LogicalModelContextSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -20,7 +22,7 @@ const NodePositionSchema = z.object({
 
 const WorkflowNodeBaseSchema = z.object({
   id: z.string(),
-  kind: z.enum(['input', 'control-input', 'protocol-discovery', 'condition', 'model-select', 'iteration', 'output']),
+  kind: z.enum(['input', 'control-input', 'protocol-discovery', 'condition', 'model-select', 'iteration', 'script', 'prompt', 'output']),
   name: z.string(),
   enabled: z.boolean(),
   description: z.string(),
@@ -110,6 +112,27 @@ const OutputNodeSchema = WorkflowNodeBaseSchema.extend({
   summaryLevel: z.enum(['brief', 'detailed']),
 })
 
+const ScriptNodeSchema = WorkflowNodeBaseSchema.extend({
+  kind: z.literal('script'),
+  // 允许空源码：空脚本在运行时会产出 success: false 的 trace，而不是让整张图校验失败。
+  code: z.string().default(''),
+  resultPath: z.string().default('route.scriptResult'),
+  // 沙箱超时上限，限制住死循环；引擎执行前还会再夹一次（同一个上限常量）。
+  timeoutMilliseconds: z.number().int().positive().max(SCRIPT_TIMEOUT_LIMIT).default(SCRIPT_TIMEOUT_DEFAULT),
+})
+
+const PromptNodeSchema = WorkflowNodeBaseSchema.extend({
+  kind: z.literal('prompt'),
+  // 允许空 id：未选择逻辑模型时运行产出 success: false 的 trace。
+  logicalModelId: z.string().default(''),
+  systemPrompt: z.string().default(''),
+  promptTemplate: z.string().default(''),
+  resultPath: z.string().default('route.promptResult'),
+  temperature: z.number().min(0).max(2).default(0.7),
+  maxTokens: z.number().int().positive().max(32_768).default(1_024),
+  timeoutMilliseconds: z.number().int().positive().max(PROMPT_TIMEOUT_LIMIT).default(PROMPT_TIMEOUT_DEFAULT),
+})
+
 export const WorkflowNodeModelSchema = z.discriminatedUnion('kind', [
   InputNodeSchema,
   ControlInputNodeSchema,
@@ -117,6 +140,8 @@ export const WorkflowNodeModelSchema = z.discriminatedUnion('kind', [
   ConditionNodeSchema,
   ModelSelectNodeSchema,
   IterationNodeSchema,
+  ScriptNodeSchema,
+  PromptNodeSchema,
   OutputNodeSchema,
 ])
 

@@ -8,7 +8,9 @@ import { InputNodeView } from './input-node'
 import { IterationNodeView } from './iteration-node'
 import { ModelSelectNodeView } from './model-select-node'
 import { OutputNodeView } from './output-node'
+import { PromptNodeView } from './prompt-node'
 import { ProtocolDiscoveryNodeView } from './protocol-discovery-node'
+import { ScriptNodeView } from './script-node'
 
 /**
  * 节点种类 → 节点内部视图。
@@ -22,5 +24,7 @@ export const NODE_COMPONENT_MAP: Record<WorkflowNodeKind, ComponentType<RouteNod
   condition: ConditionNodeView,
   'model-select': ModelSelectNodeView,
   iteration: IterationNodeView,
+  script: ScriptNodeView,
+  prompt: PromptNodeView,
   output: OutputNodeView,
 }

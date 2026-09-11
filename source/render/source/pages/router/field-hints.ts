@@ -334,6 +334,36 @@ export function resolveInputHints(graph: WorkflowGraph, targetNodeId: string, sa
       }
       continue
     }
+
+    if (model.kind === 'script') {
+      // 脚本产出什么类型完全取决于脚本内容，所以静态类型给 unknown：
+      // unknown 在下游条件节点里不限制操作符，由运行时的真实取值决定语义。
+      const resultPath = model.resultPath.trim()
+      if (resultPath) {
+        addUniqueField(fields, {
+          path: resultPath,
+          valueType: 'unknown',
+          sourceNodeId: model.id,
+          sourcePort: 'out',
+          note: '脚本 return 的返回值（类型由脚本内容决定）',
+        })
+      }
+      continue
+    }
+
+    if (model.kind === 'prompt') {
+      const resultPath = model.resultPath.trim()
+      if (resultPath) {
+        addUniqueField(fields, {
+          path: resultPath,
+          valueType: 'string',
+          sourceNodeId: model.id,
+          sourcePort: 'out',
+          note: '逻辑模型返回的文本回复',
+        })
+      }
+      continue
+    }
   }
 
   return {

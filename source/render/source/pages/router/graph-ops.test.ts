@@ -316,7 +316,7 @@ describe('图谱校验（回归）', () => {
 })
 
 describe('图操作与引擎的协同', () => {
-  it('在连线上插入节点后仍通过图校验，且引擎按新顺序经过它', () => {
+  it('在连线上插入节点后仍通过图校验，且引擎按新顺序经过它', async () => {
     const graph = createDefaultGraph()
     const anchor = resolveInsertAnchor(graph, { kind: 'protocol-discovery', edgeId: 'edge-input-protocol' })
     expect(anchor).not.toBeNull()
@@ -326,7 +326,7 @@ describe('图操作与引擎的协同', () => {
 
     expect(WorkflowGraphSchema.safeParse(next).error?.issues).toBeUndefined()
 
-    const result = runWorkflow(next, { request: { body: {} }, metadata: {} })
+    const result = await runWorkflow(next, { request: { body: {} }, metadata: {} })
     const visited = result.trace.map(step => step.nodeId)
 
     expect(visited).toContain(inserted.id)
@@ -334,9 +334,9 @@ describe('图操作与引擎的协同', () => {
     expect(visited.indexOf(inserted.id)).toBeLessThan(visited.indexOf('protocol'))
   })
 
-  it('穿透删除中间节点后，引擎把上游直接接到下游', () => {
+  it('穿透删除中间节点后，引擎把上游直接接到下游', async () => {
     const next = removeNode(createDefaultGraph(), 'model')
-    const result = runWorkflow(next, { request: { body: {} }, metadata: {} })
+    const result = await runWorkflow(next, { request: { body: {} }, metadata: {} })
 
     expect(result.stopReason).toBe('output')
     expect(result.trace.some(step => step.nodeId === 'model')).toBe(false)

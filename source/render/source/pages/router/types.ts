@@ -7,6 +7,8 @@ export type WorkflowNodeKind =
   | 'condition'
   | 'model-select'
   | 'iteration'
+  | 'script'
+  | 'prompt'
   | 'output'
 
 export type WorkflowProtocol = Protocol | 'unknown'
@@ -254,6 +256,63 @@ export interface IterationNode extends WorkflowNodeBase {
   maxIterations: number
 }
 
+/**
+ * 脚本节点沙箱超时。
+ * schema（编辑期输入的合法范围）与引擎（执行前再夹一次）共用同一组常量，避免两处漂移。
+ */
+export const SCRIPT_TIMEOUT_DEFAULT = 2_000
+export const SCRIPT_TIMEOUT_LIMIT = 10_000
+
+/** LLM 节点调用超时；上限放宽到 10 分钟，长提示词 / 慢上游也能跑完。 */
+export const PROMPT_TIMEOUT_DEFAULT = 60_000
+export const PROMPT_TIMEOUT_LIMIT = 600_000
+
+/**
+ * 脚本节点：在受控沙箱里执行一小段用户 JS，用「代码」补足节点类型覆盖不到的场景。
+ *
+ * 沙箱里可用：
+ * - `payload`：本次运行 payload 的深拷贝（`request` / `logicalModels` / `route` 都能读到）；
+ * - `get(path)`：按路径取值，支持 `a[*].b` 通配投影，与条件节点的字段路径同一套语义；
+ * - `console.log / warn / error`：日志回传到 trace 详情。
+ *
+ * 没有 `require` / `import` / 网络 / 文件系统 / `eval`，超时即中断。
+ * 脚本用 `return` 交回结果，由引擎写入 `resultPath`。
+ */
+export interface ScriptNode extends WorkflowNodeBase {
+  kind: 'script'
+  /** 用户 JS 源码；函数体形式，用 `return` 交回结果。 */
+  code: string
+  /** 结果写回路径（如 `route.scriptResult`），写回值类型未知，下游条件可用全部操作符。 */
+  resultPath: string
+  /** 沙箱执行超时（毫秒）。 */
+  timeoutMilliseconds: number
+}
+
+/**
+ * LLM 节点：用指定逻辑模型执行一段提示词，把模型回复写回 payload。
+ *
+ * 「指定逻辑模型」直接复用逻辑模型体系：选中的逻辑模型在服务端按它自己的
+ * 上游配置（供应商、协议、密钥、故障转移）执行，因此提示词走的是和真实请求同一条通路。
+ */
+export interface PromptNode extends WorkflowNodeBase {
+  kind: 'prompt'
+  /** 执行提示词使用的逻辑模型 id */
+  logicalModelId: string
+  /** 系统提示词 */
+  systemPrompt: string
+  /** 用户提示词模板，支持 `${path}` 取值（如 `${route.iteration.item}`） */
+  promptTemplate: string
+  /** 回复文本写回路径 */
+  resultPath: string
+  /** 采样温度 */
+  temperature: number
+  /** 回复长度上限 */
+  maxTokens: number
+  /** 调用超时（毫秒） */
+  timeoutMilliseconds: number
+}
+
+/** 出口节点：路由终点的信息聚合与返回控制。 */
 export interface OutputNode extends WorkflowNodeBase {
   kind: 'output'
   includeTrace: boolean
@@ -267,7 +326,71 @@ export type WorkflowNodeModel =
   | ConditionNode
   | ModelSelectNode
   | IterationNode
+  | ScriptNode
+  | PromptNode
   | OutputNode
+
+/**
+ * 脚本执行请求（引擎 → 调用方注入的能力）。
+ *
+ * 引擎不直接依赖任何运行时沙箱：`node:vm` 这类服务端模块由主进程注入，
+ * 这样同一份引擎代码既能在渲染进程里做纯静态推演，也能在服务端真正执行。
+ */
+export interface ScriptInvocation {
+  nodeId: string
+  nodeName: string
+  /** 用户源码（函数体） */
+  code: string
+  /** 超时上限（毫秒） */
+  timeoutMilliseconds: number
+  /** payload 深拷贝：脚本读到的数据与引擎的实时决策数据隔离 */
+  payload: Record<string, unknown>
+}
+
+export interface ScriptInvocationResult {
+  success: boolean
+  /** 脚本 `return` 交回的值 */
+  value?: unknown
+  /** `console.log / warn / error` 收集到的日志 */
+  logs: string[]
+  error?: string
+  durationMilliseconds: number
+}
+
+/** 提示词执行请求（引擎 → 调用方注入的能力）。 */
+export interface PromptInvocation {
+  nodeId: string
+  nodeName: string
+  logicalModelId: string
+  systemPrompt: string
+  prompt: string
+  temperature: number
+  maxTokens: number
+  timeoutMilliseconds: number
+  /** 当前请求协议，决定用哪种上游协议调用该逻辑模型 */
+  protocol: WorkflowProtocol
+}
+
+export interface PromptInvocationResult {
+  success: boolean
+  /** 模型回复文本 */
+  text: string
+  /** 上游返回体（供 trace 详情排查） */
+  raw?: unknown
+  error?: string
+  /** 实际命中的上游，便于确认提示词打到了哪个供应商模型 */
+  target?: string
+  durationMilliseconds: number
+}
+
+/**
+ * 运行能力：需要外部资源（沙箱 / 网络）的节点由调用方注入实现。
+ * 缺省时引擎照常跑完整张图，只是这些节点会以「运行环境未提供该能力」失败并记录 trace。
+ */
+export interface RunCapabilities {
+  runScript?: (invocation: ScriptInvocation) => Promise<ScriptInvocationResult>
+  runPrompt?: (invocation: PromptInvocation) => Promise<PromptInvocationResult>
+}
 
 /**
  * 引擎写入 payload 的 `route` 命名空间：路由决策 + 决策依据。

@@ -225,6 +225,8 @@ html[data-magicui-theme-vt="active"] [data-slot="app-sidebar"] > div:first-child
   --color-util-colors-green-green-500: #17b26a;
   --color-util-colors-warning-warning-500: #f79009;
   --color-util-colors-violet-violet-500: #875bf7;
+  --color-util-colors-yellow-yellow-500: #eaaa08;
+  --color-util-colors-pink-pink-500: #ee46bc;
 }
 
 @layer base {

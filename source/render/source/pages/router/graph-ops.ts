@@ -18,6 +18,8 @@ export function primarySourcePort(node: WorkflowNodeModel): string | null {
     case 'control-input':
     case 'model-select':
     case 'iteration':
+    case 'script':
+    case 'prompt':
       return 'out'
     case 'condition':
       return node.cases[0]?.id ?? 'else'
