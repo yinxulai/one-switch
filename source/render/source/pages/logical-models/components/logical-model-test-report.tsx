@@ -8,7 +8,7 @@ export interface ProtocolTestResult extends ModelTestResult {
   protocol: Protocol
 }
 
-interface QueueTestControlsProps {
+interface LogicalModelTestControlsProps {
   protocols: Protocol[]
   selectedProtocol: Protocol | 'all'
   running: boolean
@@ -17,7 +17,7 @@ interface QueueTestControlsProps {
   onRun: () => void
 }
 
-interface QueueTestSummaryProps {
+interface LogicalModelTestSummaryProps {
   protocolCount: number
   results: ProtocolTestResult[]
   onClose: () => void
@@ -29,7 +29,7 @@ export const PROTOCOL_LABELS: Record<Protocol, string> = {
   'anthropic-messages': 'Anthropic',
 }
 
-export function QueueTestControls(props: QueueTestControlsProps) {
+export function LogicalModelTestControls(props: LogicalModelTestControlsProps) {
   if (props.protocols.length === 0) return null
 
   return (
@@ -59,7 +59,7 @@ export function QueueTestControls(props: QueueTestControlsProps) {
   )
 }
 
-export function QueueTestSummary(props: QueueTestSummaryProps) {
+export function LogicalModelTestSummary(props: LogicalModelTestSummaryProps) {
   const successCount = props.results.filter(result => result.success).length
   const failureCount = props.results.length - successCount
 
@@ -68,7 +68,7 @@ export function QueueTestSummary(props: QueueTestSummaryProps) {
       <div className="min-w-0">
         <div className="flex items-center gap-1.5 font-medium">
           <Activity size={12} className="text-primary" />
-          队列连通性报告
+          逻辑模型连通性报告
         </div>
         <div className="mt-0.5 truncate text-muted-foreground">
           已探测 {props.protocolCount} 个协议、{props.results.length} 个可用供应商模型

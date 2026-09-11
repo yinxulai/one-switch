@@ -1,12 +1,12 @@
 import type { RequestLogEntry } from '@common/schemas'
 
-export interface QueueModelMetrics {
+export interface ProviderModelMetrics {
   sampleCount: number
   avgTps: number | null
   avgTtftMilliseconds: number | null
 }
 
-export interface QueueSummaryMetrics {
+export interface LogicalModelSummaryMetrics {
   completedRequestCount: number
   successCount: number
   successRate: number | null
@@ -23,11 +23,11 @@ interface MetricAccumulator {
   ttftCount: number
 }
 
-export function queueModelMetricKey(providerId: string, providerModelId: string): string {
+export function providerModelMetricKey(providerId: string, providerModelId: string): string {
   return `${providerId}\0${providerModelId}`
 }
 
-export function calculateQueueSummaryMetrics(logs: RequestLogEntry[]): QueueSummaryMetrics {
+export function calculateLogicalModelSummaryMetrics(logs: RequestLogEntry[]): LogicalModelSummaryMetrics {
   const completedLogs = logs.filter(log => log.status === 'success' || log.status === 'failed' || log.status === 'cancelled')
   const successfulLogs = completedLogs.filter(log => log.status === 'success')
   const durations = successfulLogs.map(log => log.attempts.find(attempt => attempt.status === 'success')?.durationMilliseconds ?? log.totalDurationMilliseconds).filter(duration => duration > 0)
@@ -46,7 +46,7 @@ export function calculateQueueSummaryMetrics(logs: RequestLogEntry[]): QueueSumm
   }
 }
 
-export function calculateQueueModelMetrics(logs: RequestLogEntry[]): Record<string, QueueModelMetrics> {
+export function calculateProviderModelMetrics(logs: RequestLogEntry[]): Record<string, ProviderModelMetrics> {
   const accumulators = new Map<string, MetricAccumulator>()
 
   for (const log of logs) {
@@ -54,7 +54,7 @@ export function calculateQueueModelMetrics(logs: RequestLogEntry[]): Record<stri
     const successfulAttempt = log.attempts.find(attempt => attempt.status === 'success')
     if (!successfulAttempt) continue
 
-    const key = queueModelMetricKey(successfulAttempt.providerId, successfulAttempt.providerModelId)
+    const key = providerModelMetricKey(successfulAttempt.providerId, successfulAttempt.providerModelId)
     const accumulator = accumulators.get(key) ?? {
       requestIds: new Set<string>(),
       tpsTotal: 0,

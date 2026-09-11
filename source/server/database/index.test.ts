@@ -117,7 +117,7 @@ describe('database lifecycle', () => {
     expect(() => client.prepare('INSERT INTO provider_health (providerId, updatedTime) VALUES (?, ?)').run('missing', time)).toThrow()
   })
 
-  it('keeps disabled models in management queue while excluding them from scheduling', async () => {
+  it('keeps disabled models in management list while excluding them from scheduling', async () => {
     const client = (await initDatabase(createTemporaryDirectory(), TEST_DATABASE_FILE_NAME)).$client
     const time = Date.now()
     client.prepare('INSERT INTO providers (id, name, createdTime, updatedTime) VALUES (?, ?, ?, ?)').run('prov_test', 'Test', time, time)

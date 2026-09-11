@@ -2,16 +2,16 @@
 
 ## 1. 背景与目标
 
-One Switch 既是本地代理，也是一套请求路由与模型选择系统。为了让路由逻辑从“隐式条件分支”升级为“可视化、可调试、可复用”的执行图，设计了“路由工作台”：以节点图的方式描述一条请求如何被识别、过滤、判定，并最终落到某个逻辑模型 / 队列。
+One Switch 既是本地代理，也是一套请求路由与模型选择系统。为了让路由逻辑从“隐式条件分支”升级为“可视化、可调试、可复用”的执行图，设计了“路由工作台”：以节点图的方式描述一条请求如何被识别、过滤、判定，并最终落到某个逻辑模型。
 
 路由工作台解决的核心问题包括：
 
 - 让请求通路不再依赖代码分支散落各处；
-- 让条件判断、队列选择和最终输出逻辑可视化；
+- 让条件判断、逻辑模型选择和最终输出逻辑可视化；
 - 让非开发人员也能理解一条请求如何被选到目标模型；
 - 让调试更容易，因为每个节点都能留下 trace。
 
-路由不是“编排内容修改”，而是“根据请求选择最终要求的逻辑模型/队列”。它强调：
+路由不是“编排内容修改”，而是“根据请求选择最终要求的逻辑模型”。它强调：
 
 - 入口统一；
 - 选择决策可审计；
@@ -29,7 +29,7 @@ One Switch 既是本地代理，也是一套请求路由与模型选择系统。
 - 识别请求属于什么协议；
 - 判断是否允许继续；
 - 在满足条件时选中某个逻辑模型；
-- 将请求交给对应队列或 provider chain。
+- 将请求交给对应逻辑模型或 provider chain。
 
 因此，路由工作台的核心价值是：
 
@@ -49,16 +49,17 @@ One Switch 既是本地代理，也是一套请求路由与模型选择系统。
   request: {
     method: 'POST',
     path: '/v1/chat/completions',
-    headers: {},
-    body: {}
+    headers: { 'content-type': 'application/json' } satisfies Record<string, string>,
+    body: { model: 'gpt-4o-mini' }
   },
   metadata: {
-    protocol: 'openai',
     client: 'cursor',
-    traceId: '...'
+    tenant: 'acme'
   }
 }
 ```
+
+`request` 只保留归一化之后的最小形状：`method` / `path` / `headers` / `body`。`headers` 是**扁平的字符串字典**（`Record<string, string>`）——代理入口已经把同名头按 `,` 合并，路由侧不需要多值头，因此也不再为它展开字段路径。
 
 后续节点统一对该对象读取或写入，而不是去猜测 API 差异。
 
@@ -66,7 +67,7 @@ One Switch 既是本地代理，也是一套请求路由与模型选择系统。
 
 路由图不要求所有节点都出现在同一张图里。默认最小链路是：
 
-Input -> ModelSelector -> Output
+Input -> ModelSelect -> Output
 
 复杂链路通过条件和策略分支扩展。
 
@@ -88,33 +89,34 @@ interface RouteDecision {
   traceId: string                      // 本次运行的追踪 id
   protocol: WorkflowProtocol           // 识别到的请求协议，未识别为 unknown
   transport: WorkflowTransport         // http | http-sse
-  queueIds: string[]                   // 最终落点队列（决策结果）
+  modelIds: string[]                   // 最终落点逻辑模型（决策结果）
   fallback: boolean                    // 是否走了兜底策略
   requestedModel: string               // request.body.model
-  availableQueueIds: string[]          // 本次运行可见的逻辑队列
+  availableModelIds: string[]          // 本次运行可见的逻辑模型
   controls: Record<string, unknown>    // 控制输入节点注入的运行时取值
 }
 ```
 
 约定：
 
-- **决策结果**（`queueIds`）与**决策依据**（`protocol` / `transport` / `requestedModel` / `controls` …）都放在 `route` 下，条件节点可直接按 `route.*` 选字段；
+- **决策结果**（`modelIds`）与**决策依据**（`protocol` / `transport` / `requestedModel` / `controls` …）都放在 `route` 下，条件节点可直接按 `route.*` 选字段；
 - **过程性数据**只进 trace，不进 payload —— 例如协议归一化后的请求体（`{protocol, transport, model, messages}`）与每个节点的判定明细，避免 payload 里出现只有调试才看的字段；
-- **引擎不预计算业务判定**：像「请求模型是否命中逻辑队列」这种结论由条件节点在图上现场算出，引擎只提供原始字段（`requestedModel` / `availableQueueIds`）。
-- 旧版本图（没有 `route`）在运行时会被补齐，调用方无需迁移。
+- **引擎不预计算业务判定**：像「请求模型是否命中逻辑模型列表」这种结论由条件节点在图上现场算出，引擎只提供原始字段（`requestedModel` / `availableModelIds`）；
+- **运行结果按节点组织**：`runWorkflow` 返回的 `nodeOutputs` 是 `Record<节点 id, NodeOutput[]>`，每个节点可以登记多条输出（控制项、条件分支、落点…），渲染时再查节点名称作为分组标题，因此「谁产出了什么」看得见；
+- 旧版本图（没有 `route`）在运行时会被补齐，调用方无需迁移；重命名前的 payload 键（`queues`、`route.queueIds`）读取时兼容一次后丢弃。
 
 ### 2.7 默认策略：模型直达
 
 系统内建一条默认策略，任何时刻都可通过页头的「策略」下拉一键选回：
 
-> 请求里的 `model` 命中我们的逻辑队列 id 时，请求该队列；否则请求默认队列（`default`）。
+> 请求里的 `model` 命中我们的逻辑模型 id 时，请求该逻辑模型；否则请求默认逻辑模型（`default`）。
 
 这条策略**不引入任何专用节点**，完全用基础节点拼出来，命中判断就是一条普通的「字段 in 字段」条件：
 
 ```text
-Input ─▶ Condition（route.requestedModel in route.availableQueueIds）
-           ├─ IF   ─▶ QueueSelect（取值来源 = 变量 route.requestedModel）─▶ Output
-           └─ ELSE ─▶ QueueSelect（取值来源 = 固定队列 default）────────▶ Output
+Input ─▶ Condition（route.requestedModel in route.availableModelIds）
+           ├─ IF   ─▶ ModelSelect（取值来源 = 变量 route.requestedModel）─▶ Output
+           └─ ELSE ─▶ ModelSelect（取值来源 = 固定逻辑模型 default）───▶ Output
 ```
 
 两个基础节点各自提供一种通用能力：
@@ -124,21 +126,21 @@ Input ─▶ Condition（route.requestedModel in route.availableQueueIds）
 | 比较值来源 | 语义 |
 | --- | --- |
 | `literal`（默认） | 与规则里写的固定值比较，`in` / `notIn` 按逗号拆成列表 |
-| `field` | 与另一个字段的实时取值比较，例如 `route.requestedModel in route.availableQueueIds`；`in` / `notIn` 取到数组时按成员判定，取到单值时直接比较，取不到值时按空集合处理 |
+| `field` | 与另一个字段的实时取值比较，例如 `route.requestedModel in route.availableModelIds`；`in` / `notIn` 取到数组时按成员判定，取到单值时直接比较，取不到值时按空集合处理 |
 
-`queue-select` 节点的**取值来源**：
+`model-select` 节点的**取值来源**：
 
 | 取值来源 | 语义 |
 | --- | --- |
-| `fixed` | 与请求无关，始终使用节点上勾选的队列列表 |
-| `variable` | 读取 `variablePath` 指向字段的取值作为落点：字符串视为单个队列 id，字符串数组视为队列 id 列表；取不到值时使用节点上的兜底队列，兜底队列为空则不产出落点 |
+| `fixed` | 与请求无关，始终使用节点上勾选的逻辑模型列表 |
+| `variable` | 读取 `variablePath` 指向字段的取值作为落点：字符串视为单个逻辑模型 id，字符串数组视为逻辑模型 id 列表；取不到值时使用节点上的兜底逻辑模型，兜底列表为空则不产出落点 |
 
 这样做的好处：
 
-- **不枚举模型**：命中判断基于本次运行真正可用的队列集合（`route.availableQueueIds`），逻辑队列增减时规则自动生效，不需要改图；
-- **没有专用节点，也没有预计算字段**：模型直达只是「条件 + 两次队列选择」的一种拼法，按协议、按租户、按控制输入等策略用同一组基础节点同样能表达。
+- **不枚举模型**：命中判断基于本次运行真正可见的逻辑模型集合（`route.availableModelIds`），逻辑模型增减时规则自动生效，不需要改图；
+- **没有专用节点，也没有预计算字段**：模型直达只是「条件 + 两次逻辑模型选择」的一种拼法，按协议、按租户、按控制输入等策略用同一组基础节点同样能表达。
 
-旧图里用过的 `mode: 'follow-request-model'` 会在读取时迁移为「`source: 'variable'` + `variablePath: 'route.requestedModel'`」，行为不变。
+旧图里用过的 `mode: 'follow-request-model'` 会在读取时迁移为「`source: 'variable'` + `variablePath: 'route.requestedModel'`」，行为不变；旧的 `queue-select` 节点同样会在解析时迁移成 `model-select`。
 
 预设策略放在 `graph-model.ts` 的 `ROUTER_POLICY_PRESETS` 中，第一个即默认策略，UI 侧由 `components/policy-menu.tsx` 呈现。
 
@@ -175,7 +177,7 @@ interface WorkflowNodeBase {
 执行时会维护：
 
 - 当前 payload
-- 当前 queue
+- 当前落点（`route.modelIds`）
 - trace 列表
 - stopReason
 
@@ -190,7 +192,7 @@ interface WorkflowNodeBase {
 - 一个聚合节点可能接收多个输入并合并后发出单一输出；
 - 一个节点可能在不同条件下发出不同输出端口。
 
-但在本设计里，所有路由节点都围绕同一个核心：选择目标逻辑模型 / 队列。因而端口的语义不是“改写请求”，而是“决定落点”。
+但在本设计里，所有路由节点都围绕同一个核心：选择目标逻辑模型。因而端口的语义不是“改写请求”，而是“决定落点”。
 
 因此，建议为每个节点设计统一的端口协议：
 
@@ -198,7 +200,7 @@ interface WorkflowNodeBase {
 interface NodePort<T = unknown> {
   id: string
   name: string
-  kind: 'payload' | 'context' | 'queue' | 'signal' | 'branch'
+  kind: 'payload' | 'context' | 'model' | 'signal' | 'branch'
   schema: T
   cardinality: 'single' | 'multi'
   required: boolean
@@ -230,14 +232,14 @@ interface ConditionNodeContract extends NodeIOContract<
   { true: { payload: unknown; context: RouteContext }; false: { payload: unknown; context: RouteContext } }
 > {}
 
-interface ModelSelectorNodeContract extends NodeIOContract<
+interface ModelSelectNodeContract extends NodeIOContract<
   { payload: unknown; context: RouteContext },
-  { queueIds: string[] }
+  { modelIds: string[] }
 > {}
 
 interface OutputNodeContract extends NodeIOContract<
-  { payload: unknown; context: RouteContext; queueIds: string[] },
-  { queueIds: string[]; routeDecision: { matched: boolean; queueIds: string[] } }
+  { payload: unknown; context: RouteContext; modelIds: string[] },
+  { modelIds: string[]; routeDecision: { matched: boolean; modelIds: string[] } }
 > {}
 ```
 
@@ -331,27 +333,27 @@ interface EdgeConnection {
 
 ---
 
-### 4.3 ModelSelector
+### 4.3 ModelSelect
 
 核心作用：
-- 指定一个或多个逻辑队列 ID；
-- 将明确的队列选择交给 Output 节点。
+- 指定一个或多个逻辑模型 ID；
+- 将明确的逻辑模型选择交给 Output 节点。
 
 输入：
 - `payload`
 - `context`
 
 输出：
-- `queueIds: string[]`
+- `modelIds: string[]`
 
 说明：
-- ModelSelector 只表达队列选择，不负责协议识别、模型评分或请求改写；
-- 队列 ID 经过去重和空值清理后写入运行时 payload；
-- 多个队列 ID 表示允许 Output 将请求交给多个候选队列。
+- ModelSelect 只表达逻辑模型选择，不负责协议识别、模型评分或请求改写；
+- 逻辑模型 ID 经过去重和空值清理后写入运行时 payload 的 `route.modelIds`；
+- 多个 ID 表示 Output 可以用这组逻辑模型作为落点。
 
 配置体验：
-- queueIds 支持选择一个或多个逻辑队列，并提供搜索与去重；
-- 输出结果展示最终 queueIds，便于审计和调试；
+- 支持选择一个或多个逻辑模型，并提供搜索与去重；
+- 输出结果展示最终 `modelIds`，便于审计和调试；
 
 ---
 
@@ -371,7 +373,7 @@ interface EdgeConnection {
 - `finalTarget`
 
 说明：
-- 最终输出可以是选中的逻辑模型、目标队列、终止状态或可观测结果；
+- 最终输出可以是选中的逻辑模型、终止状态或可观测结果；
 - 这是路由图的终止节点。
 
 配置体验：
@@ -383,13 +385,13 @@ interface EdgeConnection {
 
 ## 5. 节点输入输出接口规范
 
-路由节点需要“强类型 + 多端口”，但不等于“无类型”；其核心语义是：通过请求选择最终模型和队列，而不是改写请求内容。
+路由节点需要“强类型 + 多端口”，但不等于“无类型”；其核心语义是：通过请求选择最终逻辑模型，而不是改写请求内容。
 
 ```ts
 interface NodePort<T = unknown> {
   id: string
   name: string
-  kind: 'payload' | 'context' | 'queue' | 'signal' | 'branch'
+  kind: 'payload' | 'context' | 'model' | 'signal' | 'branch'
   schema: T
   cardinality: 'single' | 'multi'
   required: boolean
@@ -421,14 +423,14 @@ interface ConditionNodeContract extends NodeIOContract<
   { true: { payload: unknown }; false: { payload: unknown } }
 > {}
 
-interface ModelSelectorNodeContract extends NodeIOContract<
+interface ModelSelectNodeContract extends NodeIOContract<
   { payload: unknown; context: RouteContext },
-  { queueIds: string[] }
+  { modelIds: string[] }
 > {}
 
 interface OutputNodeContract extends NodeIOContract<
-  { payload: unknown; context: RouteContext; queueIds: string[] },
-  { queueIds: string[]; routeDecision: { matched: boolean; queueIds: string[] } }
+  { payload: unknown; context: RouteContext; modelIds: string[] },
+  { modelIds: string[]; routeDecision: { matched: boolean; modelIds: string[] } }
 > {}
 ```
 
@@ -464,16 +466,16 @@ interface OutputNodeContract extends NodeIOContract<
 
 1. Input
 2. Condition（可选）
-3. ModelSelector
+3. ModelSelect
 4. Output
 
 它们构成了“路由”的最小完整闭环：
 
 - 接收请求；
 - （可选）判断分支；
-- 选定目标逻辑模型和队列；
+- 选定目标逻辑模型；
 - 输出最终决策。
 
 这与“请求内容改写”是分离的。后者属于规则层、转换层或重写管线，不属于路由编排核心实现。
 
-> 结论：整个流程可以理解为：根据请求，选择最终的逻辑模型 / 队列，而不是改造请求内容。
+> 结论：整个流程可以理解为：根据请求，选择最终的逻辑模型，而不是改造请求内容。

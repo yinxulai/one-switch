@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils'
 import { AnimatedThemeToggler } from '@/components/ui/animated-theme-toggler'
 import { buttonVariants } from '@/components/ui/button'
 
-export type PageKey = 'queue' | 'providers' | 'access' | 'rules' | 'router' | 'overview' | 'requests' | 'settings' | 'logs'
+export type PageKey = 'logicalModels' | 'providers' | 'access' | 'rules' | 'router' | 'overview' | 'requests' | 'settings' | 'logs'
 export type Theme = 'light' | 'dark'
 export type ThemeMode = 'system' | Theme
 
@@ -36,7 +36,7 @@ interface AppSidebarProps {
 
 const baseNavItems: NavItem[] = [
   { key: 'router', label: '智能路由', icon: GitBranch, section: '主要' },
-  { key: 'queue', label: '模型队列', icon: ListOrdered, section: '主要' },
+  { key: 'logicalModels', label: '逻辑模型', icon: ListOrdered, section: '主要' },
   { key: 'providers', label: '模型管理', icon: Database, section: '主要' },
   { key: 'overview', label: '统计分析', icon: ChartColumnIncreasing, section: '数据' },
   { key: 'requests', label: '请求记录', icon: ClipboardList, section: '数据' },

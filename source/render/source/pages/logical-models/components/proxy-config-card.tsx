@@ -112,7 +112,7 @@ export function ProxyConfigCard(props: ProxyConfigCardProps) {
               </span>
             </div>
             <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
-              本地代理不校验 API Key。所有模型请求都会进入 default 默认队列；请在「模型管理」中为各上游提供商配置 API Key（无需鉴权的上游可以留空）。
+              本地代理不校验 API Key。所有模型请求都会进入 default 默认逻辑模型；请在「模型管理」中为各上游提供商配置 API Key（无需鉴权的上游可以留空）。
             </p>
           </div>
         </div>

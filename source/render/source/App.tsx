@@ -9,7 +9,7 @@ import { useAppUiStore } from '@/store/app-ui-store'
 import { useProxyStatus } from './features/proxy/hooks'
 
 const pagePaths = {
-  queue: '/queue',
+  logicalModels: '/logical-models',
   providers: '/providers',
   access: '/access',
   rules: '/rules',
@@ -22,7 +22,7 @@ const pagePaths = {
 
 function App() {
   const pathname = useRouterState({ select: state => state.location.pathname })
-  const activePage = (pathname.split('/').filter(Boolean)[0] || 'queue') as PageKey
+  const activePage = (pathname.split('/').filter(Boolean)[0] || 'logicalModels') as PageKey
   const navigate = useNavigate()
   const themeMode = useAppUiStore(state => state.themeMode)
   const setThemeMode = useAppUiStore(state => state.setThemeMode)

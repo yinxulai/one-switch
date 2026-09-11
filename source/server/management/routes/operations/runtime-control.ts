@@ -14,23 +14,23 @@ import { sendSuccess } from '../../core/response'
 import { HttpRouter } from '@server/http-router'
 
 export const runtimeControlRoutes = new HttpRouter<ManagementHandler>()
-  .post('/api/queue/status', handleQueueStatus)
-  .post('/api/queue/switch', handleQueueSwitch)
+  .post('/api/logical-model/status', handleLogicalModelStatus)
+  .post('/api/logical-model/switch', handleLogicalModelSwitch)
   .post('/api/health/list', handleListHealth)
   .post('/api/proxy/status', handleProxyStatus)
   .post('/api/proxy/start', handleProxyStart)
   .post('/api/proxy/stop', handleProxyStop)
   .post('/api/proxy/restart', handleProxyRestart)
 
-const QueueStatusSchema = z.object({ logicalModelId: z.string().min(1) })
-function handleQueueStatus(_req: IncomingMessage, res: ServerResponse, body: unknown): void {
-  const { logicalModelId } = QueueStatusSchema.parse(body)
+const LogicalModelStatusSchema = z.object({ logicalModelId: z.string().min(1) })
+function handleLogicalModelStatus(_req: IncomingMessage, res: ServerResponse, body: unknown): void {
+  const { logicalModelId } = LogicalModelStatusSchema.parse(body)
   sendSuccess(res, { logicalModelId, manualModelId: getManualModel(logicalModelId) })
 }
 
-const SwitchQueueSchema = z.object({ logicalModelId: z.string().min(1), modelId: z.string().nullable() })
-function handleQueueSwitch(_req: IncomingMessage, res: ServerResponse, body: unknown): void {
-  const { logicalModelId, modelId } = SwitchQueueSchema.parse(body)
+const SwitchLogicalModelSchema = z.object({ logicalModelId: z.string().min(1), modelId: z.string().nullable() })
+function handleLogicalModelSwitch(_req: IncomingMessage, res: ServerResponse, body: unknown): void {
+  const { logicalModelId, modelId } = SwitchLogicalModelSchema.parse(body)
   setManualModel(logicalModelId, modelId)
   console.info(`[management] manual route updated logicalModelId=${logicalModelId} providerModelId=${modelId ?? 'automatic'}`)
   sendSuccess(res, { logicalModelId, modelId })

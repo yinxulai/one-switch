@@ -47,7 +47,7 @@ export async function listProviderModelsForLogicalModel(logicalModelId: string, 
     .map(({ model, policy }) => ({
       ...mapProviderModelRoute(model),
       priority: policy.priority,
-      // enabled 反映模型自身状态：管理队列需要展示被禁用的模型，
+      // enabled 反映模型自身状态：管理页需要展示被禁用的模型，
       // 调度筛选已在上面的 filter 中完成，不能被策略的 enabled 覆盖。
       enabled: model.enabled,
     }))
@@ -117,7 +117,7 @@ export async function updateProviderModelRoute(id: string, updates: Partial<Omit
  * 删除模型：软删除模型本身，并把挂在它下面的东西一起打标。
  *
  * 绑定、协议转换器、调度策略全部以这个模型为主语，模型软删了它们就不该再被读到
- * （队列里也不该再出现一个已删除的模型）。打标而不是删除，是为了之后仍能回答
+ * （逻辑模型中也不该再出现一个已删除的模型）。打标而不是删除，是为了之后仍能回答
  * 「这个模型以前绑过哪个端点」。
  */
 export async function deleteProviderModelRoute(id: string): Promise<void> {

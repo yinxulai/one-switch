@@ -35,7 +35,7 @@ export class ProxyRuntime {
   }
 
   start(endpoint = this.endpoint): Promise<void> {
-    return this.enqueue(async () => {
+    return this.runSerialized(async () => {
       if (this.state === 'running') {
         console.debug('[proxy-lifecycle] start skipped reason=already-running')
         return
@@ -60,7 +60,7 @@ export class ProxyRuntime {
   }
 
   stop(): Promise<void> {
-    return this.enqueue(async () => {
+    return this.runSerialized(async () => {
       if (this.state === 'stopped') {
         console.debug('[proxy-lifecycle] stop skipped reason=already-stopped')
         return
@@ -83,7 +83,7 @@ export class ProxyRuntime {
   }
 
   restart(endpoint = this.endpoint): Promise<void> {
-    return this.enqueue(async () => {
+    return this.runSerialized(async () => {
       const startedAt = Date.now()
       console.info(`[proxy-lifecycle] restart requested host=${endpoint.host} port=${endpoint.port}`)
       if (this.state === 'running' || this.state === 'starting') {
@@ -110,7 +110,7 @@ export class ProxyRuntime {
     })
   }
 
-  private enqueue(operation: () => Promise<void>): Promise<void> {
+  private runSerialized(operation: () => Promise<void>): Promise<void> {
     const result = this.operation.then(operation, operation)
     this.operation = result.catch(() => undefined)
     return result

@@ -19,7 +19,7 @@ Electron + Node + TypeScript + React/Vite
 - 打开主界面
 - 退出应用
 
-菜单栏 / 托盘只提供上述基础操作，队列、供应商和监听配置统一在主界面管理。
+菜单栏 / 托盘只提供上述基础操作，逻辑模型、供应商和监听配置统一在主界面管理。
 
 在 macOS 上关闭主窗口不会退出应用：代理和菜单栏图标继续运行，同时隐藏 Dock 图标；从菜单栏重新打开主界面时恢复 Dock 图标。
 
@@ -37,7 +37,7 @@ Electron + Node + TypeScript + React/Vite
 
 - 服务状态（运行中 / 已暂停 / 异常）
 - 今日请求数、失败切换次数
-- **当前项**：显示当前正在使用的队列项，一键手动切换到其他队列项
+- **当前项**：显示当前正在使用的模型项，一键手动切换到其他候选模型
 - 各供应商健康状态（连续失败、冷却状态、最近成功）
 - 快捷操作：复制 Base URL、暂停/恢复
 
@@ -50,15 +50,15 @@ Electron + Node + TypeScript + React/Vite
 - 配置空闲超时时间（两次数据间隔，流式不超时）
 - 导入 / 导出供应商包：单个供应商详情可导出，列表页可导入或导出全部；导入前展示包内供应商、将被覆盖的同名供应商数量和明文 API Key 条数，详见 [provider-model.md](./provider-model.md)
 
-### 自动切换队列页
+### 逻辑模型页
 
-管理自动切换队列，每个队列项是一个 ProviderModel：
+管理每个逻辑模型的自动切换候选列表，每个列表项是一个 ProviderModel：
 
-- 队列列表（协议类型、远端 URL、Provider API 模型名、Provider、优先级、启用状态、ProviderModel 健康状态）
-- **当前使用标识**：高亮显示当前正在使用的队列项
-- 新增 / 编辑 / 删除队列项
-- 拖拽调整队列顺序（优先级）
-- 顶部显示队列总览：总数量 / 可用 / 冷却 / 禁用
+- 模型列表（协议类型、远端 URL、Provider API 模型名、Provider、优先级、启用状态、ProviderModel 健康状态）
+- **当前使用标识**：高亮显示当前正在使用的列表项
+- 新增 / 编辑 / 删除列表项
+- 拖拽调整候选顺序（优先级）
+- 顶部显示逻辑模型总览：总数量 / 可用 / 冷却 / 禁用
 
 > v0.3 MVP 只有一个名为 `default` 的兜底逻辑模型和一个全局 ProviderModel 候选池。所有未匹配的非空客户端模型名都由它处理。多逻辑模型及独立候选池属于后续版本；当前 UI 不提供逻辑模型增删改。
 
@@ -85,10 +85,10 @@ Electron + Node + TypeScript + React/Vite
 
 1. 启动应用，菜单栏/托盘出现图标
 2. 引导添加第一个 Provider（名称、API Key、超时）
-3. 在自动切换队列页添加队列项（选择协议、填入远端 URL 和 Provider API 模型名、选择 Provider）
-4. 可继续添加多个队列项，拖拽调整顺序
+3. 在逻辑模型页添加模型（选择协议、填入远端 URL 和 Provider API 模型名、选择 Provider）
+4. 可继续添加多个模型，拖拽调整顺序
 5. 一键复制本地 Base URL
-6. 在 AI 工具中配置 Base URL；`model` 可保留工具原有的任意非空值，代理会通过 `default` 队列处理，并在转发时替换为当前 ProviderModel 的 `modelName`
+6. 在 AI 工具中配置 Base URL；`model` 可保留工具原有的任意非空值，代理会通过 `default` 逻辑模型处理，并在转发时替换为当前 ProviderModel 的 `modelName`
 7. 发送测试请求，控制台显示尝试过程和切换路径
 
 ### 日常使用
@@ -114,15 +114,15 @@ Electron + Node + TypeScript + React/Vite
 固定节点（系统自动存在）：
 
 - `input`：请求入口，负责标准化请求上下文。
-- `output`：路由结果出口，输出最终队列集合和命中原因。
+- `output`：路由结果出口，输出最终逻辑模型集合和命中原因。
 
 可配置通用节点（建议仅保留 3 类）：
 
 - `control-input`：运行时可切换参数，不改图结构。
 - `condition`：统一条件分流节点，用于 Header / model / LLM 输出等所有判定。
-- `queue-select`：队列选择节点，按固定队列列表或上游字段取值决定一个或多个落点队列。
+- `model-select`：逻辑模型选择节点，按固定逻辑模型列表或上游字段取值决定一个或多个落点逻辑模型。
 
-> 结论：完整能力仅需 `input + control-input + condition + queue-select + output`，不再扩展更多专用节点。
+> 结论：完整能力仅需 `input + control-input + condition + model-select + output`，不再扩展更多专用节点。
 
 ### 节点能力边界
 
@@ -136,8 +136,8 @@ Electron + Node + TypeScript + React/Vite
 - `enableModelRouting`（bool，默认 true）：是否启用客户端 model 分流。
 - `enableLlmRouting`（bool，默认 false）：是否启用 LLM 动态决策分流（feature）。
 - `llmRoutingMode`（enum：`shadow` / `enforce`，默认 `shadow`）：LLM 决策仅观测或强制生效。
-- `llmRouterQueueId`（string，默认 `default`）：执行 LLM 路由判断时使用的处理队列。
-- `defaultQueueId`（string，默认 `default`）：兜底队列。
+- `llmRouterModelId`（string，默认 `default`）：执行 LLM 路由判断时使用的逻辑模型。
+- `defaultModelId`（string，默认 `default`）：兜底逻辑模型。
 
 输出端口：
 
@@ -167,15 +167,15 @@ Electron + Node + TypeScript + React/Vite
 - 命中第一个 case 即出分支（first-match-wins）。
 - 未命中走 `else`。
 
-#### 3) queue-select（目标队列层）
+#### 3) model-select（目标逻辑模型层）
 
-定位：将上游分支映射为一个或多个队列 ID。
+定位：将上游分支映射为一个或多个逻辑模型 ID。
 
 行为：
 
-- 支持多选队列输出（有序集合）。
+- 支持多选逻辑模型输出（有序集合）。
 - 去重并保持用户配置顺序。
-- 取值为空时**不自动兜底**：运行会产出 `success: false` 的 trace，输出节点报「没有可用队列」；需要兜底时在图上显式加一条分支（默认策略就是这么拼的）。
+- 取值为空时**不自动兜底**：运行会产出 `success: false` 的 trace，输出节点报「没有可用逻辑模型」；需要兜底时在图上显式加一条分支（默认策略就是这么拼的）。
 
 ### 统一规则编排（默认优先级）
 
@@ -185,11 +185,11 @@ Electron + Node + TypeScript + React/Vite
 2. Header 来源规则
 3. 客户端 model/标签规则
 4. LLM 动态决策规则（可开关，默认 shadow）
-5. 默认队列回退
+5. 默认逻辑模型回退
 
 #### 规则 1：模型直达规则（必须内建）
 
-规则定义：若请求中的 `modelId` 命中队列映射，则直接路由到指定队列；否则进入默认队列。
+规则定义：若请求中的 `modelId` 命中逻辑模型映射，则直接路由到指定逻辑模型；否则进入默认逻辑模型。
 
 示例：
 
@@ -197,11 +197,11 @@ Electron + Node + TypeScript + React/Vite
 - `claude-sonnet-*` -> `reasoning-lane`
 - 其他 -> `default`
 
-这条规则是系统默认规则，开箱即用。在路由工作台里它以**默认策略预设**的形式内建，并且完全由基础节点组合而成：`input → condition(route.requestedModel in route.availableQueueIds) → queue-select(变量取值 route.requestedModel) / queue-select(固定 default) → output`。命中判断由条件节点的「字段取值」比较完成，引擎不预计算布尔结果。不需要逐条维护模型映射表，逻辑队列增减时规则自动生效。页头的「策略」下拉可随时切回该默认策略，详见 [route-design.md](./route-design.md) §2.7。
+这条规则是系统默认规则，开箱即用。在路由工作台里它以**默认策略预设**的形式内建，并且完全由基础节点组合而成：`input → condition(route.requestedModel in route.availableModelIds) → model-select(变量取值 route.requestedModel) / model-select(固定 default) → output`。命中判断由条件节点的「字段取值」比较完成，引擎不预计算布尔结果。不需要逐条维护模型映射表，逻辑模型增减时规则自动生效。页头的「策略」下拉可随时切回该默认策略，详见 [route-design.md](./route-design.md) §2.7。
 
 #### 规则 2：Header 来源分流
 
-目标：通过 Header 区分请求来源并分配队列。
+目标：通过 Header 区分请求来源并分配逻辑模型。
 
 典型字段：
 
@@ -225,7 +225,7 @@ Electron + Node + TypeScript + React/Vite
 
 ##### 通用自动化方案：新增渠道免改工作流
 
-核心思路：工作流只保留一个通用的 `condition(client-model)` + `queue-select(model)`，具体“哪些 model 归属哪个渠道”不再写死在图里，而是放到可热更新的渠道注册表中。
+核心思路：工作流只保留一个通用的 `condition(client-model)` + `model-select(model)`，具体“哪些 model 归属哪个渠道”不再写死在图里，而是放到可热更新的渠道注册表中。
 
 配置层拆分：
 
@@ -235,7 +235,7 @@ Electron + Node + TypeScript + React/Vite
 `channelProfiles` 建议字段：
 
 - `channelId`：渠道标识（如 `openai-main`）。
-- `queueIds`：该渠道对应队列（可多队列）。
+- `modelIds`：该渠道对应逻辑模型（可多个）。
 - `modelMatchers`：模型匹配器数组（`exact` / `prefix` / `regex` / `keyword`）。
 - `capabilities`：能力标签（如 `reasoning`, `vision`, `low-cost`, `high-throughput`）。
 - `priority`：渠道优先级（用于冲突决策）。
@@ -245,7 +245,7 @@ Electron + Node + TypeScript + React/Vite
 
 - `mode`：`auto` / `manual`（默认 `auto`）。
 - `conflictStrategy`：`highest-priority` / `most-specific`（默认 `most-specific`）。
-- `fallbackQueueId`：未命中时回退队列（默认 `default`）。
+- `fallbackModelId`：未命中时回退逻辑模型（默认 `default`）。
 - `strict`：严格模式（true 时未命中直接按策略拒绝或告警，false 时回退）。
 
 自动命中算法（建议）：
@@ -253,8 +253,8 @@ Electron + Node + TypeScript + React/Vite
 1. 收集所有 `enabled` 渠道中命中的 `modelMatchers`。
 2. 先按匹配精度排序：`exact > prefix > keyword > regex`。
 3. 同精度按 `priority` 排序。
-4. 取第一名渠道输出其 `queueIds`。
-5. 无命中时走 `fallbackQueueId`。
+4. 取第一名渠道输出其 `modelIds`。
+5. 无命中时走 `fallbackModelId`。
 
 这样做的效果：新增渠道时只需新增或启用一个 `channelProfile`，无需改工作流结构、无需改节点连线。
 
@@ -269,15 +269,15 @@ Electron + Node + TypeScript + React/Vite
 
 目标：让 LLM 作为通用路由决策器，不只判断复杂度，还可以输出意图、风险、任务类型和建议渠道。
 
-执行模型指定队列：
+执行模型指定逻辑模型：
 
-- LLM 路由判断请求固定发往 `llmRouterQueueId` 指定队列。
-- 该队列可独立于业务请求队列，便于控制成本和稳定性。
-- 当 `llmRouterQueueId` 不可用时，按控制项回退到 `defaultQueueId` 或进入 `shadow` 旁路模式。
+- LLM 路由判断请求固定发往 `llmRouterModelId` 指定逻辑模型。
+- 该逻辑模型可独立于业务请求落点，便于控制成本和稳定性。
+- 当 `llmRouterModelId` 不可用时，按控制项回退到 `defaultModelId` 或进入 `shadow` 旁路模式。
 
 执行模式：
 
-- `shadow`：仅记录 LLM 决策和建议队列，不实际改路由。
+- `shadow`：仅记录 LLM 决策和建议落点，不实际改路由。
 - `enforce`：LLM 决策参与正式分流。
 
 LLM 动态输出（建议结构）：
@@ -285,7 +285,7 @@ LLM 动态输出（建议结构）：
 - `routeIntent`：如 `qa` / `coding` / `analysis` / `agent`。
 - `complexity`：`low` / `medium` / `high`。
 - `riskLevel`：`low` / `medium` / `high`。
-- `recommendedQueueIds`：建议队列数组（有序）。
+- `recommendedModelIds`：建议逻辑模型数组（有序）。
 - `reason`：决策说明（审计可读）。
 - `confidence`：0-1 置信度。
 
@@ -298,8 +298,8 @@ LLM 动态输出（建议结构）：
 LLM 决策与静态规则冲突处理：
 
 - `shadow` 模式下，LLM 仅产出建议，不改变静态规则结果。
-- `enforce` 模式下，若 `recommendedQueueIds` 非空且 `confidence` 达阈值，优先采用 LLM 结果。
-- 若 LLM 建议为空、置信度不足或包含不可用队列，回退到静态规则链（Header/model/default）。
+- `enforce` 模式下，若 `recommendedModelIds` 非空且 `confidence` 达阈值，优先采用 LLM 结果。
+- 若 LLM 建议为空、置信度不足或包含不可用逻辑模型，回退到静态规则链（Header/model/default）。
 
 LLM 调用失败语义：
 
@@ -313,7 +313,7 @@ LLM 调用失败语义：
 
 - 一键关闭 Header 分流，立即回退到 model/default 路径。
 - 将 LLM 决策从 `enforce` 切到 `shadow`，仅观测不生效。
-- 临时切换默认队列，处理上游抖动或紧急降级。
+- 临时切换默认逻辑模型，处理上游抖动或紧急降级。
 
 生效语义：
 
@@ -330,11 +330,11 @@ flowchart LR
 	R2[condition: header-source]
 	R3[condition: client-model]
 	R4[condition: llm-decision]
-	Q1[queue-select: direct]
-	Q2[queue-select: source]
-	Q3[queue-select: model]
-	Q4[queue-select: llm]
-	QD[queue-select: default]
+	Q1[model-select: direct]
+	Q2[model-select: source]
+	Q3[model-select: model]
+	Q4[model-select: llm]
+	QD[model-select: default]
 	O[output]
 
 	I --> C --> R1
@@ -354,19 +354,19 @@ flowchart LR
 
 - `matchedRuleId`
 - `matchedRuleType`（`model-hit` / `header` / `client-model` / `llm-decision` / `default`）
-- `selectedQueueIds`
-- `llmDecision`（若启用，记录 mode、llmRouterQueueId、intent、complexity、risk、confidence）
+- `selectedModelIds`
+- `llmDecision`（若启用，记录 mode、llmRouterModelId、intent、complexity、risk、confidence）
 - `controlSnapshot`（本次请求生效的控制输入快照）
 
-这样可以实现“为什么进这个队列”的可追溯解释。
+这样可以实现“为什么进这个逻辑模型”的可追溯解释。
 
 ### 管理台交互细化
 
 路由编辑页建议拆成 3 个区域：
 
 - 图编排区：只展示最少节点，避免画布膨胀。
-- 规则配置区：按规则类型编辑条件和目标队列。
-- 控制输入区：提供开关、模式和默认队列的实时切换。
+- 规则配置区：按规则类型编辑条件和目标逻辑模型。
+- 控制输入区：提供开关、模式和默认逻辑模型的实时切换。
 
 运营体验目标：
 
@@ -389,8 +389,8 @@ flowchart LR
 
 ### 验收标准（对应 5 项诉求）
 
-- [ ] 支持 Header 到队列映射，并可通过开关实时启停。
+- [ ] 支持 Header 到逻辑模型映射，并可通过开关实时启停。
 - [ ] 支持客户端 model 信息到渠道映射，且可配置优先级。
-- [ ] 支持 LLM 指定处理队列，并输出动态决策结果用于分流（不限于复杂度），含 shadow/enforce 两种模式。
+- [ ] 支持 LLM 指定处理逻辑模型，并输出动态决策结果用于分流（不限于复杂度），含 shadow/enforce 两种模式。
 - [ ] 支持控制输入节点在不改图情况下切换行为并立即作用于新请求。
-- [ ] 系统内建默认 Router 规则：命中模型队列则直达，否则回退默认队列。
+- [ ] 系统内建默认 Router 规则：命中逻辑模型则直达，否则回退默认逻辑模型。

@@ -28,7 +28,7 @@ export function useModelManagement() {
   const modelDialog = useModelDialog({ selectedProvider, models: data.models, reload: data.reload })
   const providerTransfer = useProviderTransfer({ reload: data.reload })
 
-  const invalidateModels = useCallback(async () => { await Promise.all([client.invalidateQueries({ queryKey: modelKeys.all }), client.invalidateQueries({ queryKey: ['queue-models'] })]) }, [client])
+  const invalidateModels = useCallback(async () => { await Promise.all([client.invalidateQueries({ queryKey: modelKeys.all }), client.invalidateQueries({ queryKey: ['logical-model-provider-models'] })]) }, [client])
   const updateModelMutation = useMutation({ mutationFn: ({ id, enabled }: UpdateModelEnabledVariables) => unwrap(providerModelApi.update(id, { logicalModelId: 'default', enabled })), onMutate: async ({ id, enabled }) => { await client.cancelQueries({ queryKey: modelKeys.all }); const previous = client.getQueryData<ProviderModelRoute[]>(modelKeys.all); client.setQueryData<ProviderModelRoute[]>(modelKeys.all, current => current?.map(model => model.id === id ? { ...model, enabled } : model)); return { previous } }, onError: (error, _variables, context) => { client.setQueryData(modelKeys.all, context?.previous); toast.error(error.message) }, onSettled: invalidateModels })
   const removeModelMutation = useMutation({ mutationFn: (id: string) => unwrap(providerModelApi.remove(id)), onError: error => toast.error(error.message) })
   const updateModelEnabled = useCallback(async (model: typeof data.models[number], enabled: boolean) => {

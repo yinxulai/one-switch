@@ -16,14 +16,14 @@ import { Button } from '@/components/ui/button'
 import { ProtocolIcons } from '@/components/protocol-icons'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
-import type { QueueModelMetrics } from '../lib/model-metrics'
+import type { ProviderModelMetrics } from '../lib/model-metrics'
 
-interface QueueModelRowProps {
+interface ProviderModelRowProps {
   model: ProviderModelRoute
   provider?: Provider
   providerHealth?: ProviderHealth
   providerModelHealth?: ProviderModelHealth
-  metrics?: QueueModelMetrics
+  metrics?: ProviderModelMetrics
   mode: 'auto' | 'manual'
   selected: boolean
   cooling: boolean
@@ -37,7 +37,7 @@ interface QueueModelRowProps {
 
 type HealthSource = 'model' | 'provider-fallback' | 'none'
 
-export interface QueueModelHealthDisplay {
+export interface ProviderModelHealthDisplay {
   source: HealthSource
   consecutiveFailures: number
   lastSuccessTime: number | null
@@ -72,7 +72,7 @@ function hasHealthSignal(health: ProviderHealth | ProviderModelHealth | undefine
   )
 }
 
-export function resolveQueueModelHealthDisplay(props: Pick<QueueModelRowProps, 'providerHealth' | 'providerModelHealth'>): QueueModelHealthDisplay {
+export function resolveProviderModelHealthDisplay(props: Pick<ProviderModelRowProps, 'providerHealth' | 'providerModelHealth'>): ProviderModelHealthDisplay {
   if (hasHealthSignal(props.providerModelHealth)) {
     return {
       source: 'model',
@@ -96,8 +96,8 @@ export function resolveQueueModelHealthDisplay(props: Pick<QueueModelRowProps, '
   }
 }
 
-function ModelHealth(props: Pick<QueueModelRowProps, 'providerHealth' | 'providerModelHealth'>) {
-  const healthDisplay = resolveQueueModelHealthDisplay(props)
+function ModelHealth(props: Pick<ProviderModelRowProps, 'providerHealth' | 'providerModelHealth'>) {
+  const healthDisplay = resolveProviderModelHealthDisplay(props)
   const failures = healthDisplay.consecutiveFailures
   const lastSuccessTime = healthDisplay.lastSuccessTime
   const isProviderFallback = healthDisplay.source === 'provider-fallback'
@@ -126,7 +126,7 @@ function ModelHealth(props: Pick<QueueModelRowProps, 'providerHealth' | 'provide
   )
 }
 
-export function QueueModelRow(props: QueueModelRowProps) {
+export function ProviderModelRow(props: ProviderModelRowProps) {
   const { model } = props
 
   return (
@@ -192,7 +192,7 @@ export function QueueModelRow(props: QueueModelRowProps) {
         <Badge variant={props.cooling ? 'destructive' : model.enabled ? 'success' : 'muted'}>{props.cooling ? '冷却中' : model.enabled ? (props.selected ? '当前指定' : '待命') : '已禁用'}</Badge>
         <div className="absolute top-1/2 right-0 flex -translate-y-1/2 translate-x-3 items-center gap-1 rounded-md bg-card px-1.5 py-0.5 opacity-0 transition-all group-hover/row:translate-x-0 group-hover/row:opacity-100 focus-within:translate-x-0 focus-within:opacity-100">
           <Switch checked={model.enabled} onCheckedChange={props.onToggleEnabled} onClick={event => event.stopPropagation()} aria-label={`${model.modelName} 启用状态`} />
-          <Button variant="ghost" size="icon-sm" onClick={event => { event.stopPropagation(); props.onRemove() }} aria-label={`从队列移除 ${model.modelName}`} title="从队列移除"><Trash2 size={16} /></Button>
+          <Button variant="ghost" size="icon-sm" onClick={event => { event.stopPropagation(); props.onRemove() }} aria-label={`从逻辑模型移除 ${model.modelName}`} title="从逻辑模型移除"><Trash2 size={16} /></Button>
         </div>
       </div>
     </div>

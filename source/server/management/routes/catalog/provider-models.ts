@@ -20,7 +20,7 @@ import { sendSuccess } from '../../core/response'
 
 export const providerModelRoutes = new HttpRouter<ManagementHandler>()
   .post('/api/provider-model/list', handleListProviderModels)
-  .post('/api/provider-model/queue', handleListProviderModelQueue)
+  .post('/api/provider-model/list-by-logical-model', handleListProviderModelsByLogicalModel)
   .post('/api/provider-model/get', handleGetProviderModel)
   .post('/api/provider-model/create', handleCreateProviderModel)
   .post('/api/provider-model/update', handleUpdateProviderModel)
@@ -35,7 +35,7 @@ async function handleListProviderModels(_req: IncomingMessage, res: ServerRespon
   sendSuccess(res, await listProviderModels(input.includeDeleted ?? false))
 }
 
-async function handleListProviderModelQueue(_req: IncomingMessage, res: ServerResponse, body: unknown): Promise<void> {
+async function handleListProviderModelsByLogicalModel(_req: IncomingMessage, res: ServerResponse, body: unknown): Promise<void> {
   const input = z.object({ logicalModelId: z.string().min(1).default('default'), includeDeleted: z.boolean().optional() }).parse(body)
   sendSuccess(res, await listProviderModelsForLogicalModel(input.logicalModelId, input.includeDeleted ?? false, true))
 }

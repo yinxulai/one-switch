@@ -1,27 +1,27 @@
 import { useCallback, useMemo } from 'react'
 import { useToast } from '@/components/ui/toast'
-import { useUpdateQueueModelMutation } from '../queries'
+import { useUpdateProviderModelMutation } from '../queries'
 import { useHealth } from '@/features/health/hooks'
 import { useProviders } from '@/features/providers/hooks'
 import type { ProviderModelRoute } from '@common/schemas'
 import { useProxyToggle } from './use-proxy-toggle'
-import { useQueueInteractions } from './use-queue-interactions'
-import { useQueueMetrics } from './use-queue-metrics'
-import { useQueueMode } from './use-queue-mode'
-import { useQueueModels } from './use-queue-models'
+import { useLogicalModelInteractions } from './use-logical-model-interactions'
+import { useLogicalModelMetrics } from './use-logical-model-metrics'
+import { useLogicalModelMode } from './use-logical-model-mode'
+import { useLogicalModelProviderModels } from './use-logical-model-provider-models'
 
-export function useQueueControl(logicalModelId: string) {
+export function useLogicalModelControl(logicalModelId: string) {
   const toast = useToast()
-  const updateModelMutation = useUpdateQueueModelMutation(logicalModelId)
+  const updateModelMutation = useUpdateProviderModelMutation(logicalModelId)
   const providers = useProviders()
   const healthState = useHealth()
   const health = healthState.providers
   const providerModelHealth = healthState.providerModels
-  const modelsState = useQueueModels(logicalModelId)
-  const metrics = useQueueMetrics(logicalModelId)
+  const modelsState = useLogicalModelProviderModels(logicalModelId)
+  const metrics = useLogicalModelMetrics(logicalModelId)
   const proxy = useProxyToggle()
-  const queueMode = useQueueMode(logicalModelId, modelsState.models, health, providerModelHealth)
-  const interactions = useQueueInteractions(
+  const routingMode = useLogicalModelMode(logicalModelId, modelsState.models, health, providerModelHealth)
+  const interactions = useLogicalModelInteractions(
     logicalModelId,
     modelsState.models,
     modelsState.updateModels,
@@ -44,10 +44,10 @@ export function useQueueControl(logicalModelId: string) {
   const reload = useCallback(async () => {
     await Promise.all([
       modelsState.loadModels(),
-      queueMode.refresh(),
+      routingMode.refresh(),
       metrics.refresh(),
     ])
-  }, [metrics.refresh, modelsState.loadModels, queueMode.refresh])
+  }, [metrics.refresh, modelsState.loadModels, routingMode.refresh])
 
   return {
     models: modelsState.models,
@@ -57,17 +57,17 @@ export function useQueueControl(logicalModelId: string) {
     modelMetrics: metrics.modelMetrics,
     summaryMetrics: metrics.summaryMetrics,
     proxyStatus: proxy.proxyStatus,
-    manualModelId: queueMode.manualModelId,
-    mode: queueMode.mode,
-    switchingMode: queueMode.switchingMode,
+    manualModelId: routingMode.manualModelId,
+    mode: routingMode.mode,
+    switchingMode: routingMode.switchingMode,
     copied: interactions.copied,
     loading: modelsState.loading,
     proxyBaseUrl: proxy.proxyBaseUrl,
     reload,
     copyEndpoint: interactions.copyEndpoint,
-    changeMode: queueMode.changeMode,
-    selectManualModel: queueMode.selectManualModel,
-    isCooling: queueMode.isCooling,
+    changeMode: routingMode.changeMode,
+    selectManualModel: routingMode.selectManualModel,
+    isCooling: routingMode.isCooling,
     updateEnabled,
     handleDragEnd: interactions.handleDragEnd,
     toggleProxy: proxy.toggleProxy,

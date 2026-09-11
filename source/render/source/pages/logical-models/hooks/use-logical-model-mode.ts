@@ -1,15 +1,15 @@
 import { useCallback } from 'react'
 import { useToast } from '@/components/ui/toast'
-import { useQueueModeQuery, useSwitchQueueMutation } from '../queries'
+import { useLogicalModelModeQuery, useSwitchManualModelMutation } from '../queries'
 import type { ProviderHealth, ProviderModelHealth, ProviderModelRoute } from '@common/schemas'
 
 type HealthMap = Record<string, ProviderHealth>
 type ProviderModelHealthMap = Record<string, ProviderModelHealth>
 
-export function useQueueMode(logicalModelId: string, models: ProviderModelRoute[], health: HealthMap, providerModelHealth: ProviderModelHealthMap) {
+export function useLogicalModelMode(logicalModelId: string, models: ProviderModelRoute[], health: HealthMap, providerModelHealth: ProviderModelHealthMap) {
   const toast = useToast()
-  const query = useQueueModeQuery(logicalModelId)
-  const mutation = useSwitchQueueMutation(logicalModelId)
+  const query = useLogicalModelModeQuery(logicalModelId)
+  const mutation = useSwitchManualModelMutation(logicalModelId)
   const manualModelId = query.data?.manualModelId ?? null
   const mode: 'auto' | 'manual' = manualModelId ? 'manual' : 'auto'
   const refresh = query.refetch

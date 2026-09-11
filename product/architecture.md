@@ -52,7 +52,7 @@ ProviderModel 包含：
 - 所属 Provider；
 - Provider API 模型名 `modelName`；
 - 一个或多个端点绑定及可选模型专属 `url`；
-- 逻辑模型与 ProviderModel 绑定中的候选队列优先级；
+- 逻辑模型与 ProviderModel 绑定中的优先级排序；
 - 启用状态。
 
 v0.3 MVP 只有一个兜底逻辑模型 `default`，因此所有携带非空模型名的代理请求都会进入它的候选池。ProviderModel 是可复用的供应商模型实体，是否参与某个逻辑模型的调度以及具体顺序由 `scheduling_policies` 绑定行决定。每个逻辑模型都可以绑定相同的 ProviderModel，但配置不同的优先级、权重和启用状态；多逻辑模型和独立绑定池属于后续版本。

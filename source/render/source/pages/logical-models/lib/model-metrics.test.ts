@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RequestLogEntry, RequestLogEntryAttempt } from '@common/schemas'
-import { calculateQueueModelMetrics, queueModelMetricKey } from './model-metrics'
+import { calculateProviderModelMetrics, providerModelMetricKey } from './model-metrics'
 
 function attempt(overrides: Partial<RequestLogEntryAttempt> = {}): RequestLogEntryAttempt {
   return {
@@ -51,17 +51,17 @@ function log(overrides: Partial<RequestLogEntry> = {}): RequestLogEntry {
   }
 }
 
-describe('calculateQueueModelMetrics', () => {
+describe('calculateProviderModelMetrics', () => {
   it('attributes metrics to the successful failover target and uses total duration for TPS', () => {
     // 首个尝试先拿到过首字然后又失败：它的 100ms 不能算到最终生效的 model-b 头上。
-    const metrics = calculateQueueModelMetrics([log({
+    const metrics = calculateProviderModelMetrics([log({
       attempts: [
         attempt({ status: 'failed', providerId: 'prov_primary', providerModelId: 'model-a', ttftMilliseconds: 100 }),
         attempt({ attemptIndex: 1, providerId: 'prov_backup', providerName: 'Backup', providerModelId: 'model-b', providerModelName: 'model-b' }),
       ],
     })])
 
-    expect(metrics[queueModelMetricKey('prov_backup', 'model-b')]).toEqual({
+    expect(metrics[providerModelMetricKey('prov_backup', 'model-b')]).toEqual({
       sampleCount: 1,
       avgTps: 10,
       avgTtftMilliseconds: 500,
@@ -69,7 +69,7 @@ describe('calculateQueueModelMetrics', () => {
   })
 
   it('averages only requests that contain each performance metric', () => {
-    const metrics = calculateQueueModelMetrics([
+    const metrics = calculateProviderModelMetrics([
       log({ id: 'req_complete' }),
       log({
         id: 'req_missing',
@@ -79,7 +79,7 @@ describe('calculateQueueModelMetrics', () => {
       }),
     ])
 
-    expect(metrics[queueModelMetricKey('prov_primary', 'model-a')]).toEqual({
+    expect(metrics[providerModelMetricKey('prov_primary', 'model-a')]).toEqual({
       sampleCount: 2,
       avgTps: 10,
       avgTtftMilliseconds: 500,

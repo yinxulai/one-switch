@@ -1034,7 +1034,7 @@ Store 层应分为两部分：
 - `scheduling_policies`；
 - `request_rewrite_rules` 与 `provider_model_request_rewrite_rules`。
 
-理由很直接：`request_logs` 与 `request_attempts` 里保存的是 `providerId` / `providerModelId` / `logicalModelId` 这类标识。如果配置实体物理删除，历史请求就会指向一个不存在的行——「这条 3 天前的失败请求属于哪个供应商、哪个逻辑模型队列」将无法回答。历史请求本身仍要按保留策略物理删除（见下文），但它删除的是请求侧的行，不是被引用的配置行。
+理由很直接：`request_logs` 与 `request_attempts` 里保存的是 `providerId` / `providerModelId` / `logicalModelId` 这类标识。如果配置实体物理删除，历史请求就会指向一个不存在的行——「这条 3 天前的失败请求属于哪个供应商、哪个逻辑模型」将无法回答。历史请求本身仍要按保留策略物理删除（见下文），但它删除的是请求侧的行，不是被引用的配置行。
 
 软删除带来两条配套约束：
 
@@ -1061,7 +1061,7 @@ Store 层应分为两部分：
 
 顺序不可调换：`attempt_usages` 与 `attempt_contents` 都引用 `request_attempts`，`request_usages` 等引用 `request_logs`，先删父行会直接触发外键约束失败。
 
-历史日志不依赖 `logical_models`、`provider_models` 的当前配置内容。逻辑模型队列是运行时根据当前逻辑模型和全局 Provider 模型池计算出来的，不单独持久化队列关系。
+历史日志不依赖 `logical_models`、`provider_models` 的当前配置内容。候选模型是运行时根据当前逻辑模型和全局 Provider 模型池计算出来的，不单独持久化绑定关系。
 
 ## 9. 本版本明确不采用的方案
 

@@ -1,9 +1,9 @@
 import { useCallback, useMemo } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import type { ProviderModelRoute } from '@common/schemas'
-import { queueKeys, useQueueModelsQuery } from '../queries'
+import { logicalModelKeys, useLogicalModelProviderModelsQuery } from '../queries'
 
-function toQueueModel(model: ProviderModelRoute): ProviderModelRoute {
+function toProviderModel(model: ProviderModelRoute): ProviderModelRoute {
   return {
     id: model.id,
     providerId: model.providerId,
@@ -22,12 +22,12 @@ function toQueueModel(model: ProviderModelRoute): ProviderModelRoute {
   }
 }
 
-export function useQueueModels(logicalModelId: string) {
+export function useLogicalModelProviderModels(logicalModelId: string) {
   const client = useQueryClient()
-  const query = useQueueModelsQuery(logicalModelId)
-  const models = useMemo(() => (query.data ?? []).map(toQueueModel), [query.data])
+  const query = useLogicalModelProviderModelsQuery(logicalModelId)
+  const models = useMemo(() => (query.data ?? []).map(toProviderModel), [query.data])
   const loadModels = useCallback(async () => { const result = await query.refetch(); return !result.isError }, [query])
-  const updateModels = useCallback((update: (models: ProviderModelRoute[]) => ProviderModelRoute[]) => client.setQueryData<ProviderModelRoute[]>(queueKeys.models(logicalModelId), current => update(current ?? [])), [client, logicalModelId])
+  const updateModels = useCallback((update: (models: ProviderModelRoute[]) => ProviderModelRoute[]) => client.setQueryData<ProviderModelRoute[]>(logicalModelKeys.models(logicalModelId), current => update(current ?? [])), [client, logicalModelId])
   const updateEnabledModel = useCallback((id: string, enabled: boolean) => updateModels(current => current.map(model => model.id === id ? { ...model, enabled } : model)), [updateModels])
   return { models, loading: query.isPending, loadModels, updateModels, updateEnabledModel }
 }

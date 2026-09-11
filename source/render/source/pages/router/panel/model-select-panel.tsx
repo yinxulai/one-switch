@@ -8,7 +8,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { NodePanelProps } from '../node-data'
-import type { QueueSelectSource, RuntimeLogicalModel } from '../types'
+import type { ModelSelectSource, RuntimeLogicalModel } from '../types'
 import {
   NodePanelField,
   NodePanelGroupHeader,
@@ -17,10 +17,10 @@ import {
   PANEL_POPUP_SURFACE_CLASSNAME,
 } from './panel-fields'
 
-type QueueField = 'queueIds' | 'fallbackQueueIds'
+type ModelField = 'modelIds' | 'fallbackModelIds'
 
 interface SourceOption {
-  value: QueueSelectSource
+  value: ModelSelectSource
   label: string
   description: string
 }
@@ -28,30 +28,30 @@ interface SourceOption {
 const SOURCE_OPTIONS: SourceOption[] = [
   {
     value: 'fixed',
-    label: '固定队列',
-    description: '不关心请求内容，始终使用下方勾选的队列列表。',
+    label: '固定选择',
+    description: '不关心请求内容，始终使用下方勾选的逻辑模型列表。',
   },
   {
     value: 'variable',
     label: '变量取值',
-    description: '把上游字段的取值直接当作队列 id（字符串或字符串数组），取不到时回落到兜底队列。',
+    description: '把上游字段的取值直接当作逻辑模型 id（字符串或字符串数组），取不到时回落到兜底列表。',
   },
 ]
 
-export function QueueSelectPanel(props: NodePanelProps) {
+export function ModelSelectPanel(props: NodePanelProps) {
   const { model, nodeModels, logicalModels, conditionFieldHints, update } = props
-  const node = model.kind === 'queue-select' ? model : undefined
+  const node = model.kind === 'model-select' ? model : undefined
   const source = node?.source ?? 'fixed'
   const variablePath = node?.variablePath ?? ''
-  const queueIds = node?.queueIds ?? []
-  const fallbackQueueIds = node?.fallbackQueueIds ?? []
+  const modelIds = node?.modelIds ?? []
+  const fallbackModelIds = node?.fallbackModelIds ?? []
 
   const activeDescription = useMemo(
     () => SOURCE_OPTIONS.find(option => option.value === source)?.description ?? '',
     [source],
   )
 
-  /** 变量取值只能来自字符串 / 字符串数组字段：队列 id 的形态。 */
+  /** 变量取值只能来自字符串 / 字符串数组字段：逻辑模型 id 的形态。 */
   const variableFields = useMemo(
     () => conditionFieldHints.filter(field => field.valueType === 'string' || field.valueType === 'array'),
     [conditionFieldHints],
@@ -62,15 +62,15 @@ export function QueueSelectPanel(props: NodePanelProps) {
     [nodeModels],
   )
 
-  const toggleQueue = useCallback((field: QueueField, queueId: string, checked: boolean) => {
+  const toggleModel = useCallback((field: ModelField, modelId: string, checked: boolean) => {
     update(current => {
-      if (current.kind !== 'queue-select') return current
+      if (current.kind !== 'model-select') return current
       const selected = current[field]
       return {
         ...current,
         [field]: checked
-          ? [...new Set([...selected, queueId])]
-          : selected.filter(id => id !== queueId),
+          ? [...new Set([...selected, modelId])]
+          : selected.filter(id => id !== modelId),
       }
     })
   }, [update])
@@ -82,8 +82,8 @@ export function QueueSelectPanel(props: NodePanelProps) {
       <NodePanelField label="取值来源">
         <Select
           value={source}
-          onValueChange={value => update(current => current.kind === 'queue-select'
-            ? { ...current, source: value as QueueSelectSource }
+          onValueChange={value => update(current => current.kind === 'model-select'
+            ? { ...current, source: value as ModelSelectSource }
             : current)}
         >
           <SelectTrigger className="w-full"><SelectValue placeholder="source" /></SelectTrigger>
@@ -103,7 +103,7 @@ export function QueueSelectPanel(props: NodePanelProps) {
         <NodePanelField label="取值字段（上游 schema）">
           <Select
             value={variablePath || undefined}
-            onValueChange={value => update(current => current.kind === 'queue-select'
+            onValueChange={value => update(current => current.kind === 'model-select'
               ? { ...current, variablePath: value }
               : current)}
           >
@@ -128,39 +128,39 @@ export function QueueSelectPanel(props: NodePanelProps) {
 
       {source === 'fixed'
         ? (
-          <QueuePicker
-            emptyHint="暂无可用逻辑队列，请先在队列控制中创建。"
+          <ModelPicker
+            emptyHint="暂无可用逻辑模型，请先在逻辑模型页面创建。"
             logicalModels={logicalModels}
-            onToggle={toggleQueue}
-            selectedIds={queueIds}
-            target="queueIds"
-            title="目标队列"
+            onToggle={toggleModel}
+            selectedIds={modelIds}
+            target="modelIds"
+            title="目标逻辑模型"
           />
         )
         : (
-          <QueuePicker
-            emptyHint="没有勾选兜底队列时，取不到值就不产出落点。"
+          <ModelPicker
+            emptyHint="没有勾选兜底逻辑模型时，取不到值就不产出落点。"
             logicalModels={logicalModels}
-            onToggle={toggleQueue}
-            selectedIds={fallbackQueueIds}
-            target="fallbackQueueIds"
-            title="兜底队列"
+            onToggle={toggleModel}
+            selectedIds={fallbackModelIds}
+            target="fallbackModelIds"
+            title="兜底逻辑模型"
           />
         )}
     </div>
   )
 }
 
-interface QueuePickerProps {
+interface ModelPickerProps {
   title: string
   emptyHint: string
   logicalModels: RuntimeLogicalModel[]
   selectedIds: string[]
-  target: QueueField
-  onToggle: (target: QueueField, queueId: string, checked: boolean) => void
+  target: ModelField
+  onToggle: (target: ModelField, modelId: string, checked: boolean) => void
 }
 
-function QueuePicker(props: QueuePickerProps) {
+function ModelPicker(props: ModelPickerProps) {
   const { title, emptyHint, logicalModels, selectedIds, target, onToggle } = props
 
   return (

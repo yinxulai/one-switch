@@ -31,7 +31,7 @@ function model(id: string, protocol: 'openai-completions' | 'openai-responses' |
 afterEach(() => { mocks.models = []; mocks.manualModel = null })
 
 describe('resolveProxyTargets', () => {
-  it('filters unsupported models and preserves queue order', async () => {
+  it('filters unsupported models and preserves candidate order', async () => {
     mocks.models = [{ model: model('a'), provider }, { model: model('b', 'anthropic-messages'), provider }]
     const result = await resolveProxyTargets('logical', 'openai-completions')
     expect(result.targets.map(target => target.model.id)).toEqual(['a'])
