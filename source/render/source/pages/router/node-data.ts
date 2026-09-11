@@ -69,6 +69,6 @@ export interface NodePanelProps {
   nodeModels: WorkflowNodeModel[]
   /** 可选逻辑队列 */
   logicalModels: RuntimeLogicalModel[]
-  /** 条件节点可用字段（由上游 schema 推导） */
+  /** 上游 schema 推出的可用字段（条件节点与队列选择节点的变量取值共用） */
   conditionFieldHints: SchemaFieldDescriptor[]
 }

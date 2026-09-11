@@ -36,7 +36,7 @@ describe('resolveInputHints', () => {
   })
   it('声明队列选择节点的落点队列字段', () => {
     const target = condition('target')
-    const queueSelect: WorkflowNodeModel = { id: 'queue-select', kind: 'queue-select', name: '队列选择', enabled: true, description: '', position, mode: 'fixed', queueIds: ['model-a', 'model-b'], fallbackQueueIds: [] }
+    const queueSelect: WorkflowNodeModel = { id: 'queue-select', kind: 'queue-select', name: '队列选择', enabled: true, description: '', position, source: 'fixed', variablePath: '', queueIds: ['model-a', 'model-b'], fallbackQueueIds: [] }
     const hints = resolveInputHints(graph([input(), queueSelect, target, output()], [edge('input', 'out', 'queue-select'), edge('queue-select', 'out', 'target')]), target.id, samplePayload)
     expect(hints.fields.map(field => field.path)).toContain('route.queueIds')
     expect(hints.fields.map(field => field.path)).toContain('route.fallback')

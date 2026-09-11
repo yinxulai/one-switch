@@ -120,7 +120,7 @@ Electron + Node + TypeScript + React/Vite
 
 - `control-input`：运行时可切换参数，不改图结构。
 - `condition`：统一条件分流节点，用于 Header / model / LLM 输出等所有判定。
-- `queue-select`：队列选择节点，输出一个或多个逻辑队列。
+- `queue-select`：队列选择节点，按固定队列列表或上游字段取值决定一个或多个落点队列。
 
 > 结论：完整能力仅需 `input + control-input + condition + queue-select + output`，不再扩展更多专用节点。
 
@@ -175,7 +175,7 @@ Electron + Node + TypeScript + React/Vite
 
 - 支持多选队列输出（有序集合）。
 - 去重并保持用户配置顺序。
-- 如为空则自动回退到 `defaultQueueId`。
+- 取值为空时**不自动兜底**：运行会产出 `success: false` 的 trace，输出节点报「没有可用队列」；需要兜底时在图上显式加一条分支（默认策略就是这么拼的）。
 
 ### 统一规则编排（默认优先级）
 
@@ -197,7 +197,7 @@ Electron + Node + TypeScript + React/Vite
 - `claude-sonnet-*` -> `reasoning-lane`
 - 其他 -> `default`
 
-这条规则是系统默认规则，开箱即用。在路由工作台里它以**默认策略预设**的形式内建：一个「取值方式 = 跟随请求模型」的队列选择节点，请求模型命中当前可用逻辑队列就直连该队列，否则落到兜底队列（默认 `default`）；不需要逐条维护模型映射表，逻辑队列增减时规则自动生效。页头的「策略」下拉可随时切回该默认策略，详见 [route-design.md](./route-design.md) §2.7。
+这条规则是系统默认规则，开箱即用。在路由工作台里它以**默认策略预设**的形式内建，并且完全由基础节点组合而成：`input → condition(route.requestedModelInQueues) → queue-select(变量取值 route.requestedModel) / queue-select(固定 default) → output`。不需要逐条维护模型映射表，逻辑队列增减时规则自动生效。页头的「策略」下拉可随时切回该默认策略，详见 [route-design.md](./route-design.md) §2.7。
 
 #### 规则 2：Header 来源分流
 

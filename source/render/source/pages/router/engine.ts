@@ -1,5 +1,4 @@
 import {
-  DEFAULT_FALLBACK_QUEUE_IDS,
   type ConditionCase,
   type ConditionOperator,
   type ConditionRule,
@@ -417,39 +416,46 @@ function normalizeQueueIds(queueIds: string[]): string[] {
   return [...new Set(queueIds.map(id => id.trim()).filter(Boolean))]
 }
 
+/** 变量取值 → 队列 id 列表。字段可以是单个 id（字符串），也可以是 id 列表（字符串数组）。 */
+function readQueueIdsFromValue(value: unknown): string[] {
+  if (Array.isArray(value)) return normalizeQueueIds(value.map(item => String(item)))
+  if (typeof value === 'string') return normalizeQueueIds([value])
+  return []
+}
+
 /**
  * 解析队列选择节点的落点。
- * - `fixed`：使用节点上配置的固定队列列表；
- * - `follow-request-model`（默认策略）：请求模型命中可用逻辑队列时直连该队列，否则回落到兜底队列。
+ * - `fixed`：直接使用节点上配置的固定队列列表；
+ * - `variable`：把 `variablePath` 指向的字段取值当作队列 id，取不到值时使用兜底队列
+ *   （兜底队列为空表示不兜底，此时落点为空，由输出节点报「没有可用队列」）。
  */
-function resolveQueueSelection(node: QueueSelectNode, route: RouteDecision): QueueSelection {
-  if (node.mode !== 'follow-request-model') {
-    const queueIds = normalizeQueueIds(node.queueIds)
+function resolveQueueSelection(node: QueueSelectNode, payload: Record<string, unknown>): QueueSelection {
+  if (node.source === 'variable') {
+    const variablePath = node.variablePath.trim()
+    const queueIds = variablePath ? readQueueIdsFromValue(getByPath(payload, variablePath)) : []
+    if (queueIds.length > 0) {
+      return {
+        queueIds,
+        matched: true,
+        reason: `字段 ${variablePath} 取值 ${queueIds.join('、')}，直连该队列`,
+      }
+    }
+
+    const fallbackQueueIds = normalizeQueueIds(node.fallbackQueueIds)
     return {
-      queueIds,
-      matched: queueIds.length > 0,
-      reason: queueIds.length > 0 ? `选择 ${queueIds.length} 个指定队列` : '尚未选择任何逻辑队列',
+      queueIds: fallbackQueueIds,
+      matched: false,
+      reason: fallbackQueueIds.length > 0
+        ? `字段 ${variablePath || '（未配置）'} 没有可用的队列取值，回落到兜底队列 ${fallbackQueueIds.join('、')}`
+        : `字段 ${variablePath || '（未配置）'} 没有可用的队列取值，且未配置兜底队列`,
     }
   }
 
-  const requestedModel = route.requestedModel
-  if (requestedModel && route.availableQueueIds.includes(requestedModel)) {
-    return {
-      queueIds: [requestedModel],
-      matched: true,
-      reason: `请求模型 ${requestedModel} 命中逻辑队列，直连该队列`,
-    }
-  }
-
-  const fallbackQueueIds = normalizeQueueIds(
-    node.fallbackQueueIds.length ? node.fallbackQueueIds : DEFAULT_FALLBACK_QUEUE_IDS,
-  )
+  const queueIds = normalizeQueueIds(node.queueIds)
   return {
-    queueIds: fallbackQueueIds,
-    matched: false,
-    reason: requestedModel
-      ? `请求模型 ${requestedModel} 不是逻辑队列 id，回落到默认队列 ${fallbackQueueIds.join('、')}`
-      : `请求未提供模型 id，回落到默认队列 ${fallbackQueueIds.join('、')}`,
+    queueIds,
+    matched: queueIds.length > 0,
+    reason: queueIds.length > 0 ? `选择 ${queueIds.length} 个指定队列` : '尚未选择任何逻辑队列',
   }
 }
 
@@ -541,7 +547,7 @@ export function runWorkflow(graph: WorkflowGraph, inputPayload: unknown, _option
 
       if (current.kind === 'queue-select') {
         const route = routeOf(outputPayload)
-        const selection = resolveQueueSelection(current, route)
+        const selection = resolveQueueSelection(current, outputPayload)
         queueSelections[current.id] = selection
         route.queueIds = selection.queueIds
         route.fallback = !selection.matched && selection.queueIds.length > 0
@@ -551,7 +557,12 @@ export function runWorkflow(graph: WorkflowGraph, inputPayload: unknown, _option
           kind: current.kind,
           success: selection.queueIds.length > 0,
           message: selection.reason,
-          details: { queueIds: selection.queueIds, matched: selection.matched, mode: current.mode },
+          details: {
+            queueIds: selection.queueIds,
+            matched: selection.matched,
+            source: current.source,
+            variablePath: current.variablePath,
+          },
         })
         currentId = edgeTarget(edges, current.id)
         continue

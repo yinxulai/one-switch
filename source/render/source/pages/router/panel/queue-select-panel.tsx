@@ -8,7 +8,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { NodePanelProps } from '../node-data'
-import type { QueueSelectMode, RuntimeLogicalModel } from '../types'
+import type { QueueSelectSource, RuntimeLogicalModel } from '../types'
 import {
   NodePanelField,
   NodePanelGroupHeader,
@@ -19,35 +19,47 @@ import {
 
 type QueueField = 'queueIds' | 'fallbackQueueIds'
 
-interface ModeOption {
-  value: QueueSelectMode
+interface SourceOption {
+  value: QueueSelectSource
   label: string
   description: string
 }
 
-const MODE_OPTIONS: ModeOption[] = [
-  {
-    value: 'follow-request-model',
-    label: '跟随请求模型（默认策略）',
-    description: '请求里的 model 命中某个可用逻辑队列 id 时直连该队列，否则落到兜底队列。',
-  },
+const SOURCE_OPTIONS: SourceOption[] = [
   {
     value: 'fixed',
     label: '固定队列',
     description: '不关心请求内容，始终使用下方勾选的队列列表。',
   },
+  {
+    value: 'variable',
+    label: '变量取值',
+    description: '把上游字段的取值直接当作队列 id（字符串或字符串数组），取不到时回落到兜底队列。',
+  },
 ]
 
 export function QueueSelectPanel(props: NodePanelProps) {
-  const { model, logicalModels, update } = props
+  const { model, nodeModels, logicalModels, conditionFieldHints, update } = props
   const node = model.kind === 'queue-select' ? model : undefined
-  const mode = node?.mode ?? 'fixed'
+  const source = node?.source ?? 'fixed'
+  const variablePath = node?.variablePath ?? ''
   const queueIds = node?.queueIds ?? []
   const fallbackQueueIds = node?.fallbackQueueIds ?? []
 
   const activeDescription = useMemo(
-    () => MODE_OPTIONS.find(option => option.value === mode)?.description ?? '',
-    [mode],
+    () => SOURCE_OPTIONS.find(option => option.value === source)?.description ?? '',
+    [source],
+  )
+
+  /** 变量取值只能来自字符串 / 字符串数组字段：队列 id 的形态。 */
+  const variableFields = useMemo(
+    () => conditionFieldHints.filter(field => field.valueType === 'string' || field.valueType === 'array'),
+    [conditionFieldHints],
+  )
+
+  const sourceNameOf = useMemo(
+    () => new Map(nodeModels.map(item => [item.id, item.name])),
+    [nodeModels],
   )
 
   const toggleQueue = useCallback((field: QueueField, queueId: string, checked: boolean) => {
@@ -67,16 +79,16 @@ export function QueueSelectPanel(props: NodePanelProps) {
 
   return (
     <div className="grid gap-2.5">
-      <NodePanelField label="取值方式">
+      <NodePanelField label="取值来源">
         <Select
-          value={mode}
+          value={source}
           onValueChange={value => update(current => current.kind === 'queue-select'
-            ? { ...current, mode: value as QueueSelectMode }
+            ? { ...current, source: value as QueueSelectSource }
             : current)}
         >
-          <SelectTrigger className="w-full"><SelectValue placeholder="mode" /></SelectTrigger>
+          <SelectTrigger className="w-full"><SelectValue placeholder="source" /></SelectTrigger>
           <SelectContent className={PANEL_POPUP_SURFACE_CLASSNAME}>
-            {MODE_OPTIONS.map(option => (
+            {SOURCE_OPTIONS.map(option => (
               <SelectItem className={PANEL_POPUP_ITEM_CLASSNAME} key={option.value} value={option.value}>
                 {option.label}
               </SelectItem>
@@ -87,27 +99,54 @@ export function QueueSelectPanel(props: NodePanelProps) {
 
       <NodePanelHint>{activeDescription}</NodePanelHint>
 
-      {mode === 'fixed' && (
-        <QueuePicker
-          emptyHint="暂无可用逻辑队列，请先在队列控制中创建。"
-          logicalModels={logicalModels}
-          onToggle={toggleQueue}
-          selectedIds={queueIds}
-          target="queueIds"
-          title="目标队列"
-        />
+      {source === 'variable' && (
+        <NodePanelField label="取值字段（上游 schema）">
+          <Select
+            value={variablePath || undefined}
+            onValueChange={value => update(current => current.kind === 'queue-select'
+              ? { ...current, variablePath: value }
+              : current)}
+          >
+            <SelectTrigger className="w-full"><SelectValue placeholder="field path" /></SelectTrigger>
+            <SelectContent className={PANEL_POPUP_SURFACE_CLASSNAME}>
+              {variableFields.map(field => (
+                <SelectItem className={PANEL_POPUP_ITEM_CLASSNAME} key={field.path} value={field.path}>
+                  {/* 名称前置：先看「来自哪个节点」，再看具体字段路径与类型。 */}
+                  {sourceNameOf.get(field.sourceNodeId) ?? field.sourceNodeId} · {field.path} · {field.valueType}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </NodePanelField>
       )}
 
-      {mode === 'follow-request-model' && (
-        <QueuePicker
-          emptyHint="没有选中兜底队列时，回落到内置默认队列 default。"
-          logicalModels={logicalModels}
-          onToggle={toggleQueue}
-          selectedIds={fallbackQueueIds}
-          target="fallbackQueueIds"
-          title="兜底队列"
-        />
+      {source === 'variable' && variableFields.length === 0 && (
+        <NodePanelHint tone="warning">
+          暂无可用字段，请先把会产生字符串字段的节点连接到当前节点上游。
+        </NodePanelHint>
       )}
+
+      {source === 'fixed'
+        ? (
+          <QueuePicker
+            emptyHint="暂无可用逻辑队列，请先在队列控制中创建。"
+            logicalModels={logicalModels}
+            onToggle={toggleQueue}
+            selectedIds={queueIds}
+            target="queueIds"
+            title="目标队列"
+          />
+        )
+        : (
+          <QueuePicker
+            emptyHint="没有勾选兜底队列时，取不到值就不产出落点。"
+            logicalModels={logicalModels}
+            onToggle={toggleQueue}
+            selectedIds={fallbackQueueIds}
+            target="fallbackQueueIds"
+            title="兜底队列"
+          />
+        )}
     </div>
   )
 }

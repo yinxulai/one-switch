@@ -109,14 +109,27 @@ interface RouteDecision {
 
 > 请求里的 `model` 命中我们的逻辑队列 id 时，请求该队列；否则请求默认队列（`default`）。
 
-实现方式是在 `queue-select` 节点上引入取值方式：
+这条策略**不引入任何专用节点**，完全用基础节点拼出来：
 
-| 取值方式 | 语义 |
+```text
+Input ─▶ Condition（route.requestedModelInQueues 为真）
+           ├─ IF   ─▶ QueueSelect（取值来源 = 变量 route.requestedModel）─▶ Output
+           └─ ELSE ─▶ QueueSelect（取值来源 = 固定队列 default）────────▶ Output
+```
+
+`queue-select` 的取值来源只有两种通用能力：
+
+| 取值来源 | 语义 |
 | --- | --- |
-| `follow-request-model`（默认策略） | 请求模型命中可用逻辑队列 → 直连该队列（`fallback: false`）；否则使用节点上的兜底队列（默认 `['default']`，`fallback: true`） |
 | `fixed` | 与请求无关，始终使用节点上勾选的队列列表 |
+| `variable` | 读取 `variablePath` 指向字段的取值作为落点：字符串视为单个队列 id，字符串数组视为队列 id 列表；取不到值时使用节点上的兜底队列，兜底队列为空则不产出落点 |
 
-这样做的好处是**不枚举模型**：逻辑队列在运行时会随队列控制的变化而变化，规则不需要跟着改图；命中判断始终基于本次运行真正可用的队列集合。
+这样做的好处：
+
+- **不枚举模型**：命中判断基于本次运行真正可用的队列集合（`route.requestedModelInQueues`），逻辑队列增减时规则自动生效，不需要改图；
+- **没有专用节点**：模型直达只是「条件 + 两次队列选择」的一种拼法，按协议、按租户、按控制输入等策略用同一组基础节点同样能表达。
+
+旧图里用过的 `mode: 'follow-request-model'` 会在读取时迁移为「`source: 'variable'` + `variablePath: 'route.requestedModel'`」，行为不变。
 
 预设策略放在 `graph-model.ts` 的 `ROUTER_POLICY_PRESETS` 中，第一个即默认策略，UI 侧由 `components/policy-menu.tsx` 呈现。
 

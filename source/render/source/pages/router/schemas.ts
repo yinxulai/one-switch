@@ -80,11 +80,12 @@ const ConditionNodeSchema = WorkflowNodeBaseSchema.extend({
 
 const QueueSelectNodeSchema = WorkflowNodeBaseSchema.extend({
   kind: z.literal('queue-select'),
-  // 旧版本保存的图没有这两个字段，用默认值补齐，避免历史版本全部失效。
-  mode: z.enum(['fixed', 'follow-request-model']).default('fixed'),
+  // 旧版本保存的图没有这些字段，用默认值补齐，避免历史版本全部失效。
+  source: z.enum(['fixed', 'variable']).default('fixed'),
+  variablePath: z.string().default(''),
   // 允许空数组：刚插入、尚未选择队列的节点是合法的编辑中间态，
   // 运行时会产出 success: false 的 trace，而不是让整张图校验失败。
-  queueIds: z.array(z.string().min(1)),
+  queueIds: z.array(z.string().min(1)).default([]),
   fallbackQueueIds: z.array(z.string().min(1)).default([]),
 })
 
@@ -110,11 +111,40 @@ export const WorkflowEdgeSchema = z.object({
   targetNodeId: z.string().min(1),
 })
 
-export const WorkflowGraphSchema = z.object({
+/**
+ * 历史数据迁移：早期队列选择节点用 `mode` 表达取值方式，
+ * 现在统一为 `source` + `variablePath`。
+ * 在这里做一次字段改写，老图与历史版本就能继续通过校验、行为保持不变。
+ */
+function migrateGraphInput(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object') return raw
+
+  const graph = raw as Record<string, unknown>
+  if (!Array.isArray(graph.nodes)) return raw
+
+  let changed = false
+  const nodes = graph.nodes.map((item) => {
+    if (!item || typeof item !== 'object') return item
+    const node = item as Record<string, unknown>
+    if (node.kind !== 'queue-select' || !('mode' in node)) return item
+
+    changed = true
+    const rest: Record<string, unknown> = { ...node }
+    delete rest.mode
+    if (node.mode === 'follow-request-model') {
+      return { ...rest, source: 'variable', variablePath: 'route.requestedModel' }
+    }
+    return { ...rest, source: 'fixed' }
+  })
+
+  return changed ? { ...graph, nodes } : raw
+}
+
+export const WorkflowGraphSchema = z.preprocess(migrateGraphInput, z.object({
   version: z.literal(1),
   nodes: z.array(WorkflowNodeModelSchema),
   edges: z.array(WorkflowEdgeSchema),
-})
+}))
 
 export const RouteContextInputSchema = z.object({
   request: RequestPayloadSchema,

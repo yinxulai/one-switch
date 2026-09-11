@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { runWorkflow } from './engine'
 import { appendNode, cloneNode, connectEdge, insertNode, portKey, primarySourcePort, removeEdges, removeNode, resolveInsertAnchor } from './graph-ops'
-import { createDefaultGraph, createNodeByKind } from './graph-model'
+import { createDefaultGraph, createDefaultPolicyGraph, createNodeByKind } from './graph-model'
 import { APPENDABLE_KINDS } from './node-meta'
 import { WorkflowGraphSchema } from './schemas'
 import type { ConditionNode, ControlInputNode, WorkflowGraph, WorkflowNodeModel } from './types'
@@ -240,6 +240,25 @@ describe('removeEdges', () => {
 describe('图谱校验（回归）', () => {
   it('默认图本身必须通过 schema 校验', () => {
     expect(WorkflowGraphSchema.safeParse(createDefaultGraph()).error?.issues).toBeUndefined()
+  })
+
+  it('默认策略图由基础节点组合而成，同样必须通过 schema 校验', () => {
+    const graph = createDefaultPolicyGraph()
+    expect(WorkflowGraphSchema.safeParse(graph).error?.issues).toBeUndefined()
+    // 规则完全由既有基础节点表达，没有任何专用节点类型。
+    expect(new Set(graph.nodes.map(node => node.kind))).toEqual(new Set(['input', 'condition', 'queue-select', 'output']))
+  })
+
+  it('旧版本的 mode 字段会被迁移到 source / variablePath', () => {
+    const graph = createDefaultGraph()
+    graph.nodes = graph.nodes.map(node => node.kind === 'queue-select'
+      ? { id: node.id, kind: node.kind, name: node.name, enabled: node.enabled, description: node.description, position: node.position, mode: 'follow-request-model', queueIds: [], fallbackQueueIds: ['default'] } as unknown as WorkflowNodeModel
+      : node)
+
+    const parsed = WorkflowGraphSchema.parse(JSON.parse(JSON.stringify(graph)) as unknown)
+    const queueNode = parsed.nodes.find(node => node.kind === 'queue-select')
+    expect(queueNode).toMatchObject({ source: 'variable', variablePath: 'route.requestedModel' })
+    expect(queueNode).not.toHaveProperty('mode')
   })
 
   it('插入任意可新增节点后，图仍能通过 schema 校验', () => {
