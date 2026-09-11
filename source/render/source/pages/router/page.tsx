@@ -364,6 +364,12 @@ function WorkflowStudioCanvas() {
         id: model.id,
         type: toCanvasNodeType(model.kind),
         position: model.position,
+        // React Flow 把量到的尺寸记在 internal node 上，而 `adoptUserNodes` 重建内部节点时
+        // 会直接取用户节点对象的 `measured`。这里重建对象（例如拖动时每帧写回位置）如果不把
+        // 尺寸带回来，尺寸会被重置成 undefined：`calculateNodePosition` 会打印 error015
+        // （“trying to drag a node that is not initialized”），框选 / fitView 等几何计算
+        // 也会拿到 0 尺寸。
+        measured: flow.getInternalNode(model.id)?.measured,
         draggable,
         data: {
           model,
@@ -389,6 +395,7 @@ function WorkflowStudioCanvas() {
   }, [
     dragEnabled,
     dockMode,
+    flow,
     graph,
     handleDeleteNode,
     handleDuplicateNode,
