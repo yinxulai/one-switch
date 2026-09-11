@@ -79,6 +79,47 @@ Input -> ModelSelector -> Output
 - 配置保存前必须做类型校验与可执行性校验；
 - schema 变化后需要给出迁移提示，避免静默失效。
 
+### 2.6 输出契约：`route` 命名空间
+
+路由执行器不修改调用方的 `metadata`（`metadata` 归调用方所有，引擎只读），所有由路由自身产生的数据都写在 payload 顶层的 `route` 对象里：
+
+```ts
+interface RouteDecision {
+  traceId: string                      // 本次运行的追踪 id
+  protocol: WorkflowProtocol           // 识别到的请求协议，未识别为 unknown
+  transport: WorkflowTransport         // http | http-sse
+  queueIds: string[]                   // 最终落点队列（决策结果）
+  fallback: boolean                    // 是否走了兜底策略
+  requestedModel: string               // request.body.model
+  requestedModelInQueues: boolean      // 请求模型是否命中可用逻辑队列
+  availableQueueIds: string[]          // 本次运行可见的逻辑队列
+  controls: Record<string, unknown>    // 控制输入节点注入的运行时取值
+}
+```
+
+约定：
+
+- **决策结果**（`queueIds`）与**决策依据**（`protocol` / `transport` / `requestedModel` / `controls` …）都放在 `route` 下，条件节点可直接按 `route.*` 选字段；
+- **过程性数据**只进 trace，不进 payload —— 例如协议归一化后的请求体（`{protocol, transport, model, messages}`）与每个节点的判定明细，避免 payload 里出现只有调试才看的字段；
+- 旧版本图（没有 `route`）在运行时会被补齐，调用方无需迁移。
+
+### 2.7 默认策略：模型直达
+
+系统内建一条默认策略，任何时刻都可通过页头的「策略」下拉一键选回：
+
+> 请求里的 `model` 命中我们的逻辑队列 id 时，请求该队列；否则请求默认队列（`default`）。
+
+实现方式是在 `queue-select` 节点上引入取值方式：
+
+| 取值方式 | 语义 |
+| --- | --- |
+| `follow-request-model`（默认策略） | 请求模型命中可用逻辑队列 → 直连该队列（`fallback: false`）；否则使用节点上的兜底队列（默认 `['default']`，`fallback: true`） |
+| `fixed` | 与请求无关，始终使用节点上勾选的队列列表 |
+
+这样做的好处是**不枚举模型**：逻辑队列在运行时会随队列控制的变化而变化，规则不需要跟着改图；命中判断始终基于本次运行真正可用的队列集合。
+
+预设策略放在 `graph-model.ts` 的 `ROUTER_POLICY_PRESETS` 中，第一个即默认策略，UI 侧由 `components/policy-menu.tsx` 呈现。
+
 ---
 
 ## 3. 核心抽象：Node 与 Execution Model

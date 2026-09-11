@@ -50,6 +50,21 @@ Iteration 和 Loop 是结构化控制流节点：
 
 运行时循环状态属于一次执行，不写回用户配置。公开的 `metadata.iteration` 和 `metadata.loop` 是当前循环作用域的投影，离开循环后清理。
 
+## 输出契约
+
+引擎每次运行返回 `{ outputPayload, protocol, queueSelections, stopReason, trace }`：
+
+- `outputPayload` 是入参 payload 的克隆，其中 `metadata` 归调用方所有、引擎只读；
+- 引擎自己产出的数据统一写在顶层 `route` 命名空间（决策结果 + 决策依据），字段定义见 [route-design.md](./route-design.md) §2.6；
+- 协议归一化结果、每个节点的判定明细等过程性数据只进 `trace`。
+
+`queue-select` 节点的取值方式决定落点：
+
+- `fixed`：使用节点上配置的队列列表；
+- `follow-request-model`：请求的 `body.model` 命中本次可用逻辑队列时直连该队列，否则使用节点上的兜底队列（默认为内置的 `default`）。
+
+抓不到任何队列时该节点仍产出 trace，`success` 为 `false`，但不阻断执行。
+
 ## 校验层次
 
 1. **形状校验**：`WorkflowNodeModelSchema` 与 `WorkflowEdgeSchema` 校验节点和边的字段类型。

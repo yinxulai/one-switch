@@ -8,6 +8,7 @@ import {
 } from './node-meta'
 import type { NodeRunStatus } from './node-data'
 import {
+  DEFAULT_FALLBACK_QUEUE_IDS,
   DEFAULT_OPERATOR_SET,
   type ConditionCase,
   type ConditionOperator,
@@ -36,7 +37,7 @@ export const samplePayload = {
       model: 'gpt-4o-mini',
       tenant: 'vip-cn',
       priority: 2,
-      input: 'Summarize this article in Chinese.',
+      messages: [{ role: 'user', content: 'Summarize this article in Chinese.' }],
     },
   },
   metadata: { source: 'desktop-app' },
@@ -55,9 +56,9 @@ export function createConditionRule(): ConditionRule {
   }
 }
 
-export function createConditionCase(): ConditionCase {
+export function createConditionCase(id: string = createId('case')): ConditionCase {
   return {
-    id: createId('case'),
+    id,
     name: '分支 1',
     logicalOperator: 'and',
     conditions: [createConditionRule()],
@@ -136,7 +137,9 @@ export function createNodeByKind(kind: AppendableKind, position: NodePosition): 
     enabled: true,
     description: '选择一个或多个逻辑队列，交由出口执行。',
     position,
+    mode: 'fixed',
     queueIds: [],
+    fallbackQueueIds: [...DEFAULT_FALLBACK_QUEUE_IDS],
   }
 }
 
@@ -163,17 +166,72 @@ export function withFixedNodeCopy(nodes: WorkflowNodeModel[]): WorkflowNodeModel
   return changed ? next : nodes
 }
 
+/* ------------------------------------------------------------------------- *
+ * 策略预设
+ * ------------------------------------------------------------------------- */
+
+/** 固定入口节点（input / output）的名称与描述不可修改。 */
+export function createInputNode(position: NodePosition): WorkflowNodeModel {
+  return {
+    id: 'input',
+    kind: 'input',
+    name: fixedNodeCopy.input.name,
+    enabled: true,
+    description: fixedNodeCopy.input.description,
+    position,
+  }
+}
+
+/** 固定出口节点（不受保护的固定节点使用同一份文案）。 */
+export function createOutputNode(position: NodePosition): WorkflowNodeModel {
+  return {
+    id: 'output',
+    kind: 'output',
+    name: fixedNodeCopy.output.name,
+    enabled: true,
+    description: fixedNodeCopy.output.description,
+    position,
+    includeTrace: true,
+    summaryLevel: 'detailed',
+  }
+}
+
+/**
+ * 默认策略：请求模型命中逻辑队列 id 就直连该队列，否则落到默认队列。
+ *
+ * 只用一个「跟随请求模型」的队列选择节点表达规则：不枚举模型、不随逻辑队列增减失效。
+ */
+export function createDefaultPolicyGraph(): WorkflowGraph {
+  return {
+    version: 1,
+    nodes: [
+      createInputNode({ x: 80, y: 220 }),
+      {
+        id: 'queue',
+        kind: 'queue-select',
+        name: '请求模型直连',
+        enabled: true,
+        description: '请求模型命中逻辑队列，直接路由到该队列；否则落到默认队列。',
+        position: { x: 520, y: 220 },
+        mode: 'follow-request-model',
+        queueIds: [],
+        fallbackQueueIds: [...DEFAULT_FALLBACK_QUEUE_IDS],
+      },
+      createOutputNode({ x: 960, y: 220 }),
+    ],
+    edges: [
+      { id: 'edge-input-queue', sourceNodeId: 'input', sourcePort: 'out', targetNodeId: 'queue' },
+      { id: 'edge-queue-output', sourceNodeId: 'queue', sourcePort: 'out', targetNodeId: 'output' },
+    ],
+  }
+}
+
+/** 协议分流模板：先识别协议，再按条件分流，最后落到不同队列。 */
 export function createDefaultGraph(): WorkflowGraph {
-  const conditionCase = createConditionCase()
+  // 分支 id 固定，保证同一预设每次生成的图完全一致（否则「当前策略」永远匹配不上）。
+  const conditionCase = createConditionCase('case-1')
   const nodes: WorkflowNodeModel[] = [
-    {
-      id: 'input',
-      kind: 'input',
-      name: fixedNodeCopy.input.name,
-      enabled: true,
-      description: fixedNodeCopy.input.description,
-      position: { x: 80, y: 220 },
-    },
+    createInputNode({ x: 80, y: 220 }),
     {
       id: 'protocol',
       kind: 'protocol-discovery',
@@ -198,18 +256,11 @@ export function createDefaultGraph(): WorkflowGraph {
       enabled: true,
       description: '选择一个或多个逻辑队列，交由出口执行。',
       position: { x: 1100, y: 220 },
+      mode: 'fixed',
       queueIds: [],
+      fallbackQueueIds: [...DEFAULT_FALLBACK_QUEUE_IDS],
     },
-    {
-      id: 'output',
-      kind: 'output',
-      name: fixedNodeCopy.output.name,
-      enabled: true,
-      description: fixedNodeCopy.output.description,
-      position: { x: 1440, y: 220 },
-      includeTrace: true,
-      summaryLevel: 'detailed',
-    },
+    createOutputNode({ x: 1440, y: 220 }),
   ]
 
   const edges: WorkflowEdge[] = [
@@ -224,6 +275,37 @@ export function createDefaultGraph(): WorkflowGraph {
   ]
 
   return { version: 1, nodes, edges }
+}
+
+export interface RouterPolicyPreset {
+  id: string
+  name: string
+  description: string
+  /** 是否是系统内建的默认策略（列表第一项，可在任何时刻一键选回）。 */
+  isDefault: boolean
+  createGraph: () => WorkflowGraph
+}
+
+/** 策略预设：一键把画布换成某种内置规则，随时可切回默认策略。 */
+export const ROUTER_POLICY_PRESETS: RouterPolicyPreset[] = [
+  {
+    id: 'model-direct',
+    name: '默认策略：模型直达',
+    description: '请求模型命中逻辑队列就直连该队列，否则落到默认队列。',
+    isDefault: true,
+    createGraph: createDefaultPolicyGraph,
+  },
+  {
+    id: 'protocol-then-condition',
+    name: '协议分流模板',
+    description: '先识别协议，再按条件分流，最后落到指定队列。',
+    isDefault: false,
+    createGraph: createDefaultGraph,
+  },
+]
+
+export function findPolicyPreset(id: string): RouterPolicyPreset | undefined {
+  return ROUTER_POLICY_PRESETS.find(preset => preset.id === id)
 }
 
 /**
