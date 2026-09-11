@@ -133,6 +133,56 @@
 - Token 和其他用量：请求级聚合 `request_usages`，尝试级聚合 `attempt_usages`，不得把两级混成同一个口径。
 - 延迟分布与 TTFT：TTFT 是**尝试级样本**，聚合 `request_attempts.ttftMilliseconds` 并按 `request_attempts.providerId` 归属到真正产生的供应商；不得先把一次请求的多次尝试平均成「请求级 TTFT」再比对。
 
+### 分析页聚合查询设计
+
+分析页在渲染层每 15 秒轮询一次，因此这些查询的耗时直接决定页面是「一直在加载」还是「随时可用」。在 15 万请求 / 30 万尝试的真实规模下实测（`request_logs` 15 万行、`request_attempts` 30 万行、两张用量表各 45 万行），得到三条必须遵守的结论。
+
+**一、一请求多行的表必须先按请求聚合，再连接回去，不能逐请求回查。**
+
+`request_attributes`（一请求两行）、`request_usages` / `attempt_usages`（一请求或一尝试五行）都是「实体 × 类型」的窄表。原先的写法是在主表上写相关子查询：
+
+```sql
+SELECT coalesce((SELECT value FROM request_attributes a WHERE a.requestId = r.id AND a.key = 'request.source'), 'unknown')
+FROM request_logs r WHERE r.createdTime >= ?
+```
+
+主表有多少行就回查多少次。30 天窗口下 `getRequestSourceStats` 因此要 1016 ms。改成「先在窄表里按 `requestId` / `attemptId` 分组聚成一行，再 `LEFT JOIN` 回主表」后降到 432 ms；同一改动用在用量透视上，`getUsageTrend` 从 547 ms 降到 294 ms。
+
+透视列要显式列出（`sum(case when type = 'inputTokens' ...).as('inputTokens')` 写五遍），不要在运行时循环拼接：列集合必须是静态已知的字段。
+
+**二、先按自己表的时间列收窄，再去连别的表。**
+
+`request_attempts` 与它所属的 `request_logs` 之间没有时间差——尝试的 `createdTime` 必然不早于请求的 `createdTime`，因此「请求落在窗口内」与「尝试落在窗口内」是同一批尝试。但规划器只能用后者：
+
+```sql
+-- 慢：按请求表过滤，尝试表只能靠 providerId 索引把该供应商的全部历史捞出来
+SELECT ... FROM request_attempts a JOIN request_logs r ON a.requestId = r.id
+WHERE r.createdTime >= ? GROUP BY a.providerId
+-- 等价但快：直接命中 (providerId, createdTime)
+SELECT ... FROM request_attempts a
+WHERE a.createdTime >= ? GROUP BY a.providerId
+```
+
+`getProviderStats` 因此从 366 ms 降到 117 ms（30 天）。`getModelStats` 除了用量之外没有任何指标来自请求表，整个 `JOIN request_logs` 都可以删掉。
+
+**三、能在 SQL 里分桶就不要把样本搬进内存。**
+
+`getLatencyDistribution` 原先取回窗口内每一个 TTFT 到 JS 里排序分桶——为一张直方图搬运并排序十几万个整数。改成在 SQL 里 `CASE ... END AS bucket` + `GROUP BY bucket` 后，返回行数从样本数（30 天 12.7 万行）降到桶数（最多 8 行）。同一进程内交替测量两轮、每轮取三次最小值：7 天 25.1 ms vs 30.2 ms，30 天 117.9 ms vs 125.1 ms——耗时只是小幅领先，真正的收益是把「搬运并排序全部样本」这件事从查询里去掉，返回量不再随时间窗增长。
+
+**但「时间窗下推到自己的时间列」这条经验不能无条件套用。** 延迟分布的时间窗必须留在 `request_logs.createdTime` 上：它的过滤条件里还有请求级状态 `request_logs.status = 'success'`，把时间窗下推到 `request_attempts.createdTime` 后，规划器只能用 `idx_request_logs_status_created_time` 的状态列、丢掉时间范围，7 天窗口实测从 25 ms 恶化到 106 ms。成立条件是「这张表的时间列索引能被独立使用」——用量与尝试统计的过滤条件全在尝试表上，所以它们适用；延迟分布不适用。
+
+**索引是逐条论证后选择的，不是一次加满。** 实测中一次性加上四个「看起来该有」的索引后，多数查询耗时持平，`getModelStats` 反而从 136 ms 涨到 306 ms（7 天）、`getLatencyDistribution` 从 23 ms 涨到 333 ms（30 天）——规划器被多出来的选项带到了更差的路径上。最终只保留三个经实测确认的改动：
+
+| 索引 | 服务什么 | 为什么必须这样 |
+| --- | --- | --- |
+| `idx_request_logs_status_created_time(status, createdTime)` | 失败原因分布、成功率 | 只有 `status` 时，SQLite 会先把该状态的全部历史行找出来再逐行比对时间，代价与时间窗无关 |
+| `idx_request_attempts_created_time(createdTime)` | 不带供应商/模型条件的全量统计 | `(providerId, createdTime)` 与 `(providerModelId, createdTime)` 的最左列都不是时间，服务不了全量排行 |
+| `idx_request_usages_created_time` / `idx_attempt_usages_created_time` | 用量聚合 | 过滤条件永远只有时间窗（五种类型总是一起取），`(type, createdTime)` 的最左列用不上 |
+
+**连接与 PRAGMA 层面的调优同样重要。** `initDatabase` 设定 `temp_store = MEMORY`（聚合的 `GROUP BY` / `ORDER BY` 临时 B 树不再落盘）、`cache_size = -64000`（默认页缓存仅 2 MB，扫一遍日志表就被冲干净）、`synchronous = NORMAL`（WAL 下不会因进程崩溃丢已提交数据），并在迁移后执行一次 `PRAGMA optimize` 让规划器拿到统计信息——没有统计信息时它按「所有索引一样好」估计，实测正是这一点让它给带时间窗的聚合选了更差的路径。
+
+结果：分析页一次完整加载从 1403 ms 降到 550 ms（7 天）、从 3088 ms 降到 1479 ms（30 天）；供应商详情页 30 天从 744 ms 降到 206 ms。
+
 ### 额度处理（P1）
 
 - 支持"手动额度阈值"：用户可为供应商设置周期请求数上限
