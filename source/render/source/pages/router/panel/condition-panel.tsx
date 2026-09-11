@@ -12,11 +12,13 @@ import {
 import { DifyButton } from '../components/dify-button'
 import { createConditionCase, createConditionRule, getOperatorsByType } from '../graph-model'
 import type { NodePanelProps } from '../node-data'
-import type {
-  ConditionLogicalOperator,
-  ConditionNode,
-  ConditionOperator,
-  SchemaValueType,
+import {
+  FIELD_OPERAND_OPERATORS,
+  type ConditionLogicalOperator,
+  type ConditionNode,
+  type ConditionOperator,
+  type ConditionValueSource,
+  type SchemaValueType,
 } from '../types'
 import {
   NodePanelCard,
@@ -118,6 +120,17 @@ export function ConditionPanel(props: NodePanelProps) {
                 }
                 : current)
 
+              /** 哪些操作符才有「比较值」（isTrue / empty 这类是一元判定）。 */
+              const needsExpectedValue = rule.operator !== 'exists'
+                && rule.operator !== 'isTrue'
+                && rule.operator !== 'isFalse'
+                && rule.operator !== 'empty'
+                && rule.operator !== 'notEmpty'
+
+              /** 比较值可以来自另一个字段，例如 `route.requestedModel in route.availableQueueIds`。 */
+              const supportsFieldOperand = FIELD_OPERAND_OPERATORS.includes(rule.operator)
+              const usesFieldOperand = supportsFieldOperand && rule.valueSource === 'field'
+
               return (
                 <div key={`${conditionCase.id}-${ruleIndex}`} className="grid gap-2 rounded-lg bg-workflow-block-parma-bg p-2">
                   <NodePanelGroupHeader
@@ -195,7 +208,9 @@ export function ConditionPanel(props: NodePanelProps) {
                     <NodePanelField label="操作符">
                       <Select
                         value={rule.operator}
-                        onValueChange={value => patchRule({ operator: value as ConditionOperator })}
+                        onValueChange={value => patchRule(FIELD_OPERAND_OPERATORS.includes(value as ConditionOperator)
+                          ? { operator: value as ConditionOperator }
+                          : { operator: value as ConditionOperator, valueSource: 'literal' })}
                       >
                         <SelectTrigger className="w-full"><SelectValue placeholder="operator" /></SelectTrigger>
                         <SelectContent className={PANEL_POPUP_SURFACE_CLASSNAME}>
@@ -207,17 +222,54 @@ export function ConditionPanel(props: NodePanelProps) {
                     </NodePanelField>
                   </div>
 
-                  {rule.operator !== 'exists'
-                    && rule.operator !== 'isTrue'
-                    && rule.operator !== 'isFalse'
-                    && rule.operator !== 'empty'
-                    && rule.operator !== 'notEmpty' && (
-                      <NodePanelField label="比较值">
-                        <Input
-                          value={rule.value ?? ''}
-                          onChange={event => patchRule({ value: event.target.value })}
-                        />
-                      </NodePanelField>
+                  {needsExpectedValue && supportsFieldOperand && (
+                    <NodePanelField label="比较值来源">
+                      <Select
+                        value={rule.valueSource ?? 'literal'}
+                        onValueChange={value => patchRule({ valueSource: value as ConditionValueSource })}
+                      >
+                        <SelectTrigger className="w-full"><SelectValue placeholder="value source" /></SelectTrigger>
+                        <SelectContent className={PANEL_POPUP_SURFACE_CLASSNAME}>
+                          <SelectItem className={PANEL_POPUP_ITEM_CLASSNAME} value="literal">固定值</SelectItem>
+                          <SelectItem className={PANEL_POPUP_ITEM_CLASSNAME} value="field">字段取值</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </NodePanelField>
+                  )}
+
+                  {needsExpectedValue && usesFieldOperand && (
+                    <NodePanelField label="比较字段（上游 schema）">
+                      <Select
+                        value={rule.valueFieldPath ?? ''}
+                        onValueChange={value => patchRule({ valueFieldPath: value })}
+                      >
+                        <SelectTrigger className="w-full"><SelectValue placeholder="field path" /></SelectTrigger>
+                        <SelectContent className={PANEL_POPUP_SURFACE_CLASSNAME}>
+                          {conditionFieldHints.map(field => (
+                            <SelectItem className={PANEL_POPUP_ITEM_CLASSNAME} key={field.path} value={field.path}>
+                              {sourceNameOf.get(field.sourceNodeId) ?? field.sourceNodeId} · {field.path} · {field.valueType}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </NodePanelField>
+                  )}
+
+                  {needsExpectedValue && usesFieldOperand && (
+                    <NodePanelHint>
+                      {rule.operator === 'in' || rule.operator === 'notIn'
+                        ? '取到数组时按「左值是否在列表里」判定，取到单值时与左值直接比较。'
+                        : '取到的字段值会与左侧字段比较。'}
+                    </NodePanelHint>
+                  )}
+
+                  {needsExpectedValue && !usesFieldOperand && (
+                    <NodePanelField label="比较值">
+                      <Input
+                        value={rule.value ?? ''}
+                        onChange={event => patchRule({ value: event.target.value })}
+                      />
+                    </NodePanelField>
                   )}
 
                   {rule.operator === 'between' && (

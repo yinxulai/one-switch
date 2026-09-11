@@ -52,6 +52,8 @@ export function createConditionRule(): ConditionRule {
     fieldPath: 'request.body.tenant',
     valueType: 'string',
     operator: 'startsWith',
+    valueSource: 'literal',
+    valueFieldPath: '',
     value: 'vip-',
   }
 }
@@ -200,19 +202,23 @@ export function createOutputNode(position: NodePosition): WorkflowNodeModel {
 /**
  * 默认策略：请求模型命中逻辑队列 id 就直连该队列，否则落到默认队列。
  *
- * 规则全部由基础节点组合而成，没有任何专用节点：
- * 输入 → 条件（route.requestedModelInQueues）→ 队列选择（变量取值）→ 出口
- *                                          └→ 队列选择（固定 default）→ 出口
+ * 规则全部由基础节点组合而成，没有任何专用节点，
+ * 命中判断就是一条普通的「字段 in 字段」条件：
+ * 输入 → 条件（route.requestedModel in route.availableQueueIds）
+ *        ├─ IF   → 队列选择（变量取值 route.requestedModel）→ 出口
+ *        └─ ELSE → 队列选择（固定 default）→ 出口
  */
 export function createDefaultPolicyGraph(): WorkflowGraph {
   const conditionCase: ConditionCase = {
     ...createConditionCase('case-1'),
-    name: '请求模型是逻辑队列',
+    name: '请求模型在逻辑队列列表里',
     conditions: [
       {
-        fieldPath: 'route.requestedModelInQueues',
-        valueType: 'boolean',
-        operator: 'isTrue',
+        fieldPath: 'route.requestedModel',
+        valueType: 'string',
+        operator: 'in',
+        valueSource: 'field',
+        valueFieldPath: 'route.availableQueueIds',
       },
     ],
   }
@@ -226,7 +232,7 @@ export function createDefaultPolicyGraph(): WorkflowGraph {
         kind: 'condition',
         name: '请求模型是否命中逻辑队列',
         enabled: true,
-        description: 'route.requestedModelInQueues 为真时走直连分支，否则落到默认队列。',
+        description: 'route.requestedModel 在 route.availableQueueIds 里时走直连分支，否则落到默认队列。',
         position: { x: 460, y: 220 },
         cases: [conditionCase],
       },
@@ -332,7 +338,7 @@ export const ROUTER_POLICY_PRESETS: RouterPolicyPreset[] = [
   {
     id: 'model-direct',
     name: '默认策略：模型直达',
-    description: '请求模型命中逻辑队列就直连该队列，否则落到默认队列（由条件 + 队列选择基础节点组合而成）。',
+    description: '请求模型命中逻辑队列就直连该队列，否则落到默认队列（条件 + 两次队列选择）。',
     isDefault: true,
     createGraph: createDefaultPolicyGraph,
   },

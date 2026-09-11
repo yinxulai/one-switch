@@ -61,6 +61,9 @@ const ConditionRuleSchema = z.object({
   fieldPath: z.string().min(1),
   valueType: z.enum(['string', 'number', 'boolean', 'enum', 'array', 'unknown']),
   operator: z.enum(['equals', 'notEquals', 'contains', 'notContains', 'startsWith', 'endsWith', 'in', 'notIn', 'regex', 'gt', 'gte', 'lt', 'lte', 'between', 'isTrue', 'isFalse', 'empty', 'notEmpty', 'exists']),
+  // 旧版本保存的图没有这两项，默认按字面量比较。
+  valueSource: z.enum(['literal', 'field']).default('literal'),
+  valueFieldPath: z.string().default(''),
   value: z.string().optional(),
   secondaryValue: z.string().optional(),
   enumOptions: z.array(z.string()).optional(),

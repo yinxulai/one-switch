@@ -64,7 +64,6 @@ function createEmptyRoute(): RouteDecision {
     queueIds: [],
     fallback: false,
     requestedModel: '',
-    requestedModelInQueues: false,
     availableQueueIds: [],
     controls: {},
   }
@@ -122,7 +121,6 @@ function normalizeInputPayload(inputPayload: unknown): RouteContextEnvelope {
     traceId,
     transport: detectTransport(normalized),
     requestedModel,
-    requestedModelInQueues: requestedModel ? availableQueueIds.includes(requestedModel) : false,
     availableQueueIds,
     controls: objectField(normalized, 'controls'),
   } satisfies RouteDecision
@@ -205,8 +203,44 @@ function splitSet(raw: string | undefined): string[] {
     .filter(Boolean)
 }
 
-function evaluateCondition(rule: ConditionRule, actual: unknown): boolean {
+/**
+ * 比较值来源：`literal` 直接用规则上的字面量，`field` 读取 `valueFieldPath` 的实时取值。
+ * 有了字段来源，「某字段的取值是否落在另一个列表字段里」就能用通用条件表达，
+ * 不需要引擎为具体场景预计算布尔结果。
+ */
+function resolveFieldOperand(rule: ConditionRule, payload: Record<string, unknown>): unknown {
+  if (rule.valueSource !== 'field') return undefined
+  const path = (rule.valueFieldPath ?? '').trim()
+  return path ? getByPath(payload, path) : undefined
+}
+
+/** `in` / `notIn` 的比较集合：字面量按逗号拆分，字段来源按数组 / 标量展开。 */
+function resolveExpectedSet(rule: ConditionRule, payload: Record<string, unknown>): string[] {
+  if (rule.valueSource === 'field') {
+    const resolved = resolveFieldOperand(rule, payload)
+    if (Array.isArray(resolved)) return resolved.map(item => String(item)).filter(Boolean)
+    if (resolved === undefined || resolved === null) return []
+    return [String(resolved)]
+  }
+
+  if (rule.valueType === 'enum' && rule.enumOptions?.length) return rule.enumOptions
+  return splitSet(rule.value)
+}
+
+/** 其余操作符的比较值：统一成字符串（字段来源取到数组时按逗号连接）。 */
+function resolveExpectedText(rule: ConditionRule, payload: Record<string, unknown>): string {
+  if (rule.valueSource === 'field') {
+    const resolved = resolveFieldOperand(rule, payload)
+    if (resolved === undefined || resolved === null) return ''
+    return Array.isArray(resolved) ? resolved.map(item => String(item)).join(',') : String(resolved)
+  }
+
+  return rule.value ?? ''
+}
+
+function evaluateCondition(rule: ConditionRule, actual: unknown, payload: Record<string, unknown>): boolean {
   const operator: ConditionOperator = rule.operator
+  const expected = resolveExpectedText(rule, payload)
 
   if (operator === 'exists') {
     return actual !== undefined && actual !== null
@@ -230,7 +264,7 @@ function evaluateCondition(rule: ConditionRule, actual: unknown): boolean {
 
   if (operator === 'regex') {
     try {
-      return new RegExp(rule.value ?? '').test(String(actual ?? ''))
+      return new RegExp(expected).test(String(actual ?? ''))
     } catch {
       return false
     }
@@ -238,36 +272,34 @@ function evaluateCondition(rule: ConditionRule, actual: unknown): boolean {
 
   if (operator === 'contains') {
     if (Array.isArray(actual)) {
-      return actual.map(item => String(item)).includes(rule.value ?? '')
+      return actual.map(item => String(item)).includes(expected)
     }
-    return String(actual ?? '').includes(rule.value ?? '')
+    return String(actual ?? '').includes(expected)
   }
 
   if (operator === 'notContains') {
     if (Array.isArray(actual)) {
-      return !actual.map(item => String(item)).includes(rule.value ?? '')
+      return !actual.map(item => String(item)).includes(expected)
     }
-    return !String(actual ?? '').includes(rule.value ?? '')
+    return !String(actual ?? '').includes(expected)
   }
 
   if (operator === 'startsWith') {
-    return String(actual ?? '').startsWith(rule.value ?? '')
+    return String(actual ?? '').startsWith(expected)
   }
 
   if (operator === 'endsWith') {
-    return String(actual ?? '').endsWith(rule.value ?? '')
+    return String(actual ?? '').endsWith(expected)
   }
 
   if (operator === 'in' || operator === 'notIn') {
-    const items = rule.valueType === 'enum' && rule.enumOptions?.length
-      ? rule.enumOptions
-      : splitSet(rule.value)
+    const items = resolveExpectedSet(rule, payload)
     const included = items.includes(String(actual ?? ''))
     return operator === 'in' ? included : !included
   }
 
   if (operator === 'between') {
-    const lower = parseNumber(rule.value)
+    const lower = parseNumber(expected)
     const upper = parseNumber(rule.secondaryValue)
     const current = Number(actual)
     if (!Number.isFinite(current) || lower === null || upper === null) {
@@ -278,26 +310,25 @@ function evaluateCondition(rule: ConditionRule, actual: unknown): boolean {
 
   if (operator === 'gt' || operator === 'gte' || operator === 'lt' || operator === 'lte') {
     const current = Number(actual)
-    const expected = parseNumber(rule.value)
-    if (!Number.isFinite(current) || expected === null) {
+    const expectedNumber = parseNumber(expected)
+    if (!Number.isFinite(current) || expectedNumber === null) {
       return false
     }
 
-    if (operator === 'gt') return current > expected
-    if (operator === 'gte') return current >= expected
-    if (operator === 'lt') return current < expected
-    return current <= expected
+    if (operator === 'gt') return current > expectedNumber
+    if (operator === 'gte') return current >= expectedNumber
+    if (operator === 'lt') return current < expectedNumber
+    return current <= expectedNumber
   }
 
   const left = String(actual ?? '')
-  const right = String(rule.value ?? '')
-  if (operator === 'equals') return left === right
-  if (operator === 'notEquals') return left !== right
+  if (operator === 'equals') return left === expected
+  if (operator === 'notEquals') return left !== expected
   return false
 }
 
 function evaluateCase(caseNode: ConditionCase, payload: Record<string, unknown>): boolean {
-  const results = caseNode.conditions.map(rule => evaluateCondition(rule, getByPath(payload, rule.fieldPath)))
+  const results = caseNode.conditions.map(rule => evaluateCondition(rule, getByPath(payload, rule.fieldPath), payload))
   return caseNode.logicalOperator === 'and'
     ? results.every(Boolean)
     : results.some(Boolean)
