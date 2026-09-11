@@ -380,11 +380,17 @@ CREATE TABLE provider_endpoints (
   enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
   createdTime INTEGER NOT NULL,
   updatedTime INTEGER NOT NULL,
-  UNIQUE(providerId, protocol)
+  deletedTime INTEGER
 );
 
+-- 同一供应商同一协议只允许一条未删除的端点；软删除的行留在表里，
+-- 因此唯一约束必须是部分索引，否则重新添加同一协议会撞上历史行。
+CREATE UNIQUE INDEX idx_provider_endpoints_provider_protocol_active
+  ON provider_endpoints(providerId, protocol) WHERE deletedTime IS NULL;
 CREATE INDEX idx_provider_endpoints_protocol
   ON provider_endpoints(protocol, enabled);
+CREATE INDEX idx_provider_endpoints_deleted_time
+  ON provider_endpoints(deletedTime);
 ```
 
 密钥本身仍然不能进入数据库，只保存系统密钥环中的引用。
@@ -426,11 +432,14 @@ CREATE TABLE scheduling_policies (
   enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
   createdTime INTEGER NOT NULL,
   updatedTime INTEGER NOT NULL,
+  deletedTime INTEGER,
   PRIMARY KEY (logicalModelId, providerModelId)
 );
 
 CREATE INDEX idx_scheduling_policies_route
   ON scheduling_policies(logicalModelId, enabled, priority, weight);
+CREATE INDEX idx_scheduling_policies_deleted_time
+  ON scheduling_policies(deletedTime);
 ```
 
 `request_logs.logicalModelId` 保留实际处理请求的逻辑模型标识，但不建立外键。MVP 中请求体只要求 `model` 为非空字符串；路由先按请求模型匹配逻辑模型，未匹配时才回退到 `default` 的启用绑定。
@@ -458,7 +467,7 @@ CREATE TABLE provider_model_endpoints (
   enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
   createdTime INTEGER NOT NULL,
   updatedTime INTEGER NOT NULL,
-  UNIQUE(providerModelId, providerEndpointId)
+  deletedTime INTEGER
 );
 
 CREATE TABLE protocol_converters (
@@ -468,17 +477,25 @@ CREATE TABLE protocol_converters (
   enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
   createdTime INTEGER NOT NULL,
   updatedTime INTEGER NOT NULL,
-  UNIQUE(providerModelEndpointId, clientProtocol)
+  deletedTime INTEGER
 );
 
 CREATE UNIQUE INDEX idx_provider_models_provider_model_active
   ON provider_models(providerId, modelName) WHERE deletedTime IS NULL;
 CREATE INDEX idx_provider_models_enabled
   ON provider_models(providerId, enabled, deletedTime);
+CREATE UNIQUE INDEX idx_provider_model_endpoints_unique_active
+  ON provider_model_endpoints(providerModelId, providerEndpointId) WHERE deletedTime IS NULL;
 CREATE INDEX idx_provider_model_endpoints_provider_endpoint
   ON provider_model_endpoints(providerEndpointId, enabled);
+CREATE INDEX idx_provider_model_endpoints_deleted_time
+  ON provider_model_endpoints(deletedTime);
+CREATE UNIQUE INDEX idx_protocol_converters_unique_active
+  ON protocol_converters(providerModelEndpointId, clientProtocol) WHERE deletedTime IS NULL;
 CREATE INDEX idx_protocol_converters_protocol
   ON protocol_converters(clientProtocol, enabled);
+CREATE INDEX idx_protocol_converters_deleted_time
+  ON protocol_converters(deletedTime);
 ```
 
 端点解析规则：优先使用 `provider_model_endpoints.url`，为空时使用其 `providerEndpointId` 对应的 `provider_endpoints.url`；协议始终来自 Provider 端点，不在端点绑定表重复保存。
@@ -537,8 +554,11 @@ CREATE TABLE request_logs (
 CREATE INDEX idx_request_logs_created_time
   ON request_logs(createdTime);
 
-CREATE INDEX idx_request_logs_status
-  ON request_logs(status);
+-- 状态过滤总是与时间窗一起出现（失败原因分布、成功率）。
+-- 只有 status 一列时，SQLite 会先把该状态的全部历史行找出来再逐行比时间，
+-- 代价与时间窗无关——30 天与 7 天一样慢。
+CREATE INDEX idx_request_logs_status_created_time
+  ON request_logs(status, createdTime);
 
 CREATE INDEX idx_request_logs_logical_model
   ON request_logs(logicalModelId);
@@ -593,11 +613,14 @@ CREATE TABLE attempt_usages (
       OR (type <> 'raw' AND value IS NOT NULL AND rawValue IS NULL))
 );
 
-CREATE INDEX idx_request_usages_type_time
-  ON request_usages(type, createdTime);
+-- 用量聚合的过滤条件永远只有时间窗（五种类型总是一起取，不会只查其中一种），
+-- 再按请求/尝试分组。`(type, createdTime)` 服务不了这种形态：type 是等值条件之外的
+-- 第二列，查询里没有 type 条件时索引最左列就用不上。
+CREATE INDEX idx_request_usages_created_time
+  ON request_usages(createdTime);
 
-CREATE INDEX idx_attempt_usages_type_time
-  ON attempt_usages(type, createdTime);
+CREATE INDEX idx_attempt_usages_created_time
+  ON attempt_usages(createdTime);
 ```
 
 `type` 表示标准用量名，数值写在 `value` 上。**`totalTokens` 不落库**：它是 `inputTokens` 与 `outputTokens` 的派生量，存下来必然有一天与两个加数不一致，读取侧现算即可。
@@ -834,6 +857,11 @@ CREATE INDEX idx_request_attempts_provider_time
 
 CREATE INDEX idx_request_attempts_model_time
   ON request_attempts(providerModelId, createdTime);
+
+-- 不带 providerId / providerModelId 的全量统计（提供方排行、模型排行的总量）
+-- 只按时间窗取数，需要单独的时间索引。
+CREATE INDEX idx_request_attempts_created_time
+  ON request_attempts(createdTime);
 ```
 
 `providerId` 和 `providerModelId` 均不建立外键：历史尝试不依赖 Provider 或 ProviderModel 的当前存在性（配置实体未来可能物理删除）。由于详情页必须在配置删除后仍能展示名称，`request_attempts` 还必须在写入时保存 `providerName`、`providerModelName` 和实际 `url` 快照；ID 仅用于关联和筛选，不得依赖当前配置反查。
@@ -995,20 +1023,33 @@ Store 层应分为两部分：
 
 ### 配置实体
 
-以下表使用软删除：
+所有配置实体使用软删除（`deletedTime` 非空即视为已删除），因为它们会被历史数据反过来引用：
 
 - `providers`；
 - `logical_models`；
-- `provider_models`。
+- `provider_models`；
+- `provider_endpoints`；
+- `provider_model_endpoints`；
+- `protocol_converters`；
+- `scheduling_policies`；
+- `request_rewrite_rules` 与 `provider_model_request_rewrite_rules`。
+
+理由很直接：`request_logs` 与 `request_attempts` 里保存的是 `providerId` / `providerModelId` / `logicalModelId` 这类标识。如果配置实体物理删除，历史请求就会指向一个不存在的行——「这条 3 天前的失败请求属于哪个供应商、哪个逻辑模型队列」将无法回答。历史请求本身仍要按保留策略物理删除（见下文），但它删除的是请求侧的行，不是被引用的配置行。
+
+软删除带来两条配套约束：
+
+1. **唯一约束必须写成部分唯一索引**（`... WHERE deletedTime IS NULL`）。软删除的行留在表里，如果沿用普通 `UNIQUE`，重新添加同一个协议端点、同一对绑定关系会直接撞上历史行而失败。
+2. **同一实体重新添加时优先复用仍存在的行**（就地更新并把 `deletedTime` 置空），而不是插入新行；这样 ID 稳定，历史引用不会指向两条语义相同的记录。`scheduling_policies` 的主键是 `(logicalModelId, providerModelId)`，因此它的「复活」天然是主键冲突更新。
 
 ### 运行状态
 
-删除 Provider 时：
+删除 Provider 时，在同一事务中级联：
 
 1. 将 Provider 标记为软删除；
-2. 禁用或软删除其 Provider 模型；
-3. 保留 `provider_health` 和各 ProviderModel 的 `provider_model_health`（便于恢复后观察历史健康状态）；若未来提供物理删除，则在同一事务中清理对应健康状态；
-4. 保留历史请求日志和远端尝试记录。
+2. 软删除其全部 Provider 模型；
+3. 软删除这些模型与 Provider 自身的端点绑定（`provider_model_endpoints`）、端点（`provider_endpoints`）以及二者关联的 `protocol_converters`；
+4. 保留 `provider_health` 和各 ProviderModel 的 `provider_model_health`（便于恢复后观察历史健康状态）；若未来提供物理删除，则在同一事务中清理对应健康状态；
+5. 保留历史请求日志和远端尝试记录。
 
 ### 请求日志
 

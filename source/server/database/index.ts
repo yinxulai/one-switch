@@ -36,6 +36,18 @@ export async function initDatabase(dataDir: string, databaseFileName: string): P
 
   try {
     client.exec('PRAGMA journal_mode = WAL')
+    // 读密集型分析查询的调优：句柄是长驻的，这几个参数一次设定、全程生效。
+    //
+    // `temp_store = MEMORY`：分析聚合几乎都带 `GROUP BY` / `ORDER BY`，SQLite 为此
+    // 要建临时 B 树。默认走磁盘临时文件（约 1.9 万行/秒的写盘往返），落在内存里则
+    // 没有这段 IO。数据量再大也只是临时文件放内存，结果正确性不受影响。
+    // `cache_size = -64000`：默认页缓存只有 2MB，150k 行的日志表随便扫一遍就把它冲干净了，
+    // 分析查询又会连着访问同样的页。64MB 上限对桌面应用是可接受的开销。
+    // `synchronous = NORMAL`：WAL 下该档位不会因进程崩溃丢已提交数据，只有整机掉电
+    // 才可能丢最后几个事务——代理每次请求都要写日志，这个取舍对写入延迟的收益是值得的。
+    client.exec('PRAGMA temp_store = MEMORY')
+    client.exec('PRAGMA cache_size = -64000')
+    client.exec('PRAGMA synchronous = NORMAL')
     assertDatabaseIsSupported(client, migrationsFolder, databasePath)
     const db = drizzle({ client })
     // 迁移期间必须放下外键约束：重建式迁移（建新表 → 拷数据 → 删旧表 → 改名）删旧表时的隐式
@@ -50,6 +62,11 @@ export async function initDatabase(dataDir: string, databaseFileName: string): P
     }
     ensureDefaultLogicalModel(client)
     reconcileInterruptedRequests(client)
+    // 补一次统计信息。`ANALYZE` 的结果（`sqlite_stat1`）决定查询规划器选哪个索引，
+    // 而规划器在没有统计信息时是按「每个索引都一样好」的默认假设估的——实测中它因此
+    // 给带时间窗的聚合选了更差的路径。`optimize` 只在统计信息缺失或已过期时才会真正分析，
+    // 因此常规启动几乎不花时间；新建的空库也会被它立刻标记为「已有统计信息」。
+    client.exec('PRAGMA optimize')
     database = db
     console.info(`[database] initialization completed duration=${Date.now() - startedAt}ms`)
     return database
