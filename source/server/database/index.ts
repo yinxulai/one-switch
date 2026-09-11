@@ -2,34 +2,54 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
+import { DATABASE_FILE_PREFIX } from '@common/database-file'
 import { drizzle } from 'drizzle-orm/node-sqlite'
 import { migrate } from 'drizzle-orm/node-sqlite/migrator'
 
 export type Database = ReturnType<typeof drizzle>
 
-export const DATABASE_FILE_NAME = 'one-switch.db'
-
 let database: Database | null = null
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url))
 
-export async function initDatabase(dataDir: string): Promise<Database> {
+/**
+ * 打开（必要时创建）数据文件。
+ *
+ * `databaseFileName` 由应用入口给出（`createDatabaseFileName(app.getVersion())`）而不是在这里推导：
+ * 文件名带主版本号，是「换了不兼容结构就换一个文件」这条策略的载体，所以它必须由知道应用版本的
+ * 那一层提供，而不是由数据库层去猜。
+ */
+export async function initDatabase(dataDir: string, databaseFileName: string): Promise<Database> {
   if (database) {
     console.debug('[database] initialization skipped reason=already-initialized')
     return database
   }
 
   const startedAt = Date.now()
-  console.info(`[database] initialization started file=${DATABASE_FILE_NAME}`)
+  console.info(`[database] initialization started file=${databaseFileName}`)
   fs.mkdirSync(dataDir, { recursive: true })
-  const client = new DatabaseSync(path.join(dataDir, DATABASE_FILE_NAME), {
+  const databasePath = path.join(dataDir, databaseFileName)
+  const migrationsFolder = getMigrationsFolder()
+  warnAboutOtherDatabaseFiles(dataDir, databaseFileName)
+  const client = new DatabaseSync(databasePath, {
     enableForeignKeyConstraints: true,
   })
 
   try {
     client.exec('PRAGMA journal_mode = WAL')
+    assertDatabaseIsSupported(client, migrationsFolder, databasePath)
     const db = drizzle({ client })
-    migrate(db, { migrationsFolder: getMigrationsFolder() })
+    // 迁移期间必须放下外键约束：重建式迁移（建新表 → 拷数据 → 删旧表 → 改名）删旧表时的隐式
+    // 删除会撞上子表的外键，而 Drizzle 自己写的 `PRAGMA foreign_keys=OFF` 落在它的迁移事务
+    // 内部，SQLite 会忽略。迁移结束后立即恢复，运行期约束强度不受影响。
+    // 当前 `drizzle/` 只有一个纯建表的首发基线，这段是为了让将来生成的迁移仍然成立。
+    client.exec('PRAGMA foreign_keys = OFF')
+    try {
+      migrate(db, { migrationsFolder })
+    } finally {
+      client.exec('PRAGMA foreign_keys = ON')
+    }
     ensureDefaultLogicalModel(client)
+    reconcileInterruptedRequests(client)
     database = db
     console.info(`[database] initialization completed duration=${Date.now() - startedAt}ms`)
     return database
@@ -68,10 +88,100 @@ function getMigrationsFolder(): string {
   return path.join(moduleDirectory, '..', '..', 'drizzle')
 }
 
+/**
+ * 提示数据目录里其他版本的数据文件。
+ *
+ * 文件名带主版本号 ⇒ 换代后旧文件不会被动用，也不会被删除（用户可以自己取回旧数据）。但如果不
+ * 提示，用户只会看到「日志页面空了」。这里只写一条日志，不对文件做任何处理。
+ */
+function warnAboutOtherDatabaseFiles(dataDir: string, databaseFileName: string): void {
+  const others = fs
+    .readdirSync(dataDir)
+    .filter(name => name !== databaseFileName && name.startsWith(DATABASE_FILE_PREFIX) && name.endsWith('.db'))
+  if (others.length === 0) return
+
+  console.warn(
+    `[database] found database files of other versions file=${others.join(',')} note="not used by this version; back up and delete them (together with -wal/-shm) if unwanted"`,
+  )
+}
+
+/**
+ * 拒绝在不受支持的数据库上启动。
+ *
+ * One Switch 还在 preview 阶段，数据库结构只由 `drizzle/` 下的单个首发基线创建，不存在任何
+ * 升级路径：旧版本的库即使表名恰好相同，列与约束也未必一致，让它继续跑只会把错误推迟到运行
+ * 期的某次写入。所以这里只做一件事——判定数据库不是本版本创建的，就明确报错要求重新初始化，
+ * 而不是尝试修补（产品约定见 `product/data-model.md` 的数据库初始化策略）。
+ *
+ * 判定依据是 migration 记录而不是表名清单：只要记录里出现了本地基线之外的 migration，或者库里
+ * 有表却没有任何 migration 记录，就说明它来自另一条历史。这样无论旧库长什么样都不需要维护一份
+ * 「历史表名」列表，代价是要求 `drizzle/` 里的基线一旦发布就只能是追加式演进。
+ *
+ * 数据文件名已经带了主版本号，正常情况下这个函数见不到旧库（旧库在别的文件里）。它守的是
+ * 「文件被改名/拷错/来自别的分支」这类拿错库的情况。
+ */
+function assertDatabaseIsSupported(client: DatabaseSync, migrationsFolder: string, databasePath: string): void {
+  const tables = client
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+    .all()
+  if (tables.length === 0) return
+
+  const supportedNames = new Set(listMigrationNames(migrationsFolder))
+  const appliedNames = readAppliedMigrationNames(client)
+  const unsupportedNames = appliedNames.filter(name => !supportedNames.has(name))
+  if (appliedNames.length > 0 && unsupportedNames.length === 0) return
+
+  console.error(
+    `[database] unsupported database file=${databasePath} tables=${tables.length} applied=${appliedNames.length} unsupported=${unsupportedNames.length}`,
+  )
+  throw new Error(
+    `数据库文件不受当前版本支持：${databasePath}\n` +
+      'One Switch 处于 preview 阶段，数据库结构由首发基线直接创建，不提供旧数据库升级。\n' +
+      '请先自行备份，然后删除该文件（连同同目录的 -wal / -shm 文件）后重新启动，应用会自动重新初始化。',
+  )
+}
+
+function listMigrationNames(migrationsFolder: string): string[] {
+  if (!fs.existsSync(migrationsFolder)) {
+    throw new Error(`数据库初始化失败：缺少 migration 目录 ${migrationsFolder}`)
+  }
+  return fs
+    .readdirSync(migrationsFolder, { withFileTypes: true })
+    .filter(entry => entry.isDirectory())
+    .map(entry => entry.name)
+}
+
+/** 读取 Drizzle 记账表；库由其他来源创建时这张表不存在，返回空数组以区分「没跑过」和「跑过别的」。 */
+function readAppliedMigrationNames(client: DatabaseSync): string[] {
+  const bookkeeping = client
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = '__drizzle_migrations'")
+    .get()
+  if (!bookkeeping) return []
+
+  return (client.prepare('SELECT name FROM __drizzle_migrations').all() as { name: unknown }[])
+    .map(row => row.name)
+    .filter((name): name is string => typeof name === 'string')
+}
+
 function ensureDefaultLogicalModel(db: DatabaseSync): void {
   const time = BigInt(Date.now())
   db.prepare(`INSERT OR IGNORE INTO logical_models
     (id, name, description, enabled, createdTime, updatedTime)
     VALUES ('default', 'default', 'Default fallback routing model', 1, ?, ?)`)
     .run(time, time)
+}
+
+/**
+ * 回收上一次运行遗留的「进行中」请求。
+ *
+ * 请求行在拿到结果之前就已写入，所以进程被杀掉（崩溃、强制退出）时会留下永远
+ * 停在 `pending` 的行：它既不会被后续写入更新，也不会被保留期清理回收，只会让
+ * 日志列表永久显示一条「进行中」。
+ *
+ * 收尾为 `cancelled` 是唯诚实的选项：我们确实没有观察到这次请求的结果，
+ * 既不能假装成功，也没有任何失败证据可以归因。
+ */
+function reconcileInterruptedRequests(db: DatabaseSync): void {
+  const result = db.prepare("UPDATE request_logs SET status = 'cancelled' WHERE status = 'pending'").run()
+  if (result.changes > 0) console.info(`[database] reconciled interrupted request logs count=${result.changes}`)
 }

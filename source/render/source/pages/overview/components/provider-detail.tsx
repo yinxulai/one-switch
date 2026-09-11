@@ -21,9 +21,9 @@ export function ProviderDetail(props: ProviderDetailProps) {
   return (
     <div className="space-y-4">
       <MetricGrid className="sm:grid-cols-5" items={[
-        { label: '调用数', value: summary.requests.toLocaleString(), Icon: BarChart3 },
-        { label: '调用成功率', value: `${(summary.successRate * 100).toFixed(1)}%`, Icon: CheckCircle2 },
-        { label: '失败调用', value: summary.failed.toLocaleString(), Icon: TriangleAlert },
+        { label: '尝试数', value: summary.attempts.toLocaleString(), Icon: BarChart3 },
+        { label: '尝试成功率', value: `${(summary.successRate * 100).toFixed(1)}%`, Icon: CheckCircle2 },
+        { label: '失败尝试', value: summary.failed.toLocaleString(), Icon: TriangleAlert },
         { label: '平均延迟', value: hasSuccessfulCalls ? formatLatency(summary.avgLatencyMs) : '—', Icon: Clock3 },
         { label: '用量', value: formatTokens(summary.totalTokens), Icon: Coins },
       ]} />
@@ -33,11 +33,11 @@ export function ProviderDetail(props: ProviderDetailProps) {
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[720px] text-xs">
-              <thead className="bg-muted/40 text-muted-foreground"><tr><th className="px-4 py-2 text-left font-medium">模型</th><th className="px-3 py-2 text-right font-medium">调用数</th><th className="px-3 py-2 text-right font-medium">平均延迟</th><th className="px-3 py-2 text-right font-medium">平均 TTFT</th><th className="px-3 py-2 text-right font-medium">平均 TPS</th><th className="px-3 py-2 text-right font-medium">缓存命中率</th><th className="px-4 py-2 text-right font-medium">成功率</th></tr></thead>
+              <thead className="bg-muted/40 text-muted-foreground"><tr><th className="px-4 py-2 text-left font-medium">模型</th><th className="px-3 py-2 text-right font-medium">尝试数</th><th className="px-3 py-2 text-right font-medium">平均延迟</th><th className="px-3 py-2 text-right font-medium">平均 TTFT</th><th className="px-3 py-2 text-right font-medium">平均 TPS</th><th className="px-3 py-2 text-right font-medium">缓存命中率</th><th className="px-4 py-2 text-right font-medium">成功率</th></tr></thead>
               <tbody>{providerModels.length === 0 ? <tr><td colSpan={7} className="py-8 text-center text-muted-foreground">暂无模型数据</td></tr> : providerModels.map(model => (
                 <tr key={model.providerModelId} className="border-t border-border/50">
                   <td className="max-w-52 truncate px-4 py-2.5 font-medium">{model.providerModelName}</td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">{model.requests.toLocaleString()}</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums">{model.attempts.toLocaleString()}</td>
                   <td className="px-3 py-2.5 text-right tabular-nums">{model.success > 0 ? formatLatency(model.avgLatencyMs) : '—'}</td>
                   <td className="px-3 py-2.5 text-right tabular-nums">{model.avgTtftMs == null ? '—' : formatLatency(model.avgTtftMs)}</td>
                   <td className="px-3 py-2.5 text-right tabular-nums">{model.avgTps == null ? '—' : model.avgTps.toFixed(1)}</td>

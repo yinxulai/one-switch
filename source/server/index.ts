@@ -6,6 +6,7 @@ import type { SystemProxyResolver } from './infrastructure/network/outbound-conn
 
 export interface StartServerOptions {
   dataDir: string
+  databaseFileName: string
   secretStore: KeychainApi
   runtimeProfile: RuntimeProfile
   systemProxyResolver?: SystemProxyResolver

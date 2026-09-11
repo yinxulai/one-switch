@@ -1,6 +1,5 @@
 import type { IncomingHttpHeaders } from 'node:http'
 import DeviceDetector from 'device-detector-js'
-import type { RequestAttributeValueType } from '@common/schemas'
 
 const MAX_VALUE_LENGTH = 4096
 const USER_AGENT_MAX_LENGTH = 1024
@@ -17,8 +16,8 @@ const detector = new DeviceDetector({ skipBotDetection: true })
 
 export interface RequestAttributeInput {
   key: string
+  /** 属性值一律是字符串：采集侧只产出字符串，不另设「值类型」维度。 */
   value: string
-  valueType: RequestAttributeValueType
 }
 
 export function collectRequestAttributes(headers: IncomingHttpHeaders): RequestAttributeInput[] {
@@ -29,12 +28,12 @@ export function collectRequestAttributes(headers: IncomingHttpHeaders): RequestA
 
   if (userAgent) {
     const normalizedUserAgent = normalizeValue(userAgent, USER_AGENT_MAX_LENGTH)
-    attributes.push({ key: 'request.user_agent', value: normalizedUserAgent, valueType: 'string' })
+    attributes.push({ key: 'request.user_agent', value: normalizedUserAgent })
     const parsed = detector.parse(normalizedUserAgent)
     const client = identifyClient(normalizedUserAgent, parsed)
-    attributes.push({ key: 'client.category', value: client.category, valueType: 'string' })
-    if (client.name) attributes.push({ key: 'client.name', value: client.name, valueType: 'string' })
-    if (client.version) attributes.push({ key: 'client.version', value: client.version, valueType: 'string' })
+    attributes.push({ key: 'client.category', value: client.category })
+    if (client.name) attributes.push({ key: 'client.name', value: client.name })
+    if (client.version) attributes.push({ key: 'client.version', value: client.version })
     addAttribute(attributes, 'os.name', parsed.os?.name === 'Mac' ? 'Mac OS' : parsed.os?.name)
     addAttribute(attributes, 'os.version', parsed.os?.version)
     addAttribute(attributes, 'device.type', normalizeDeviceType(parsed))
@@ -50,11 +49,11 @@ export function collectRequestAttributes(headers: IncomingHttpHeaders): RequestA
     }
     addAttribute(attributes, 'cpu.architecture', parsed.os?.platform)
   } else {
-    attributes.push({ key: 'client.category', value: 'unknown', valueType: 'string' })
+    attributes.push({ key: 'client.category', value: 'unknown' })
   }
 
-  if (source) attributes.push({ key: 'request.source', value: normalizeValue(source), valueType: 'string' })
-  if (clientRequestId) attributes.push({ key: 'request.client_request_id', value: normalizeValue(clientRequestId), valueType: 'string' })
+  if (source) attributes.push({ key: 'request.source', value: normalizeValue(source) })
+  if (clientRequestId) attributes.push({ key: 'request.client_request_id', value: normalizeValue(clientRequestId) })
   return attributes
 }
 
@@ -67,7 +66,7 @@ export function extractClientRequestId(headers: IncomingHttpHeaders): string | n
 }
 
 function addAttribute(attributes: RequestAttributeInput[], key: string, value: string | undefined): void {
-  if (value) attributes.push({ key, value: normalizeValue(value), valueType: 'string' })
+  if (value) attributes.push({ key, value: normalizeValue(value) })
 }
 
 function normalizeValue(value: string, maxLength = MAX_VALUE_LENGTH): string {

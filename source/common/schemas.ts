@@ -55,6 +55,11 @@ export type ProviderModelRequestRewriteRule = z.infer<typeof ProviderModelReques
 export const RequestStatusSchema = z.enum(['pending', 'success', 'failed', 'cancelled'])
 export type RequestStatus = z.infer<typeof RequestStatusSchema>
 
+// 尝试的状态里没有 `pending`：尝试行在拿到结果之后才写入，
+// 「还没有结果」由「没有这一行」唯一表达，枚举里再留一个待定值就是留一条不可达状态。
+export const AttemptStatusSchema = z.enum(['success', 'failed', 'cancelled'])
+export type AttemptStatus = z.infer<typeof AttemptStatusSchema>
+
 // ========== Provider ==========
 
 export const ProviderSchema = z.object({
@@ -225,34 +230,50 @@ export type RawUsage = z.infer<typeof RawUsageSchema>
 
 export const RequestLogSchema = z.object({
   id: z.string().startsWith('req_'),
-  logicalModelId: z.string(),
-  clientProtocol: ProtocolSchema,
-  upstreamProtocol: ProtocolSchema.nullable(),
+  /** 为 `null` 表示请求在解析出逻辑模型之前就已经失败。 */
+  logicalModelId: z.string().nullable(),
+  /** 为 `null` 表示请求连 API 路径都无法识别，不存在「客户端协议」这个事实。 */
+  clientProtocol: ProtocolSchema.nullable(),
+  /** 客户端是否要求流式响应。请求体里即可确定，与上游实际是否流式无关。 */
+  streaming: z.boolean(),
   status: RequestStatusSchema,
   totalDurationMilliseconds: z.number().int().nonnegative(),
+  /**
+   * 用量字段都是**派生视图**，不是存储列。
+   *
+   * 请求级用量（含原始 usage 报文）由 `request_usages` 唯一持有，原始报文是其中
+   * `type = 'raw'` 的行；`totalTokens` 则是 `inputTokens + outputTokens` 的派生值，
+   * 不单独落库，避免出现「上游给了 total 但和两个分量对不上」的第三份数字。
+   */
   totalTokens: z.number().int().nonnegative().nullable(),
   inputTokens: z.number().int().nonnegative().nullable(),
   outputTokens: z.number().int().nonnegative().nullable(),
   cachedInputTokens: z.number().int().nonnegative().nullable(),
   reasoningTokens: z.number().int().nonnegative().nullable().optional(),
   cacheCreationInputTokens: z.number().int().nonnegative().nullable(),
+  /** 派生值：请求级 `cachedInputTokens > 0`。缓存是否命中不是独立事实。 */
   promptCacheHit: z.boolean().nullable(),
   rawUsage: RawUsageSchema.nullable(),
+  /** 请求级派生值：由本次请求所有 `request_attempts.ttftMilliseconds` 取最小值得出，不是存储列。 */
   ttftMilliseconds: z.number().int().nonnegative().nullable(),
-  cacheHit: z.boolean().nullable(),
   createdTime: z.number().int(),
 })
 export type RequestLog = z.infer<typeof RequestLogSchema>
-export type RequestLogUpdate = Partial<Pick<RequestLog, 'status' | 'upstreamProtocol' | 'totalDurationMilliseconds' | 'totalTokens' | 'inputTokens' | 'outputTokens' | 'cachedInputTokens' | 'cacheCreationInputTokens' | 'reasoningTokens' | 'promptCacheHit' | 'rawUsage' | 'ttftMilliseconds' | 'cacheHit'>>
-
-export const RequestAttributeValueTypeSchema = z.enum(['string', 'number', 'boolean', 'json'])
-export type RequestAttributeValueType = z.infer<typeof RequestAttributeValueTypeSchema>
+/**
+ * 请求日志的可更新字段。
+ *
+ * 只剩「请求级结果」这一类事实：状态与总耗时。以下字段刻意不可写：
+ * `ttftMilliseconds` 是尝试级事实的视图；用量（含原始 usage 报文）由
+ * `request_usages` 唯一持有，写入点是「服务该请求的那次尝试」的落库事务。
+ * 允许在这里再写一遍，就是制造一份会与尝试级数据漂移的副本。
+ */
+export type RequestLogUpdate = Partial<Pick<RequestLog, 'status' | 'totalDurationMilliseconds'>>
 
 export const RequestAttributeSchema = z.object({
   requestId: z.string().startsWith('req_'),
   key: z.string().min(1).max(128),
+  /** 属性值一律是字符串：采集侧只产出字符串，因此不另设「值类型」维度。 */
   value: z.string().max(4096),
-  valueType: RequestAttributeValueTypeSchema,
   createdTime: z.number().int(),
 })
 export type RequestAttribute = z.infer<typeof RequestAttributeSchema>
@@ -266,58 +287,108 @@ export const RequestAttemptSchema = z.object({
   providerModelId: z.string(),
   providerName: z.string(),
   providerModelName: z.string(),
+  /** 实际发往上游的协议。与请求的 `clientProtocol` 不同即代表发生过协议转换。 */
   upstreamProtocol: ProtocolSchema.nullable(),
   upstreamRequestId: z.string().nullable(),
   url: z.string(),
   attemptIndex: z.number().int().nonnegative(),
-  status: RequestStatusSchema,
+  status: AttemptStatusSchema,
   httpStatus: z.number().int().nullable(),
   retryable: z.boolean(),
+  /**
+   * 本次尝试上游是否以流式（SSE）返回。
+   *
+   * 这是**上游视角**的事实。「客户端是否要求流式」是请求级事实，落在
+   * `request_logs.streaming`，两者是不同的东西，不能互相顶替。
+   * 未收到响应（网络错误、请求取消）时无从判断，因此为 `null`。
+   */
+  streaming: z.boolean().nullable(),
   errorCode: z.string().nullable(),
   errorMessage: z.string().nullable(),
   durationMilliseconds: z.number().int().nonnegative(),
+  /** 本次尝试从发出请求到上游首个输出的耗时；未产生输出时为 null。 */
+  ttftMilliseconds: z.number().int().nonnegative().nullable(),
+  /** 该次尝试在请求阶段命中的改写规则 id。 */
+  requestRewriteRuleIds: z.array(z.string()).default([]),
+  /** 该次尝试在响应阶段命中的改写规则 id。 */
+  responseRewriteRuleIds: z.array(z.string()).default([]),
   createdTime: z.number().int(),
 })
 export type RequestAttempt = z.infer<typeof RequestAttemptSchema>
 
-export const RequestContentCaptureStatusSchema = z.enum(['captured', 'partial', 'disabled', 'failed'])
+// 正文采集的状态。只有「采到了」和「只采到一部分」两种真实情况：
+// 采集被设置关闭时根本不会写入正文行，因此“没有行 = 未采集”由行是否
+// 存在唯一确定，不需要用枚举值再表达一次。
+// captured — 完整采集
+// partial  — 只采集到部分内容（流式中断、上游报错、请求未走完）
+export const RequestContentCaptureStatusSchema = z.enum(['captured', 'partial'])
 export type RequestContentCaptureStatus = z.infer<typeof RequestContentCaptureStatusSchema>
 
+// 正文模型按「视角」正交拆分，每张表只承载一个视角，因此列名一律使用裸名
+// （headers / body / status）而不再带 client / upstream 前缀——视角由表名
+// 唯一确定，不存在二义。
+//
+//   request_contents   客户端视角（每个请求一行）
+//   attempt_contents   上游视角  （每次尝试一行）
+//
+// 「发生过协议转换」这个事实不单独建表：它由
+// `request_attempts.upstreamProtocol` 与请求的 `clientProtocol` 是否相同
+// 唯一确定，单独存一份必然会漂移。
+// 是否流式则按视角拆成两个事实：客户端是否要求流式落在 `request_logs.streaming`，
+// 上游是否以流式返回落在 `request_attempts.streaming`。
+
+/**
+ * 客户端视角的正文记录：客户端原始请求 + 最终回给客户端的响应。
+ * 每个请求恰好一行（`requestId` 唯一）。
+ */
 export const RequestContentSchema = z.object({
   id: z.string().startsWith('content_'),
   requestId: z.string().startsWith('req_'),
-  attemptId: z.string().startsWith('att_').nullable(),
   captureStatus: RequestContentCaptureStatusSchema,
+  /** 客户端使用的 HTTP 方法。 */
   requestMethod: z.string(),
+  /** 客户端请求的路径。 */
   requestPath: z.string(),
+  /** 客户端原始请求头（脱敏后的 JSON 字符串）。 */
   requestHeaders: z.string().nullable(),
+  /** 客户端原始请求体。 */
   requestBody: z.string().nullable(),
+  /** 最终返回给客户端的 HTTP 状态码。 */
   responseStatus: z.number().int().nullable(),
+  /** 最终返回给客户端的响应头（脱敏后的 JSON 字符串）。 */
   responseHeaders: z.string().nullable(),
+  /** 最终返回给客户端的响应体。 */
   responseBody: z.string().nullable(),
-  requestRewriteRuleIds: z.array(z.string()).default([]),
   createdTime: z.number().int(),
   updatedTime: z.number().int(),
 })
 export type RequestContent = z.infer<typeof RequestContentSchema>
 
-export const RequestConversionSchema = z.object({
-  id: z.string().startsWith('conversion_'),
-  requestId: z.string().startsWith('req_'),
+/**
+ * 上游视角的正文记录：真正发往上游的请求 + 上游返回的响应。
+ * 每次尝试恰好一行（`attemptId` 唯一）。
+ *
+ * 归属的请求、命中的改写规则这些事实都由 `request_attempts` 持有，
+ * 这里只保存上游视角的报文本身。
+ */
+export const AttemptContentSchema = z.object({
+  id: z.string().startsWith('attempt_content_'),
   attemptId: z.string().startsWith('att_'),
-  clientProtocol: ProtocolSchema,
-  upstreamProtocol: ProtocolSchema,
-  clientRequestHeaders: z.string().nullable(),
-  upstreamRequestHeaders: z.string().nullable(),
-  upstreamResponseHeaders: z.string().nullable(),
-  clientResponseHeaders: z.string().nullable(),
+  captureStatus: RequestContentCaptureStatusSchema,
+  /** 发往上游的请求头（脱敏后的 JSON 字符串），含改写与协议转换的结果。 */
+  requestHeaders: z.string().nullable(),
+  /** 发往上游的请求体，含改写与协议转换的结果。 */
   requestBody: z.string().nullable(),
+  /** 上游返回的 HTTP 状态码。 */
+  responseStatus: z.number().int().nullable(),
+  /** 上游返回的响应头（脱敏后的 JSON 字符串）。 */
+  responseHeaders: z.string().nullable(),
+  /** 上游返回的响应体。 */
   responseBody: z.string().nullable(),
-  streaming: z.boolean(),
-  durationMilliseconds: z.number().int().nonnegative(),
   createdTime: z.number().int(),
+  updatedTime: z.number().int(),
 })
-export type RequestConversion = z.infer<typeof RequestConversionSchema>
+export type AttemptContent = z.infer<typeof AttemptContentSchema>
 
 // ========== API 响应结构 ==========
 
@@ -378,7 +449,7 @@ export type ApiErrorCode = z.infer<typeof ApiErrorCodeSchema>
 export const RequestLogEntryAttemptSchema = z.object({
   id: z.string().startsWith('att_'),
   attemptIndex: z.number().int().nonnegative(),
-  status: RequestStatusSchema,
+  status: AttemptStatusSchema,
   providerId: z.string(),
   providerName: z.string(),
   providerModelId: z.string(),
@@ -388,6 +459,14 @@ export const RequestLogEntryAttemptSchema = z.object({
   url: z.string(),
   httpStatus: z.number().int().nullable(),
   retryable: z.boolean(),
+  /** 本次尝试上游是否以流式（SSE）返回；未收到响应时为 `null`。 */
+  streaming: z.boolean().nullable(),
+  /** 本次尝试从发出请求到上游首个输出的耗时；未产生输出时为 null。 */
+  ttftMilliseconds: z.number().int().nonnegative().nullable(),
+  /** 该次尝试在请求阶段命中的改写规则 id。 */
+  requestRewriteRuleIds: z.array(z.string()),
+  /** 该次尝试在响应阶段命中的改写规则 id。 */
+  responseRewriteRuleIds: z.array(z.string()),
   errorCode: z.string().nullable(),
   errorMessage: z.string().nullable(),
   durationMilliseconds: z.number().int().nonnegative(),
@@ -397,9 +476,12 @@ export type RequestLogEntryAttempt = z.infer<typeof RequestLogEntryAttemptSchema
 
 export const RequestLogEntrySchema = z.object({
   id: z.string().startsWith('req_'),
-  logicalModelId: z.string(),
-  clientProtocol: ProtocolSchema,
-  upstreamProtocol: ProtocolSchema.nullable(),
+  /** 为 `null` 表示请求在解析出逻辑模型之前就已经失败。 */
+  logicalModelId: z.string().nullable(),
+  /** 为 `null` 表示请求连 API 路径都无法识别。 */
+  clientProtocol: ProtocolSchema.nullable(),
+  /** 客户端是否要求流式响应。 */
+  streaming: z.boolean(),
   status: RequestStatusSchema,
   totalDurationMilliseconds: z.number().int().nonnegative(),
   totalTokens: z.number().int().nonnegative().nullable(),
@@ -411,7 +493,6 @@ export const RequestLogEntrySchema = z.object({
   promptCacheHit: z.boolean().nullable(),
   rawUsage: RawUsageSchema.nullable(),
   ttftMilliseconds: z.number().int().nonnegative().nullable(),
-  cacheHit: z.boolean().nullable(),
   createdTime: z.number().int(),
   attempts: z.array(RequestLogEntryAttemptSchema),
 })
@@ -425,7 +506,7 @@ export type AppliedRequestRewriteRule = z.infer<typeof AppliedRequestRewriteRule
 
 export const RequestLogDetailSchema = RequestLogEntrySchema.extend({
   contents: z.array(RequestContentSchema),
-  conversions: z.array(RequestConversionSchema),
+  attemptContents: z.array(AttemptContentSchema),
   requestRewriteRules: z.array(AppliedRequestRewriteRuleSchema),
 })
 export type RequestLogDetail = z.infer<typeof RequestLogDetailSchema>
@@ -477,7 +558,8 @@ export type DailyTrendPoint = z.infer<typeof DailyTrendPointSchema>
 export const ProviderStatSchema = z.object({
   providerId: z.string(),
   providerName: z.string(),
-  requests: z.number().int().nonnegative(),
+  /** 调用次数（每次上游尝试计一次，与请求数不同）。 */
+  attempts: z.number().int().nonnegative(),
   success: z.number().int().nonnegative(),
   failed: z.number().int().nonnegative(),
   avgLatencyMs: z.number().nonnegative(),
@@ -490,7 +572,8 @@ export const ModelStatSchema = z.object({
   providerModelName: z.string(),
   providerId: z.string(),
   providerName: z.string(),
-  requests: z.number().int().nonnegative(),
+  /** 调用次数（每次上游尝试计一次，与请求数不同）。 */
+  attempts: z.number().int().nonnegative(),
   success: z.number().int().nonnegative(),
   successRate: z.number().min(0).max(1),
   avgLatencyMs: z.number().nonnegative(),
@@ -537,7 +620,8 @@ export type ProviderRequestTrendPoint = z.infer<typeof ProviderRequestTrendPoint
 export const ProviderDetailSummarySchema = z.object({
   providerId: z.string(),
   providerName: z.string(),
-  requests: z.number().int().nonnegative(),
+  /** 调用次数（每次上游尝试计一次，与请求数不同）。 */
+  attempts: z.number().int().nonnegative(),
   success: z.number().int().nonnegative(),
   failed: z.number().int().nonnegative(),
   successRate: z.number().min(0).max(1),

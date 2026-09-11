@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { closeDatabase, initDatabase } from './index'
+import { TEST_DATABASE_FILE_NAME } from './test-support'
 import { createWorkflow, getLatestWorkflow, getWorkflow, listWorkflows, updateWorkflow } from './workflow-store'
 
 const temporaryDirectories: string[] = []
@@ -22,7 +23,7 @@ function createTemporaryDirectory(): string {
 
 describe('workflow store', () => {
   it('creates versioned workflow records and resolves the latest record by type', async () => {
-    await initDatabase(createTemporaryDirectory())
+    await initDatabase(createTemporaryDirectory(), TEST_DATABASE_FILE_NAME)
 
     const first = await createWorkflow({
       type: 'router',
@@ -44,7 +45,7 @@ describe('workflow store', () => {
   })
 
   it('updates workflow metadata without changing the version identity', async () => {
-    await initDatabase(createTemporaryDirectory())
+    await initDatabase(createTemporaryDirectory(), TEST_DATABASE_FILE_NAME)
 
     const workflow = await createWorkflow({
       type: 'router',

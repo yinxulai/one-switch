@@ -1,4 +1,4 @@
-import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { IncomingMessage } from 'node:http'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -10,18 +10,10 @@ vi.mock('@server/errors', () => ({ normalizeError: mocks.normalizeError }))
 vi.mock('./response', () => ({ sendManagementError: mocks.sendManagementError }))
 
 import { handleApiError } from './error-handler'
+import { mockResponse } from '../test-support'
 
 function mockRequest(method?: string, url?: string): IncomingMessage {
   return { method, url } as IncomingMessage
-}
-
-function mockResponse(overrides: Partial<ServerResponse> = {}): ServerResponse {
-  return {
-    headersSent: false,
-    writableEnded: false,
-    destroy: vi.fn(),
-    ...overrides,
-  } as unknown as ServerResponse
 }
 
 describe('handleApiError', () => {

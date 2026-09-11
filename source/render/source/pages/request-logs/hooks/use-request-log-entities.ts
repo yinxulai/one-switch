@@ -6,6 +6,6 @@ export function useRequestLogEntities() {
   const providers = useProviders()
   const logicalModels = useLogicalModels()
   const providerOptions = useMemo(() => providers.map(p => ({ id: p.id, name: p.name })).sort((a, b) => a.name.localeCompare(b.name)), [providers])
-  const getModelName = useCallback((id: string) => logicalModels.find(model => model.id === id)?.name ?? id, [logicalModels])
+  const getModelName = useCallback((id: string | null) => id === null ? '—' : logicalModels.find(model => model.id === id)?.name ?? id, [logicalModels])
   return { providers, logicalModels, providerOptions, getModelName }
 }

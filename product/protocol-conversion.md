@@ -79,10 +79,10 @@ P1 优先实现三个最高频方向：
 - 新增 `provider_endpoints`：Provider 按原生协议维护默认端点。
 - `provider_model_endpoints`：将 ProviderModel 绑定到 ProviderEndpoint，可选配置模型专属 `url`；为空时回退到 `provider_endpoints.url`。
 - 新增 `protocol_converters`：按 ProviderModel 端点绑定和客户端协议配置 `enabled`；目标 upstream 协议通过 `provider_model_endpoints.providerEndpointId -> provider_endpoints.protocol` 得到。
-- `request_logs.clientProtocol` 记录客户端协议；请求级 `request_logs.upstreamProtocol` 仅作为可选摘要；每次 attempt 的真实 upstream 协议必须记录在 `request_attempts.upstreamProtocol`，与客户端协议不同即表示发生了转换。
-- 新增 `request_metrics`：按请求保存可扩展数值指标；Token 和其他用量保存到 `request_usages`。
+- `request_logs.clientProtocol` 记录客户端协议；请求级不再保存 upstream 协议摘要；每次 attempt 的真实 upstream 协议必须记录在 `request_attempts.upstreamProtocol`，与客户端协议不同即表示发生了转换。
+- Token 和其他用量按视角保存到 `request_usages`（请求级）与 `attempt_usages`（尝试级），原始 `usage` 报文以 `type = 'raw'` 的行保存在同一组表里；不再有通用指标 KV 表。
 - `request_attempts.upstreamProtocol` 为 nullable，记录本次尝试实际使用的端点协议，不依赖当前端点配置推导；upstream 返回的请求标识记录在 `upstreamRequestId`。
-- `RequestConversion` 独立记录 client/upstream 两侧协议、Header、正文和流式状态，不嵌入 `request_contents`。
+- **转换事实不单独建表。** `request_logs.clientProtocol` 与 `request_attempts.upstreamProtocol` 不相等即为「发生了转换」的充要判据；是否流式读 `request_attempts.streaming`，耗时读 `request_attempts.durationMilliseconds`。原因：一份独立的转换表只能重复保存前两张表已持有的信息，且其中的耗时列会与 `request_attempts.durationMilliseconds` 形成一份会漂移的副本；“没发生转换”与“转换记录丢失”在该表里也不可区分。转换前后的载荷由 `request_contents`（客户端侧）与 `attempt_contents`（上游侧）分别唯一提供。
 - 修改器仅记录协议转换边界之后的报文：请求侧记录协议转换后的 upstream 原始请求与修改后供应商请求；响应侧记录协议转换后的 client 原始响应与修改后客户端响应。修改器不处理客户端原始请求、供应商原始响应或转换器内部的中间报文。
 
 ## UI 设计

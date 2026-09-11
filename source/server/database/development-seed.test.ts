@@ -5,18 +5,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import type { KeychainApi } from '@common/keychain'
 import { closeDatabase, getDb, initDatabase } from './index'
+import { TEST_DATABASE_FILE_NAME } from './test-support'
 import { seedDevelopmentData } from './development-seed'
 import { providerModels, requestUsages } from './schema'
 import { createProvider, listProviders } from './provider-store'
 import { listLogicalModels } from './logical-model-store'
-import { getRequestLog, listAttemptsByRequest, listRequestContents, listRequestLogs, listRequestUsages } from './request-log-store'
+import { getAttemptUsage, getRequestLog, getRequestUsage, listAttemptContents, listAttemptsByRequest, listRequestContents, listRequestLogs } from './request-log-store'
 
 let temporaryDirectory: string
 let secretStore: KeychainApi
 
 beforeEach(async () => {
   temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-seed-'))
-  await initDatabase(temporaryDirectory)
+  await initDatabase(temporaryDirectory, TEST_DATABASE_FILE_NAME)
   secretStore = {
     set: vi.fn(async () => undefined),
     get: vi.fn(async () => null),
@@ -49,7 +50,7 @@ describe('development seed', () => {
       totalTokens: expect.any(Number),
     }))
     const successfulRequestId = successfulRequest!.id
-    expect((await listRequestUsages(successfulRequestId))[0]).toEqual(expect.objectContaining({
+    expect(await getRequestUsage(successfulRequestId)).toEqual(expect.objectContaining({
       inputTokens: expect.any(Number),
       outputTokens: expect.any(Number),
       totalTokens: expect.any(Number),
@@ -60,19 +61,33 @@ describe('development seed', () => {
       }),
     }))
     expect(getDb().select().from(providerModels).all()).toHaveLength(10)
-    expect(getDb().select().from(requestUsages).where(eq(requestUsages.requestId, successfulRequestId)).all()).toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: 'estimatedCost', unit: 'USD' }),
+    // 数值用量表里只有可求和的 token 类条目，原始报文另占一行 `raw`。
+    const usageRows = getDb().select().from(requestUsages).where(eq(requestUsages.requestId, successfulRequestId)).all()
+    expect(usageRows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'inputTokens', value: expect.any(Number), rawValue: null }),
+      expect.objectContaining({ type: 'raw', value: null, rawValue: expect.stringContaining('prompt_tokens') }),
     ]))
-    expect((await listRequestContents(successfulRequestId)).find(content => content.attemptId === null)).toEqual(expect.objectContaining({
+    // `totalTokens` 是派生值，不再单独存一行。
+    expect(usageRows.some(row => row.type === 'totalTokens')).toBe(false)
+    expect((await listRequestContents(successfulRequestId))[0]).toEqual(expect.objectContaining({
       requestMethod: 'POST',
       responseStatus: 200,
       requestBody: expect.stringContaining('messages'),
       responseBody: expect.stringContaining('chat.completion'),
     }))
     const failedRequestId = firstBatchRequests.find(request => request.status === 'failed')!.id
-    expect(await listRequestUsages(failedRequestId)).toHaveLength(0)
-    expect(await listRequestContents(failedRequestId)).toHaveLength(2)
+    expect(await getRequestUsage(failedRequestId)).toEqual({ inputTokens: null, outputTokens: null, totalTokens: null, cachedInputTokens: null, cacheCreationInputTokens: null, reasoningTokens: null, rawUsage: null })
+    expect(await listRequestContents(failedRequestId)).toHaveLength(1)
+    expect(await listAttemptContents(failedRequestId)).toHaveLength(1)
     expect(await listAttemptsByRequest(failedRequestId)).toHaveLength(2)
+    const failedAttempts = await listAttemptsByRequest(failedRequestId)
+    // 事实（TTFT、规则、原始 usage）与是否采集正文无关，总是写入。
+    expect(failedAttempts.every(attempt => attempt.requestRewriteRuleIds.length === 0)).toBe(true)
+    // 上游流式与否是尝试级事实：没等到响应的那次尝试无从判断，成功那次总有个确定值。
+    expect(failedAttempts.find(attempt => attempt.status === 'failed')?.streaming).toBeNull()
+    expect(typeof failedAttempts.find(attempt => attempt.status === 'success')?.streaming).toBe('boolean')
+    const successfulAttempt = (await listAttemptsByRequest(successfulRequestId))[0]
+    expect(await getAttemptUsage(successfulAttempt.id)).toEqual(expect.objectContaining({ totalTokens: expect.any(Number) }))
     expect(new Set((await listRequestLogs()).map(request => request.clientProtocol))).toEqual(new Set([
       'openai-completions',
       'openai-responses',
@@ -118,8 +133,8 @@ describe('development seed', () => {
     expect(secondBatchRequests).toHaveLength(120)
     const secondBatchSuccess = secondBatchRequests.find(request => request.status === 'success')!
     const secondBatchFailure = secondBatchRequests.find(request => request.status === 'failed')!
-    expect(await listRequestUsages(secondBatchSuccess.id)).not.toHaveLength(0)
-    expect(await listRequestContents(secondBatchSuccess.id)).toHaveLength(2)
+    expect((await getRequestUsage(secondBatchSuccess.id)).totalTokens).not.toBeNull()
+    expect(await listRequestContents(secondBatchSuccess.id)).toHaveLength(1)
     expect(await listAttemptsByRequest(secondBatchFailure.id)).toHaveLength(2)
     expect(secretStore.set).toHaveBeenCalledTimes(5)
   })

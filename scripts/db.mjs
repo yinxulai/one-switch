@@ -11,7 +11,7 @@ Commands:
 `
 
 const main = async () => {
-  const [command] = process.argv.slice(2)
+  const [command, ...extraArguments] = process.argv.slice(2)
 
   const commands = {
     generate: ['drizzle-kit', 'generate'],
@@ -27,7 +27,7 @@ const main = async () => {
 
   log.title(`DB — ${command}`)
   try {
-    await run('pnpm', commands[command])
+    await run('pnpm', [...commands[command], ...extraArguments])
     log.success(`Done: ${command}`)
   } catch (error) {
     log.error(`DB command failed: ${command}`)

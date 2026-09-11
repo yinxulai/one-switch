@@ -80,7 +80,7 @@ proxy/
 └── hooks/
     ├── request-logger.ts     # 唯一日志写入点（request_logs / request_attempts）
     ├── usage-tracker.ts      # token / usage 提取
-    └── content-capture.ts    # request_contents 正文采集
+    └── content-capture.ts    # request_contents / attempt_contents 正文采集
 ```
 
 ### 观测订阅原则

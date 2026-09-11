@@ -64,8 +64,9 @@ export function calculateQueueModelMetrics(logs: RequestLogEntry[]): Record<stri
     }
     accumulator.requestIds.add(log.id)
 
-    if (log.ttftMilliseconds != null) {
-      accumulator.ttftTotal += log.ttftMilliseconds
+    // TTFT 是尝试级样本：必须取真正成功那次尝试的值，而不是请求级派生值。
+    if (successfulAttempt.ttftMilliseconds != null) {
+      accumulator.ttftTotal += successfulAttempt.ttftMilliseconds
       accumulator.ttftCount += 1
     }
 

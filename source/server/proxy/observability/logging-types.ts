@@ -1,39 +1,44 @@
 import type http from 'node:http'
 import type { IncomingHttpHeaders, OutgoingHttpHeaders } from 'node:http'
-import type { Protocol, RawUsage, RequestAttribute, RequestStatus } from '@common/schemas'
+import type { AttemptStatus, Protocol, RawUsage, RequestAttribute, RequestStatus } from '@common/schemas'
 import type { ProxyObservationHooks } from '@server/proxy/observability/hooks'
 
 export interface RequestLoggingInput {
   requestId: string
-  logicalModelId: string
-  clientProtocol: Protocol
+  /** 解析出的逻辑模型；`null` 表示尚未（或未能）解析出逻辑模型。 */
+  logicalModelId: string | null
+  /** 客户端请求协议；`null` 表示连 API 路径都无法识别。 */
+  clientProtocol: Protocol | null
   method: string
   path: string
   headers: http.IncomingHttpHeaders
   attributes?: Array<Omit<RequestAttribute, 'requestId' | 'createdTime'>>
   requestBody: Buffer
   captureRequestContent: boolean
+  hooks?: ProxyObservationHooks
 }
 
-export interface RequestLogMetrics {
-  ttftMilliseconds?: number | null
-  inputTokens?: number | null
-  outputTokens?: number | null
-  cachedInputTokens?: number | null
-  cacheCreationInputTokens?: number | null
-  reasoningTokens?: number | null
-  promptCacheHit?: boolean | null
-  rawUsage?: RawUsage | null
-  upstreamProtocol?: Protocol | null
-}
-
-export interface RequestLogOutcome {
-  statusCode: number
+/**
+ * 客户端视角的最终响应结果，写入 `request_contents` 的响应侧。
+ *
+ * 这里的每个字段都必须是「客户端真正收到的东西」：如果响应从未写出客户端，
+ * 对应字段就应为 `null`，而不是用上游的值顶替。
+ */
+export interface RequestContentOutcome {
+  /**
+   * 视角标记。
+   *
+   * `AttemptOutcome` 与 `RequestContentOutcome` 的字段结构高度相似，若不加标记，
+   * 误把上游视角数据直接写入客户端正文时编译器不会报错。这个字面量只能由
+   * 「尝试结果 -> 客户端视角」的显式转换函数产生，从类型上杜绝该类混淆。
+   */
+  perspective: 'client'
   captureStatus?: 'captured' | 'partial'
-  responseStatus?: number
-  responseHeaders?: string
-  upstreamResponseHeaders?: string
-  clientResponseHeaders?: string
+  /** 最终返回给客户端的 HTTP 状态码；未写出时为 `null`。 */
+  statusCode: number | null
+  /** 最终返回给客户端的响应头（脱敏后的 JSON 字符串）；未写出时为 `null`。 */
+  responseHeaders?: string | null
+  /** 最终返回给客户端的响应体。 */
   responseBody?: string | null
 }
 
@@ -55,15 +60,26 @@ export interface AttemptUsageInput {
   rawUsage?: RawUsage | null
 }
 
-export interface AttemptContentInput {
-  attemptId: string | null
+/**
+ * 上游视角的响应内容，写入 `attempt_contents`。
+ *
+ * 这里的每个字段都必须是「上游真正返回的东西」，与客户端收到的内容无关。
+ * 连接失败、超时这类本地错误下上游一个字节都没回：状态码与响应头保持 `null`，
+ * 响应体只写本地观察到的失败原因（带 `localFailure` 标记），绝不凭空造一个状态码。
+ */
+export interface UpstreamContentInput {
   captureStatus: 'captured' | 'partial'
+  /** 上游返回的 HTTP 状态码；上游没有返回任何响应时为 `null`。 */
   responseStatus: number | null
-  upstreamResponseHeaders: IncomingHttpHeaders | null
-  clientResponseHeaders: IncomingHttpHeaders | OutgoingHttpHeaders | null
+  /** 上游返回的响应头，来源固定为 upstream 响应；上游没有返回任何响应时为 `null`。 */
+  responseHeaders: IncomingHttpHeaders | null
+  /**
+   * 上游返回的响应体。
+   *
+   * 上游没有返回任何响应时，这里写的是本地失败原因（JSON，含 `localFailure` 标记），
+   * 而不是上游内容——否则一次连接失败在记录里只剩一个空壳，看不出为什么失败。
+   */
   responseBody: string | null
-  convertedResponseBody?: string | null
-  streaming?: boolean
 }
 
 export interface AttemptLoggingInput {
@@ -71,26 +87,66 @@ export interface AttemptLoggingInput {
   attemptIndex: number
   startedAt: number
   snapshot: AttemptLogSnapshot
-  method: string
-  path: string
-  requestHeaders: http.IncomingHttpHeaders
-  requestBody: Buffer
+  /** 实际发往上游的请求头（已完成改写与协议转换）。 */
   upstreamRequestHeaders: http.OutgoingHttpHeaders
+  /** 实际发往上游的请求体（已完成改写与协议转换）。 */
   upstreamRequestBody: Buffer
+  /** 本次尝试在请求阶段命中的改写规则 id。 */
   requestRewriteRuleIds?: string[]
   customAuthHeader?: string | null
-  clientProtocol: Protocol
-  upstreamProtocol: Protocol
-  requiresResponseConversion: boolean
   captureRequestContent: boolean
   hooks: ProxyObservationHooks
 }
 
+/**
+ * 一次性完成「尝试记录 + 正文捕获」的入参。
+ * 供 attempt 执行器在收到上游响应（或失败）后统一落库使用。
+ *
+ * 「是否流式」在两个视角上是两件不同的事，因此分居两张表：
+ * - 客户端是否要求流式：请求级事实，写在 `request_logs.streaming`；
+ * - 上游是否以 SSE 返回：尝试级事实，写到这里的 {@link streaming}。
+ */
+export interface AttemptFinalizationInput {
+  status: AttemptStatus
+  httpStatus: number | null
+  retryable: boolean
+  /**
+   * 本次尝试上游是否以流式（SSE）返回。
+   *
+   * 未收到响应（网络错误、请求取消）时无从判断，因此为 `null`——不假称「不是流式」。
+   */
+  streaming: boolean | null
+  /**
+   * 这次尝试是否就是「服务该请求」的那次尝试。
+   *
+   * 为真时它的用量会镜像成请求级用量：请求级用量没有独立的写入点。
+   */
+  servesRequest: boolean
+  errorCode?: string
+  errorMessage?: string
+  upstreamRequestId?: string | null
+  /** 本次尝试从发出请求到上游首个输出的耗时；未产生输出时留空。 */
+  ttftMilliseconds?: number | null
+  usage?: AttemptUsageInput
+  /** 上游视角的响应内容；为空表示本次不写入。 */
+  upstreamContent?: UpstreamContentInput | null
+  /** 本次尝试在响应阶段命中的改写规则 id。 */
+  responseRewriteRuleIds?: string[]
+}
+
 export interface RequestLogger {
   readonly requestContentId: string | null
-  finalizeRequestLog(status: RequestStatus, startedAt: number, metrics?: RequestLogMetrics): Promise<void>
-  finalizeRequestContent(outcome: RequestLogOutcome): Promise<void>
+  /**
+   * 收尾请求日志：只落状态与总耗时。用量不在其中——它属于「服务该请求的那次尝试」。
+   *
+   * 同一实例重复调用只生效第一次：取消竞态下两条路径会先后调用它。
+   */
+  finalizeRequestLog(status: RequestStatus, startedAt: number): Promise<void>
+  finalizeRequestContent(outcome: RequestContentOutcome): Promise<void>
   finalizeLocalErrorContent(statusCode: number, responseHeaders: IncomingHttpHeaders | OutgoingHttpHeaders, responseBody: string): Promise<void>
-  recordAttempt(status: RequestStatus, httpStatus: number | null, retryable: boolean, errorCode?: string, errorMessage?: string, upstreamRequestId?: string | null, usage?: AttemptUsageInput): Promise<{ id: string } | null>
-  recordAttemptContent(input: AttemptContentInput): Promise<void>
+}
+
+/** attempt 级日志器：一次性写入这次尝试的全部事实与上游视角正文。 */
+export interface AttemptLogger {
+  finalizeAttempt(input: AttemptFinalizationInput): Promise<void>
 }

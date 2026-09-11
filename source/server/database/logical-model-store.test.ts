@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { closeDatabase, initDatabase } from './index'
+import { TEST_DATABASE_FILE_NAME } from './test-support'
 import { createLogicalModel, deleteLogicalModel, listLogicalModels, listSchedulingPolicies, updateLogicalModel, upsertSchedulingPolicy } from './logical-model-store'
 import { createProvider } from './provider-store'
 import { createProviderModelRoute } from './model-store'
@@ -11,7 +12,7 @@ let temporaryDirectory: string
 
 beforeEach(async () => {
   temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-logical-model-store-'))
-  await initDatabase(temporaryDirectory)
+  await initDatabase(temporaryDirectory, TEST_DATABASE_FILE_NAME)
 })
 
 afterEach(async () => {

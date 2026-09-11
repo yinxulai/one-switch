@@ -4,23 +4,21 @@ import path from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { closeDatabase, initDatabase } from '../database'
+import { TEST_DATABASE_FILE_NAME } from '../database/test-support'
 import { modelTestRoutes } from './routes/diagnostics/model-test'
+import { mockResponse } from './test-support'
 
 let temporaryDirectory: string
 
 beforeEach(async () => {
   temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-model-test-'))
-  await initDatabase(temporaryDirectory)
+  await initDatabase(temporaryDirectory, TEST_DATABASE_FILE_NAME)
 })
 
 afterEach(async () => {
   await closeDatabase()
   fs.rmSync(temporaryDirectory, { recursive: true, force: true })
 })
-
-function mockResponse() {
-  return { statusCode: 0, setHeader: vi.fn(), end: vi.fn() } as unknown as ServerResponse
-}
 
 function responsePayload(response: ServerResponse): Record<string, unknown> {
   return JSON.parse(String(vi.mocked(response.end).mock.calls[0][0])) as Record<string, unknown>

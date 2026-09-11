@@ -19,8 +19,10 @@ One Switch 的配置内容会持续增加，尤其是供应商、模型端点、
 9. **数据库结构以 Drizzle schema 为唯一代码定义，由生成的 migration 在应用启动时执行；v0.3 不提供旧数据库兼容迁移。**
 10. **所有时间戳字段均为 Unix 毫秒（`Date.now()`），不使用秒。**
 11. **表名统一为 `settings`，不再引入 `app_config` 作为数据库表名。**
-12. **领域前缀按对象边界使用：`provider*` 是配置身份，`client*` 是客户端一侧，`upstream*` 是实际远端 hop，`conversion*` 是转换事件。**
-13. **请求级协议是 `clientProtocol`；每次 attempt 和 conversion 分别保存实际的 `upstreamProtocol`。**
+12. **领域前缀按对象边界使用：`provider*` 是配置身份，`client*` 是客户端一侧，`upstream*` 是实际远端 hop。**
+13. **请求级协议是 `clientProtocol`；每次 attempt 保存自己的 `upstreamProtocol`。**
+14. **一张表 = 一个视角。列名不带视角前缀——视角由表名唯一确定。**
+15. **事实永远写入，载荷才受开关控制。** `captureRequestContent` 只决定是否保存正文；是否发生协议转换、命中的改写规则 id、尝试耗时、TTFT、是否流式都是**事实**，无论开关如何都必须落库。
 
 ### 1.1 术语边界
 
@@ -30,13 +32,18 @@ One Switch 的配置内容会持续增加，尤其是供应商、模型端点、
 - `clientProtocol`、`clientRequest*` 和 `clientResponse*` 描述客户端边界；
 - `upstreamProtocol`、`upstreamRequest*` 和 `upstreamResponse*` 描述实际远端 HTTP hop；
 - `request_attempts` 只保存一次 attempt 的 upstream 事实快照；
-- `request_conversions` 保存转换前后的 client/upstream 数据，不嵌入 `request_contents`。
+- **协议转换是派生事实，不单独建表**：`clientProtocol` ≠ `request_attempts.upstreamProtocol` 即说明发生了转换，是否流式由 `request_attempts.streaming` 表达。转换不需要第三张表，因为第三张表只能重复保存前两张表已有的信息；
+- 客户端视角载荷归 `request_contents`，上游视角载荷归 `attempt_contents`；
+- 用量也按视角拆表：请求级用量归 `request_usages`，尝试级用量归 `attempt_usages`。**不存在用可空列判别归属的行**——如果一行的含义取决于某列是否为空，那它其实是两张表；
+- 正文表的一行只属于一个视角，因此表名即视角，列名不再带 `client` / `upstream` 前缀。
 
 ## 2. 数据库总览
 
-v0.3 包含以下 17 张核心表。
+v0.3 包含以下 22 张核心表。
 
-数据库启动时通过 Drizzle runtime migrator 应用 `drizzle/` 下的生成 migration，并由 `__drizzle_migrations` 记录已执行版本。`logical_models.default` 是应用 seed，不属于 schema migration；旧版本数据库检测到历史表后直接拒绝启动，需要重新初始化数据库。
+数据库启动时通过 Drizzle runtime migrator 应用 `drizzle/` 下的生成 migration，并由 `__drizzle_migrations` 记录已执行版本。`logical_models.default` 是应用 seed，不属于 schema migration。preview 阶段 `drizzle/` 只保留一个由 schema 直接生成的首发基线，因此兼容性判定不需要维护任何「历史表名」清单：`__drizzle_migrations` 里出现基线之外的 migration，或者库里有表却没有任何 migration 记录，就直接拒绝启动，要求用户重新初始化数据库。
+
+数据文件名为 `one-switch-v<主版本号>.db`（例如 `one-switch-v1.db`），主版本号取自应用版本号（`source/common/database-file.ts` 是这条规则的唯一实现）。这意味着发布一个不兼容的大版本时，应用会在全新的文件上初始化，旧文件既不读取也不删除——所谓「不兼容旧版本」因此不需要任何检测代码，只是换了一个文件名。
 
 | 表 | 用途 | 数据性质 |
 | --- | --- | --- |
@@ -50,12 +57,18 @@ v0.3 包含以下 17 张核心表。
 | `provider_model_endpoints` | ProviderModel 到 Provider 端点的绑定 | 配置实体 |
 | `protocol_converters` | ProviderModel 端点允许的客户端协议转换器 | 配置实体 |
 | `logical_models` | 对外暴露的逻辑模型 | 配置实体 |
+| `request_rewrite_rules` | 可复用的请求/响应改写规则 | 配置实体 |
+| `provider_model_request_rewrite_rules` | ProviderModel 与改写规则的启用关系 | 配置实体 |
+| `workflows` | 工作流定义 | 配置实体 |
 | `scheduling_policies` | 逻辑模型的调度策略 | 配置实体 |
 | `request_logs` | 每次代理请求的汇总日志 | 历史观测数据 |
-| `request_metrics` | 请求扩展指标 KV | 历史观测数据 |
-| `request_usages` | 请求用量数值明细 | 历史观测数据 |
+| `request_attributes` | 请求客户端/网络属性 | 历史观测数据 |
+| `request_usages` | 请求级用量数值明细 | 历史观测数据 |
+| `attempt_usages` | 单次尝试级用量数值明细 | 历史观测数据 |
 | `request_attempts` | 请求内每次远端尝试 | 历史观测数据 |
-| `request_contents` | 请求/响应正文及每次尝试内容 | 可选历史观测数据 |
+| `request_contents` | 客户端视角的请求与响应正文 | 可选历史观测数据 |
+| `attempt_contents` | 上游视角的请求与响应正文 | 可选历史观测数据 |
+| `runtime_logs` | 应用运行时日志 | 可选历史观测数据 |
 
 关系概览：
 
@@ -71,12 +84,11 @@ erDiagram
   provider_models ||--o{ provider_model_endpoints : exposes
   provider_model_endpoints ||--o{ protocol_converters : enables
   provider_endpoints ||--o{ provider_model_endpoints : binds
-  request_logs ||--o{ request_metrics : measures
   request_logs ||--o{ request_usages : records
   request_logs ||--o{ request_contents : captures
   request_logs ||--o{ request_attempts : contains
-  request_attempts ||--o{ request_usages : produces
-  request_attempts ||--o| request_contents : captures
+  request_attempts ||--o{ attempt_usages : produces
+  request_attempts ||--o| attempt_contents : captures
   providers ||--o{ request_attempts : attempted_by
 
   settings {
@@ -187,34 +199,31 @@ erDiagram
     text id PK
     text logicalModelId
     text clientProtocol
-    text upstreamProtocol nullable
+    boolean streaming
     text status
+    integer totalDurationMilliseconds
     integer createdTime
-    text metadata
-  }
-
-  request_metrics {
-    text requestId PK, FK
-    text key PK
-    real value
-    text unit
-    integer updatedTime
   }
 
   request_usages {
-    text id PK
-    text requestId FK
-    text attemptId FK
-    text type
+    text requestId PK, FK
+    text type PK
     real value
-    text unit
+    text rawValue
+    integer createdTime
+  }
+
+  attempt_usages {
+    text attemptId PK, FK
+    text type PK
+    real value
+    text rawValue
     integer createdTime
   }
 
   request_contents {
     text id PK
     text requestId FK
-    text attemptId UK, FK
     text captureStatus
     text requestMethod
     text requestPath
@@ -223,7 +232,19 @@ erDiagram
     integer responseStatus
     text responseHeaders
     text responseBody
-    text conversions
+    integer createdTime
+    integer updatedTime
+  }
+
+  attempt_contents {
+    text id PK
+    text attemptId UK, FK
+    text captureStatus
+    text requestHeaders
+    text requestBody
+    integer responseStatus
+    text responseHeaders
+    text responseBody
     integer createdTime
     integer updatedTime
   }
@@ -243,7 +264,10 @@ erDiagram
     integer httpStatus
     integer attemptIndex
     integer durationMilliseconds
-    text details
+    boolean streaming
+    integer ttftMilliseconds
+    text requestRewriteRuleIds
+    text responseRewriteRuleIds
     text errorCode
     text errorMessage
     integer createdTime
@@ -497,16 +521,16 @@ CREATE TABLE provider_model_health (
 
 ### 3.9 `request_logs`
 
-请求日志只保存请求身份、协议、状态和必要快照。可聚合的耗时、Token、缓存命中等数值指标不放入 `request_logs`，分别存入 `request_metrics` 和 `request_usages`，避免持续修改日志主表。
+请求日志只保存请求身份、客户端协议、流式标记、状态、逻辑模型和总耗时。Token、缓存等可聚合数值不放入 `request_logs`，分别存入 `request_usages` 和 `attempt_usages`，避免持续修改日志主表。
 
 ```sql
 CREATE TABLE request_logs (
   id TEXT PRIMARY KEY,
   status TEXT NOT NULL CHECK (status IN ('pending', 'success', 'failed', 'cancelled')),
-  clientProtocol TEXT NOT NULL,
-  upstreamProtocol TEXT,
-  logicalModelId TEXT NOT NULL,
-  metadata TEXT,
+  clientProtocol TEXT,
+  streaming INTEGER NOT NULL DEFAULT 0,
+  logicalModelId TEXT,
+  totalDurationMilliseconds INTEGER NOT NULL DEFAULT 0,
   createdTime INTEGER NOT NULL
 );
 
@@ -518,105 +542,130 @@ CREATE INDEX idx_request_logs_status
 
 CREATE INDEX idx_request_logs_logical_model
   ON request_logs(logicalModelId);
+
+CREATE INDEX idx_request_logs_client_protocol
+  ON request_logs(clientProtocol);
 ```
 
-### 3.10 `request_metrics`
+`clientProtocol` 与 `logicalModelId` 均可为空：请求可能在协议识别或模型解析之前就被拒掉，但它同样是用户真实发出的请求，必须留下记录。为空表达的是「还没走到那一步」，不是「没有这一列」。
 
-请求扩展指标采用 KV 结构，一条请求可以拥有多个可扩展指标。`request_metrics.value` 使用 REAL 数值列，适合范围过滤、排序和聚合；单位通过 `unit` 表示。Token、缓存等协议用量统一进入 `request_usages`，不再与通用指标混存。
+`streaming` 在请求进入代理时就已确定（客户端是否以流式方式发起），因此属于请求级事实；上游是否流式是尝试级事实，写在 `request_attempts.streaming` 上。`totalDurationMilliseconds` 是从收到请求到写完响应的总耗时，它无法由尝试耗时稳定推导（尝试之间还有调度与等待），因此落在日志主表。
 
-```sql
-CREATE TABLE request_metrics (
-  requestId TEXT NOT NULL REFERENCES request_logs(id),
-  key TEXT NOT NULL,
-  value REAL NOT NULL,
-  unit TEXT NOT NULL DEFAULT 'count',
-  updatedTime INTEGER NOT NULL,
-  PRIMARY KEY (requestId, key)
-);
+原始协议 `usage` 报文不再占用日志主表的列：它属于某个视角的一份事实，以 `type = 'raw'` 的记录保存在对应的用量表里（见 3.10）。
 
-CREATE INDEX idx_request_metrics_key
-  ON request_metrics(key);
-```
+### 3.10 `request_usages` / `attempt_usages`
 
-`request_metrics.value` 使用 REAL，数据库可以直接执行数值范围过滤、排序和聚合；不再需要 `valueType` 或文本 CAST。非数值原始详情不属于 `request_metrics`，应存入对应的 JSON 详情字段。
+用量按**视角**拆成两张表，与正文表遵循同一条原则：一张表 = 一个视角，列名不带视角前缀。
 
-推荐的 key：
+| 表 | 表达的视角 | 行数 | 主键 |
+| --- | --- | --- | --- |
+| `request_usages` | 请求级 | 每个请求、每种用量类型一行 | `(requestId, type)` |
+| `attempt_usages` | 尝试级 | 每次尝试、每种用量类型一行 | `(attemptId, type)` |
 
-```text
-timing.durationMilliseconds
-timing.ttftMilliseconds
-cache.hit
-cache.promptHit
-```
-
-Token 和其他需要按类型聚合的协议用量只写入 `request_usages`，不得同时写入 `request_metrics`。所有指标值都按 REAL 数值读取。指标查询通过 `(requestId, key)` 获取单请求指标；需要按用量类型、数值范围或时间聚合的查询通过 `request_usages` 完成。
-
-### 3.11 `request_usages`
-
-`request_usages` 是独立的关系表，而不是另一个数据库。每个数值用量保存为一行，便于按 `type`、时间和请求关联进行范围筛选、分组和汇总。`attemptId` 为空表示请求级/最终汇总用量；不为空表示某次远端尝试产生的用量。
+`request_usages` 是独立的关系表，而不是另一个数据库。每个数值用量保存为一行，便于按 `type`、时间和请求关联进行范围筛选、分组和汇总。
 
 ```sql
 CREATE TABLE request_usages (
-  id TEXT PRIMARY KEY,
   requestId TEXT NOT NULL REFERENCES request_logs(id),
-  attemptId TEXT REFERENCES request_attempts(id),
-  type TEXT NOT NULL,
-  value REAL NOT NULL,
-  unit TEXT NOT NULL DEFAULT 'count',
-  createdTime INTEGER NOT NULL
+  type TEXT NOT NULL CHECK (type IN (
+    'inputTokens', 'outputTokens', 'cachedInputTokens',
+    'cacheCreationInputTokens', 'reasoningTokens', 'raw'
+  )),
+  value REAL,
+  rawValue TEXT,
+  createdTime INTEGER NOT NULL,
+  PRIMARY KEY (requestId, type),
+  CHECK ((type = 'raw' AND value IS NULL AND rawValue IS NOT NULL)
+      OR (type <> 'raw' AND value IS NOT NULL AND rawValue IS NULL))
+);
+
+CREATE TABLE attempt_usages (
+  attemptId TEXT NOT NULL REFERENCES request_attempts(id),
+  type TEXT NOT NULL CHECK (type IN (
+    'inputTokens', 'outputTokens', 'cachedInputTokens',
+    'cacheCreationInputTokens', 'reasoningTokens', 'raw'
+  )),
+  value REAL,
+  rawValue TEXT,
+  createdTime INTEGER NOT NULL,
+  PRIMARY KEY (attemptId, type),
+  CHECK ((type = 'raw' AND value IS NULL AND rawValue IS NOT NULL)
+      OR (type <> 'raw' AND value IS NOT NULL AND rawValue IS NULL))
 );
 
 CREATE INDEX idx_request_usages_type_time
   ON request_usages(type, createdTime);
-CREATE INDEX idx_request_usages_request
-  ON request_usages(requestId);
-CREATE INDEX idx_request_usages_attempt
-  ON request_usages(attemptId);
+
+CREATE INDEX idx_attempt_usages_type_time
+  ON attempt_usages(type, createdTime);
 ```
 
-`type` 表示标准用量名，例如 `inputTokens`、`outputTokens`、`cachedInputTokens`、`reasoningTokens`；`value` 使用 REAL，通常为非负整数。`unit` 默认是 `count`，可扩展为其他明确单位。`attemptId` 为空表示请求级汇总用量，不为空表示某次远端尝试的用量。统计时必须明确选择请求级或尝试级口径，避免重复计入。
+`type` 表示标准用量名，数值写在 `value` 上。**`totalTokens` 不落库**：它是 `inputTokens` 与 `outputTokens` 的派生量，存下来必然有一天与两个加数不一致，读取侧现算即可。
 
-原始协议 `usage` 不直接塞入 `request_usages`：可聚合字段拆成 `request_usages` 数值行，无法稳定建模的 upstream 私有字段保存在请求级 `request_logs.rawUsage` 中；一次 attempt 收到的完整上游响应正文（包括错误响应和流式 partial 响应）统一保存在对应 `request_contents.responseBody`，并通过 `attemptId` 关联。
+`attempt_usages` 不再重复保存 `requestId`：请求归属由 `request_attempts.requestId` 唯一持有。这一列是纯冗余，且当一次尝试已经落库、但用量行还在飞的时候，两份 `requestId` 可能短暂不一致。
+
+原始协议 `usage` 报文不另开列：它按**视角**落在同一张用量表里，用 `type = 'raw'` 的行把 Provider 原样返回的报文写进 `rawValue`，并且此时 `value` 必须为空。让原始报文与数值共用一张表，是因为「原始报文」同样只是某个视角的一份事实；用 `value = 0` 占位会静默污染 `sum(value)`，因此这个形状约束由 CHECK 在数据库层强制——`raw` 行 `value` 为空且 `rawValue` 非空，数值行反之。
+
+请求级 `raw` 行保存 Provider 原样返回的 `usage` 对象：
 
 ```json
 {
-  "streaming": true,
-  "finishReason": "stop",
-  "reasoningTokens": 48,
-  "providerRegion": "us-east",
-  "clientModelName": "glm-5.2",
-  "logicalModelName": "default",
-  "providerId": "prov_123",
-  "providerName": "OpenAI"
+  "prompt_tokens": 1500,
+  "prompt_tokens_details": { "cached_tokens": 900 },
+  "completion_tokens": 120
 }
 ```
 
-`clientModelName`、`logicalModelName`、`providerId`、`providerName` 均为请求发生时的快照，用于逻辑模型或供应商被删除后日志详情页仍能展示名称，以及追溯“客户端请求的模型名路由到了哪个逻辑模型”；快照属于日志自身数据，不构成对可变配置的依赖。
+它只用于回溯与排查，不参与聚合——聚合一律走 `request_usages` / `attempt_usages` 的数值行。
 
-请求总耗时、TTFT 等请求级通用指标放入 `request_metrics`；Token、缓存 Token 和其他协议用量放入 `request_usages`，不得重复记录。不放入 `request_logs`。`request_logs` 只保留请求身份、客户端协议、状态、逻辑模型快照和创建时间等稳定字段。
+名称快照不放在 `request_logs`：`request_attempts` 已在写入时保存 `providerName`、`providerModelName` 和实际 `url`，供配置实体被删除后日志详情页仍能展示；`request_logs.logicalModelId` 是稳定列。请求级不再复制一份供应商快照——一次请求可能尝试过多个供应商，「请求级的供应商快照」必须回答「记哪个」这个没有确定答案的问题，而尝试级快照天然没有这个问题。
+
+请求总耗时是请求级事实，落在 `request_logs.totalDurationMilliseconds`；缓存命中是派生量，由 `cachedInputTokens > 0` 现算，不单独落库。Token、缓存 Token 和其他协议用量按视角放入 `request_usages` / `attempt_usages`，不得重复记录。TTFT 是**尝试级事实**，写在 `request_attempts.ttftMilliseconds` 上——把尝试级样本平均成「请求级 TTFT」会直接污染延迟分布；需要请求粒度展示时按 `min(ttftMilliseconds)` 现算，不落库。`request_logs` 只保留请求身份、客户端协议、流式标记、状态、逻辑模型、总耗时和创建时间等稳定字段。
 
 日志表的稳定查询字段为：
 
 - `logicalModelId`；
 - `clientProtocol`；
-- `upstreamProtocol`（可选请求级摘要，事实以 `request_attempts.upstreamProtocol` 为准）；
+- `streaming`；
+- `totalDurationMilliseconds`；
 - `status`；
 - `createdTime`。
 
-未来增加新的请求级指标时，只需增加新的 `request_metrics.key`；增加新的 Token 类型、缓存用量或计费明细时，使用新的 `request_usages.type`，不需要修改表结构。
+未来增加新的 Token 类型、缓存用量或计费明细时，使用新的 `request_usages.type` / `attempt_usages.type`，不需要修改表结构；协议私有不稳定的字段继续留在 `raw` 行里。
 
-### 3.12 `request_contents`
+### 3.11 `request_contents`
 
-请求正文和响应正文属于大体积、可能包含敏感信息且变化频繁的数据，不直接塞入 `request_logs` 或 `request_attempts` 的宽表。`request_contents` 统一保存正文：客户端视角的请求/最终响应使用一行 `attemptId = NULL` 的记录；每次远端尝试的请求/响应使用一行带 `attemptId` 的记录，并直接关联 `request_attempts.id`。因此不需要额外的正文尝试表，也不需要把尝试正文塞进 JSON 数组。
+请求正文和响应正文属于大体积、可能包含敏感信息且变化频繁的数据，不直接塞入 `request_logs` 或 `request_attempts` 的宽表。
 
-内容记录区分客户端视角和上游视角：
+正文按**视角**拆成两张表，而不是在同一张表里用可空外键区分含义：
 
-- `requestHeader`：客户端请求头（脱敏后）；
+| 表 | 表达的视角 | 行数 | 定位 |
+| --- | --- | --- | --- |
+| `request_contents` | 客户端 | 每个请求一行 | 客户端发来的请求与最终收到的响应 |
+| `attempt_contents` | 上游 | 每次尝试一行 | 真正发给 Provider 的请求与 Provider 返回的响应 |
+
+这是本节最重要的结构约束：**一张表只表达一个视角，因此表名即视角，列名不带 `client` / `upstream` 前缀**。旧设计用 `attemptId` 是否为空来推断列的含义，使得 `requestHeaders`、`responseBody` 这些列在不同行里指向不同的东西，且响应头不得不同时提供 `upstreamResponseHeaders` 与 `clientResponseHeaders` 两列；一旦某处写错视角，读出来依然「像是对的」。拆分后每次写入只有一个合法目标表，视角歧义在结构上不存在。
+
+同一条原则也适用于**归属冗余**：`attempt_contents` 不保存 `requestId`。尝试属于哪个请求由 `request_attempts.requestId` 唯一表达，在正文行上再存一份只是把同一个事实写两遍——而同一请求的两个尝试可能有不同的上游协议、不同的模型、不同的改写结果，因此改写规则 id 也属于尝试而不是请求。
+
+`request_contents` 列定义：
+
+- `requestMethod` / `requestPath`：客户端请求的方法与路径。请求级信息天然属于客户端视角，因此只存在于本表；
+- `requestHeaders`：客户端请求头（脱敏后）；
 - `requestBody`：客户端请求正文；
-- `responseHeader`：返回给客户端的响应头（脱敏后）；
-- `responseBody`：返回给客户端的响应正文；
-- `request_contents.attemptId`：为空表示客户端视角正文，不为空表示对应 Provider 尝试的正文；
-- `conversions`：当前正文记录的协议转换前后内容；未发生任何转换时为 `null`。
+- `responseStatus`：最终返回给客户端的状态码；
+- `responseHeaders`：最终返回给客户端的响应头（脱敏后）。只有真正写出客户端时才有值，未写出时为 `NULL`，绝不回落到上游响应头；
+- `responseBody`：最终返回给客户端的响应正文（协议转换后的形态）。
+
+`attempt_contents` 列定义：
+
+- `requestHeaders`：实际发往上游的请求头（脱敏后，已完成改写与协议转换）；
+- `requestBody`：实际发往上游的请求正文；
+- `responseStatus`：上游返回的状态码；
+- `responseHeaders`：上游返回的响应头（脱敏后）；
+- `responseBody`：上游返回的响应正文（协议转换前的原始形态）。
+
+`attempt_contents` **只保存载荷**。改写规则 id、是否流式、TTFT 都是事实，写在 `request_attempts` 上：规则按 ProviderModel 匹配，归属单位是「尝试」；而事实必须在采集开关关闭时依然完整落库，不能和正文挤在同一张表里。日志详情页需要的规则集合由 `request_attempts.requestRewriteRuleIds` ∪ `responseRewriteRuleIds` 聚合而成。
 
 `captureStatus` 枚举定稿：
 
@@ -624,8 +673,8 @@ CREATE INDEX idx_request_usages_attempt
 | --- | --- |
 | `captured` | 完整采集 |
 | `partial` | 流式采集中断或部分丢失 |
-| `disabled` | 未开启采集 |
-| `failed` | 采集异常 |
+
+这两个值由 CHECK 约束在数据库层强制。早期设计的 `disabled` / `failed` 从未被写入过——「未开启采集」的正确表达是**根本没有正文行**，「采集异常」的正确表达同样是**没有行**或 `partial`。枚举里保留永远不会出现的值，只会让读取方多写两个永远进不去的分支。
 
 日志详情页根据 `captureStatus` 展示不同状态，而不是猜测内容为空的原因。
 
@@ -635,8 +684,7 @@ CREATE INDEX idx_request_usages_attempt
 CREATE TABLE request_contents (
   id TEXT PRIMARY KEY,
   requestId TEXT NOT NULL REFERENCES request_logs(id),
-  attemptId TEXT REFERENCES request_attempts(id),
-  captureStatus TEXT NOT NULL CHECK (captureStatus IN ('captured', 'partial', 'disabled', 'failed')),
+  captureStatus TEXT NOT NULL CHECK (captureStatus IN ('captured', 'partial')),
   requestMethod TEXT NOT NULL,
   requestPath TEXT NOT NULL,
   requestHeaders TEXT,
@@ -648,13 +696,26 @@ CREATE TABLE request_contents (
   updatedTime INTEGER NOT NULL
 );
 
-CREATE UNIQUE INDEX idx_request_contents_request_level
-  ON request_contents(requestId) WHERE attemptId IS NULL;
-CREATE UNIQUE INDEX idx_request_contents_attempt
-  ON request_contents(attemptId) WHERE attemptId IS NOT NULL;
+CREATE TABLE attempt_contents (
+  id TEXT PRIMARY KEY,
+  attemptId TEXT NOT NULL REFERENCES request_attempts(id),
+  captureStatus TEXT NOT NULL CHECK (captureStatus IN ('captured', 'partial')),
+  requestHeaders TEXT,
+  requestBody TEXT,
+  responseStatus INTEGER,
+  responseHeaders TEXT,
+  responseBody TEXT,
+  createdTime INTEGER NOT NULL,
+  updatedTime INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX idx_request_contents_request
+  ON request_contents(requestId);
+CREATE UNIQUE INDEX idx_attempt_contents_attempt
+  ON attempt_contents(attemptId);
 ```
 
-正文列只保存脱敏后的原始内容或明确的正文 envelope；请求头、响应头和每次尝试使用独立的结构化列/子表。仅协议转换的前后正文仍使用 JSON 文档，因为其形状由协议决定且体积不稳定。
+正文列只保存脱敏后的原始内容或明确的正文 envelope。由于视角已由表决定，每份载荷在全库中恰好只有一个归属，不存在需要跨表比对的重复列。
 
 ```json
 {
@@ -686,26 +747,41 @@ CREATE UNIQUE INDEX idx_request_contents_attempt
 
 `body` 保存可解析的 JSON 正文；非 JSON 或二进制正文使用 `bodyText` 保存原文文本（二进制内容 base64 编码并标注 `contentType`）。
 
-`conversions` 示例（当前正文记录的协议转换前后内容；正文记录通过 `request_contents.attemptId` 关联对应尝试）：
+#### 3.11.1 转换事实为什么不再建表
 
-```json
-[
-  {
-    "schemaVersion": 1,
-    "attemptId": "att_01J...",
-    "fromProtocol": "anthropic-messages",
-    "toProtocol": "openai-completions",
-    "requestBefore": {},
-    "requestAfter": {},
-    "responseBefore": {},
-    "responseAfter": {},
-    "streamEventsBefore": [],
-    "streamEventsAfter": []
-  }
-]
+早期设计有一张 `request_conversions`，只回答一个问题：**这次尝试发生了什么转换**。但它记录的每一项信息都可以从别处推导：
+
+| `request_conversions` 列 | 唯一的真实出处 |
+| --- | --- |
+| `clientProtocol` | `request_logs.clientProtocol` |
+| `upstreamProtocol` | `request_attempts.upstreamProtocol` |
+| `streaming` | `request_attempts.streaming` |
+| `durationMilliseconds` | `request_attempts.durationMilliseconds` |
+| `requestId` | `request_attempts.requestId` |
+
+其中 `clientProtocol` 与 `upstreamProtocol` **不相等**这一事实本身，就是「发生了转换」的唯一判据：
+
+```text
+发生协议转换  ⇔  request_logs.clientProtocol ≠ request_attempts.upstreamProtocol
 ```
 
-同一请求多次尝试且各自发生协议转换时，每项转换独立保存，不会互相覆盖。
+因此该表没有任何独立信息。更糟的是它会引入两个具体问题：
+
+1. **漂移的第二份耗时。** `request_conversions.durationMilliseconds` 与 `request_attempts.durationMilliseconds` 是同一事实的两份副本，两份副本必然有一天不一致，而且不一致时无法判断谁对。
+2. **「没发生转换」和「没记录」不可区分。** 未发生转换的尝试没有对应行，所以「查不到转换记录的尝试」既可能是同一协议直通，也可能是转换记录丢失，读取方无法判断。
+
+删除后转换事实并入 `request_attempts`：一次尝试永远是恰好一行，事实永远存在，不需要任何 JOIN 也不需要任何存在性判断。
+
+`request_contents` 与 `attempt_contents` 两张视角表加上 `request_attempts` 这一张事实表，就足以支撑日志详情页的每一个展示位：
+
+| 详情页展示位置 | 唯一数据来源 |
+| --- | --- |
+| 客户端原始请求 | `request_contents.requestHeaders` / `requestBody` |
+| 发送到上游的请求 | `attempt_contents.requestHeaders` / `requestBody` |
+| 真实供应商响应 | `attempt_contents.responseHeaders` / `responseBody` |
+| 返回客户端的响应 | `request_contents.responseHeaders` / `responseBody` |
+| 已应用修改器 | `request_attempts.requestRewriteRuleIds` ∪ `responseRewriteRuleIds` |
+| 协议与流式标记 | `request_attempts.upstreamProtocol` ∪ `request_attempts.streaming`，与 `request_logs.clientProtocol` 对比得出转换 |
 
 安全与容量约束：
 
@@ -715,12 +791,12 @@ CREATE UNIQUE INDEX idx_request_contents_attempt
 - 本地工具不限制正文大小，完整读取并保存已接收的请求和响应内容，以支持超长上下文和大体积请求；由此产生的内存与存储占用属于明确设计取舍；
 - 流式响应记录已接收的事件/文本片段，不阻塞代理转发，不因日志写入失败影响请求；
 - 流式响应按 transport 每次收到或写出的原始 chunk 字符串数组保存，不聚合为统一消息正文，也不重新按 SSE 事件切分；
-- 清理请求日志时，依次删除 `request_contents`、`request_usages`、`request_metrics`、`request_attempts`，最后删除 `request_logs`；
+- 清理请求日志时，依次删除 `attempt_contents`、`attempt_usages`、`request_contents`、`request_usages`、`request_attributes`、`request_attempts`，最后删除 `request_logs`；一边删子行一边删父行会撞上外键约束，因此每次必须先把子行删完；
 - 导出日志必须明确包含正文和指标的开关，默认不导出正文但保留可选指标。
 
-### 3.13 `request_attempts`
+### 3.12 `request_attempts`
 
-每次实际 Upstream 尝试一行，保存故障转移顺序和统计所需字段。
+每次实际 Upstream 尝试一行。除了故障转移顺序和统计所需字段，这张表还承载**所有与「这次尝试发生了什么」相关的非载荷事实**：协议转换、是否流式、TTFT、命中的改写规则。原始 `usage` 报文不属于这里——它是用量，按视角保存在 `attempt_usages` 的 `raw` 行里。
 
 ```sql
 CREATE TABLE request_attempts (
@@ -733,19 +809,25 @@ CREATE TABLE request_attempts (
   upstreamProtocol TEXT,
   upstreamRequestId TEXT,
   url TEXT NOT NULL,
-  attemptIndex INTEGER NOT NULL,
-  status TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('success', 'failed', 'cancelled')),
   httpStatus INTEGER,
   retryable INTEGER NOT NULL DEFAULT 0 CHECK (retryable IN (0, 1)),
+  streaming INTEGER CHECK (streaming IN (0, 1)),
+  attemptIndex INTEGER NOT NULL,
   durationMilliseconds INTEGER NOT NULL,
+  ttftMilliseconds INTEGER,
   errorCode TEXT,
   errorMessage TEXT,
-  details TEXT,
+  requestRewriteRuleIds TEXT NOT NULL DEFAULT '[]',
+  responseRewriteRuleIds TEXT NOT NULL DEFAULT '[]',
   createdTime INTEGER NOT NULL,
 
   FOREIGN KEY (requestId) REFERENCES request_logs(id),
   UNIQUE (requestId, attemptIndex)
 );
+
+CREATE INDEX idx_request_attempts_request_order
+  ON request_attempts(requestId, attemptIndex);
 
 CREATE INDEX idx_request_attempts_provider_time
   ON request_attempts(providerId, createdTime);
@@ -756,7 +838,7 @@ CREATE INDEX idx_request_attempts_model_time
 
 `providerId` 和 `providerModelId` 均不建立外键：历史尝试不依赖 Provider 或 ProviderModel 的当前存在性（配置实体未来可能物理删除）。由于详情页必须在配置删除后仍能展示名称，`request_attempts` 还必须在写入时保存 `providerName`、`providerModelName` 和实际 `url` 快照；ID 仅用于关联和筛选，不得依赖当前配置反查。
 
-`httpStatus`、`retryable` 和 `upstreamProtocol` 是稳定的观测字段，必须使用独立列；协议私有错误正文、原始 usage 和网络诊断信息才放入 `details` JSON。
+`httpStatus`、`retryable`、`upstreamProtocol`、`streaming`、`ttftMilliseconds` 和两侧规则 id 数组都是稳定的观测字段，必须使用独立列；错误摘要（`errorCode` / `errorMessage`）同理。这张表不再有 `details` 这类协议私有 JSON 列：协议私有的原始报文按视角归入用量表的 `raw` 行，与载荷无关的事实则一律有独立列。`streaming` 与 `ttftMilliseconds` 都可能为 `NULL`，因为一次尝试可能根本没拿到上游响应（网络错误、请求取消）；此时「不知道」必须与「不是流式」区分开。规则 id 数组用 JSON 文本保存是因为它们是**集合**而不是标量；它们不是正文，因此不受 `captureRequestContent` 影响。
 
 保留独立列的字段：
 
@@ -769,7 +851,11 @@ CREATE INDEX idx_request_attempts_model_time
 - `attemptIndex`；
 - `status`；
 - `upstreamProtocol`；
+- `streaming`；
 - `durationMilliseconds`；
+- `ttftMilliseconds`；
+- `requestRewriteRuleIds`；
+- `responseRewriteRuleIds`；
 - `httpStatus`；
 - `retryable`；
 - `errorCode`；
@@ -777,7 +863,7 @@ CREATE INDEX idx_request_attempts_model_time
 
 ## 4. JSON 文档版本
 
-仅以下 JSON 文档需要 `schemaVersion`：设置中的数组/对象值、协议私有详情、正文 envelope 和协议转换记录。Provider、LogicalModel、ProviderModel 及端点不再拥有 config JSON，因此不适用 config 文档版本。
+仅以下 JSON 文档需要 `schemaVersion`：设置中的数组/对象值、协议私有详情、正文 envelope。Provider、LogicalModel、ProviderModel 及端点不再拥有 config JSON，因此不适用 config 文档版本。
 
 ```json
 {
@@ -828,10 +914,11 @@ durationMilliseconds
 
 ```text
 settings.value（仅保留真正动态的扩展设置；标准设置必须有独立列）
-协议私有且不稳定的原始 usage 字段（存入对应 `request_attempts.details` JSON；若开启正文采集，则同时保存在对应 `request_contents.responseBody` 的原始响应 envelope 中）
+协议私有且不稳定的原始 usage 字段（按视角存入 `request_usages.rawValue` / `attempt_usages.rawValue`，即 `type = 'raw'` 的行；若开启正文采集，则同时保存在对应 `attempt_contents.responseBody` 的原始响应 envelope 中）
 协议私有响应详情和未建模的错误响应
 请求/响应正文 envelope（大体积、可选采集）
-协议转换前后正文（可选采集）
+上游请求/响应正文 envelope（大体积、可选采集）
+命中的改写规则 id 集合（`request_attempts.requestRewriteRuleIds` / `responseRewriteRuleIds`）
 ```
 
 以下内容明确禁止放入 JSON：
@@ -842,8 +929,9 @@ LogicalModel name / description / enabled / routing strategy
 ProviderModel modelName / enabled；scheduling_policies priority / weight / enabled
 Provider protocol / URL / ProviderModel endpoint binding / conversion client protocol / enabled
 日志 status / protocol / model IDs / provider ID
-请求级数值指标（如耗时、TTFT） -> `request_metrics`
-Token、缓存 Token 和其他协议用量 -> `request_usages`
+请求级耗时与流式标记 -> `request_logs.totalDurationMilliseconds` / `request_logs.streaming`
+Token、缓存 Token 和其他协议用量 -> `request_usages` / `attempt_usages`
+是否流式、是否发生协议转换、TTFT、命中的改写规则 id -> `request_attempts` 独立列
 健康计数、冷却时间和时间戳
 ```
 
@@ -854,17 +942,18 @@ Token、缓存 Token 和其他协议用量 -> `request_usages`
 由于本版本不考虑兼容旧版本，数据库初始化流程保持简单：
 
 1. 创建独立的数据目录；
-2. 打开 `one-switch.db`；
+2. 打开 `one-switch-v<主版本号>.db`（主版本号来自应用版本号，同名文件存在就直接复用）；
 3. 启用 SQLite 外键；
 4. 切换 WAL 模式；
-5. 创建当前版本全部表和索引；
-6. 按默认值批量插入 `settings` 配置项（使用 `INSERT OR IGNORE`，仅插入不存在的 key，永不覆盖已有值，保证幂等）；
-7. 插入默认逻辑模型；
-8. 初始化 Provider 健康状态。
+5. 确认这个库是本版本创建的（`__drizzle_migrations` 与首发基线一致），否则报错退出，不做任何改动；
+6. 创建当前版本全部表和索引；
+7. 按默认值批量插入 `settings` 配置项（使用 `INSERT OR IGNORE`，仅插入不存在的 key，永不覆盖已有值，保证幂等）；
+8. 插入默认逻辑模型；
+9. 初始化 Provider 健康状态。
 
 `source/server/database/index.ts` 不再包含以下逻辑：
 
-- 旧表检测；
+- 旧表检测（第 5 步只判断「这个库是不是本版本建的」，不认任何具体表名，也不修补任何结构）；
 - 旧字段迁移；
 - `ensureColumn`；
 - `dropColumn`；
@@ -872,7 +961,7 @@ Token、缓存 Token 和其他协议用量 -> `request_usages`
 - 旧 Settings 表转换；
 - 运行时兼容修补。
 
-旧版数据库由用户自行备份或删除。新版本遇到旧数据库文件时，应明确报错并要求重新初始化，而不是尝试隐式迁移。
+旧版数据库由用户自行备份或删除。文件名带主版本号使得正常情况下应用根本不会碰到旧库（旧库在别的文件名下），第 5 步退化成第二道防线，只防「文件被改名、拷错或来自别的分支」这类拿错库的情况。当数据目录里存在其他版本的数据文件时，启动日志会提示这两个文件名，由用户自行备份或删除。
 
 ## 7. Store 层边界
 
@@ -885,8 +974,8 @@ Store 层应分为两部分：
 - 表记录的创建、查询、更新、删除；
 - 外键关系；
 - 时间和生命周期；
-- 请求日志分页、指标读取和统计；
-- `request_metrics` 的 KV 编解码与聚合查询。
+- 请求日志分页、用量读取和统计；
+- `request_usages` / `attempt_usages` 的类型聚合查询，以及 `raw` 行的编解码。
 
 ### 文档仓储
 
@@ -925,9 +1014,11 @@ Store 层应分为两部分：
 
 请求日志按保留策略物理删除：
 
-1. 先删除 `request_contents` 和 `request_metrics`；
+1. 先删除 `attempt_contents`、`attempt_usages`、`request_contents`、`request_usages`、`request_attributes`；
 2. 再删除 `request_attempts`；
 3. 最后删除 `request_logs`。
+
+顺序不可调换：`attempt_usages` 与 `attempt_contents` 都引用 `request_attempts`，`request_usages` 等引用 `request_logs`，先删父行会直接触发外键约束失败。
 
 历史日志不依赖 `logical_models`、`provider_models` 的当前配置内容。逻辑模型队列是运行时根据当前逻辑模型和全局 Provider 模型池计算出来的，不单独持久化队列关系。
 
@@ -968,11 +1059,12 @@ Store 层应分为两部分：
 7. 分域 Store 测试（`store-boundaries.test.ts`、各领域测试）；
 8. 配置导入导出逻辑；
 9. Provider、模型、路由和统计相关 SQL；
-10. 删除旧版 Drizzle 迁移文件，生成新的首发基线。
+10. 删除旧版 Drizzle 迁移文件，生成新的首发基线；
+11. 数据文件名规则（`source/common/database-file.ts`）及其在 `source/command/index.ts`、`source/server/index.ts`、`source/server/runtime/server-runtime.ts`、`source/server/database/index.ts` 之间的传递；测试统一使用 `source/server/database/test-support.ts` 里的固定文件名。
 
 ## 11. 后续演进建议（评审补充）
 
-以下建议尚未定稿，按优先级排列，供后续迭代评审时决策。已定稿的决策（表名统一为 `settings`、`captureStatus` 枚举、时间戳毫秒、日志快照冗余、`provider_health` 与 `provider_model_health` 清理时机、转换记录结构、`request_contents` 请求级和尝试级正文结构（通过可空 `attemptId` 关联）、`request_attempts` 去除 Provider 外键、唯一约束与 CHECK 约束、删除 `settings.version`）已落入正文各章。
+以下建议尚未定稿，按优先级排列，供后续迭代评审时决策。已定稿的决策（表名统一为 `settings`、`captureStatus` 枚举、时间戳毫秒、日志快照冗余、`provider_health` 与 `provider_model_health` 清理时机、转换事实并入 `request_attempts` 而不单独建表、正文按视角拆表（`request_contents` / `attempt_contents`，以 `attemptId` 唯一关联尝试）、用量按视角拆表（`request_usages` / `attempt_usages`）、`request_attempts` 去除 Provider 外键、唯一约束与 CHECK 约束、删除 `settings.version`、数据文件名带应用主版本号（`one-switch-v<主版本>.db`））已落入正文各章。
 
 ### 11.1 待产品决策
 
@@ -980,10 +1072,7 @@ Store 层应分为两部分：
 正文不限制大小，但单个请求的尝试次数可能很多（重试风暴）。建议约定：按实际尝试次数完整保存数组项，但每次尝试的正文若超过某个“展示友好”阈值（如 1MB），可在 envelope 中降级为 `bodyPreview` + `bodyOmitted: true`，这不是存储限制，而是防止单行 JSON 过大导致 UI 无法渲染。
 
 **按供应商筛选日志的实现方式。**
-`request_logs.metadata` 已冗余 `providerId` 快照，但 JSON 字段无法直接建索引。若日志页需要高频按供应商筛选，两个选项：
-
-- 接受 `request_attempts` JOIN 开销（当前方案）；
-- 未来将 `providerId` 提升为 `request_logs` 独立列（需定义清楚是“最终成功供应商”还是“尝试过的供应商”）。
+日志页按供应商筛选目前靠 `request_attempts` 的 JOIN，因为 `request_attempts.providerId` 上是真正可索引的列，且一次请求可能尝试过多个供应商，请求级无法表达这个集合。若未来出现明确的高频需求，可考虑在 `request_logs` 上增加一个明确语义的派生列（例如「最终成功供应商」），但**不得**用无法索引的 JSON 快照代替。
 
 ### 11.2 可延后但建议预留
 
@@ -992,9 +1081,6 @@ Store 层应分为两部分：
 
 **JSON 文档升级函数的注册机制。**
 第 4 节描述了 `V1 -> V2 -> V3` 升级链，建议实现时采用显式注册表（`{ 1: upgradeToV2, 2: upgradeToV3 }`）而非 if-else 链，便于测试每个升级步骤。
-
-**数据库文件版本标记。**
-虽然不兼容旧版，建议在 `settings` 中写入 `database.schemaBaseline = "v0.3"`，未来再发不兼容版本时可用于检测并提示用户，而不是静默打开结构不匹配的库。
 
 **WAL checkpoint 与应用退出。**
 本地桌面应用退出时建议执行 `PRAGMA wal_checkpoint(TRUNCATE)`，避免残留过大的 WAL 文件；这属于实现细节，但值得写入 desktop spec。

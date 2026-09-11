@@ -1,24 +1,21 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { ServerResponse } from 'node:http'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { KeychainApi } from '@common/keychain'
 import { closeDatabase, initDatabase } from '../database'
+import { TEST_DATABASE_FILE_NAME } from '../database/test-support'
 import { createProvider, getProvider, listProviders } from '@server/database/provider-store'
 import { configureSecretStore } from '@server/infrastructure/secrets/secret-store'
 import { deleteProviderAndSecret, providerRoutes } from './routes/catalog/providers'
-
-function mockResponse() {
-  return { setHeader: vi.fn(), end: vi.fn() } as unknown as ServerResponse
-}
+import { mockResponse } from './test-support'
 
 let temporaryDirectory: string
 let secretStore: KeychainApi
 
 beforeEach(async () => {
   temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-provider-'))
-  await initDatabase(temporaryDirectory)
+  await initDatabase(temporaryDirectory, TEST_DATABASE_FILE_NAME)
   secretStore = {
     set: vi.fn(async () => undefined),
     get: vi.fn(async () => null),

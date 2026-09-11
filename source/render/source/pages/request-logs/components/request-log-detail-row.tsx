@@ -12,6 +12,7 @@ import {
   formatNumber,
   formatTPS,
   formatTTFT,
+  formatTime,
 } from '../lib/format'
 import { RequestContentsSheet } from './request-contents-sheet'
 
@@ -98,6 +99,34 @@ function MetricCard(props: MetricCardProps) {
   )
 }
 
+interface AttemptStatusFactsProps {
+  attempt: RequestLogEntryAttempt
+}
+
+/** 尝试级的响应事实：上游回了什么状态码、是否可重试、是否以流式返回。 */
+function AttemptStatusFacts(props: AttemptStatusFactsProps) {
+  const { attempt } = props
+
+  return (
+    <>
+      <Badge variant="outline" className="h-5 px-1.5 font-mono text-[10px] font-normal text-muted-foreground">
+        {attempt.httpStatus === null ? '未收到响应' : `HTTP ${attempt.httpStatus}`}
+      </Badge>
+      <Badge variant="outline" className="h-5 px-1.5 text-[10px] font-normal text-muted-foreground">
+        {attempt.streaming === null ? '流式未知' : attempt.streaming ? 'SSE 流式' : '非流式'}
+      </Badge>
+      {attempt.retryable && (
+        <Badge variant="outline" className="h-5 bg-amber-500/15 px-1.5 text-[10px] font-normal text-amber-600 dark:text-amber-400">
+          可重试
+        </Badge>
+      )}
+      {attempt.errorCode && (
+        <span className="font-mono text-[10px] text-red-600 dark:text-red-400">{attempt.errorCode}</span>
+      )}
+    </>
+  )
+}
+
 function UpstreamRequestId(props: UpstreamRequestIdProps) {
   return (
     <div className="mt-1 flex items-center gap-1 font-mono text-[10px] text-muted-foreground">
@@ -159,6 +188,7 @@ function ProviderRoute(props: ProviderRouteProps) {
             key={attempt.attemptIndex}
             aria-label={`查看第 ${index + 1} 次 Provider 路由详情`}
             className="group grid w-full grid-cols-[24px_minmax(0,1fr)_auto_14px] items-center gap-2 px-3 py-2.5 text-left text-xs transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/50"
+            title={attempt.url}
             onClick={() => props.onSelect(attempt.id)}
             onKeyDown={event => {
               if (event.key === 'Enter' || event.key === ' ') {
@@ -183,11 +213,16 @@ function ProviderRoute(props: ProviderRouteProps) {
                   {PROTOCOL_LABEL[attempt.upstreamProtocol ?? ''] ?? attempt.upstreamProtocol ?? '协议未知'}
                 </span>
                 <AttemptBadge attempt={attempt} />
+                <AttemptStatusFacts attempt={attempt} />
               </div>
+              {attempt.errorMessage && (
+                <div className="mt-0.5 wrap-break-word text-[10px] text-red-600 dark:text-red-400">{attempt.errorMessage}</div>
+              )}
               <UpstreamRequestId requestId={attempt.upstreamRequestId} />
             </div>
-            <div className="font-mono text-[11px] tabular-nums text-muted-foreground">
-              {formatDuration(attempt.durationMilliseconds)}
+            <div className="text-right font-mono text-[11px] tabular-nums text-muted-foreground">
+              <div>{formatDuration(attempt.durationMilliseconds)}</div>
+              <div className="text-[10px] text-muted-foreground/70">首字 {formatTTFT(attempt.ttftMilliseconds)}</div>
             </div>
             <ChevronRight size={14} className="text-muted-foreground/50 transition-transform group-hover:translate-x-0.5 group-hover:text-foreground group-focus-visible:text-foreground" />
           </div>
@@ -237,8 +272,8 @@ function RawUsage(props: Pick<RequestLogEntry, 'rawUsage'>) {
 export function RequestLogDetailRow(props: RequestLogDetailRowProps) {
   const { log, modelName } = props
   const successfulAttempt = log.attempts.find(attempt => attempt.status === 'success')
-  const upstreamProtocol = log.upstreamProtocol
-    ?? successfulAttempt?.upstreamProtocol
+  // 上游协议只是尝试级事实：失败转移的请求可能先后走过不同协议。
+  const upstreamProtocol = successfulAttempt?.upstreamProtocol
     ?? log.attempts[0]?.upstreamProtocol
   const tps = formatTPS(log.outputTokens, successfulAttempt?.durationMilliseconds ?? log.totalDurationMilliseconds)
   const contents = 'contents' in log ? log.contents : null
@@ -260,7 +295,7 @@ export function RequestLogDetailRow(props: RequestLogDetailRowProps) {
               <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
                 <span>{modelName}</span><span>·</span>
                 <span>
-                  请求协议：{PROTOCOL_LABEL[log.clientProtocol] ?? log.clientProtocol}
+                  请求协议：{log.clientProtocol === null ? '未识别' : PROTOCOL_LABEL[log.clientProtocol] ?? log.clientProtocol}
                   {upstreamProtocol && upstreamProtocol !== log.clientProtocol ? (
                     <>
                       {' '}→{' '}
@@ -270,16 +305,24 @@ export function RequestLogDetailRow(props: RequestLogDetailRowProps) {
                     </>
                   ) : <span className="text-muted-foreground/70"> · 原生协议</span>}
                 </span><span>·</span>
+                {/* 客户端是否要求流式是请求级事实，与上游是否以 SSE 回无关。 */}
+                <span>客户端流式：{log.streaming ? '是' : '否'}</span><span>·</span>
+                <span>{formatTime(log.createdTime)}</span><span>·</span>
+                {log.logicalModelId === null
+                  ? <span>逻辑模型：未解析</span>
+                  : <span className="font-mono text-[11px] text-muted-foreground/80">逻辑模型 ID：{log.logicalModelId}</span>}
+                <span>·</span>
                 <span className="font-mono text-[11px] text-muted-foreground/80">请求 ID：{log.id}</span>
               </div>
             </div>
             {canOpenRuntimeLogs && <RequestLogIdLink requestId={log.id} />}
           </div>
 
-          <div className="grid grid-cols-2 gap-2 md:grid-cols-4 lg:grid-cols-6">
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-6">
             <MetricCard label="总耗时" value={formatDuration(log.totalDurationMilliseconds)} />
             <MetricCard label="首字延迟" value={formatTTFT(log.ttftMilliseconds)} />
             <MetricCard label="输出速度" value={tps === '—' ? '—' : `${tps} t/s`} accent={tps !== '—'} />
+            <MetricCard label="总 Token" value={formatNumber(log.totalTokens)} />
             <MetricCard label="输入 Token" value={formatNumber(log.inputTokens)} />
             <MetricCard label="输出 Token" value={formatNumber(log.outputTokens)} />
             <MetricCard label="思考 Token" value={formatNumber(log.reasoningTokens)} />
@@ -289,6 +332,7 @@ export function RequestLogDetailRow(props: RequestLogDetailRowProps) {
               hint={log.promptCacheHit === null ? '未知' : log.promptCacheHit ? 'Prompt Cache 命中' : '未命中'}
               accent={log.promptCacheHit === true}
             />
+            <MetricCard label="缓存写入" value={formatNumber(log.cacheCreationInputTokens)} hint="Prompt Cache 写入" />
           </div>
 
           <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,.65fr)]">
@@ -297,7 +341,8 @@ export function RequestLogDetailRow(props: RequestLogDetailRowProps) {
           </div>
           <RequestContentsSheet
             contents={contents}
-            conversions={'conversions' in log ? log.conversions : null}
+            attemptContents={'attemptContents' in log ? log.attemptContents : null}
+            attempts={log.attempts}
             requestRewriteRules={requestRewriteRules}
             clientProtocol={log.clientProtocol}
             upstreamProtocol={upstreamProtocol}

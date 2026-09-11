@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { closeDatabase, initDatabase } from './index'
+import { TEST_DATABASE_FILE_NAME } from './test-support'
 import {
   getProviderHealth,
   getProviderModelHealth,
@@ -22,7 +23,7 @@ let temporaryDirectory: string
 
 beforeEach(async () => {
   temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-health-store-'))
-  await initDatabase(temporaryDirectory)
+  await initDatabase(temporaryDirectory, TEST_DATABASE_FILE_NAME)
 })
 
 afterEach(async () => {

@@ -1,11 +1,19 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "3c4d7400-a3b5-4947-8e8d-e723db9617d4",
+  "id": "49a46818-becb-4d26-9c37-e1421919df50",
   "prevIds": [
-    "ad6be3a5-e152-45be-a6eb-ddb2a1a91729"
+    "00000000-0000-0000-0000-000000000000"
   ],
   "ddl": [
+    {
+      "name": "attempt_contents",
+      "entityType": "tables"
+    },
+    {
+      "name": "attempt_usages",
+      "entityType": "tables"
+    },
     {
       "name": "logical_models",
       "entityType": "tables"
@@ -59,15 +67,7 @@
       "entityType": "tables"
     },
     {
-      "name": "request_conversions",
-      "entityType": "tables"
-    },
-    {
       "name": "request_logs",
-      "entityType": "tables"
-    },
-    {
-      "name": "request_metrics",
       "entityType": "tables"
     },
     {
@@ -79,12 +79,170 @@
       "entityType": "tables"
     },
     {
+      "name": "runtime_logs",
+      "entityType": "tables"
+    },
+    {
       "name": "scheduling_policies",
       "entityType": "tables"
     },
     {
       "name": "settings",
       "entityType": "tables"
+    },
+    {
+      "name": "workflows",
+      "entityType": "tables"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "attempt_contents"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "attemptId",
+      "entityType": "columns",
+      "table": "attempt_contents"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "captureStatus",
+      "entityType": "columns",
+      "table": "attempt_contents"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "requestHeaders",
+      "entityType": "columns",
+      "table": "attempt_contents"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "requestBody",
+      "entityType": "columns",
+      "table": "attempt_contents"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "responseStatus",
+      "entityType": "columns",
+      "table": "attempt_contents"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "responseHeaders",
+      "entityType": "columns",
+      "table": "attempt_contents"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "responseBody",
+      "entityType": "columns",
+      "table": "attempt_contents"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "createdTime",
+      "entityType": "columns",
+      "table": "attempt_contents"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updatedTime",
+      "entityType": "columns",
+      "table": "attempt_contents"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "attemptId",
+      "entityType": "columns",
+      "table": "attempt_usages"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "type",
+      "entityType": "columns",
+      "table": "attempt_usages"
+    },
+    {
+      "type": "real",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "value",
+      "entityType": "columns",
+      "table": "attempt_usages"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "rawValue",
+      "entityType": "columns",
+      "table": "attempt_usages"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "createdTime",
+      "entityType": "columns",
+      "table": "attempt_usages"
     },
     {
       "type": "text",
@@ -858,6 +1016,16 @@
     },
     {
       "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "streaming",
+      "entityType": "columns",
+      "table": "request_attempts"
+    },
+    {
+      "type": "integer",
       "notNull": true,
       "autoincrement": false,
       "default": null,
@@ -873,6 +1041,16 @@
       "default": null,
       "generated": null,
       "name": "durationMilliseconds",
+      "entityType": "columns",
+      "table": "request_attempts"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "ttftMilliseconds",
       "entityType": "columns",
       "table": "request_attempts"
     },
@@ -893,6 +1071,26 @@
       "default": null,
       "generated": null,
       "name": "errorMessage",
+      "entityType": "columns",
+      "table": "request_attempts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'[]'",
+      "generated": null,
+      "name": "requestRewriteRuleIds",
+      "entityType": "columns",
+      "table": "request_attempts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'[]'",
+      "generated": null,
+      "name": "responseRewriteRuleIds",
       "entityType": "columns",
       "table": "request_attempts"
     },
@@ -937,16 +1135,6 @@
       "table": "request_attributes"
     },
     {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "'string'",
-      "generated": null,
-      "name": "valueType",
-      "entityType": "columns",
-      "table": "request_attributes"
-    },
-    {
       "type": "integer",
       "notNull": true,
       "autoincrement": false,
@@ -973,16 +1161,6 @@
       "default": null,
       "generated": null,
       "name": "requestId",
-      "entityType": "columns",
-      "table": "request_contents"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "attemptId",
       "entityType": "columns",
       "table": "request_contents"
     },
@@ -1067,16 +1245,6 @@
       "table": "request_contents"
     },
     {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "requestRewriteRuleIds",
-      "entityType": "columns",
-      "table": "request_contents"
-    },
-    {
       "type": "integer",
       "notNull": true,
       "autoincrement": false,
@@ -1095,146 +1263,6 @@
       "name": "updatedTime",
       "entityType": "columns",
       "table": "request_contents"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "id",
-      "entityType": "columns",
-      "table": "request_conversions"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "requestId",
-      "entityType": "columns",
-      "table": "request_conversions"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "attemptId",
-      "entityType": "columns",
-      "table": "request_conversions"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "clientProtocol",
-      "entityType": "columns",
-      "table": "request_conversions"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "upstreamProtocol",
-      "entityType": "columns",
-      "table": "request_conversions"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "clientRequestHeaders",
-      "entityType": "columns",
-      "table": "request_conversions"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "upstreamRequestHeaders",
-      "entityType": "columns",
-      "table": "request_conversions"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "upstreamResponseHeaders",
-      "entityType": "columns",
-      "table": "request_conversions"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "clientResponseHeaders",
-      "entityType": "columns",
-      "table": "request_conversions"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "requestBody",
-      "entityType": "columns",
-      "table": "request_conversions"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "responseBody",
-      "entityType": "columns",
-      "table": "request_conversions"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "false",
-      "generated": null,
-      "name": "streaming",
-      "entityType": "columns",
-      "table": "request_conversions"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "durationMilliseconds",
-      "entityType": "columns",
-      "table": "request_conversions"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "createdTime",
-      "entityType": "columns",
-      "table": "request_conversions"
     },
     {
       "type": "text",
@@ -1258,7 +1286,7 @@
     },
     {
       "type": "text",
-      "notNull": true,
+      "notNull": false,
       "autoincrement": false,
       "default": null,
       "generated": null,
@@ -1267,18 +1295,18 @@
       "table": "request_logs"
     },
     {
-      "type": "text",
-      "notNull": false,
+      "type": "integer",
+      "notNull": true,
       "autoincrement": false,
-      "default": null,
+      "default": "false",
       "generated": null,
-      "name": "upstreamProtocol",
+      "name": "streaming",
       "entityType": "columns",
       "table": "request_logs"
     },
     {
       "type": "text",
-      "notNull": true,
+      "notNull": false,
       "autoincrement": false,
       "default": null,
       "generated": null,
@@ -1287,12 +1315,12 @@
       "table": "request_logs"
     },
     {
-      "type": "text",
-      "notNull": false,
+      "type": "integer",
+      "notNull": true,
       "autoincrement": false,
-      "default": null,
+      "default": "0",
       "generated": null,
-      "name": "metadata",
+      "name": "totalDurationMilliseconds",
       "entityType": "columns",
       "table": "request_logs"
     },
@@ -1305,56 +1333,6 @@
       "name": "createdTime",
       "entityType": "columns",
       "table": "request_logs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "requestId",
-      "entityType": "columns",
-      "table": "request_metrics"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "key",
-      "entityType": "columns",
-      "table": "request_metrics"
-    },
-    {
-      "type": "real",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "value",
-      "entityType": "columns",
-      "table": "request_metrics"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "'count'",
-      "generated": null,
-      "name": "unit",
-      "entityType": "columns",
-      "table": "request_metrics"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "updatedTime",
-      "entityType": "columns",
-      "table": "request_metrics"
     },
     {
       "type": "text",
@@ -1488,31 +1466,11 @@
     },
     {
       "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "id",
-      "entityType": "columns",
-      "table": "request_usages"
-    },
-    {
-      "type": "text",
       "notNull": true,
       "autoincrement": false,
       "default": null,
       "generated": null,
       "name": "requestId",
-      "entityType": "columns",
-      "table": "request_usages"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "attemptId",
       "entityType": "columns",
       "table": "request_usages"
     },
@@ -1528,21 +1486,11 @@
     },
     {
       "type": "real",
-      "notNull": true,
+      "notNull": false,
       "autoincrement": false,
       "default": null,
       "generated": null,
       "name": "value",
-      "entityType": "columns",
-      "table": "request_usages"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "'count'",
-      "generated": null,
-      "name": "unit",
       "entityType": "columns",
       "table": "request_usages"
     },
@@ -1565,6 +1513,46 @@
       "name": "createdTime",
       "entityType": "columns",
       "table": "request_usages"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": true,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "runtime_logs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "level",
+      "entityType": "columns",
+      "table": "runtime_logs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "message",
+      "entityType": "columns",
+      "table": "runtime_logs"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "timestamp",
+      "entityType": "columns",
+      "table": "runtime_logs"
     },
     {
       "type": "text",
@@ -1685,6 +1673,116 @@
       "name": "updatedTime",
       "entityType": "columns",
       "table": "settings"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "workflows"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "type",
+      "entityType": "columns",
+      "table": "workflows"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "version",
+      "entityType": "columns",
+      "table": "workflows"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "name",
+      "entityType": "columns",
+      "table": "workflows"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "definition",
+      "entityType": "columns",
+      "table": "workflows"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "createdTime",
+      "entityType": "columns",
+      "table": "workflows"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updatedTime",
+      "entityType": "columns",
+      "table": "workflows"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "deletedTime",
+      "entityType": "columns",
+      "table": "workflows"
+    },
+    {
+      "columns": [
+        "attemptId"
+      ],
+      "tableTo": "request_attempts",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_attempt_contents_attemptId_request_attempts_id_fk",
+      "entityType": "fks",
+      "table": "attempt_contents"
+    },
+    {
+      "columns": [
+        "attemptId"
+      ],
+      "tableTo": "request_attempts",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_attempt_usages_attemptId_request_attempts_id_fk",
+      "entityType": "fks",
+      "table": "attempt_usages"
     },
     {
       "columns": [
@@ -1892,51 +1990,6 @@
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "nameExplicit": false,
-      "name": "fk_request_conversions_requestId_request_logs_id_fk",
-      "entityType": "fks",
-      "table": "request_conversions"
-    },
-    {
-      "columns": [
-        "attemptId"
-      ],
-      "tableTo": "request_attempts",
-      "columnsTo": [
-        "id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "NO ACTION",
-      "nameExplicit": false,
-      "name": "fk_request_conversions_attemptId_request_attempts_id_fk",
-      "entityType": "fks",
-      "table": "request_conversions"
-    },
-    {
-      "columns": [
-        "requestId"
-      ],
-      "tableTo": "request_logs",
-      "columnsTo": [
-        "id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "NO ACTION",
-      "nameExplicit": false,
-      "name": "fk_request_metrics_requestId_request_logs_id_fk",
-      "entityType": "fks",
-      "table": "request_metrics"
-    },
-    {
-      "columns": [
-        "requestId"
-      ],
-      "tableTo": "request_logs",
-      "columnsTo": [
-        "id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "NO ACTION",
-      "nameExplicit": false,
       "name": "fk_request_usages_requestId_request_logs_id_fk",
       "entityType": "fks",
       "table": "request_usages"
@@ -1973,6 +2026,16 @@
     },
     {
       "columns": [
+        "attemptId",
+        "type"
+      ],
+      "nameExplicit": false,
+      "name": "attempt_usages_pk",
+      "entityType": "pks",
+      "table": "attempt_usages"
+    },
+    {
+      "columns": [
         "providerModelId",
         "requestRewriteRuleId"
       ],
@@ -2004,12 +2067,12 @@
     {
       "columns": [
         "requestId",
-        "key"
+        "type"
       ],
       "nameExplicit": false,
-      "name": "request_metrics_pk",
+      "name": "request_usages_pk",
       "entityType": "pks",
-      "table": "request_metrics"
+      "table": "request_usages"
     },
     {
       "columns": [
@@ -2020,6 +2083,15 @@
       "name": "scheduling_policies_pk",
       "entityType": "pks",
       "table": "scheduling_policies"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "attempt_contents_pk",
+      "table": "attempt_contents",
+      "entityType": "pks"
     },
     {
       "columns": [
@@ -2116,15 +2188,6 @@
         "id"
       ],
       "nameExplicit": false,
-      "name": "request_conversions_pk",
-      "table": "request_conversions",
-      "entityType": "pks"
-    },
-    {
-      "columns": [
-        "id"
-      ],
-      "nameExplicit": false,
       "name": "request_logs_pk",
       "table": "request_logs",
       "entityType": "pks"
@@ -2143,8 +2206,8 @@
         "id"
       ],
       "nameExplicit": false,
-      "name": "request_usages_pk",
-      "table": "request_usages",
+      "name": "runtime_logs_pk",
+      "table": "runtime_logs",
       "entityType": "pks"
     },
     {
@@ -2155,6 +2218,47 @@
       "name": "settings_pk",
       "table": "settings",
       "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "workflows_pk",
+      "table": "workflows",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        {
+          "value": "attemptId",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_attempt_contents_attempt",
+      "entityType": "indexes",
+      "table": "attempt_contents"
+    },
+    {
+      "columns": [
+        {
+          "value": "type",
+          "isExpression": false
+        },
+        {
+          "value": "createdTime",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_attempt_usages_type_time",
+      "entityType": "indexes",
+      "table": "attempt_usages"
     },
     {
       "columns": [
@@ -2500,53 +2604,11 @@
         }
       ],
       "isUnique": true,
-      "where": "attemptId IS NULL",
-      "origin": "manual",
-      "name": "idx_request_contents_request_level",
-      "entityType": "indexes",
-      "table": "request_contents"
-    },
-    {
-      "columns": [
-        {
-          "value": "attemptId",
-          "isExpression": false
-        }
-      ],
-      "isUnique": true,
-      "where": "attemptId IS NOT NULL",
-      "origin": "manual",
-      "name": "idx_request_contents_attempt",
-      "entityType": "indexes",
-      "table": "request_contents"
-    },
-    {
-      "columns": [
-        {
-          "value": "attemptId",
-          "isExpression": false
-        }
-      ],
-      "isUnique": true,
       "where": null,
       "origin": "manual",
-      "name": "idx_request_conversions_attempt",
+      "name": "idx_request_contents_request",
       "entityType": "indexes",
-      "table": "request_conversions"
-    },
-    {
-      "columns": [
-        {
-          "value": "requestId",
-          "isExpression": false
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "origin": "manual",
-      "name": "idx_request_conversions_request",
-      "entityType": "indexes",
-      "table": "request_conversions"
+      "table": "request_contents"
     },
     {
       "columns": [
@@ -2593,16 +2655,16 @@
     {
       "columns": [
         {
-          "value": "key",
+          "value": "clientProtocol",
           "isExpression": false
         }
       ],
       "isUnique": false,
       "where": null,
       "origin": "manual",
-      "name": "idx_request_metrics_key",
+      "name": "idx_request_logs_client_protocol",
       "entityType": "indexes",
-      "table": "request_metrics"
+      "table": "request_logs"
     },
     {
       "columns": [
@@ -2667,30 +2729,34 @@
     {
       "columns": [
         {
-          "value": "requestId",
+          "value": "timestamp",
           "isExpression": false
         }
       ],
       "isUnique": false,
       "where": null,
       "origin": "manual",
-      "name": "idx_request_usages_request",
+      "name": "idx_runtime_logs_timestamp",
       "entityType": "indexes",
-      "table": "request_usages"
+      "table": "runtime_logs"
     },
     {
       "columns": [
         {
-          "value": "attemptId",
+          "value": "level",
+          "isExpression": false
+        },
+        {
+          "value": "timestamp",
           "isExpression": false
         }
       ],
       "isUnique": false,
       "where": null,
       "origin": "manual",
-      "name": "idx_request_usages_attempt",
+      "name": "idx_runtime_logs_level_timestamp",
       "entityType": "indexes",
-      "table": "request_usages"
+      "table": "runtime_logs"
     },
     {
       "columns": [
@@ -2734,12 +2800,110 @@
     },
     {
       "columns": [
+        {
+          "value": "type",
+          "isExpression": false
+        },
+        {
+          "value": "version",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_workflows_type_version",
+      "entityType": "indexes",
+      "table": "workflows"
+    },
+    {
+      "columns": [
+        {
+          "value": "type",
+          "isExpression": false
+        },
+        {
+          "value": "deletedTime",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_workflows_type",
+      "entityType": "indexes",
+      "table": "workflows"
+    },
+    {
+      "columns": [
+        {
+          "value": "deletedTime",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_workflows_deleted_time",
+      "entityType": "indexes",
+      "table": "workflows"
+    },
+    {
+      "columns": [
         "name"
       ],
       "nameExplicit": false,
       "name": "logical_models_name_unique",
       "entityType": "uniques",
       "table": "logical_models"
+    },
+    {
+      "value": "\"captureStatus\" in ('captured', 'partial')",
+      "name": "chk_attempt_contents_capture_status",
+      "entityType": "checks",
+      "table": "attempt_contents"
+    },
+    {
+      "value": "\"type\" in ('inputTokens', 'outputTokens', 'cachedInputTokens', 'cacheCreationInputTokens', 'reasoningTokens', 'raw')",
+      "name": "chk_attempt_usages_type",
+      "entityType": "checks",
+      "table": "attempt_usages"
+    },
+    {
+      "value": "(\"type\" = 'raw' and \"value\" is null and \"rawValue\" is not null) or (\"type\" <> 'raw' and \"value\" is not null and \"rawValue\" is null)",
+      "name": "chk_attempt_usages_value_shape",
+      "entityType": "checks",
+      "table": "attempt_usages"
+    },
+    {
+      "value": "\"status\" in ('success', 'failed', 'cancelled')",
+      "name": "chk_request_attempts_status",
+      "entityType": "checks",
+      "table": "request_attempts"
+    },
+    {
+      "value": "\"captureStatus\" in ('captured', 'partial')",
+      "name": "chk_request_contents_capture_status",
+      "entityType": "checks",
+      "table": "request_contents"
+    },
+    {
+      "value": "\"status\" in ('pending', 'success', 'failed', 'cancelled')",
+      "name": "chk_request_logs_status",
+      "entityType": "checks",
+      "table": "request_logs"
+    },
+    {
+      "value": "\"type\" in ('inputTokens', 'outputTokens', 'cachedInputTokens', 'cacheCreationInputTokens', 'reasoningTokens', 'raw')",
+      "name": "chk_request_usages_type",
+      "entityType": "checks",
+      "table": "request_usages"
+    },
+    {
+      "value": "(\"type\" = 'raw' and \"value\" is null and \"rawValue\" is not null) or (\"type\" <> 'raw' and \"value\" is not null and \"rawValue\" is null)",
+      "name": "chk_request_usages_value_shape",
+      "entityType": "checks",
+      "table": "request_usages"
     }
   ],
   "renames": []

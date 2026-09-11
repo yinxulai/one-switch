@@ -41,6 +41,7 @@ const ConfigSettingsSchema = z.object({
 const ConfigProviderSchema = z.object({
   id: z.string().optional(),
   name: z.string(),
+  description: z.string().optional(),
   timeoutMilliseconds: z.number().int().positive().optional(),
   enabled: z.boolean().optional(),
   apiKey: z.string().optional(),

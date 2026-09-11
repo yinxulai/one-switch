@@ -41,3 +41,19 @@ export function rewriteRequestModel(requestBody: Buffer, providerModelName: stri
     throw new Error('Request body must be a JSON object', { cause: error })
   }
 }
+
+/**
+ * 客户端是否要求流式响应。
+ *
+ * 这是**请求级**事实：一个请求里的所有尝试共用它，写在 `request_logs.streaming`。
+ * 尝试级事实是「上游是否以 SSE 返回」，只有拿到响应头之后才存在，两者不可混用。
+ */
+export function isStreamingRequest(requestBody: Buffer): boolean {
+  try {
+    const payload: unknown = JSON.parse(requestBody.toString('utf8'))
+    if (payload === null || Array.isArray(payload) || typeof payload !== 'object') return false
+    return (payload as Record<string, unknown>).stream === true
+  } catch {
+    return false
+  }
+}
