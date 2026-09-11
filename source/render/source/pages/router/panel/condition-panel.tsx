@@ -9,10 +9,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { cn } from '@/lib/utils'
 import { DifyButton } from '../components/dify-button'
 import { createConditionCase, createConditionRule, getOperatorsByType } from '../graph-model'
 import type { NodePanelProps } from '../node-data'
 import {
+  CONDITION_OPERATOR_META,
   FIELD_OPERAND_OPERATORS,
   type ConditionLogicalOperator,
   type ConditionNode,
@@ -212,10 +214,30 @@ export function ConditionPanel(props: NodePanelProps) {
                           ? { operator: value as ConditionOperator }
                           : { operator: value as ConditionOperator, valueSource: 'literal' })}
                       >
-                        <SelectTrigger className="w-full"><SelectValue placeholder="operator" /></SelectTrigger>
-                        <SelectContent className={PANEL_POPUP_SURFACE_CLASSNAME}>
+                        {/* 触发器只放中文名，说明留在选项里；传 children 可让 Radix 不再搬运选项内容。 */}
+                        <SelectTrigger className="w-full">
+                          <SelectValue>{CONDITION_OPERATOR_META[rule.operator].label}</SelectValue>
+                        </SelectTrigger>
+                        <SelectContent position="popper" className={cn(PANEL_POPUP_SURFACE_CLASSNAME, 'w-96')}>
                           {operators.map(operator => (
-                            <SelectItem className={PANEL_POPUP_ITEM_CLASSNAME} key={operator} value={operator}>{operator}</SelectItem>
+                            <SelectItem
+                              className={cn(PANEL_POPUP_ITEM_CLASSNAME, 'h-auto py-1.5')}
+                              key={operator}
+                              value={operator}
+                            >
+                              {/* 两行：中文名 + 标识符，下面一行是判定语义说明；说明不换行，保证每项等高。 */}
+                              <span className="grid min-w-0 gap-0.5 text-left">
+                                <span className="flex items-center gap-1.5">
+                                  <span className="text-[13px] leading-4 font-medium text-text-primary">
+                                    {CONDITION_OPERATOR_META[operator].label}
+                                  </span>
+                                  <span className="font-mono system-2xs-regular text-text-quaternary">{operator}</span>
+                                </span>
+                                <span className="truncate system-2xs-regular text-text-tertiary">
+                                  {CONDITION_OPERATOR_META[operator].description}
+                                </span>
+                              </span>
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>

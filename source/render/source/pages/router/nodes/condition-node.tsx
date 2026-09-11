@@ -1,7 +1,7 @@
 import { NodeHandle } from '../components/node-handle'
 import { NodeBody, NodeBranchRow, NodeConditionChip } from '../components/node-sections'
 import type { RouteNodeProps } from '../node-data'
-import type { ConditionNode } from '../types'
+import { conditionOperatorMeta, type ConditionNode } from '../types'
 
 /**
  * 条件节点视图。
@@ -55,7 +55,13 @@ export function ConditionNodeView(props: RouteNodeProps) {
                     <span className="min-w-0 truncate px-1 system-xs-medium text-text-secondary">
                       {condition.fieldPath}
                     </span>
-                    <span className="mx-1 shrink-0 text-xs font-medium text-text-primary">{condition.operator}</span>
+                    {/* 卡片上展示中文名（比 `equals` 好读），原始标识符与语义说明作为悬浮提示。 */}
+                    <span
+                      className="mx-1 shrink-0 cursor-help text-xs font-medium text-text-primary"
+                      title={`${condition.operator} · ${conditionOperatorMeta(condition.operator).description}`}
+                    >
+                      {conditionOperatorMeta(condition.operator).label}
+                    </span>
                     <span className="min-w-0 grow truncate px-1.5 text-xs/6 text-text-secondary">
                       {condition.valueSource === 'field'
                         ? condition.valueFieldPath || '—'
