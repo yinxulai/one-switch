@@ -26,8 +26,6 @@ type WorkflowNodePanelProps = {
   model: WorkflowNodeModel
   /** 画布宽度，用于限制面板最大宽度 */
   canvasWidth: number
-  /** 面板顶边对齐的视口 Y 坐标（取画布顶边，即页面标题栏下方），窗口尺寸变化时跟随更新 */
-  viewportTop: number
   width: number
   onWidthChange: (width: number) => void
   nodeModels: WorkflowNodeModel[]
@@ -46,13 +44,13 @@ type WorkflowNodePanelProps = {
  *
  * 定位使用 `fixed`（窗口级）而不是相对画布的 `absolute`：画布外层有 `overflow-hidden`
  * 与 `rounded-xl`，面板只要画在画布内部就会被裁掉圆角、且高度被限制在画布盒子里。
- * 现在它紧贴窗口右侧与底边，只有顶边对齐画布顶边，避免盖住页面标题栏上的「测试运行 / 保存」。
+ * 现在面板贴满窗口右侧的整条边（上、下都到窗口边界），不会出现「面板比窗口矮一截」的观感；
+ * 页面标题栏的操作按钮由页面自己让出面板宽度（见 `page.tsx` 的 `headerInset`）。
  */
 export function WorkflowNodePanel(props: WorkflowNodePanelProps) {
   const {
     model,
     canvasWidth,
-    viewportTop,
     width,
     onWidthChange,
     nodeModels,
@@ -109,10 +107,7 @@ export function WorkflowNodePanel(props: WorkflowNodePanelProps) {
   const update: NodePanelUpdate = updater => updateNode(model.id, updater)
 
   return (
-    <aside
-      className="fixed right-0 bottom-0 z-40 flex outline-hidden"
-      style={{ top: `${viewportTop}px` }}
-    >
+    <aside className="fixed inset-y-0 right-0 z-40 flex outline-hidden">
       <div
         role="separator"
         aria-orientation="vertical"
