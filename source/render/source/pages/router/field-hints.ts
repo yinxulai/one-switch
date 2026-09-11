@@ -133,20 +133,26 @@ export function resolveInputHints(graph: WorkflowGraph, targetNodeId: string, sa
         sourcePort: 'context',
       })
       addUniqueField(fields, {
-        path: 'metadata.router.requestModelId',
+        path: 'route.traceId',
         valueType: 'string',
         sourceNodeId: model.id,
         sourcePort: 'context',
       })
       addUniqueField(fields, {
-        path: 'metadata.router.queueIds',
-        valueType: 'array',
+        path: 'route.requestedModel',
+        valueType: 'string',
         sourceNodeId: model.id,
         sourcePort: 'context',
       })
       addUniqueField(fields, {
-        path: 'metadata.router.requestModelInQueues',
+        path: 'route.requestedModelInQueues',
         valueType: 'boolean',
+        sourceNodeId: model.id,
+        sourcePort: 'context',
+      })
+      addUniqueField(fields, {
+        path: 'route.availableQueueIds',
+        valueType: 'array',
         sourceNodeId: model.id,
         sourcePort: 'context',
       })
@@ -159,7 +165,7 @@ export function resolveInputHints(graph: WorkflowGraph, targetNodeId: string, sa
       for (const control of model.controls) {
         if (!control.enabled) continue
         addUniqueField(fields, {
-          path: `metadata.controls.${control.key}`,
+          path: `route.controls.${control.key}`,
           valueType: control.kind === 'switch' ? 'boolean' : 'enum',
           sourceNodeId: model.id,
           sourcePort: control.id,
@@ -180,52 +186,32 @@ export function resolveInputHints(graph: WorkflowGraph, targetNodeId: string, sa
       const protocolEnumOptions = [...new Set(reachableProtocols)]
 
       addUniqueField(fields, {
-        path: 'metadata.protocol',
+        path: 'route.protocol',
         valueType: 'enum',
         sourceNodeId: model.id,
         sourcePort: 'protocol',
         enumOptions: protocolEnumOptions,
       })
       addUniqueField(fields, {
-        path: 'metadata.transport',
+        path: 'route.transport',
         valueType: 'enum',
         sourceNodeId: model.id,
         sourcePort: 'transport',
         enumOptions: [...WORKFLOW_TRANSPORTS],
-      })
-      addUniqueField(fields, {
-        path: 'metadata.protocolOutput.protocol',
-        valueType: 'enum',
-        sourceNodeId: model.id,
-        sourcePort: 'protocol',
-        enumOptions: protocolEnumOptions,
-      })
-      addUniqueField(fields, {
-        path: 'metadata.protocolOutput.transport',
-        valueType: 'enum',
-        sourceNodeId: model.id,
-        sourcePort: 'transport',
-        enumOptions: [...WORKFLOW_TRANSPORTS],
-      })
-      addUniqueField(fields, {
-        path: 'metadata.protocolOutput.model',
-        valueType: 'string',
-        sourceNodeId: model.id,
-        sourcePort: 'protocol',
-      })
-      addUniqueField(fields, {
-        path: 'metadata.protocolOutput.messages',
-        valueType: 'array',
-        sourceNodeId: model.id,
-        sourcePort: 'protocol',
       })
       continue
     }
 
     if (model.kind === 'queue-select') {
       addUniqueField(fields, {
-        path: 'queueIds',
+        path: 'route.queueIds',
         valueType: 'array',
+        sourceNodeId: model.id,
+        sourcePort: 'out',
+      })
+      addUniqueField(fields, {
+        path: 'route.fallback',
+        valueType: 'boolean',
         sourceNodeId: model.id,
         sourcePort: 'out',
       })

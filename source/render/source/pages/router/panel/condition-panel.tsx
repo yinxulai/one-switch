@@ -173,7 +173,8 @@ export function ConditionPanel(props: NodePanelProps) {
                       <SelectContent className={PANEL_POPUP_SURFACE_CLASSNAME}>
                         {conditionFieldHints.map(field => (
                           <SelectItem className={PANEL_POPUP_ITEM_CLASSNAME} key={field.path} value={field.path}>
-                            {field.path} · {field.valueType} · {sourceNameOf.get(field.sourceNodeId) ?? field.sourceNodeId}
+                            {/* 名称前置：先看「来自哪个节点」，再看具体字段路径与类型。 */}
+                            {sourceNameOf.get(field.sourceNodeId) ?? field.sourceNodeId} · {field.path} · {field.valueType}
                           </SelectItem>
                         ))}
                       </SelectContent>

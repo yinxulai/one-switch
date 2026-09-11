@@ -42,6 +42,7 @@ import { cn } from '@/lib/utils'
 
 import { NodeSelector } from './components/node-selector'
 import { DifyButton } from './components/dify-button'
+import { PolicyMenu } from './components/policy-menu'
 import { VersionMenu } from './components/version-menu'
 import { WorkflowConnectionLine } from './components/workflow-connection-line'
 import { WorkflowNodePanel } from './components/workflow-node-panel'
@@ -56,6 +57,7 @@ import {
   type RouterGraphVersion,
 } from './graph-versions'
 import {
+  ROUTER_POLICY_PRESETS,
   buildFlowEdges,
   createDefaultGraph,
   createNodeByKind,
@@ -63,6 +65,7 @@ import {
   routerStorageKey,
   samplePayload,
   withFixedNodeCopy,
+  type RouterPolicyPreset,
   type WorkflowFlowEdge,
 } from './graph-model'
 import {
@@ -148,6 +151,15 @@ function WorkflowStudioCanvas() {
   const [versions, setVersions] = useState<RouterGraphVersion[]>(readVersions)
   const versionsRef = useRef(versions)
   versionsRef.current = versions
+
+  /**
+   * 测试输入框的行数随内容增长（上限 28 行），剩下的交给抽屉整体滚动。
+   * 这样小窗口里不会出现「输入框自己滚 + 结果区自己滚」的双滚动条。
+   */
+  const payloadRows = useMemo(
+    () => Math.min(28, Math.max(8, payloadText.split('\n').length + 1)),
+    [payloadText],
+  )
 
   const canvasRef = useRef<HTMLDivElement | null>(null)
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 620, top: 0 })
@@ -492,6 +504,29 @@ function WorkflowStudioCanvas() {
     toast.success(`已回到版本 v${version.sequence}，未保存的改动已被替换`)
   }, [toast])
 
+  /**
+   * 套用内置策略：整张画布换成预设内容并立即写入工作副本。
+   * 预设里没有用户的改动，所以不需要额外确认，但会清掉选中态与上次运行结果。
+   */
+  const applyPolicy = useCallback((preset: RouterPolicyPreset) => {
+    const next = preset.createGraph()
+    setGraph(next)
+    setSelectedNodeId(null)
+    setRunResult(null)
+    try {
+      localStorage.setItem(routerStorageKey, JSON.stringify(next))
+    } catch {
+      // 工作副本写入失败不影响画布切版
+    }
+    toast.success(`已套用策略：${preset.name}`)
+  }, [toast])
+
+  /** 当前画布与哪个预设一致（不一致时为 null）。 */
+  const activePolicyId = useMemo(
+    () => ROUTER_POLICY_PRESETS.find(preset => isSameGraph(preset.createGraph(), graph))?.id ?? null,
+    [graph],
+  )
+
   const draggable = dragEnabled && dockMode === 'select'
 
   return (
@@ -502,6 +537,7 @@ function WorkflowStudioCanvas() {
         actions={(
           // 标题栏不提供 gap，两个按钮直接放在 Fragment 里会贴在一起。
           <div className="flex items-center gap-2">
+            <PolicyMenu activePolicyId={activePolicyId} onApply={applyPolicy} />
             <DifyButton size="medium" onClick={() => setTestDrawerOpen(true)}>
               <CirclePlay className="size-3.5" aria-hidden /> 测试运行
             </DifyButton>
@@ -671,20 +707,21 @@ function WorkflowStudioCanvas() {
             <DrawerDescription>在此输入 JSON，执行路由并查看结果与完整轨迹。</DrawerDescription>
           </DrawerHeader>
 
-          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden px-4 pb-4">
-            {/* 输入与结果各占一半高度：输入框不再写死 `min-h-96`，
-                窗口高度变小时两者一起收缩，而不是把结果区顶出可视区。 */}
-            <div className="flex min-h-0 flex-1 flex-col gap-2">
+          {/* 输入与结果共用一个滚动容器：窗口变小时整体滚动，
+              而不是输入区、结果区各滚各的（结果里的 Trace 也不再单独滚动）。 */}
+          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pb-4">
+            <div className="flex flex-col gap-2">
               <div className="py-1 system-sm-medium text-text-secondary">测试输入</div>
               <Textarea
                 value={payloadText}
                 onChange={event => setPayloadText(event.target.value)}
-                className="min-h-24 flex-1 resize-none font-mono text-[12px] leading-5"
+                rows={payloadRows}
+                className="min-h-24 resize-none font-mono text-[12px] leading-5"
               />
               {payloadError && <div className="system-xs-regular text-text-destructive">{payloadError}</div>}
             </div>
 
-            <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
+            <div className="flex flex-col gap-3">
               <div className="py-1 system-sm-medium text-text-secondary">测试结果</div>
               {!runResult && <div className="rounded-lg bg-workflow-block-parma-bg p-3 system-xs-regular text-text-tertiary">点击下方“运行测试”查看结果。</div>}
 
@@ -707,7 +744,7 @@ function WorkflowStudioCanvas() {
                   </div>
                   <div className="space-y-1.5 rounded-lg bg-workflow-block-parma-bg p-2">
                     <div className="system-2xs-medium-uppercase text-text-tertiary">Trace</div>
-                    <div className="max-h-[40vh] space-y-1.5 overflow-y-auto">
+                    <div className="space-y-1.5">
                       {runResult.trace.map(item => (
                         <div key={`${item.nodeId}-${item.message}`} className="rounded-md bg-workflow-block-bg p-2 system-xs-regular">
                           <div className="mb-0.5 flex items-center gap-2">

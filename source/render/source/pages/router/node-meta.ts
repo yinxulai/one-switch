@@ -134,17 +134,21 @@ export function nodeSummary(model: WorkflowNodeModel): string {
   if (model.kind === 'control-input') return `${model.controls.filter(control => control.enabled).length} 个控制项`
   if (model.kind === 'protocol-discovery') return NODE_KIND_META['protocol-discovery'].hint
   if (model.kind === 'condition') return `${model.cases.length} 个分支 + ELSE`
-  if (model.kind === 'queue-select') return `${model.queueIds.length} 个逻辑队列`
+  if (model.kind === 'queue-select') {
+    return model.mode === 'follow-request-model'
+      ? `${model.fallbackQueueIds.length || 1} 个兜底队列`
+      : `${model.queueIds.length} 个逻辑队列`
+  }
   return NODE_KIND_META.output.hint
 }
 
 export function nodePanelHint(model: WorkflowNodeModel): string {
   if (model.kind === 'input') return '输入节点无配置项，仅作为路由入口。'
   if (model.kind === 'output') return '输出节点无核心配置项，固定作为路由出口。Trace 与摘要仅影响调试可见性。'
-  if (model.kind === 'control-input') return '控制输入节点会把开关、下拉等值写入 metadata.controls，供条件节点和其他逻辑引用。'
+  if (model.kind === 'control-input') return '控制输入节点会把开关、下拉等值写入 route.controls，供条件节点和其他逻辑引用。'
   if (model.kind === 'protocol-discovery') return '该节点无配置项，系统会自动分析请求并输出 openai-completions/openai-responses/anthropic-messages/unknown 分支。'
   if (model.kind === 'condition') return '字段来源于上游 schema，每个分支可包含多个条件，按 AND / OR 组合判定；首个命中的分支生效，否则走 ELSE。'
-  if (model.kind === 'queue-select') return '从逻辑模型队列中选择一个或多个目标，作为路由出口的明确执行范围。'
+  if (model.kind === 'queue-select') return '取值方式决定落点：固定队列直接用勾选的队列；跟随请求模型则用请求里的 model 命中逻辑队列，否则落到兜底队列。'
   return '该节点不会直接返回模型响应，而是返回一个可用队列交由代理执行。'
 }
 

@@ -39,7 +39,7 @@ export function ControlInputPanel(props: NodePanelProps) {
   return (
     <div className="grid gap-2.5">
       <NodePanelHint>
-        控制输入节点会把开关、下拉等值写入 metadata.controls，供条件节点和其他逻辑引用。
+        控制输入节点会把开关、下拉等值写入 route.controls，供条件节点和其他逻辑引用。
       </NodePanelHint>
 
       <div className="grid gap-2.5">

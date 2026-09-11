@@ -29,7 +29,7 @@ function createBaseGraph(overrides?: BaseNodeOverrides): WorkflowGraph {
     controls: [{ id: 'feature-toggle', key: 'featureEnabled', label: '功能开关', kind: 'switch', enabled: true, defaultValue: true }], ...overrides?.control,
   }
   const queueSelectNode: Extract<WorkflowNodeModel, { kind: 'queue-select' }> = {
-    id: 'queue-select', kind: 'queue-select', name: '队列选择', enabled: true, description: '选择逻辑队列', position: { x: 780, y: 120 }, queueIds: ['model-vip', 'model-default'], ...overrides?.queueSelect,
+    id: 'queue-select', kind: 'queue-select', name: '队列选择', enabled: true, description: '选择逻辑队列', position: { x: 780, y: 120 }, mode: 'fixed', queueIds: ['model-vip', 'model-default'], fallbackQueueIds: [], ...overrides?.queueSelect,
   }
   const nodes: WorkflowNodeModel[] = [
     { id: 'input', kind: 'input', name: '输入', enabled: true, description: '输入标准化', position: { x: 60, y: 120 }, ...overrides?.input }, controlNode,
@@ -66,16 +66,22 @@ describe('router engine', () => {
       metadata: { source: 'desktop' },
     })
 
-    const normalized = (result.outputPayload as { metadata: { protocolOutput?: { protocol: string; model: string; messages: Array<{ role: string; content: unknown }> } } }).metadata.protocolOutput
-    expect(normalized).toMatchObject({
-      protocol: 'openai-completions',
-      transport: 'http',
-      model: 'gpt-4o-mini',
-      messages: [{ role: 'user', content: 'hello world' }],
+    // 协议归一化的结果只进 trace 详情，不再写回 payload。
+    const protocolTrace = result.trace.find(item => item.nodeId === 'protocol')
+    expect(protocolTrace?.details).toMatchObject({
+      normalized: {
+        protocol: 'openai-completions',
+        transport: 'http',
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: 'hello world' }],
+      },
     })
+    // 调用方的 metadata 不被引擎改写。
+    const payload = result.outputPayload as { metadata: Record<string, unknown> }
+    expect(payload.metadata).toEqual({ source: 'desktop' })
   })
 
-  it('detects http-sse transport and writes transport metadata', () => {
+  it('detects http-sse transport and writes it into route', () => {
     const graph = createBaseGraph()
 
     const result = runWorkflow(graph, {
@@ -94,9 +100,9 @@ describe('router engine', () => {
       metadata: {},
     })
 
-    const payload = result.outputPayload as { metadata: { transport: string; protocolOutput: { transport: string } } }
-    expect(payload.metadata.transport).toBe('http-sse')
-    expect(payload.metadata.protocolOutput.transport).toBe('http-sse')
+    const payload = result.outputPayload as { route: { protocol: string; transport: string } }
+    expect(payload.route.transport).toBe('http-sse')
+    expect(payload.route.protocol).toBe('openai-completions')
   })
 
   it('routes openai-completions requests through IF and resolver nodes', () => {
@@ -120,11 +126,11 @@ describe('router engine', () => {
     expect(result.trace.some(item => item.nodeId === 'condition-gate' && item.success)).toBe(true)
   })
 
-  it('injects control-input values into metadata for downstream conditions', () => {
+  it('injects control-input values into route.controls for downstream conditions', () => {
     const graph = createBaseGraph({
       condition: {
         cases: [singleCase([{ 
-          fieldPath: 'metadata.controls.featureEnabled',
+          fieldPath: 'route.controls.featureEnabled',
           valueType: 'boolean',
           operator: 'isTrue',
         }])],
@@ -155,8 +161,8 @@ describe('router engine', () => {
       metadata: {},
     })
 
-    const payload = result.outputPayload as { metadata: { controls: { featureEnabled: boolean } } }
-    expect(payload.metadata.controls.featureEnabled).toBe(true)
+    const payload = result.outputPayload as { route: { controls: { featureEnabled: boolean } } }
+    expect(payload.route.controls.featureEnabled).toBe(true)
     expect(result.trace.some(item => item.nodeId === 'condition-gate' && item.success)).toBe(true)
   })
 
@@ -198,11 +204,11 @@ describe('router engine', () => {
     expect(result.protocol).toBe('openai-completions')
   })
 
-  it('exposes requestModelInQueues for condition checks', () => {
+  it('exposes requestedModelInQueues for condition checks', () => {
     const graph = createBaseGraph({
       condition: {
         cases: [singleCase([{ 
-          fieldPath: 'metadata.router.requestModelInQueues',
+          fieldPath: 'route.requestedModelInQueues',
           valueType: 'boolean',
           operator: 'isTrue',
         }])],
@@ -228,23 +234,24 @@ describe('router engine', () => {
     expect(hit.stopReason).toBe('output')
     expect(hit.queueSelections['queue-select']?.queueIds).toEqual(['queue-hit'])
 
-    const payload = hit.outputPayload as { metadata: { router: { requestModelInQueues: boolean; queueIds: string[] } } }
-    expect(payload.metadata.router.requestModelInQueues).toBe(true)
-    expect(payload.metadata.router.queueIds).toEqual(['queue-hit', 'queue-fallback'])
+    const payload = hit.outputPayload as { route: { requestedModel: string; requestedModelInQueues: boolean; availableQueueIds: string[] } }
+    expect(payload.route.requestedModel).toBe('queue-hit')
+    expect(payload.route.requestedModelInQueues).toBe(true)
+    expect(payload.route.availableQueueIds).toEqual(['queue-hit', 'queue-fallback'])
   })
 
-  it('exposes normalized protocol output fields for downstream conditions', () => {
+  it('exposes protocol discovery results for downstream conditions', () => {
     const graph = createBaseGraph({
       condition: {
         cases: [singleCase([
           {
-            fieldPath: 'metadata.protocolOutput.model',
+            fieldPath: 'route.protocol',
             valueType: 'string',
             operator: 'equals',
-            value: 'gpt-4o-mini',
+            value: 'openai-completions',
           },
           {
-            fieldPath: 'metadata.protocolOutput.messages',
+            fieldPath: 'request.body.messages',
             valueType: 'array',
             operator: 'notEmpty',
           },
@@ -471,7 +478,7 @@ describe('router engine', () => {
   it('迭代节点遍历数组并在完成后从 out 端口退出', () => {
     const nodes: WorkflowNodeModel[] = [
       { id: 'input', kind: 'input', name: '输入', enabled: true, description: '', position: { x: 0, y: 0 } },
-      { id: 'queue-select', kind: 'queue-select', name: '队列选择', enabled: true, description: '', position: { x: 100, y: 0 }, queueIds: ['model-a', 'model-b'] },
+      { id: 'queue-select', kind: 'queue-select', name: '队列选择', enabled: true, description: '', position: { x: 100, y: 0 }, mode: 'fixed', queueIds: ['model-a', 'model-b'], fallbackQueueIds: [] },
       { id: 'control', kind: 'control-input', name: '下游', enabled: true, description: '', position: { x: 200, y: 0 }, controls: [] },
       { id: 'output', kind: 'output', name: '输出', enabled: true, description: '', position: { x: 300, y: 0 }, includeTrace: true, summaryLevel: 'brief' },
     ]
@@ -484,11 +491,69 @@ describe('router engine', () => {
   it('队列选择节点去重并保持选择顺序', () => {
     const nodes: WorkflowNodeModel[] = [
       { id: 'input', kind: 'input', name: '输入', enabled: true, description: '', position: { x: 0, y: 0 } },
-      { id: 'queue-select', kind: 'queue-select', name: '队列选择', enabled: true, description: '', position: { x: 100, y: 0 }, queueIds: ['model-a', 'model-a', 'model-b'] },
+      { id: 'queue-select', kind: 'queue-select', name: '队列选择', enabled: true, description: '', position: { x: 100, y: 0 }, mode: 'fixed', queueIds: ['model-a', 'model-a', 'model-b'], fallbackQueueIds: [] },
       { id: 'output', kind: 'output', name: '输出', enabled: true, description: '', position: { x: 300, y: 0 }, includeTrace: true, summaryLevel: 'brief' },
     ]
     const result = runWorkflow({ version: 1, nodes, edges: [edge('input', 'out', 'queue-select'), edge('queue-select', 'out', 'output')] }, { request: { body: {} }, metadata: {} })
     expect(result.queueSelections['queue-select']?.queueIds).toEqual(['model-a', 'model-b'])
-    expect((result.outputPayload as { queueIds: string[] }).queueIds).toEqual(['model-a', 'model-b'])
+    expect((result.outputPayload as { route: { queueIds: string[] } }).route.queueIds).toEqual(['model-a', 'model-b'])
+  })
+
+  it('跟随请求模型：命中逻辑队列时直连该队列', () => {
+    const result = runWorkflow(createFollowRequestModelGraph(), {
+      request: { path: '/v1/chat/completions', headers: { 'x-provider': 'openai' }, body: { model: 'queue-hit' } },
+      queues: [
+        { id: 'queue-hit', name: 'Queue Hit', enabled: true },
+        { id: 'default', name: 'Default', enabled: true },
+      ],
+      metadata: {},
+    })
+
+    const payload = result.outputPayload as { route: { queueIds: string[]; fallback: boolean } }
+    expect(result.queueSelections['queue-select']).toMatchObject({ matched: true, queueIds: ['queue-hit'] })
+    expect(payload.route.queueIds).toEqual(['queue-hit'])
+    expect(payload.route.fallback).toBe(false)
+  })
+
+  it('跟随请求模型：未命中时回落到兜底队列', () => {
+    const result = runWorkflow(createFollowRequestModelGraph(), {
+      request: { path: '/v1/chat/completions', headers: { 'x-provider': 'openai' }, body: { model: 'gpt-4o-mini' } },
+      queues: [
+        { id: 'queue-hit', name: 'Queue Hit', enabled: true },
+        { id: 'default', name: 'Default', enabled: true },
+      ],
+      metadata: {},
+    })
+
+    const payload = result.outputPayload as { route: { queueIds: string[]; fallback: boolean } }
+    expect(result.queueSelections['queue-select']).toMatchObject({ matched: false, queueIds: ['queue-fallback'] })
+    expect(payload.route.queueIds).toEqual(['queue-fallback'])
+    expect(payload.route.fallback).toBe(true)
+  })
+
+  it('跟随请求模型：没配兜底队列时使用内置默认队列', () => {
+    const graph = createFollowRequestModelGraph()
+    graph.nodes = graph.nodes.map(node => node.kind === 'queue-select' ? { ...node, fallbackQueueIds: [] } : node)
+
+    const result = runWorkflow(graph, {
+      request: { path: '/v1/chat/completions', headers: { 'x-provider': 'openai' }, body: { model: 'gpt-4o-mini' } },
+      queues: [{ id: 'queue-hit', name: 'Queue Hit', enabled: true }],
+      metadata: {},
+    })
+
+    expect(result.queueSelections['queue-select']?.queueIds).toEqual(['default'])
   })
 })
+
+/** 最小默认策略图：输入 → 跟随请求模型的队列选择 → 输出。 */
+function createFollowRequestModelGraph(): WorkflowGraph {
+  return {
+    version: 1,
+    nodes: [
+      { id: 'input', kind: 'input', name: '输入', enabled: true, description: '', position: { x: 0, y: 0 } },
+      { id: 'queue-select', kind: 'queue-select', name: '请求模型直连', enabled: true, description: '', position: { x: 100, y: 0 }, mode: 'follow-request-model', queueIds: [], fallbackQueueIds: ['queue-fallback'] },
+      { id: 'output', kind: 'output', name: '输出', enabled: true, description: '', position: { x: 200, y: 0 }, includeTrace: true, summaryLevel: 'brief' },
+    ],
+    edges: [edge('input', 'out', 'queue-select'), edge('queue-select', 'out', 'output')],
+  }
+}
