@@ -292,3 +292,23 @@ html[data-magicui-theme-vt="active"] [data-slot="app-sidebar"] > div:first-child
 .workflow-reactflow .react-flow__edge-path {
   vector-effect: non-scaling-stroke;
 }
+
+/* 框选矩形，复制自 Dify `workflow/style.css` 的 `#workflow-container .react-flow__selection`
+   与 `.react-flow__nodesselection-rect`，颜色从它的硬编码蓝改成主题强调色。 */
+.workflow-reactflow .react-flow__selection {
+  border: 1px solid hsl(var(--primary) / 0.7);
+  background: hsl(var(--primary) / 0.05);
+}
+
+.workflow-reactflow .react-flow__nodesselection-rect {
+  border: 1px solid hsl(var(--primary) / 0.7);
+  background: hsl(var(--primary) / 0.05);
+  cursor: move;
+}
+
+/* 节点键盘聚焦描边，对应 Dify 的 `#workflow-container .react-flow__node:focus-visible`。 */
+.workflow-reactflow .react-flow__node:focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 4px;
+  border-radius: 16px;
+}
