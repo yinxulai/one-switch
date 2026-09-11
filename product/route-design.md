@@ -7,14 +7,13 @@ One Switch 既是本地代理，也是一套请求路由与模型选择系统。
 路由工作台解决的核心问题包括：
 
 - 让请求通路不再依赖代码分支散落各处；
-- 让协议发现、条件判断、模型选择逻辑可视化；
+- 让条件判断、队列选择和最终输出逻辑可视化；
 - 让非开发人员也能理解一条请求如何被选到目标模型；
 - 让调试更容易，因为每个节点都能留下 trace。
 
 路由不是“编排内容修改”，而是“根据请求选择最终要求的逻辑模型/队列”。它强调：
 
 - 入口统一；
-- 协议语义清晰；
 - 选择决策可审计；
 - 每个节点只做一件事；
 - 不在路由层改写请求内容。
@@ -67,7 +66,7 @@ One Switch 既是本地代理，也是一套请求路由与模型选择系统。
 
 路由图不要求所有节点都出现在同一张图里。默认最小链路是：
 
-Input -> ProtocolDiscovery -> ModelSelector -> Output
+Input -> ModelSelector -> Output
 
 复杂链路通过条件和策略分支扩展。
 
@@ -158,13 +157,6 @@ type RouteContext = {
   traceId: string
 }
 
-type LogicalModelDecision = {
-  selectedModel: string
-  targetQueue: string
-  fallbackQueue?: string
-  matched: boolean
-}
-
 interface InputNodeContract extends NodeIOContract<
   { request: unknown; metadata?: Record<string, unknown> },
   { payload: unknown; context: RouteContext }
@@ -176,8 +168,13 @@ interface ConditionNodeContract extends NodeIOContract<
 > {}
 
 interface ModelSelectorNodeContract extends NodeIOContract<
-  { payload: unknown; context: RouteContext; candidateModels: string[] },
-  { selectedModel: string; targetQueue: string; fallbackQueue?: string; routeDecision: LogicalModelDecision }
+  { payload: unknown; context: RouteContext },
+  { queueIds: string[] }
+> {}
+
+interface OutputNodeContract extends NodeIOContract<
+  { payload: unknown; context: RouteContext; queueIds: string[] },
+  { queueIds: string[]; routeDecision: { matched: boolean; queueIds: string[] } }
 > {}
 ```
 
@@ -239,49 +236,6 @@ interface EdgeConnection {
 
 ---
 
-### 4.2 ProtocolDiscovery
-
-核心作用：
-- 发现当前请求属于哪种接口协议；
-- 识别后为不同协议类型输出各自的连接点；
-- 将请求分发到对应的协议分支。
-
-输入：
-- `request.path`
-- `request.headers`
-- `payload`
-
-输出连接点：
-- `openai`
-- `anthropic`
-- `gemini`
-- `custom`
-- `unknown`
-
-说明：
-- 这是路由图的第一层语义判断；
-- 它不是单一判断，而是把不同协议类型暴露成独立的分支连接点；
-- 每个协议类型都对应一个明确的后续输出端口；
-- 例如：`openai -> ModelSelector`，`anthropic -> ModelSelector`，`unknown -> Condition` 或 `Output`。
-
-配置体验：
-- path 匹配规则和 header 匹配规则提供模板（OpenAI/Anthropic/Gemini 常见路径）；
-- 协议分支输出口固定展示并可预览“最近命中率”；
-- unknown 分支默认给出建议落点（Condition 或 Output），减少空分支配置。
-
-示意：
-
-```text
-ProtocolDiscovery
-  ├─ openai -> ModelSelector
-  ├─ anthropic -> ModelSelector
-  ├─ gemini -> ModelSelector
-  ├─ custom -> ModelSelector
-  └─ unknown -> Output
-```
-
----
-
 ### 4.3 Condition
 
 核心作用：
@@ -314,31 +268,27 @@ ProtocolDiscovery
 
 ---
 
-### 4.4 ModelSelector
+### 4.3 ModelSelector
 
 核心作用：
-- 根据请求选择最终逻辑模型；
-- 决定请求落到哪条队列 / provider chain。
+- 指定一个或多个逻辑队列 ID；
+- 将明确的队列选择交给 Output 节点。
 
 输入：
 - `payload`
 - `context`
-- `candidateModels`
 
 输出：
-- `targetQueue`
-- `selectedModel`
-- `fallbackQueue`
-- `routeDecision`
+- `queueIds: string[]`
 
 说明：
-- 这是路由中的最终决策节点；
-- 它的职责是选择“目标逻辑模型 + 目标队列”，不是改写请求字段。
+- ModelSelector 只表达队列选择，不负责协议识别、模型评分或请求改写；
+- 队列 ID 经过去重和空值清理后写入运行时 payload；
+- 多个队列 ID 表示允许 Output 将请求交给多个候选队列。
 
 配置体验：
-- candidateModels 支持按协议、租户、客户端分组展示与搜索；
-- 评分策略（延迟、成本、成功率）提供可视化权重滑杆；
-- fallbackQueue 必填策略可配置（强制/可选），并在缺失时给出阻断提示。
+- queueIds 支持选择一个或多个逻辑队列，并提供搜索与去重；
+- 输出结果展示最终 queueIds，便于审计和调试；
 
 ---
 
@@ -409,8 +359,13 @@ interface ConditionNodeContract extends NodeIOContract<
 > {}
 
 interface ModelSelectorNodeContract extends NodeIOContract<
-  { payload: unknown; context: RouteContext; candidateModels: string[] },
-  { selectedModel: string; targetQueue: string; fallbackQueue?: string; routeDecision: { matched: boolean } }
+  { payload: unknown; context: RouteContext },
+  { queueIds: string[] }
+> {}
+
+interface OutputNodeContract extends NodeIOContract<
+  { payload: unknown; context: RouteContext; queueIds: string[] },
+  { queueIds: string[]; routeDecision: { matched: boolean; queueIds: string[] } }
 > {}
 ```
 
@@ -445,16 +400,14 @@ interface ModelSelectorNodeContract extends NodeIOContract<
 路由编排的核心节点应当只包含：
 
 1. Input
-2. ProtocolDiscovery
-3. Condition
-4. ModelSelector
-5. Output
+2. Condition（可选）
+3. ModelSelector
+4. Output
 
 它们构成了“路由”的最小完整闭环：
 
 - 接收请求；
-- 识别协议；
-- 判断分支；
+- （可选）判断分支；
 - 选定目标逻辑模型和队列；
 - 输出最终决策。
 

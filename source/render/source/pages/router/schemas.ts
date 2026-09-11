@@ -80,7 +80,9 @@ const ConditionNodeSchema = WorkflowNodeBaseSchema.extend({
 
 const QueueSelectNodeSchema = WorkflowNodeBaseSchema.extend({
   kind: z.literal('queue-select'),
-  queueIds: z.array(z.string().min(1)).min(1),
+  // 允许空数组：刚插入、尚未选择队列的节点是合法的编辑中间态，
+  // 运行时会产出 success: false 的 trace，而不是让整张图校验失败。
+  queueIds: z.array(z.string().min(1)),
 })
 
 const OutputNodeSchema = WorkflowNodeBaseSchema.extend({
