@@ -24,7 +24,7 @@ describe('management router', () => {
   it('hides development-only paths outside development', async () => {
     const response = mockResponse()
 
-    await handleApiRequest(request('/api/config/seed-development'), response, 'production')
+    await handleApiRequest(request('/api/development/seed'), response, 'production')
 
     expect(response.statusCode).toBe(404)
     expect(responsePayload(response)).toMatchObject({ success: false, errorCode: 'NOT_FOUND' })

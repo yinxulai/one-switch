@@ -1,6 +1,5 @@
 export { modelRoutes, providerRoutes, providerModelRoutes } from './catalog'
-export { settingsRoutes, runtimeControlRoutes } from './operations'
+export { settingsRoutes, runtimeControlRoutes, developmentRoutes } from './operations'
 export { logRoutes, requestLogRoutes, analyticsRoutes } from './observability'
 export { modelTestRoutes, outboundProxyTestRoutes, providerModelFetchRoutes, routerRunRoutes } from './diagnostics'
 export { relationRoutes, requestRewriteRuleRoutes } from './relations'
-export { configRoutes } from '../config/routes'

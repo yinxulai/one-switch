@@ -1057,7 +1057,7 @@ Store 层应分为两部分：
 5. `source/server/database/development-seed.ts`；
 6. `source/server/database/index.test.ts`；
 7. 分域 Store 测试（`store-boundaries.test.ts`、各领域测试）；
-8. 配置导入导出逻辑；
+8. 供应商包导入导出逻辑（`source/server/management/provider-transfer/`、`source/common/provider-bundle.ts`）；
 9. Provider、模型、路由和统计相关 SQL；
 10. 删除旧版 Drizzle 迁移文件，生成新的首发基线；
 11. 数据文件名规则（`source/common/database-file.ts`）及其在 `source/command/index.ts`、`source/server/index.ts`、`source/server/runtime/server-runtime.ts`、`source/server/database/index.ts` 之间的传递；测试统一使用 `source/server/database/test-support.ts` 里的固定文件名。

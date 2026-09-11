@@ -1,4 +1,4 @@
-import { BarChart3, Pencil, Trash2 } from 'lucide-react'
+import { BarChart3, Download, Pencil, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
@@ -10,12 +10,13 @@ interface ProviderDetailHeaderProps {
   provider: Provider
   onToggleProviderEnabled: (enabled: boolean) => void
   onEditProvider: () => void
+  onExportProvider: () => void
   onRemoveProvider: () => void
   onNavigateToAnalytics?: () => void
 }
 
 export function ProviderDetailHeader(props: ProviderDetailHeaderProps) {
-  const { provider, onToggleProviderEnabled, onEditProvider, onRemoveProvider } = props
+  const { provider, onToggleProviderEnabled, onEditProvider, onExportProvider, onRemoveProvider } = props
   const iconColor = findPresetByName(provider.name)?.color
 
   return (
@@ -43,6 +44,9 @@ export function ProviderDetailHeader(props: ProviderDetailHeaderProps) {
           onCheckedChange={onToggleProviderEnabled}
           aria-label={`${provider.name} 启用状态`}
         />
+        <Button variant="outline" onClick={onExportProvider}>
+          <Download size={13} /> 导出
+        </Button>
         {props.onNavigateToAnalytics && (
           <Button variant="outline" onClick={props.onNavigateToAnalytics}>
             <BarChart3 size={13} /> 数据分析

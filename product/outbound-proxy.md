@@ -128,17 +128,15 @@ outboundProxyBypass: string
 - 首版支持精确主机、域名后缀和可选端口，例如 `localhost`、`.example.com`、`api.example.com:8443`；
 - 首版不支持 CIDR、通配路径或正则表达式。
 
-### 持久化与导入导出
+### 持久化与导出边界
 
 设置继续使用现有通用 `settings` 键值表，不新增数据库表或迁移。新增字段必须同步到：
 
 - `SettingsSchema` 与 `Settings` 类型；
 - 设置更新接口；
-- 配置文档 `ConfigSettingsSchema`；
-- 配置导出和导入流程；
 - 设置页草稿与保存请求。
 
-旧配置文件缺少新字段时使用默认值，保持 schema version 3 的向后兼容。配置导入导出完整保留代理模式、自定义代理 URL 和绕过规则，包括 URL 中的账号密码。
+上游代理是全局设置，**不进入供应商包**：`/api/provider/export` 只携带单个供应商的端点、模型、自定义设置和可选的明文 API Key（详见 [provider-model.md](./provider-model.md)）。跨机器迁移代理配置需要在新环境的设置页重新填写。preview 阶段不提供旧配置/旧库的兼容升级路径，缺少新字段时按 `SettingsSchema` 的默认值处理。
 
 ## 安全与隐私
 
@@ -147,11 +145,11 @@ outboundProxyBypass: string
 自定义代理 URL 允许直接携带用户名和密码，例如 `http://user:password@127.0.0.1:7890`。按本功能契约，该完整 URL：
 
 - 作为普通设置值保存在本地 SQLite；
-- 随配置导出和导入，不替换为密钥引用；
+- 不随供应商包导出，也不替换为密钥引用；
 - 在设置表单中可编辑；
 - 交给 `proxy-agent` 生成代理认证信息。
 
-这意味着数据库和导出文件可能包含明文代理凭据。导出操作应提示文件可能包含代理账号密码，用户负责保管。运行日志、请求日志、错误消息、测试结果和诊断信息不得输出完整 URL userinfo；显示代理地址时统一脱敏为 `scheme://***:***@host:port`。不得把 `Proxy-Authorization` 转发给目标服务器。
+这意味着数据库可能包含明文代理凭据。设置页对代理地址输入应给出相应提示，用户负责保管。运行日志、请求日志、错误消息、测试结果和诊断信息不得输出完整 URL userinfo；显示代理地址时统一脱敏为 `scheme://***:***@host:port`。不得把 `Proxy-Authorization` 转发给目标服务器。
 
 ### 请求可见性
 
@@ -348,9 +346,7 @@ sequenceDiagram
 ### 公共模型与持久化
 
 - `source/common/schemas.ts`
-- `source/common/config-schemas.ts`
 - `source/server/database/settings-store.ts` 及测试
-- `source/server/management/config/export-config.ts` 及配置导入导出测试
 
 ### 服务端网络与管理 API
 
@@ -379,8 +375,8 @@ sequenceDiagram
 - `getProxyForUrl` 在 direct、system、custom bypass 和 custom proxy 状态下返回正确结果；
 - Chromium `DIRECT`、`PROXY`、`HTTPS`、`SOCKS`、`SOCKS4` 规则转换及未知规则错误；
 - 配置变化后新请求读取最新值，测试草稿实例销毁且不修改运行配置；
-- 带账号密码的代理 URL 完整持久化及导入导出，日志和错误仍保持脱敏；
-- 配置默认值、持久化、监听通知和旧配置导入。
+- 带账号密码的代理 URL 完整持久化，日志和错误仍保持脱敏；
+- 配置默认值、持久化和监听通知。
 
 ### 传输集成测试
 
@@ -420,6 +416,6 @@ sequenceDiagram
 - [ ] 代理阶段失败不会错误冷却单个 Provider 或 ProviderModel
 - [ ] 保存代理设置后新请求立即生效，无需重启本地监听服务
 - [ ] 修改监听地址或端口时仍按现有流程重启本地代理服务
-- [ ] 配置导入导出完整保留代理模式、自定义 URL、账号密码和绕过规则，旧 schema version 3 配置仍可导入
+- [ ] 代理配置只存在于本地设置，不进入供应商包；跨机器迁移需在设置页重新配置
 - [ ] 运行日志、请求日志、错误消息和测试结果不出现代理认证凭据
 - [ ] `pnpm typecheck`、`pnpm lint` 和完整测试通过

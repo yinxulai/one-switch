@@ -14,6 +14,8 @@ import {
 import { resetProviderHealth } from '@server/database/health-store'
 import { getSecretStore } from '@server/infrastructure/secrets/secret-store'
 import { HttpRouter } from '@server/http-router'
+import { exportProviderBundle } from '../../provider-transfer/export-provider-bundle'
+import { importProviderBundle } from '../../provider-transfer/import-provider-bundle'
 import type { ManagementHandler } from '../../core/response'
 import { sendError, sendSuccess } from '../../core/response'
 
@@ -25,6 +27,8 @@ export const providerRoutes = new HttpRouter<ManagementHandler>()
   .post('/api/provider/update', handleUpdateProvider)
   .post('/api/provider/delete', handleDeleteProvider)
   .post('/api/provider/reset-health', handleResetProviderHealth)
+  .post('/api/provider/export', handleExportProviderBundle)
+  .post('/api/provider/import', handleImportProviderBundle)
 
 async function handleListProviders(_req: IncomingMessage, res: ServerResponse): Promise<void> {
   sendSuccess(res, await listProviders())
@@ -124,4 +128,12 @@ async function handleResetProviderHealth(_req: IncomingMessage, res: ServerRespo
   const { providerId } = ResetHealthSchema.parse(body)
   await resetProviderHealth(providerId)
   sendSuccess(res, { providerId })
+}
+
+async function handleExportProviderBundle(_req: IncomingMessage, res: ServerResponse, body: unknown): Promise<void> {
+  sendSuccess(res, await exportProviderBundle(body))
+}
+
+async function handleImportProviderBundle(_req: IncomingMessage, res: ServerResponse, body: unknown): Promise<void> {
+  sendSuccess(res, await importProviderBundle(body))
 }

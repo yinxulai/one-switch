@@ -137,6 +137,29 @@ export async function replaceProviderEndpoints(providerId: string, endpoints: Pa
   return listProviderEndpoints(providerId)
 }
 
+/**
+ * 按给定状态整体替换供应商端点。
+ *
+ * `replaceProviderEndpoints` 只接受「启用的 protocol → url」映射，表达不了「这一行地址还在，只是被
+ * 停用了」——那条行带着用户填过的 URL，是用户可见状态而不是缓存。供应商导入导出需要完整往返，
+ * 所以这里额外接收 `enabled`。传入的端点集合即该供应商的端点全集：没提到的协议一律置为禁用。
+ */
+export async function replaceProviderEndpointStates(providerId: string, endpoints: Array<Pick<ProviderEndpoint, 'protocol' | 'url' | 'enabled'>>): Promise<ProviderEndpoint[]> {
+  const db = getDb()
+  const time = now()
+  db.transaction(transaction => {
+    transaction.update(providerEndpoints).set({ enabled: false, updatedTime: time }).where(eq(providerEndpoints.providerId, providerId)).run()
+    for (const { protocol, url, enabled } of endpoints) {
+      const trimmed = url.trim()
+      if (!trimmed) continue
+      transaction.insert(providerEndpoints).values({ id: generateId('end_'), providerId, protocol, url: trimmed, enabled, createdTime: time, updatedTime: time }).onConflictDoUpdate({
+        target: [providerEndpoints.providerId, providerEndpoints.protocol], set: { url: trimmed, enabled, updatedTime: time },
+      }).run()
+    }
+  })
+  return listProviderEndpoints(providerId)
+}
+
 export async function deleteProvider(id: string): Promise<void> {
   const time = now()
   getDb().transaction(transaction => {

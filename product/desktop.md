@@ -48,6 +48,7 @@ Electron + Node + TypeScript + React/Vite
 - Provider 列表（名称、状态、连续失败、冷却状态）
 - 新增 / 编辑 / 删除 / 启用禁用 Provider
 - 配置空闲超时时间（两次数据间隔，流式不超时）
+- 导入 / 导出供应商包：单个供应商详情可导出，列表页可导入或导出全部；导入前展示包内供应商、将被覆盖的同名供应商数量和明文 API Key 条数，详见 [provider-model.md](./provider-model.md)
 
 ### 自动切换队列页
 
@@ -76,7 +77,6 @@ Electron + Node + TypeScript + React/Vite
 - 开机自启
 - 日志保留条数和保留天数
 - 按天数立即清理历史日志
-- 配置导入 / 导出
 - 关于
 
 ## 用户流程

@@ -9,6 +9,7 @@ interface ProviderDetailProps {
   models: ProviderModelRoute[]
   onToggleProviderEnabled: (enabled: boolean) => void
   onEditProvider: () => void
+  onExportProvider: () => void
   onRemoveProvider: () => void
   onNavigateToAnalytics?: (providerId: string) => void
   onAddModel: () => void
@@ -21,7 +22,7 @@ interface ProviderDetailProps {
 }
 
 export function ProviderDetail(props: ProviderDetailProps) {
-  const { provider, models, onToggleProviderEnabled, onEditProvider, onRemoveProvider, onNavigateToAnalytics, onAddModel, onEditModel, onToggleModelEnabled, onRemoveModel, onRemoveModels, onDisableModels, onDragEnd } = props
+  const { provider, models, onToggleProviderEnabled, onEditProvider, onExportProvider, onRemoveProvider, onNavigateToAnalytics, onAddModel, onEditModel, onToggleModelEnabled, onRemoveModel, onRemoveModels, onDisableModels, onDragEnd } = props
 
   return (
     <Card>
@@ -29,6 +30,7 @@ export function ProviderDetail(props: ProviderDetailProps) {
         provider={provider}
         onToggleProviderEnabled={onToggleProviderEnabled}
         onEditProvider={onEditProvider}
+        onExportProvider={onExportProvider}
         onRemoveProvider={onRemoveProvider}
         onNavigateToAnalytics={onNavigateToAnalytics ? () => onNavigateToAnalytics(provider.id) : undefined}
       />

@@ -15,11 +15,11 @@
 
 ## 密钥存储
 
-- Provider API Key 不写入明文配置文件
+- Provider API Key 不写入明文配置、日志或导出的供应商包（除非用户显式选择包含）
 - Provider API Key 使用 Electron `safeStorage` 或系统密钥环（macOS Keychain / Windows Credential Manager / Linux Secret Service）存储
-- 配置文件中仅保存 Provider API Key 的密钥引用 ID
-- 配置导入/导出时默认脱敏 Provider API Key（导出文件不含明文 API Key）
-- 自定义上游代理 URL 例外：允许携带账号密码，并作为普通设置写入 SQLite 和配置导出；日志、错误与测试结果仍必须脱敏，详见 [outbound-proxy.md](./outbound-proxy.md)
+- 数据库中仅保存 Provider API Key 的密钥引用 ID
+- 供应商包默认导出脱敏版本（不含明文 API Key）；包含明文必须由用户显式勾选，并在界面提示该文件等同于凭据，详见 [provider-model.md](./provider-model.md)
+- 自定义上游代理 URL 例外：允许携带账号密码，并作为普通设置写入 SQLite；代理设置不进入供应商包，日志、错误与测试结果仍必须脱敏，详见 [outbound-proxy.md](./outbound-proxy.md)
 
 ## 隐私策略
 
@@ -45,7 +45,7 @@
 - 内容查看和导出都应明确提示可能包含提示词、文件内容和模型输出；导出默认不包含正文
 - 日志内容只保存在本地应用数据目录，不上传任何第三方服务器
 
-## 配置文件位置
+## 本地数据位置
 
 | 平台 | 路径 |
 |------|------|
