@@ -1,4 +1,5 @@
-import { Button } from '@/components/ui/button'
+import { Plus } from 'lucide-react'
+
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -9,6 +10,7 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { DifyButton } from '../components/dify-button'
 import { createControlItem } from '../graph-model'
 import type { NodePanelProps } from '../node-data'
 import type { ControlInputNode } from '../types'
@@ -17,6 +19,8 @@ import {
   NodePanelField,
   NodePanelGroupHeader,
   NodePanelHint,
+  PANEL_POPUP_ITEM_CLASSNAME,
+  PANEL_POPUP_SURFACE_CLASSNAME,
 } from './panel-fields'
 
 export function ControlInputPanel(props: NodePanelProps) {
@@ -44,16 +48,14 @@ export function ControlInputPanel(props: NodePanelProps) {
             <NodePanelGroupHeader
               title={`控制项 ${index + 1}`}
               action={(
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
+                <DifyButton
+                  variant="ghost-destructive"
                   onClick={() => update(current => current.kind === 'control-input'
                     ? { ...current, controls: current.controls.filter(item => item.id !== control.id) }
                     : current)}
                 >
                   删除
-                </Button>
+                </DifyButton>
               )}
             />
 
@@ -100,15 +102,15 @@ export function ControlInputPanel(props: NodePanelProps) {
                     : current)}
                 >
                   <SelectTrigger className="w-full"><SelectValue placeholder="type" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="switch">开关</SelectItem>
-                    <SelectItem value="select">下拉</SelectItem>
+                  <SelectContent className={PANEL_POPUP_SURFACE_CLASSNAME}>
+                    <SelectItem className={PANEL_POPUP_ITEM_CLASSNAME} value="switch">开关</SelectItem>
+                    <SelectItem className={PANEL_POPUP_ITEM_CLASSNAME} value="select">下拉</SelectItem>
                   </SelectContent>
                 </Select>
               </NodePanelField>
 
-              <div className="flex items-end justify-between gap-2 rounded-lg bg-muted/45 px-2.5 py-2">
-                <span className="text-xs">启用</span>
+              <div className="flex items-end justify-between gap-2 rounded-lg bg-workflow-block-parma-bg px-2.5 py-2">
+                <span className="system-xs-regular text-text-secondary">启用</span>
                 <Switch
                   checked={control.enabled}
                   onCheckedChange={checked => patchControl(control.id, { enabled: checked })}
@@ -117,8 +119,8 @@ export function ControlInputPanel(props: NodePanelProps) {
             </div>
 
             {control.kind === 'switch' && (
-              <div className="flex items-center justify-between rounded-lg bg-muted/45 px-2.5 py-2">
-                <span className="text-xs">默认开启</span>
+              <div className="flex items-center justify-between rounded-lg bg-workflow-block-parma-bg px-2.5 py-2">
+                <span className="system-xs-regular text-text-secondary">默认开启</span>
                 <Switch
                   checked={Boolean(control.defaultValue)}
                   onCheckedChange={checked => patchControl(control.id, { defaultValue: checked })}
@@ -136,9 +138,9 @@ export function ControlInputPanel(props: NodePanelProps) {
                     onValueChange={value => patchControl(control.id, { defaultValue: value })}
                   >
                     <SelectTrigger className="w-full"><SelectValue placeholder="default" /></SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className={PANEL_POPUP_SURFACE_CLASSNAME}>
                       {(control.options ?? []).map(option => (
-                        <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                        <SelectItem className={PANEL_POPUP_ITEM_CLASSNAME} key={option.value} value={option.value}>{option.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -164,15 +166,13 @@ export function ControlInputPanel(props: NodePanelProps) {
         ))}
       </div>
 
-      <Button
-        type="button"
-        variant="outline"
+      <DifyButton
         onClick={() => update(current => current.kind === 'control-input'
           ? { ...current, controls: [...current.controls, createControlItem('switch')] }
           : current)}
       >
-        添加控制项
-      </Button>
+        <Plus className="size-3.5" aria-hidden /> 添加控制项
+      </DifyButton>
     </div>
   )
 }

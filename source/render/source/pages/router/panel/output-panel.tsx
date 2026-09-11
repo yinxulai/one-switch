@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/select'
 import type { NodePanelProps } from '../node-data'
 import type { OutputNode } from '../types'
-import { NodePanelField, NodePanelSwitchRow } from './panel-fields'
+import { NodePanelField, NodePanelSwitchRow, PANEL_POPUP_ITEM_CLASSNAME, PANEL_POPUP_SURFACE_CLASSNAME } from './panel-fields'
 
 export function OutputPanel(props: NodePanelProps) {
   const { model, update } = props
@@ -29,9 +29,9 @@ export function OutputPanel(props: NodePanelProps) {
             : current)}
         >
           <SelectTrigger className="w-full"><SelectValue placeholder="summary" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="brief">简要</SelectItem>
-            <SelectItem value="detailed">详细</SelectItem>
+          <SelectContent className={PANEL_POPUP_SURFACE_CLASSNAME}>
+            <SelectItem className={PANEL_POPUP_ITEM_CLASSNAME} value="brief">简要</SelectItem>
+            <SelectItem className={PANEL_POPUP_ITEM_CLASSNAME} value="detailed">详细</SelectItem>
           </SelectContent>
         </Select>
       </NodePanelField>

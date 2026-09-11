@@ -25,7 +25,6 @@ import { routerApi } from '@/api/router'
 import { unwrap } from '@/api/unwrap'
 import { PageContent, PageHeader, PageLayout } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import {
   Drawer,
@@ -42,6 +41,7 @@ import { useLogicalModels } from '@/features/logical-models/hooks'
 import { cn } from '@/lib/utils'
 
 import { NodeSelector } from './components/node-selector'
+import { DifyButton } from './components/dify-button'
 import { WorkflowConnectionLine } from './components/workflow-connection-line'
 import { WorkflowNodePanel } from './components/workflow-node-panel'
 import { resolveInputHints } from './field-hints'
@@ -394,7 +394,9 @@ function WorkflowStudioCanvas() {
     if (hasFitViewRef.current) return
     const frame = requestAnimationFrame(() => {
       hasFitViewRef.current = true
-      void flow.fitView({ padding: 0.2 })
+      // maxZoom 限制在 1：图较小时 fitView 会放大到 1.5 倍并溢出可视区，
+      // 首屏应该能一眼看完整个图。
+      void flow.fitView({ padding: 0.25, maxZoom: 1 })
     })
     return () => cancelAnimationFrame(frame)
   }, [flow])
@@ -446,25 +448,25 @@ function WorkflowStudioCanvas() {
         description="用基础节点组合出路由策略：输入 → 协议发现 → 条件 → 队列选择 → 输出"
         actions={(
           <>
-            <Button type="button" size="sm" variant="outline" onClick={() => setTestDrawerOpen(true)}>
-              <CirclePlay className="size-4" /> 测试运行
-            </Button>
-            <Button type="button" size="sm" onClick={saveWorkflow}>
-              <Save className="size-4" /> 保存
-            </Button>
+            <DifyButton size="medium" onClick={() => setTestDrawerOpen(true)}>
+              <CirclePlay className="size-3.5" aria-hidden /> 测试运行
+            </DifyButton>
+            <DifyButton size="medium" variant="primary" onClick={saveWorkflow}>
+              <Save className="size-3.5" aria-hidden /> 保存
+            </DifyButton>
           </>
         )}
       />
 
       <PageContent>
-        <div className="flex items-center gap-4 text-[11px] text-muted-foreground">
+        <div className="flex items-center gap-4 system-xs-regular text-text-tertiary">
           {legendKinds.map(kind => (
             <span key={kind} className="flex items-center gap-1.5">
               <span className={cn('size-2 rounded-full', kindAccent(kind))} />
               {NODE_KIND_META[kind].label}
             </span>
           ))}
-          <span className="ml-auto hidden text-muted-foreground/70 sm:inline">
+          <span className="ml-auto hidden text-text-quaternary sm:inline">
             拖动节点组合策略 · 端口 + 号插入节点 · 拖拽端口连线 · 点击节点配置
           </span>
         </div>
@@ -473,7 +475,7 @@ function WorkflowStudioCanvas() {
           <CardContent>
             <div
               ref={canvasRef}
-              className="relative w-full overflow-hidden rounded-xl bg-muted/30"
+              className="relative w-full overflow-hidden rounded-xl bg-workflow-canvas-workflow-bg"
               style={{ height: canvasSize.height }}
             >
               <ReactFlow
@@ -505,16 +507,22 @@ function WorkflowStudioCanvas() {
                 onNodeMouseLeave={handleNodeMouseLeave}
                 onNodeClick={(_event, node) => setSelectedNodeId(node.id)}
                 onPaneClick={() => setSelectedNodeId(null)}
-                className="workflow-reactflow"
+                className="workflow-reactflow workflow-dify-surface"
               >
-                {/* 点阵参数对齐 Dify `workflow/index.tsx`：gap 14 / size 2；
-                    颜色变量 Dify 定义在未随仓库提供的 dify-ui 包里，这里用主题色映射。 */}
-                <Background gap={[14, 14]} size={2} color="hsl(var(--muted-foreground) / 0.2)" />
+                {/* 点阵参数与底色逐字复制自 Dify `workflow/index.tsx` 的 <Background>。 */}
+                <Background
+                  gap={[14, 14]}
+                  size={2}
+                  className="bg-workflow-canvas-workflow-bg"
+                  color="var(--color-workflow-canvas-workflow-dot-color)"
+                />
                 <Controls className="router-controls" showInteractive={false} />
               </ReactFlow>
 
               <div className="pointer-events-none absolute inset-x-0 bottom-3 z-20 flex justify-center px-3">
-                <div className="pointer-events-auto inline-flex max-w-full items-center gap-1 rounded-2xl bg-popover p-1.5 text-foreground">
+                {/* 容器样式对齐 Dify `workflow/operator/control.tsx` 的悬浮控制条：
+                    actionbar 底色与画布只差一档明度，因此保留 Dify 的 0.5px 描边、省略阴影。 */}
+                <div className="pointer-events-auto inline-flex max-w-full items-center gap-0.5 rounded-lg border-[0.5px] border-components-actionbar-border bg-components-actionbar-bg p-0.5 text-text-tertiary backdrop-blur-[5px]">
                   <NodeSelector
                     placement="top"
                     onSelect={appendAtCanvasCenter}
@@ -522,7 +530,7 @@ function WorkflowStudioCanvas() {
                       <button
                         type="button"
                         aria-label="添加节点"
-                        className="flex size-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                        className="flex size-8 items-center justify-center rounded-lg text-text-tertiary transition-colors hover:bg-state-base-hover hover:text-text-secondary"
                       >
                         <Plus className="size-3.5" aria-hidden />
                       </button>
@@ -535,8 +543,8 @@ function WorkflowStudioCanvas() {
                     type="button"
                     aria-label="框选模式"
                     className={cn(
-                      'flex size-7 items-center justify-center rounded-lg transition-colors',
-                      dockMode === 'select' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                      'flex size-8 items-center justify-center rounded-lg transition-colors',
+                      dockMode === 'select' ? 'bg-state-accent-solid text-white' : 'text-text-tertiary hover:bg-state-base-hover hover:text-text-secondary',
                     )}
                     onClick={() => setDockMode('select')}
                   >
@@ -546,8 +554,8 @@ function WorkflowStudioCanvas() {
                     type="button"
                     aria-label="平移模式"
                     className={cn(
-                      'flex size-7 items-center justify-center rounded-lg transition-colors',
-                      dockMode === 'pan' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                      'flex size-8 items-center justify-center rounded-lg transition-colors',
+                      dockMode === 'pan' ? 'bg-state-accent-solid text-white' : 'text-text-tertiary hover:bg-state-base-hover hover:text-text-secondary',
                     )}
                     onClick={() => setDockMode('pan')}
                   >
@@ -557,8 +565,8 @@ function WorkflowStudioCanvas() {
                     type="button"
                     aria-label={dragEnabled ? '锁定节点位置' : '解锁节点位置'}
                     className={cn(
-                      'flex size-7 items-center justify-center rounded-lg transition-colors',
-                      dragEnabled ? 'text-muted-foreground hover:bg-accent hover:text-foreground' : 'bg-primary text-primary-foreground',
+                      'flex size-8 items-center justify-center rounded-lg transition-colors',
+                      dragEnabled ? 'text-text-tertiary hover:bg-state-base-hover hover:text-text-secondary' : 'bg-state-accent-solid text-white',
                     )}
                     onClick={() => setDragEnabled(value => !value)}
                   >
@@ -570,8 +578,8 @@ function WorkflowStudioCanvas() {
                   <button
                     type="button"
                     aria-label="适应画布"
-                    className="flex size-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                    onClick={() => void flow.fitView({ padding: 0.2 })}
+                    className="flex size-8 items-center justify-center rounded-lg text-text-tertiary transition-colors hover:bg-state-base-hover hover:text-text-secondary"
+                    onClick={() => void flow.fitView({ padding: 0.25, maxZoom: 1 })}
                   >
                     <LocateFixed className="size-3.5" aria-hidden />
                   </button>
@@ -598,7 +606,7 @@ function WorkflowStudioCanvas() {
       </PageContent>
 
       <Drawer open={testDrawerOpen} onOpenChange={setTestDrawerOpen} direction="right">
-        <DrawerContent className="h-full w-208! max-w-[90vw]! bg-popover">
+        <DrawerContent className="workflow-test-drawer workflow-dify-surface h-full w-208! max-w-[90vw]! border-l-[0.5px] border-components-panel-border bg-components-panel-bg">
           <DrawerHeader>
             <DrawerTitle className="flex items-center gap-2"><ArrowRight className="size-4" /> 测试运行</DrawerTitle>
             <DrawerDescription>在此输入 JSON，执行路由并查看结果与完整轨迹。</DrawerDescription>
@@ -606,14 +614,14 @@ function WorkflowStudioCanvas() {
 
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden px-4 pb-4">
             <div className="space-y-2">
-              <div className="text-sm font-medium">测试输入</div>
-              <Textarea value={payloadText} onChange={event => setPayloadText(event.target.value)} className="min-h-96 font-mono text-[12px]" />
-              {payloadError && <div className="text-xs text-destructive">{payloadError}</div>}
+              <div className="py-1 system-sm-medium text-text-secondary">测试输入</div>
+              <Textarea value={payloadText} onChange={event => setPayloadText(event.target.value)} className="min-h-96 font-mono text-[12px] leading-5" />
+              {payloadError && <div className="system-xs-regular text-text-destructive">{payloadError}</div>}
             </div>
 
             <div className="min-h-0 space-y-3 overflow-y-auto">
-              <div className="text-sm font-medium">测试结果</div>
-              {!runResult && <div className="rounded-lg bg-muted/45 p-3 text-xs text-muted-foreground">点击下方“运行测试”查看结果。</div>}
+              <div className="py-1 system-sm-medium text-text-secondary">测试结果</div>
+              {!runResult && <div className="rounded-lg bg-workflow-block-parma-bg p-3 system-xs-regular text-text-tertiary">点击下方“运行测试”查看结果。</div>}
 
               {runResult && (
                 <>
@@ -624,24 +632,24 @@ function WorkflowStudioCanvas() {
                     <Badge variant="info">协议：{runResult.protocol}</Badge>
                     <Badge variant="muted">节点数：{runResult.trace.length}</Badge>
                   </div>
-                  <div className="rounded-lg bg-muted/45 p-2 font-mono text-[11px]">
-                    <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">解析结果（调试详情）</div>
+                  <div className="rounded-lg bg-workflow-block-parma-bg p-2 font-mono system-2xs-regular">
+                    <div className="mb-1 system-2xs-medium-uppercase text-text-tertiary">解析结果（调试详情）</div>
                     <pre className="whitespace-pre-wrap break-all">{JSON.stringify(runResult.queueSelections, null, 2)}</pre>
                   </div>
-                  <div className="rounded-lg bg-muted/45 p-2 font-mono text-[11px]">
-                    <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">Output</div>
+                  <div className="rounded-lg bg-workflow-block-parma-bg p-2 font-mono system-2xs-regular">
+                    <div className="mb-1 system-2xs-medium-uppercase text-text-tertiary">Output</div>
                     <pre className="whitespace-pre-wrap break-all">{JSON.stringify(runResult.outputPayload, null, 2)}</pre>
                   </div>
-                  <div className="space-y-1.5 rounded-lg bg-muted/35 p-2">
-                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Trace</div>
+                  <div className="space-y-1.5 rounded-lg bg-workflow-block-parma-bg p-2">
+                    <div className="system-2xs-medium-uppercase text-text-tertiary">Trace</div>
                     <div className="max-h-[40vh] space-y-1.5 overflow-y-auto">
                       {runResult.trace.map(item => (
-                        <div key={`${item.nodeId}-${item.message}`} className="rounded-md bg-muted p-2 text-xs">
+                        <div key={`${item.nodeId}-${item.message}`} className="rounded-md bg-workflow-block-bg p-2 system-xs-regular">
                           <div className="mb-0.5 flex items-center gap-2">
-                            <span className="font-medium">{item.nodeName}</span>
+                            <span className="system-xs-medium text-text-primary">{item.nodeName}</span>
                             <Badge variant={item.success ? 'success' : 'warning'}>{item.kind}</Badge>
                           </div>
-                          <div className="text-muted-foreground">{item.message}</div>
+                          <div className="text-text-tertiary">{item.message}</div>
                         </div>
                       ))}
                     </div>
@@ -652,8 +660,8 @@ function WorkflowStudioCanvas() {
           </div>
 
           <DrawerFooter className="flex-row justify-end">
-            <Button type="button" onClick={runLocalTest}>运行测试</Button>
-            <Button type="button" variant="outline" onClick={() => setTestDrawerOpen(false)}>关闭</Button>
+            <DifyButton size="medium" variant="primary" onClick={runLocalTest}>运行测试</DifyButton>
+            <DifyButton size="medium" onClick={() => setTestDrawerOpen(false)}>关闭</DifyButton>
           </DrawerFooter>
         </DrawerContent>
       </Drawer>

@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { Trash2, X } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { PANEL_COMPONENT_MAP } from '../panel'
+import { NodePanelHint } from '../panel/panel-fields'
 import { isProtectedNode, nodePanelHint } from '../node-meta'
 import type { NodePanelUpdate, NodePanelProps as NodePanelBodyProps } from '../node-data'
 import type { WorkflowNodeModel } from '../types'
 import { BlockIcon } from './block-icon'
+import { DifyButton } from './dify-button'
 
 /** 面板最小宽度。 */
 const MIN_PANEL_WIDTH = 380
@@ -111,21 +112,21 @@ export function WorkflowNodePanel(props: WorkflowNodePanelProps) {
       >
         <span
           className={cn(
-            'h-10 w-0.5 rounded-full bg-muted-foreground/20 transition-all',
-            dragging ? 'h-full bg-primary' : 'group-hover/resize:h-full group-hover/resize:bg-primary/70',
+            'h-10 w-0.5 rounded-full bg-state-base-handle transition-all',
+            dragging ? 'h-full bg-state-accent-solid' : 'group-hover/resize:h-full group-hover/resize:bg-state-accent-solid/70',
           )}
         />
       </div>
 
       <div
-        className="flex h-full min-w-0 flex-col overflow-hidden bg-popover"
+        className="workflow-node-panel workflow-dify-surface flex h-full min-w-0 flex-col overflow-hidden border-l-[0.5px] border-components-panel-border bg-components-panel-bg"
         style={{ width: `${boundedWidth}px` }}
       >
         <div className="flex shrink-0 items-center gap-2 px-3 pt-3 pb-1.5">
           <BlockIcon kind={model.kind} size="md" />
 
           {protectedNode
-            ? <span className="min-w-0 flex-1 truncate text-sm font-semibold">{model.name}</span>
+            ? <span className="min-w-0 flex-1 truncate system-sm-semibold text-text-primary">{model.name}</span>
             : (
               <Input
                 value={model.name}
@@ -142,7 +143,7 @@ export function WorkflowNodePanel(props: WorkflowNodePanelProps) {
           <button
             type="button"
             aria-label="关闭面板"
-            className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="flex size-6 shrink-0 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-state-base-hover hover:text-text-secondary"
             onClick={onClose}
           >
             <X className="size-3.5" aria-hidden />
@@ -151,7 +152,7 @@ export function WorkflowNodePanel(props: WorkflowNodePanelProps) {
 
         <div className="shrink-0 px-3 py-1">
           {protectedNode
-            ? <div className="text-[11px] leading-4 text-muted-foreground/80">{model.description}</div>
+            ? <div className="system-xs-regular text-text-tertiary">{model.description}</div>
             : (
               <Textarea
                 value={model.description}
@@ -164,9 +165,7 @@ export function WorkflowNodePanel(props: WorkflowNodePanelProps) {
 
         <div className="min-h-0 flex-1 overflow-y-auto px-3 pt-2 pb-3">
           <div className="grid gap-3">
-            <div className="rounded-lg bg-muted/35 px-2.5 py-2 text-[11px] leading-4 text-muted-foreground">
-              {nodePanelHint(model)}
-            </div>
+            <NodePanelHint>{nodePanelHint(model)}</NodePanelHint>
 
             <Body
               model={model}
@@ -180,15 +179,13 @@ export function WorkflowNodePanel(props: WorkflowNodePanelProps) {
 
         {!protectedNode && (
           <div className="flex shrink-0 items-center justify-end px-3 pt-2 pb-3">
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+            <DifyButton
+              variant="ghost-destructive"
+              size="medium"
               onClick={() => onDelete(model.id)}
             >
-              <Trash2 className="size-3.5" /> 删除节点
-            </Button>
+              <Trash2 className="size-3.5" aria-hidden /> 删除节点
+            </DifyButton>
           </div>
         )}
       </div>

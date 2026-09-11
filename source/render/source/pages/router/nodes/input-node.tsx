@@ -1,8 +1,10 @@
+import { Braces } from 'lucide-react'
+
 import { NodeHandle } from '../components/node-handle'
 import { NodeBody, NodeRow, NodeRowList } from '../components/node-sections'
 import type { RouteNodeProps } from '../node-data'
 
-/** 入口字段，行结构与 Dify `nodes/start/node.tsx` 的变量行一致（h-6 圆角浅底 + 右侧类型）。 */
+/** 入口字段，行结构与 Dify `nodes/start/node.tsx` 的变量行一致（h-6 圆角浅底 + 行首 accent 图标 + 右侧类型）。 */
 const INPUT_FIELDS: { name: string; type: string }[] = [
   { name: 'request', type: 'object' },
   { name: 'queues', type: 'array' },
@@ -18,7 +20,12 @@ export function InputNodeView(props: RouteNodeProps) {
       <NodeBody className="mb-1 py-1">
         <NodeRowList>
           {INPUT_FIELDS.map(field => (
-            <NodeRow key={field.name} name={field.name} meta={field.type} />
+            <NodeRow
+              key={field.name}
+              name={field.name}
+              meta={field.type}
+              icon={<Braces className="size-3.5 shrink-0 text-text-accent" aria-hidden />}
+            />
           ))}
         </NodeRowList>
       </NodeBody>

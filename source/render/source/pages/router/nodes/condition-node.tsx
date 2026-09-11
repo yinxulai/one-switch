@@ -17,7 +17,7 @@ export function ConditionNodeView(props: RouteNodeProps) {
   return (
     <NodeBody className="pb-1">
       {cases.length === 0 && (
-        <div className="flex h-6 items-center rounded-md bg-muted px-1 text-xs text-muted-foreground">
+        <div className="flex h-6 items-center space-x-1 rounded-md bg-workflow-block-parma-bg px-1 system-xs-regular text-text-secondary">
           尚未配置分支，所有请求都会走 ELSE
         </div>
       )}
@@ -44,19 +44,25 @@ export function ConditionNodeView(props: RouteNodeProps) {
 
             <div className="space-y-0.5">
               {conditions.length === 0 && (
-                <NodeConditionChip className="h-6 px-1 text-xs text-muted-foreground">未配置条件</NodeConditionChip>
+                <NodeConditionChip className="h-6 space-x-1 px-1 system-xs-regular text-text-secondary">未配置条件</NodeConditionChip>
               )}
 
               {conditions.map((condition, conditionIndex) => (
-                <div key={`${condition.fieldPath}-${conditionIndex}`}>
-                  <NodeConditionChip>
-                    <span className="truncate px-1.5 text-xs/6 text-foreground">{condition.fieldPath}</span>
-                    <span className="mx-1 shrink-0 text-xs font-medium text-foreground">{condition.operator}</span>
-                    <span className="grow truncate px-1.5 text-xs/6 text-muted-foreground">{condition.value || '—'}</span>
+                <div key={`${condition.fieldPath}-${conditionIndex}`} className="relative">
+                  <NodeConditionChip className="h-6">
+                    {/* 变量名可收缩截断，操作符固定宽度，值占满剩余空间：
+                        三者都不换行，保证条件条目恒定单行 24px，与 Dify `condition-value.tsx` 一致。 */}
+                    <span className="min-w-0 truncate px-1 system-xs-medium text-text-secondary">
+                      {condition.fieldPath}
+                    </span>
+                    <span className="mx-1 shrink-0 text-xs font-medium text-text-primary">{condition.operator}</span>
+                    <span className="min-w-0 grow truncate px-1.5 text-xs/6 text-text-secondary">
+                      {condition.value || '—'}
+                    </span>
                   </NodeConditionChip>
 
                   {conditionIndex !== conditions.length - 1 && (
-                    <div className="pr-1 text-right text-[10px] leading-4 font-medium text-primary uppercase">
+                    <div className="absolute right-1 -bottom-2.5 z-10 system-2xs-medium-uppercase text-text-accent">
                       {logicalOperator === 'and' ? 'AND' : 'OR'}
                     </div>
                   )}

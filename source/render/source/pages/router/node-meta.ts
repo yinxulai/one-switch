@@ -65,43 +65,43 @@ export const NODE_KIND_META: Record<WorkflowNodeKind, NodeKindMeta> = {
     label: '输入请求',
     hint: '接收原始请求并开始路由',
     icon: CirclePlay,
-    tone: 'bg-blue-500',
-    accent: 'bg-blue-500',
+    tone: 'bg-util-colors-blue-brand-blue-brand-500',
+    accent: 'bg-util-colors-blue-brand-blue-brand-500',
   },
   'control-input': {
     label: '控制输入',
     hint: '注入开关或下拉控制值',
     icon: ArrowRightLeft,
-    tone: 'bg-indigo-500',
-    accent: 'bg-indigo-500',
+    tone: 'bg-util-colors-blue-blue-500',
+    accent: 'bg-util-colors-blue-blue-500',
   },
   'protocol-discovery': {
     label: '协议发现',
     hint: '识别协议并输出分支',
     icon: GitBranch,
-    tone: 'bg-green-500',
-    accent: 'bg-green-500',
+    tone: 'bg-util-colors-green-green-500',
+    accent: 'bg-util-colors-green-green-500',
   },
   condition: {
     label: '条件',
     hint: 'IF / ELSE 多分支',
     icon: Waypoints,
-    tone: 'bg-cyan-500',
-    accent: 'bg-cyan-500',
+    tone: 'bg-util-colors-cyan-cyan-500',
+    accent: 'bg-util-colors-cyan-cyan-500',
   },
   'queue-select': {
     label: '队列选择',
     hint: '选择一个或多个逻辑队列',
     icon: ArrowRightLeft,
-    tone: 'bg-violet-500',
-    accent: 'bg-violet-500',
+    tone: 'bg-util-colors-indigo-indigo-500',
+    accent: 'bg-util-colors-indigo-indigo-500',
   },
   output: {
     label: '路由结果出口',
     hint: '输出可用队列，交由代理执行',
     icon: ArrowRight,
-    tone: 'bg-amber-500',
-    accent: 'bg-amber-500',
+    tone: 'bg-util-colors-warning-warning-500',
+    accent: 'bg-util-colors-warning-warning-500',
   },
 }
 
@@ -155,28 +155,29 @@ export function isProtectedNode(model: WorkflowNodeModel): boolean {
 
 /**
  * 连线在“无状态、无交互”时的颜色。
- * 对应 Dify 的 `--color-workflow-link-line-normal`（Dify 只有一种灰，
- * 这里保留按上游分支区分颜色，属于 One Switch 的信息增强）。
+ * 对应 Dify 的 `--color-workflow-link-line-normal`。
+ * Dify 只有一种灰，这里保留按上游分支区分颜色，属于 One Switch 的信息增强，
+ * 分支色取自 Dify 的 util-colors 色板，保证明暗两套主题下都与节点图标同色系。
  */
-export const EDGE_STROKE_NORMAL = 'hsl(var(--muted-foreground) / 0.45)'
+export const EDGE_STROKE_NORMAL = 'var(--color-workflow-link-line-normal)'
 
 /**
  * 连线被选中 / 悬浮 / 连接节点被悬浮时的颜色。
  * 对应 Dify 的 `--color-workflow-link-line-handle`。
  */
-export const EDGE_STROKE_HANDLE = 'hsl(var(--muted-foreground))'
+export const EDGE_STROKE_HANDLE = 'var(--color-workflow-link-line-handle)'
 
-const cyanStroke = 'hsl(189 94% 43%)'
-const violetStroke = 'hsl(258 90% 66%)'
-const emeraldStroke = 'hsl(160 84% 39%)'
+const cyanStroke = 'var(--color-util-colors-cyan-cyan-500)'
+const violetStroke = 'var(--color-util-colors-indigo-indigo-500)'
+const emeraldStroke = 'var(--color-util-colors-blue-blue-500)'
 
 /** 连线颜色：按上游节点的类型与端口区分分支语义。 */
 export function edgeStrokeColor(sourceKind: WorkflowNodeKind, sourcePort: string): string {
   if (sourceKind === 'protocol-discovery') {
-    return sourcePort === 'unknown' ? 'hsl(var(--warning))' : cyanStroke
+    return sourcePort === 'unknown' ? 'var(--color-text-warning)' : cyanStroke
   }
   if (sourceKind === 'condition') {
-    return sourcePort === 'else' ? EDGE_STROKE_NORMAL : 'hsl(var(--success))'
+    return sourcePort === 'else' ? EDGE_STROKE_NORMAL : 'var(--color-util-colors-green-green-500)'
   }
   if (sourceKind === 'queue-select') return violetStroke
   if (sourceKind === 'control-input') return emeraldStroke
@@ -188,8 +189,8 @@ export function edgeStrokeColor(sourceKind: WorkflowNodeKind, sourcePort: string
  * 未运行过（`idle`）时返回 undefined，交给调用方回落到分支色。
  */
 export function edgeRunStatusStroke(status: NodeRunStatus | undefined): string | undefined {
-  if (status === 'succeeded') return 'hsl(var(--success))'
-  if (status === 'failed') return 'hsl(var(--destructive))'
-  if (status === 'running') return 'hsl(var(--info))'
+  if (status === 'succeeded') return 'var(--color-workflow-link-line-success-handle)'
+  if (status === 'failed') return 'var(--color-workflow-link-line-error-handle)'
+  if (status === 'running') return 'var(--color-workflow-link-line-handle)'
   return undefined
 }
