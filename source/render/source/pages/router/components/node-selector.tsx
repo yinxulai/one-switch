@@ -72,7 +72,7 @@ export function NodeSelector(props: NodeSelectorProps) {
       type="button"
       aria-label="在此处插入节点"
       className={cn(
-        'absolute top-1/2 left-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-components-button-primary-bg text-white transition-opacity duration-150',
+        'absolute top-1/2 left-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-components-button-primary-bg text-components-button-primary-text transition-opacity duration-150',
         'hover:bg-components-button-primary-bg-hover',
         variant === 'handle' ? 'size-4' : 'size-5',
         // 逐字对应 Dify block-selector 触发器的 `opacity-0 pointer-events-none group-hover:opacity-100`：

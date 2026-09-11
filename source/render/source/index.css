@@ -113,8 +113,12 @@ html[data-magicui-theme-vt="active"] [data-slot="app-sidebar"] > div:first-child
   --color-text-secondary: #354052;
   --color-text-tertiary: #676f83;
   --color-text-quaternary: rgb(16 24 40 / 0.3);
-  --color-text-accent: #0033ff;
-  --color-text-accent-secondary: #085afc;
+  /* 主题色：accent 一族全部改回应用自身的 `--primary`。
+     本应用是中性色主题（亮色近黑 / 暗色近白），Dify 的蓝色不是我们的主题色。
+     明暗差异由 `--primary` / `--primary-foreground` 自己承担，因此只在这里声明一次，
+     `.dark` 里不再覆盖，避免「复制 Dify 时把主题色一起改掉」。 */
+  --color-text-accent: hsl(var(--primary));
+  --color-text-accent-secondary: hsl(var(--primary) / 0.8);
   --color-text-destructive: #d92d20;
   --color-text-success: #079455;
   --color-text-success-secondary: #17b26a;
@@ -137,9 +141,9 @@ html[data-magicui-theme-vt="active"] [data-slot="app-sidebar"] > div:first-child
   --color-state-base-active: rgb(200 206 218 / 0.4);
   --color-state-base-handle: rgb(16 24 40 / 0.2);
   --color-state-base-handle-hover: rgb(16 24 40 / 0.3);
-  --color-state-accent-solid: #0033ff;
-  --color-state-accent-hover: #e9f0ff;
-  --color-state-accent-active: rgb(0 51 255 / 0.08);
+  --color-state-accent-solid: hsl(var(--primary));
+  --color-state-accent-hover: hsl(var(--primary) / 0.08);
+  --color-state-accent-active: hsl(var(--primary) / 0.08);
   --color-state-success-solid: #17b26a;
   --color-state-warning-solid: #f79009;
   --color-state-destructive-solid: #f04438;
@@ -150,7 +154,7 @@ html[data-magicui-theme-vt="active"] [data-slot="app-sidebar"] > div:first-child
   --color-workflow-block-bg: #fcfcfd;
   --color-workflow-block-bg-transparent: rgb(252 252 253 / 0.9);
   --color-workflow-block-border: #ffffff;
-  --color-workflow-block-border-highlight: rgb(0 51 255 / 0.14);
+  --color-workflow-block-border-highlight: hsl(var(--primary) / 0.14);
   --color-workflow-block-parma-bg: #f2f4f7;
   /* 非 Dify token：Dify 用 `hover:shadow-lg` 表达节点悬浮，本仓库偏好不用阴影，
      改用一档明度台阶承担同样的层次（亮色提亮、暗色提亮）。 */
@@ -159,8 +163,8 @@ html[data-magicui-theme-vt="active"] [data-slot="app-sidebar"] > div:first-child
   /* 工作流连线 */
   --color-workflow-link-line-normal: #d0d5dc;
   --color-workflow-link-line-normal-transparent: rgb(208 213 220 / 0.2);
-  --color-workflow-link-line-active: #085afc;
-  --color-workflow-link-line-handle: #085afc;
+  --color-workflow-link-line-active: hsl(var(--primary));
+  --color-workflow-link-line-handle: hsl(var(--primary));
   --color-workflow-link-line-failure-active: #f79009;
   --color-workflow-link-line-failure-handle: #f79009;
   --color-workflow-link-line-failure-button-bg: #dc6803;
@@ -179,7 +183,7 @@ html[data-magicui-theme-vt="active"] [data-slot="app-sidebar"] > div:first-child
   --color-components-option-card-option-bg-hover: #ffffff;
   --color-components-option-card-option-border-hover: #d0d5dc;
   --color-components-option-card-option-selected-bg: #ffffff;
-  --color-components-option-card-option-selected-border: #0033ff;
+  --color-components-option-card-option-selected-border: hsl(var(--primary));
   --color-components-actionbar-bg: rgb(255 255 255 / 0.95);
   --color-components-actionbar-border: rgb(16 24 40 / 0.04);
   --color-components-panel-bg: #ffffff;
@@ -195,14 +199,14 @@ html[data-magicui-theme-vt="active"] [data-slot="app-sidebar"] > div:first-child
   --color-components-input-text-placeholder: #98a2b2;
   --color-components-input-border-hover: #d0d5dc;
   --color-components-input-border-active: #d0d5dc;
-  --color-components-button-primary-bg: #0033ff;
-  --color-components-button-primary-bg-hover: #002cde;
-  --color-components-button-primary-text: #ffffff;
-  --color-components-button-primary-border: rgb(16 24 40 / 0.04);
+  --color-components-button-primary-bg: hsl(var(--primary));
+  --color-components-button-primary-bg-hover: hsl(var(--primary) / 0.9);
+  --color-components-button-primary-text: hsl(var(--primary-foreground));
+  --color-components-button-primary-border: hsl(var(--primary-foreground) / 0.12);
   --color-components-button-secondary-bg: #ffffff;
   --color-components-button-secondary-bg-hover: #f9fafb;
   --color-components-button-secondary-text: #354052;
-  --color-components-button-secondary-accent-text: #0033ff;
+  --color-components-button-secondary-accent-text: hsl(var(--primary));
   --color-components-button-secondary-border: rgb(16 24 40 / 0.14);
   --color-components-button-secondary-border-hover: rgb(16 24 40 / 0.2);
   --color-components-button-tertiary-bg: #f2f4f7;
@@ -212,7 +216,6 @@ html[data-magicui-theme-vt="active"] [data-slot="app-sidebar"] > div:first-child
   --color-components-button-ghost-bg-hover: rgb(200 206 218 / 0.2);
   --color-components-button-destructive-ghost-text: #d92d20;
   --color-components-button-destructive-ghost-bg-hover: #fee4e2;
-  --color-state-accent-hover: #e9f0ff;
 
   /* util-colors：Dify 图标色块专用，明暗共用同一组值 */
   --color-util-colors-blue-brand-blue-brand-500: #085afc;
@@ -231,8 +234,6 @@ html[data-magicui-theme-vt="active"] [data-slot="app-sidebar"] > div:first-child
     --color-text-secondary: #d9d9de;
     --color-text-tertiary: rgb(200 206 218 / 0.6);
     --color-text-quaternary: rgb(200 206 218 / 0.4);
-    --color-text-accent: #6694ff;
-    --color-text-accent-secondary: #3072ff;
     --color-text-destructive: #f97066;
     --color-text-success: #17b26a;
     --color-text-success-secondary: #47cd89;
@@ -253,9 +254,6 @@ html[data-magicui-theme-vt="active"] [data-slot="app-sidebar"] > div:first-child
     --color-state-base-active: rgb(200 206 218 / 0.2);
     --color-state-base-handle: rgb(200 206 218 / 0.3);
     --color-state-base-handle-hover: rgb(200 206 218 / 0.5);
-    --color-state-accent-solid: #3072ff;
-    --color-state-accent-hover: rgb(8 90 252 / 0.14);
-    --color-state-accent-active: rgb(8 90 252 / 0.14);
     --color-state-success-solid: #47cd89;
     --color-state-warning-solid: #f79009;
     --color-state-destructive-solid: #f97066;
@@ -265,14 +263,11 @@ html[data-magicui-theme-vt="active"] [data-slot="app-sidebar"] > div:first-child
     --color-workflow-block-bg: #27272b;
     --color-workflow-block-bg-transparent: rgb(39 39 43 / 0.96);
     --color-workflow-block-border: rgb(255 255 255 / 0.08);
-    --color-workflow-block-border-highlight: rgb(200 206 218 / 0.2);
     --color-workflow-block-parma-bg: rgb(255 255 255 / 0.05);
     --color-workflow-block-bg-hover: #303035;
 
     --color-workflow-link-line-normal: #676f83;
     --color-workflow-link-line-normal-transparent: rgb(103 111 131 / 0.2);
-    --color-workflow-link-line-active: #3072ff;
-    --color-workflow-link-line-handle: #3072ff;
     --color-workflow-link-line-failure-active: #fdb022;
     --color-workflow-link-line-failure-handle: #fdb022;
     --color-workflow-link-line-failure-button-bg: #f79009;
@@ -289,7 +284,6 @@ html[data-magicui-theme-vt="active"] [data-slot="app-sidebar"] > div:first-child
     --color-components-option-card-option-bg-hover: rgb(200 206 218 / 0.14);
     --color-components-option-card-option-border-hover: rgb(200 206 218 / 0.3);
     --color-components-option-card-option-selected-bg: rgb(255 255 255 / 0.05);
-    --color-components-option-card-option-selected-border: #3072ff;
     --color-components-actionbar-bg: #222225;
     --color-components-actionbar-border: rgb(200 206 218 / 0.08);
     --color-components-panel-bg: #222225;
@@ -305,10 +299,6 @@ html[data-magicui-theme-vt="active"] [data-slot="app-sidebar"] > div:first-child
     --color-components-input-text-placeholder: rgb(200 206 218 / 0.3);
     --color-components-input-border-hover: #3a3a40;
     --color-components-input-border-active: #747481;
-    --color-components-button-primary-bg: #085afc;
-    --color-components-button-primary-bg-hover: #3072ff;
-    --color-components-button-primary-text: rgb(255 255 255 / 0.95);
-    --color-components-button-primary-border: rgb(255 255 255 / 0.12);
     --color-components-button-secondary-bg: rgb(255 255 255 / 0.12);
     --color-components-button-secondary-bg-hover: rgb(255 255 255 / 0.2);
     --color-components-button-secondary-text: rgb(255 255 255 / 0.8);
@@ -322,7 +312,6 @@ html[data-magicui-theme-vt="active"] [data-slot="app-sidebar"] > div:first-child
     --color-components-button-ghost-bg-hover: rgb(200 206 218 / 0.08);
     --color-components-button-destructive-ghost-text: #f97066;
     --color-components-button-destructive-ghost-bg-hover: rgb(240 68 56 / 0.14);
-    --color-state-accent-hover: rgb(8 90 252 / 0.14);
   }
 }
 
