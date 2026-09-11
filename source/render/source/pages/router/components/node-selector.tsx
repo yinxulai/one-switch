@@ -81,8 +81,11 @@ export function NodeSelector(props: NodeSelectorProps) {
         'data-[state=open]:pointer-events-auto data-[state=open]:opacity-100',
         alwaysVisible && 'pointer-events-auto opacity-100',
       )}
-      onPointerDown={event => event.stopPropagation()}
-      onMouseDown={event => event.stopPropagation()}
+      // **不能**在这里阻断 mousedown / pointerdown：xyflow 把连接手势挂在
+      // `<Handle onMouseDown={...}>` 上（v12 里 `onMouseDown: onPointerDown`），
+      // 而 + 钮是 Handle 的 16px 子节点、悬浮节点时会整个盖住端口热区。
+      // 一旦阻断冒泡，Handle 的 React 处理器就收不到事件，端口将彻底无法拖出连线。
+      // Dify 的 block-selector 同样只在 click 上 `stopPropagation()`。
     >
       <Plus className={variant === 'handle' ? 'size-2.5' : 'size-3'} aria-hidden />
     </button>
