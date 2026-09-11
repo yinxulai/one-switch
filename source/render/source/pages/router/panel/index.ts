@@ -8,7 +8,9 @@ import { InputPanel } from './input-panel'
 import { IterationPanel } from './iteration-panel'
 import { ModelSelectPanel } from './model-select-panel'
 import { OutputPanel } from './output-panel'
+import { PromptPanel } from './prompt-panel'
 import { ProtocolDiscoveryPanel } from './protocol-discovery-panel'
+import { ScriptPanel } from './script-panel'
 
 /**
  * 节点种类 → 右侧面板内容。
@@ -21,5 +23,7 @@ export const PANEL_COMPONENT_MAP: Record<WorkflowNodeKind, ComponentType<NodePan
   condition: ConditionPanel,
   'model-select': ModelSelectPanel,
   iteration: IterationPanel,
+  script: ScriptPanel,
+  prompt: PromptPanel,
   output: OutputPanel,
 }

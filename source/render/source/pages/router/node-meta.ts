@@ -6,6 +6,8 @@ import {
   CirclePlay,
   GitBranch,
   Repeat2,
+  Sparkles,
+  SquareCode,
   Waypoints,
 } from 'lucide-react'
 
@@ -18,7 +20,7 @@ import type { IterationCollectMode, WorkflowNodeKind, WorkflowNodeModel } from '
  */
 export type AppendableKind = Extract<
   WorkflowNodeKind,
-  'control-input' | 'protocol-discovery' | 'condition' | 'model-select' | 'iteration'
+  'control-input' | 'protocol-discovery' | 'condition' | 'model-select' | 'iteration' | 'script' | 'prompt'
 >
 
 /** React Flow 中注册的节点类型名。 */
@@ -30,6 +32,8 @@ export type CanvasNodeType =
   | 'condition'
   | 'model-select'
   | 'iteration'
+  | 'script'
+  | 'prompt'
 
 export const APPENDABLE_KINDS: AppendableKind[] = [
   'control-input',
@@ -37,6 +41,8 @@ export const APPENDABLE_KINDS: AppendableKind[] = [
   'condition',
   'model-select',
   'iteration',
+  'script',
+  'prompt',
 ]
 
 /** 画布默认列顺序：既用于图例排序，也用于旧数据的自动布局。 */
@@ -46,6 +52,8 @@ export const NODE_KIND_ORDER: WorkflowNodeKind[] = [
   'protocol-discovery',
   'condition',
   'iteration',
+  'script',
+  'prompt',
   'model-select',
   'output',
 ]
@@ -106,6 +114,20 @@ export const NODE_KIND_META: Record<WorkflowNodeKind, NodeKindMeta> = {
     icon: Repeat2,
     tone: 'bg-util-colors-violet-violet-500',
     accent: 'bg-util-colors-violet-violet-500',
+  },
+  script: {
+    label: 'JS 脚本',
+    hint: '沙箱里跑一段 JS，把结果写回 payload',
+    icon: SquareCode,
+    tone: 'bg-util-colors-yellow-yellow-500',
+    accent: 'bg-util-colors-yellow-yellow-500',
+  },
+  prompt: {
+    label: 'LLM 节点',
+    hint: '用指定逻辑模型执行提示词',
+    icon: Sparkles,
+    tone: 'bg-util-colors-pink-pink-500',
+    accent: 'bg-util-colors-pink-pink-500',
   },
   output: {
     label: '路由结果出口',
@@ -173,6 +195,14 @@ export function nodeSummary(model: WorkflowNodeModel): string {
     if (!sourcePath) return '未配置遍历来源'
     return `遍历 ${sourcePath} · 上限 ${model.maxIterations} 轮`
   }
+  if (model.kind === 'script') {
+    const resultPath = model.resultPath.trim()
+    return resultPath ? `结果写入 ${resultPath}` : '未配置结果写回路径'
+  }
+  if (model.kind === 'prompt') {
+    const logicalModelId = model.logicalModelId.trim()
+    return logicalModelId ? `逻辑模型 ${logicalModelId}` : '未选择逻辑模型'
+  }
   return NODE_KIND_META.output.hint
 }
 
@@ -184,6 +214,8 @@ export function nodePanelHint(model: WorkflowNodeModel): string {
   if (model.kind === 'condition') return '字段来源于上游 schema，每个分支可包含多个条件，按 AND / OR 组合判定；首个命中的分支生效，否则走 ELSE。'
   if (model.kind === 'model-select') return '取值来源决定落点：固定选择直接用勾选的逻辑模型；变量取值则把指定字段当作逻辑模型 id（字符串或字符串数组），取不到时用兜底逻辑模型。'
   if (model.kind === 'iteration') return '遍历来源支持通配投影（如 logicalModels[*].id）；数组按元素、对象按键值对遍历，每轮把当前项写入 route.iteration 后从 body 端口进入循环体，循环体末端连回本节点即视为本轮结束。'
+  if (model.kind === 'script') return '脚本在服务端沙箱里执行：可用 payload（payload 深拷贝）、get(路径)（支持 a[*].b 通配投影）与 console，用 return 交回结果并写入结果路径。没有 require / import / 网络 / 文件系统，超时会被中断。'
+  if (model.kind === 'prompt') return 'LLM 节点用指定逻辑模型执行提示词，走的是和真实请求同一条上游通路（含密钥、协议转换与故障转移）。提示词模板支持 ${路径} 取值，回复写入结果路径供下游条件判断。'
   return '该节点不会直接返回模型响应，而是返回一个可用逻辑模型交由代理执行。'
 }
 
@@ -210,6 +242,8 @@ const cyanStroke = 'var(--color-util-colors-cyan-cyan-500)'
 const violetStroke = 'var(--color-util-colors-indigo-indigo-500)'
 const emeraldStroke = 'var(--color-util-colors-blue-blue-500)'
 const iterationStroke = 'var(--color-util-colors-violet-violet-500)'
+const scriptStroke = 'var(--color-util-colors-yellow-yellow-500)'
+const promptStroke = 'var(--color-util-colors-pink-pink-500)'
 
 /** 连线颜色：按上游节点的类型与端口区分分支语义。 */
 export function edgeStrokeColor(sourceKind: WorkflowNodeKind, sourcePort: string): string {
@@ -222,6 +256,8 @@ export function edgeStrokeColor(sourceKind: WorkflowNodeKind, sourcePort: string
   if (sourceKind === 'model-select') return violetStroke
   if (sourceKind === 'control-input') return emeraldStroke
   if (sourceKind === 'iteration') return sourcePort === 'body' ? iterationStroke : EDGE_STROKE_NORMAL
+  if (sourceKind === 'script') return scriptStroke
+  if (sourceKind === 'prompt') return promptStroke
   return EDGE_STROKE_NORMAL
 }
 

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { runWorkflow as runWorkflowEngine } from './engine'
 import { createDefaultPolicyGraph } from './graph-model'
-import type { ConditionCase, ConditionRule, WorkflowGraph, WorkflowNodeModel } from './types'
+import { WorkflowGraphSchema } from './schemas'
+import { PROMPT_TIMEOUT_DEFAULT, SCRIPT_TIMEOUT_DEFAULT } from './types'
+import type { ConditionCase, ConditionRule, PromptInvocation, ScriptInvocation, WorkflowGraph, WorkflowNodeModel } from './types'
 
 const edge = (sourceNodeId: string, sourcePort: string, targetNodeId: string) => ({ id: `${sourceNodeId}:${sourcePort}->${targetNodeId}`, sourceNodeId, sourcePort, targetNodeId })
 
@@ -51,10 +53,10 @@ function createBaseGraph(overrides?: BaseNodeOverrides): WorkflowGraph {
 }
 
 describe('router engine', () => {
-  it('normalizes protocol branch payloads with model and messages for downstream outputs', () => {
+  it('normalizes protocol branch payloads with model and messages for downstream outputs', async () => {
     const graph = createBaseGraph()
 
-    const result = runWorkflow(graph, {
+    const result = await runWorkflow(graph, {
       request: {
         path: '/v1/chat/completions',
         headers: { 'x-provider': 'openai' },
@@ -82,10 +84,10 @@ describe('router engine', () => {
     expect(payload.metadata).toEqual({ source: 'desktop' })
   })
 
-  it('detects http-sse transport and writes it into route', () => {
+  it('detects http-sse transport and writes it into route', async () => {
     const graph = createBaseGraph()
 
-    const result = runWorkflow(graph, {
+    const result = await runWorkflow(graph, {
       request: {
         path: '/v1/chat/completions',
         headers: {
@@ -106,10 +108,10 @@ describe('router engine', () => {
     expect(payload.route.protocol).toBe('openai-completions')
   })
 
-  it('routes openai-completions requests through IF and resolver nodes', () => {
+  it('routes openai-completions requests through IF and resolver nodes', async () => {
     const graph = createBaseGraph()
 
-    const result = runWorkflow(graph, {
+    const result = await runWorkflow(graph, {
       request: {
         path: '/v1/chat/completions',
         headers: { 'x-provider': 'openai' },
@@ -127,7 +129,7 @@ describe('router engine', () => {
     expect(result.trace.some(item => item.nodeId === 'condition-gate' && item.success)).toBe(true)
   })
 
-  it('injects control-input values into route.controls for downstream conditions', () => {
+  it('injects control-input values into route.controls for downstream conditions', async () => {
     const graph = createBaseGraph({
       condition: {
         cases: [singleCase([{ 
@@ -150,7 +152,7 @@ describe('router engine', () => {
       },
     })
 
-    const result = runWorkflow(graph, {
+    const result = await runWorkflow(graph, {
       request: {
         path: '/v1/chat/completions',
         headers: { 'x-provider': 'openai' },
@@ -167,10 +169,10 @@ describe('router engine', () => {
     expect(result.trace.some(item => item.nodeId === 'condition-gate' && item.success)).toBe(true)
   })
 
-  it('auto-detects anthropic-messages by model id without explicit rules', () => {
+  it('auto-detects anthropic-messages by model id without explicit rules', async () => {
     const graph = createBaseGraph()
 
-    const result = runWorkflow(graph, {
+    const result = await runWorkflow(graph, {
       request: {
         path: '/v1/messages',
         headers: {},
@@ -186,10 +188,10 @@ describe('router engine', () => {
     expect(result.protocol).toBe('anthropic-messages')
   })
 
-  it('supports request.headers as string array when discovering protocol', () => {
+  it('supports request.headers as string array when discovering protocol', async () => {
     const graph = createBaseGraph()
 
-    const result = runWorkflow(graph, {
+    const result = await runWorkflow(graph, {
       request: {
         path: '/v1/chat/completions',
         headers: { 'x-provider': ['openai'] },
@@ -205,7 +207,7 @@ describe('router engine', () => {
     expect(result.protocol).toBe('openai-completions')
   })
 
-  it('用通用条件判断请求模型是否在可用逻辑模型里', () => {
+  it('用通用条件判断请求模型是否在可用逻辑模型里', async () => {
     const graph = createBaseGraph({
       condition: {
         cases: [singleCase([{
@@ -226,7 +228,7 @@ describe('router engine', () => {
       { id: 'model-fallback', name: 'Model Fallback', enabled: true },
     ]
 
-    const hit = runWorkflow(graph, {
+    const hit = await runWorkflow(graph, {
       request: {
         path: '/v1/chat/completions',
         headers: { 'x-provider': ['openai'] },
@@ -240,7 +242,7 @@ describe('router engine', () => {
     expect(hit.nodeOutputs['model-select']).toEqual([{ name: '落点逻辑模型', value: ['model-hit'] }])
     expect(hit.trace.some(item => item.nodeId === 'condition-gate' && item.success)).toBe(true)
 
-    const miss = runWorkflow(graph, {
+    const miss = await runWorkflow(graph, {
       request: {
         path: '/v1/chat/completions',
         headers: { 'x-provider': ['openai'] },
@@ -260,7 +262,7 @@ describe('router engine', () => {
     expect(Object.keys(payload.route).filter(key => key.startsWith('requestedModel'))).toEqual(['requestedModel'])
   })
 
-  it('字段右值：比较字段取不到值时按空集合判定', () => {
+  it('字段右值：比较字段取不到值时按空集合判定', async () => {
     const graph = createBaseGraph({
       condition: {
         cases: [singleCase([{
@@ -273,7 +275,7 @@ describe('router engine', () => {
       },
     })
 
-    const result = runWorkflow(graph, {
+    const result = await runWorkflow(graph, {
       request: {
         path: '/v1/chat/completions',
         headers: { 'x-provider': ['openai'] },
@@ -286,7 +288,7 @@ describe('router engine', () => {
     expect(result.nodeOutputs).not.toHaveProperty('model-select')
   })
 
-  it('字段右值：notIn 在比较字段取不到值时判定为真', () => {
+  it('字段右值：notIn 在比较字段取不到值时判定为真', async () => {
     const graph = createBaseGraph({
       condition: {
         cases: [singleCase([{
@@ -302,7 +304,7 @@ describe('router engine', () => {
       },
     })
 
-    const result = runWorkflow(graph, {
+    const result = await runWorkflow(graph, {
       request: {
         path: '/v1/chat/completions',
         headers: { 'x-provider': ['openai'] },
@@ -315,7 +317,7 @@ describe('router engine', () => {
     expect(result.nodeOutputs['model-select']).toEqual([{ name: '落点逻辑模型', value: ['model-x'] }])
   })
 
-  it('exposes protocol discovery results for downstream conditions', () => {
+  it('exposes protocol discovery results for downstream conditions', async () => {
     const graph = createBaseGraph({
       condition: {
         cases: [singleCase([
@@ -334,7 +336,7 @@ describe('router engine', () => {
       },
     })
 
-    const result = runWorkflow(graph, {
+    const result = await runWorkflow(graph, {
       request: {
         path: '/v1/chat/completions',
         headers: { 'x-provider': ['openai'] },
@@ -351,10 +353,10 @@ describe('router engine', () => {
     expect(result.trace.some(item => item.nodeId === 'condition-gate' && item.success)).toBe(true)
   })
 
-  it('sends unknown protocol directly to output branch', () => {
+  it('sends unknown protocol directly to output branch', async () => {
     const graph = createBaseGraph()
 
-    const result = runWorkflow(graph, {
+    const result = await runWorkflow(graph, {
       request: {
         path: '/v2/unknown',
         headers: {},
@@ -371,10 +373,10 @@ describe('router engine', () => {
     expect(result.nodeOutputs).not.toHaveProperty('model-select')
   })
 
-  it('按节点 id 聚合节点输出，同名节点各占一组', () => {
+  it('按节点 id 聚合节点输出，同名节点各占一组', async () => {
     const graph = createBaseGraph()
 
-    const result = runWorkflow(graph, {
+    const result = await runWorkflow(graph, {
       request: {
         path: '/v1/chat/completions',
         headers: { 'x-provider': 'openai' },
@@ -400,10 +402,10 @@ describe('router engine', () => {
     expect(result.nodeOutputs.output).toEqual([{ name: '最终落点', value: ['model-vip', 'model-default'] }])
   })
 
-  it('保留条件命中后的逻辑模型选择结果', () => {
+  it('保留条件命中后的逻辑模型选择结果', async () => {
     const graph = createBaseGraph()
 
-    const result = runWorkflow(graph, {
+    const result = await runWorkflow(graph, {
       request: {
         path: '/v1/chat/completions',
         headers: { 'x-provider': 'openai' },
@@ -419,8 +421,8 @@ describe('router engine', () => {
     expect(result.nodeOutputs['model-select']).toEqual([{ name: '落点逻辑模型', value: ['model-vip', 'model-default'] }])
   })
 
-  it('保留逻辑模型选择节点的稳定结果', () => {
-    const result = runWorkflow(createBaseGraph(), {
+  it('保留逻辑模型选择节点的稳定结果', async () => {
+    const result = await runWorkflow(createBaseGraph(), {
       request: {
         path: '/v1/chat/completions',
         headers: { 'x-provider': 'openai' },
@@ -435,11 +437,11 @@ describe('router engine', () => {
     expect(result.nodeOutputs['model-select']).toEqual([{ name: '落点逻辑模型', value: ['model-vip', 'model-default'] }])
   })
 
-  it('returns an error when the input node is missing', () => {
+  it('returns an error when the input node is missing', async () => {
     const graph = createBaseGraph()
     graph.nodes = graph.nodes.filter(node => node.kind !== 'input')
 
-    const result = runWorkflow(graph, {
+    const result = await runWorkflow(graph, {
       request: {
         path: '/v1/chat/completions',
         headers: { 'x-provider': 'openai' },
@@ -457,7 +459,7 @@ describe('router engine', () => {
     expect(result.trace[0]?.message).toBe('缺少输入节点')
   })
 
-  it('skips a disabled protocol-discovery node and follows the unknown branch', () => {
+  it('skips a disabled protocol-discovery node and follows the unknown branch', async () => {
     const graph = createBaseGraph({
       protocol: {
         enabled: false,
@@ -465,7 +467,7 @@ describe('router engine', () => {
       },
     })
 
-    const result = runWorkflow(graph, {
+    const result = await runWorkflow(graph, {
       request: {
         path: '/v1/chat/completions',
         headers: { 'x-provider': 'openai' },
@@ -483,11 +485,11 @@ describe('router engine', () => {
     expect(result.trace.some(item => item.nodeId === 'protocol' && item.message === '节点禁用，跳过')).toBe(true)
   })
 
-  it('不生成旧的扁平路由字段', () => {
+  it('不生成旧的扁平路由字段', async () => {
     const graph = createBaseGraph()
     graph.edges = graph.edges.map(item => item.sourceNodeId === 'protocol' && item.sourcePort === 'unknown' ? { ...item, targetNodeId: 'condition-gate' } : item)
 
-    const result = runWorkflow(graph, {
+    const result = await runWorkflow(graph, {
       request: {
         path: '/v2/unknown',
         headers: {},
@@ -501,7 +503,7 @@ describe('router engine', () => {
     expect(result).not.toHaveProperty('routeDecision')
   })
 
-  it('supports multiple IF branches with OR and ELSE fallback', () => {
+  it('supports multiple IF branches with OR and ELSE fallback', async () => {
     const graph = createBaseGraph({
       condition: {
         cases: [
@@ -521,7 +523,7 @@ describe('router engine', () => {
 
     graph.edges.push(edge('condition-gate', 'case-2', 'model-select'))
 
-    const result = runWorkflow(graph, {
+    const result = await runWorkflow(graph, {
       request: {
         path: '/v1/chat/completions',
         headers: { 'x-provider': 'openai' },
@@ -536,7 +538,7 @@ describe('router engine', () => {
     expect(conditionTrace?.details).toMatchObject({ matchedCaseId: 'case-2' })
   })
 
-  it('supports numeric between condition operator', () => {
+  it('supports numeric between condition operator', async () => {
     const graph = createBaseGraph({
       condition: {
         cases: [singleCase([{ 
@@ -549,7 +551,7 @@ describe('router engine', () => {
       },
     })
 
-    const pass = runWorkflow(graph, {
+    const pass = await runWorkflow(graph, {
       request: {
         path: '/v1/chat/completions',
         headers: { 'x-provider': 'openai' },
@@ -561,7 +563,7 @@ describe('router engine', () => {
       metadata: {},
     })
 
-    const fail = runWorkflow(graph, {
+    const fail = await runWorkflow(graph, {
       request: {
         path: '/v1/chat/completions',
         headers: { 'x-provider': 'openai' },
@@ -578,32 +580,32 @@ describe('router engine', () => {
     expect(fail.trace.some(item => item.nodeId === 'condition-gate' && !item.success)).toBe(true)
   })
 
-  it('迭代节点遍历数组并在完成后从 out 端口退出', () => {
+  it('迭代节点遍历数组并在完成后从 out 端口退出', async () => {
     const nodes: WorkflowNodeModel[] = [
       { id: 'input', kind: 'input', name: '输入', enabled: true, description: '', position: { x: 0, y: 0 } },
       { id: 'model-select', kind: 'model-select', name: '逻辑模型选择', enabled: true, description: '', position: { x: 100, y: 0 }, source: 'fixed', variablePath: '', modelIds: ['model-a', 'model-b'], fallbackModelIds: [] },
       { id: 'control', kind: 'control-input', name: '下游', enabled: true, description: '', position: { x: 200, y: 0 }, controls: [] },
       { id: 'output', kind: 'output', name: '输出', enabled: true, description: '', position: { x: 300, y: 0 }, includeTrace: true, summaryLevel: 'brief' },
     ]
-    const result = runWorkflow({ version: 1, nodes, edges: [edge('input', 'out', 'model-select'), edge('model-select', 'out', 'control'), edge('control', 'out', 'output')] }, { request: { body: { items: ['a', 'b', 'c'] } }, metadata: {} })
+    const result = await runWorkflow({ version: 1, nodes, edges: [edge('input', 'out', 'model-select'), edge('model-select', 'out', 'control'), edge('control', 'out', 'output')] }, { request: { body: { items: ['a', 'b', 'c'] } }, metadata: {} })
     expect(result.stopReason).toBe('output')
     expect(result.nodeOutputs['model-select']).toEqual([{ name: '落点逻辑模型', value: ['model-a', 'model-b'] }])
     expect((result.outputPayload as { metadata: Record<string, unknown> }).metadata).not.toHaveProperty('iteration')
   })
 
-  it('逻辑模型选择节点去重并保持选择顺序', () => {
+  it('逻辑模型选择节点去重并保持选择顺序', async () => {
     const nodes: WorkflowNodeModel[] = [
       { id: 'input', kind: 'input', name: '输入', enabled: true, description: '', position: { x: 0, y: 0 } },
       { id: 'model-select', kind: 'model-select', name: '逻辑模型选择', enabled: true, description: '', position: { x: 100, y: 0 }, source: 'fixed', variablePath: '', modelIds: ['model-a', 'model-a', 'model-b'], fallbackModelIds: [] },
       { id: 'output', kind: 'output', name: '输出', enabled: true, description: '', position: { x: 300, y: 0 }, includeTrace: true, summaryLevel: 'brief' },
     ]
-    const result = runWorkflow({ version: 1, nodes, edges: [edge('input', 'out', 'model-select'), edge('model-select', 'out', 'output')] }, { request: { body: {} }, metadata: {} })
+    const result = await runWorkflow({ version: 1, nodes, edges: [edge('input', 'out', 'model-select'), edge('model-select', 'out', 'output')] }, { request: { body: {} }, metadata: {} })
     expect(result.nodeOutputs['model-select']).toEqual([{ name: '落点逻辑模型', value: ['model-a', 'model-b'] }])
     expect((result.outputPayload as { route: { modelIds: string[] } }).route.modelIds).toEqual(['model-a', 'model-b'])
   })
 
-  it('默认策略（基础节点组合）：请求模型是逻辑模型时直连该逻辑模型', () => {
-    const result = runWorkflow(createDefaultPolicyGraph(), {
+  it('默认策略（基础节点组合）：请求模型是逻辑模型时直连该逻辑模型', async () => {
+    const result = await runWorkflow(createDefaultPolicyGraph(), {
       request: { path: '/v1/chat/completions', headers: { 'x-provider': 'openai' }, body: { model: 'model-hit' } },
       logicalModels: [
         { id: 'model-hit', name: 'Model Hit', enabled: true },
@@ -622,8 +624,8 @@ describe('router engine', () => {
     expect(result.trace.some(item => item.nodeId === 'condition' && item.success)).toBe(true)
   })
 
-  it('默认策略（基础节点组合）：请求模型不是逻辑模型时落到默认逻辑模型', () => {
-    const result = runWorkflow(createDefaultPolicyGraph(), {
+  it('默认策略（基础节点组合）：请求模型不是逻辑模型时落到默认逻辑模型', async () => {
+    const result = await runWorkflow(createDefaultPolicyGraph(), {
       request: { path: '/v1/chat/completions', headers: { 'x-provider': 'openai' }, body: { model: 'gpt-4o-mini' } },
       logicalModels: [{ id: 'model-hit', name: 'Model Hit', enabled: true }],
       metadata: {},
@@ -636,8 +638,8 @@ describe('router engine', () => {
     expect(result.trace.some(item => item.nodeId === 'condition' && !item.success)).toBe(true)
   })
 
-  it('变量取值：字段为空时回落到兜底逻辑模型', () => {
-    const result = runWorkflow(createVariableModelGraph('model-fallback'), {
+  it('变量取值：字段为空时回落到兜底逻辑模型', async () => {
+    const result = await runWorkflow(createVariableModelGraph('model-fallback'), {
       request: { path: '/v1/chat/completions', headers: { 'x-provider': 'openai' }, body: { model: '' } },
       logicalModels: [{ id: 'model-hit', name: 'Model Hit', enabled: true }],
       metadata: {},
@@ -652,13 +654,13 @@ describe('router engine', () => {
     expect(payload.route.fallback).toBe(true)
   })
 
-  it('变量取值：字段是通配投影数组时整体作为落点', () => {
+  it('变量取值：字段是通配投影数组时整体作为落点', async () => {
     const graph = createVariableModelGraph()
     graph.nodes = graph.nodes.map(node => node.kind === 'model-select'
       ? { ...node, variablePath: 'logicalModels[*].id' }
       : node)
 
-    const result = runWorkflow(graph, {
+    const result = await runWorkflow(graph, {
       request: { path: '/v1/chat/completions', headers: { 'x-provider': 'openai' }, body: { model: 'gpt-4o-mini' } },
       logicalModels: [
         { id: 'model-a', name: 'Model A', enabled: true },
@@ -673,8 +675,8 @@ describe('router engine', () => {
     ])
   })
 
-  it('变量取值：没有兜底逻辑模型且取不到值时落点为空', () => {
-    const result = runWorkflow(createVariableModelGraph(), {
+  it('变量取值：没有兜底逻辑模型且取不到值时落点为空', async () => {
+    const result = await runWorkflow(createVariableModelGraph(), {
       request: { path: '/v1/chat/completions', headers: { 'x-provider': 'openai' }, body: { model: '' } },
       logicalModels: [{ id: 'model-hit', name: 'Model Hit', enabled: true }],
       metadata: {},
@@ -706,8 +708,8 @@ function runConditionProbe(rule: ConditionRule, body: Record<string, unknown>) {
   })
 }
 
-function conditionHit(rule: ConditionRule, body: Record<string, unknown>): boolean {
-  const result = runConditionProbe(rule, body)
+async function conditionHit(rule: ConditionRule, body: Record<string, unknown>): Promise<boolean> {
+  const result = await runConditionProbe(rule, body)
   return Boolean(result.trace.find(item => item.nodeId === 'condition-gate')?.success)
 }
 
@@ -721,38 +723,38 @@ describe('router engine · 类型感知条件', () => {
     ...patch,
   })
 
-  it('对象按键名判定包含，空对象按无键判定为空', () => {
-    expect(conditionHit(rule({ operator: 'contains', value: 'tier' }), { tags: { tier: 'gold' } })).toBe(true)
-    expect(conditionHit(rule({ operator: 'contains', value: 'tier' }), { tags: { region: 'cn' } })).toBe(false)
-    expect(conditionHit(rule({ operator: 'empty' }), { tags: {} })).toBe(true)
-    expect(conditionHit(rule({ operator: 'empty' }), { tags: { region: 'cn' } })).toBe(false)
-    expect(conditionHit(rule({ operator: 'notEmpty' }), { tags: { region: 'cn' } })).toBe(true)
+  it('对象按键名判定包含，空对象按无键判定为空', async () => {
+    expect(await conditionHit(rule({ operator: 'contains', value: 'tier' }), { tags: { tier: 'gold' } })).toBe(true)
+    expect(await conditionHit(rule({ operator: 'contains', value: 'tier' }), { tags: { region: 'cn' } })).toBe(false)
+    expect(await conditionHit(rule({ operator: 'empty' }), { tags: {} })).toBe(true)
+    expect(await conditionHit(rule({ operator: 'empty' }), { tags: { region: 'cn' } })).toBe(false)
+    expect(await conditionHit(rule({ operator: 'notEmpty' }), { tags: { region: 'cn' } })).toBe(true)
     // undefined 与空对象都算空，字符串化后为 "[object Object]" 的旧行为不再出现。
-    expect(conditionHit(rule({ operator: 'empty' }), {})).toBe(true)
+    expect(await conditionHit(rule({ operator: 'empty' }), {})).toBe(true)
   })
 
-  it('数组按长度判空、按元素判包含', () => {
+  it('数组按长度判空、按元素判包含', async () => {
     const arrayRule = rule({ fieldPath: 'request.body.list', valueType: 'array' })
-    expect(conditionHit(arrayRule, { list: [] })).toBe(false)
-    expect(conditionHit({ ...arrayRule, operator: 'empty' }, { list: [] })).toBe(true)
-    expect(conditionHit({ ...arrayRule, operator: 'notEmpty' }, { list: ['vip'] })).toBe(true)
-    expect(conditionHit({ ...arrayRule, operator: 'contains', value: 'vip' }, { list: ['vip', 'cn'] })).toBe(true)
-    expect(conditionHit({ ...arrayRule, operator: 'contains', value: 'v' }, { list: ['vip'] })).toBe(false)
-    expect(conditionHit({ ...arrayRule, operator: 'notContains', value: 'v' }, { list: ['vip'] })).toBe(true)
+    expect(await conditionHit(arrayRule, { list: [] })).toBe(false)
+    expect(await conditionHit({ ...arrayRule, operator: 'empty' }, { list: [] })).toBe(true)
+    expect(await conditionHit({ ...arrayRule, operator: 'notEmpty' }, { list: ['vip'] })).toBe(true)
+    expect(await conditionHit({ ...arrayRule, operator: 'contains', value: 'vip' }, { list: ['vip', 'cn'] })).toBe(true)
+    expect(await conditionHit({ ...arrayRule, operator: 'contains', value: 'v' }, { list: ['vip'] })).toBe(false)
+    expect(await conditionHit({ ...arrayRule, operator: 'notContains', value: 'v' }, { list: ['vip'] })).toBe(true)
   })
 
-  it('对象按结构化序列化比较相等', () => {
+  it('对象按结构化序列化比较相等', async () => {
     const equalRule = rule({ operator: 'equals', value: '{"tier":"gold"}' })
-    expect(conditionHit(equalRule, { tags: { tier: 'gold' } })).toBe(true)
-    expect(conditionHit(equalRule, { tags: { tier: 'silver' } })).toBe(false)
-    expect(conditionHit({ ...equalRule, operator: 'notEquals' }, { tags: { tier: 'silver' } })).toBe(true)
+    expect(await conditionHit(equalRule, { tags: { tier: 'gold' } })).toBe(true)
+    expect(await conditionHit(equalRule, { tags: { tier: 'silver' } })).toBe(false)
+    expect(await conditionHit({ ...equalRule, operator: 'notEquals' }, { tags: { tier: 'silver' } })).toBe(true)
   })
 
-  it('未知类型不限制操作符，运行时按实际取值决定语义', () => {
+  it('未知类型不限制操作符，运行时按实际取值决定语义', async () => {
     // valueType 是 unknown（例如数组元素、动态脚本产出），仍然可以用数值比较。
-    expect(conditionHit(rule({ fieldPath: 'request.body.priority', valueType: 'unknown', operator: 'gt', value: '3' }), { priority: 5 })).toBe(true)
-    expect(conditionHit(rule({ fieldPath: 'request.body.priority', valueType: 'unknown', operator: 'gt', value: '3' }), { priority: 1 })).toBe(false)
-    expect(conditionHit(rule({ fieldPath: 'request.body.tags', valueType: 'unknown', operator: 'contains', value: 'tier' }), { tags: { tier: 'gold' } })).toBe(true)
+    expect(await conditionHit(rule({ fieldPath: 'request.body.priority', valueType: 'unknown', operator: 'gt', value: '3' }), { priority: 5 })).toBe(true)
+    expect(await conditionHit(rule({ fieldPath: 'request.body.priority', valueType: 'unknown', operator: 'gt', value: '3' }), { priority: 1 })).toBe(false)
+    expect(await conditionHit(rule({ fieldPath: 'request.body.tags', valueType: 'unknown', operator: 'contains', value: 'tier' }), { tags: { tier: 'gold' } })).toBe(true)
   })
 })
 
@@ -842,8 +844,8 @@ const logicalModels = [
 ]
 
 describe('router engine · 遍历迭代', () => {
-  it('数组来源：逐项跑循环体，首次命中即停止并写回结果', () => {
-    const result = runWorkflow(createIterationGraph(), {
+  it('数组来源：逐项跑循环体，首次命中即停止并写回结果', async () => {
+    const result = await runWorkflow(createIterationGraph(), {
       request: { path: '/v1/chat/completions', headers: {}, body: { model: 'gpt-4o-mini' } },
       logicalModels,
       metadata: {},
@@ -872,8 +874,8 @@ describe('router engine · 遍历迭代', () => {
     expect((result.outputPayload as { route: { modelIds: string[] } }).route.modelIds).toEqual(['model-on'])
   })
 
-  it('对象来源按「键值对」遍历，route.iteration.key 是键名', () => {
-    const result = runWorkflow(createIterationGraph({
+  it('对象来源按「键值对」遍历，route.iteration.key 是键名', async () => {
+    const result = await runWorkflow(createIterationGraph({
       iteration: { sourcePath: 'metadata.tags', collectPath: 'route.iteration.item', collectMode: 'last', resultPath: 'route.iterationResult' },
     }), {
       request: { path: '/v1/chat/completions', headers: {}, body: { model: 'gpt-4o-mini' } },
@@ -889,8 +891,8 @@ describe('router engine · 遍历迭代', () => {
     expect(payload.route.iteration.key).toBe('vip')
   })
 
-  it('count 模式只累计轮数，不受收集路径是否命中影响', () => {
-    const result = runWorkflow(createIterationGraph({
+  it('count 模式只累计轮数，不受收集路径是否命中影响', async () => {
+    const result = await runWorkflow(createIterationGraph({
       iteration: { sourcePath: 'metadata.tags', collectPath: 'route.modelIds', collectMode: 'count', resultPath: 'route.iterationCount' },
     }), {
       request: { path: '/v1/chat/completions', headers: {}, body: { model: 'gpt-4o-mini' } },
@@ -902,9 +904,9 @@ describe('router engine · 遍历迭代', () => {
     expect(result.trace.find(item => item.nodeId === 'iteration')?.details).toMatchObject({ executed: 3, hitCount: 0 })
   })
 
-  it('list 模式收集每轮命中值', () => {
+  it('list 模式收集每轮命中值', async () => {
     // 让循环体每轮都命中：收集路径改读本轮作用域里的 enabled。
-    const result = runWorkflow(createIterationGraph({
+    const result = await runWorkflow(createIterationGraph({
       iteration: { sourcePath: 'logicalModels[*].id', collectPath: 'route.iteration.item', collectMode: 'list', resultPath: 'route.hitIds' },
     }), {
       request: { path: '/v1/chat/completions', headers: {}, body: { model: 'gpt-4o-mini' } },
@@ -918,8 +920,8 @@ describe('router engine · 遍历迭代', () => {
     expect(result.trace.find(item => item.nodeId === 'iteration')?.details).toMatchObject({ sourcePath: 'logicalModels[*].id', executed: 3 })
   })
 
-  it('轮数上限生效，未遍历完的项会记录在 trace 里', () => {
-    const result = runWorkflow(createIterationGraph({
+  it('轮数上限生效，未遍历完的项会记录在 trace 里', async () => {
+    const result = await runWorkflow(createIterationGraph({
       iteration: { maxIterations: 1, collectMode: 'list' },
     }), {
       request: { path: '/v1/chat/completions', headers: {}, body: { model: 'gpt-4o-mini' } },
@@ -932,8 +934,8 @@ describe('router engine · 遍历迭代', () => {
     expect(String(iterationTrace?.details?.stoppedReason)).toContain('迭代上限')
   })
 
-  it('没有连接循环体时不执行任何一轮，但仍把空结果写回', () => {
-    const result = runWorkflow(createIterationGraph({ withBody: false }), {
+  it('没有连接循环体时不执行任何一轮，但仍把空结果写回', async () => {
+    const result = await runWorkflow(createIterationGraph({ withBody: false }), {
       request: { path: '/v1/chat/completions', headers: {}, body: { model: 'gpt-4o-mini' } },
       logicalModels,
       metadata: {},
@@ -947,8 +949,8 @@ describe('router engine · 遍历迭代', () => {
     expect(result.stopReason).toBe('output')
   })
 
-  it('遍历来源为空时执行 0 轮，不进入循环体', () => {
-    const result = runWorkflow(createIterationGraph({
+  it('遍历来源为空时执行 0 轮，不进入循环体', async () => {
+    const result = await runWorkflow(createIterationGraph({
       iteration: { sourcePath: 'metadata.missing', collectMode: 'count', resultPath: 'route.iterationCount' },
     }), {
       request: { path: '/v1/chat/completions', headers: {}, body: { model: 'gpt-4o-mini' } },
@@ -985,3 +987,327 @@ function createVariableModelGraph(fallbackModelId?: string): WorkflowGraph {
     edges: [edge('input', 'out', 'model-select'), edge('model-select', 'out', 'output')],
   }
 }
+
+
+/* ------------------------------------------------------------------------- *
+ * 脚本节点
+ * ------------------------------------------------------------------------- */
+
+/** 脚本节点的可覆盖字段。 */
+type ScriptNodeOverrides = Partial<Extract<WorkflowNodeModel, { kind: 'script' }>>
+
+/** 最小脚本图：输入 → JS 脚本 → 输出。 */
+function createScriptGraph(overrides?: ScriptNodeOverrides): WorkflowGraph {
+  return {
+    version: 1,
+    nodes: [
+      { id: 'input', kind: 'input', name: '输入', enabled: true, description: '', position: { x: 0, y: 0 } },
+      {
+        id: 'script',
+        kind: 'script',
+        name: 'JS 脚本',
+        enabled: true,
+        description: '',
+        position: { x: 100, y: 0 },
+        code: "return get('logicalModels[*].id')",
+        resultPath: 'route.scriptResult',
+        timeoutMilliseconds: SCRIPT_TIMEOUT_DEFAULT,
+        ...overrides,
+      },
+      { id: 'output', kind: 'output', name: '输出', enabled: true, description: '', position: { x: 200, y: 0 }, includeTrace: true, summaryLevel: 'brief' },
+    ],
+    edges: [edge('input', 'out', 'script'), edge('script', 'out', 'output')],
+  }
+}
+
+const scriptPayload = {
+  request: { path: '/v1/chat/completions', headers: {}, body: { model: 'gpt-4o-mini' } },
+  logicalModels: [{ id: 'model-vip', name: 'VIP', enabled: true }],
+  metadata: {},
+}
+
+describe('router engine · 脚本节点', () => {
+  it('把沙箱返回值写入 resultPath，并把控制台日志带进 trace', async () => {
+    const result = await runWorkflowEngine(createScriptGraph(), scriptPayload, {
+      capabilities: {
+        runScript: async () => ({ success: true, value: ['model-vip'], logs: ['picked 1'], durationMilliseconds: 5 }),
+      },
+    })
+
+    const payload = result.outputPayload as { route: { scriptResult: string[] } }
+    expect(payload.route.scriptResult).toEqual(['model-vip'])
+
+    const scriptTrace = result.trace.find(item => item.nodeId === 'script')
+    expect(scriptTrace?.success).toBe(true)
+    expect(scriptTrace?.message).toContain('route.scriptResult')
+    expect(scriptTrace?.details).toMatchObject({ resultPath: 'route.scriptResult', logs: ['picked 1'], durationMilliseconds: 5 })
+
+    expect(result.nodeOutputs.script?.map(item => item.name)).toEqual(['脚本结果', '耗时', '控制台'])
+    expect(result.stopReason).toBe('output')
+  })
+
+  it('脚本拿到的是 payload 深拷贝，脚本侧改动不会污染路由决策数据', async () => {
+    const result = await runWorkflowEngine(createScriptGraph(), scriptPayload, {
+      capabilities: {
+        runScript: async (invocation) => {
+          const request = invocation.payload.request as { body: { model: string } }
+          request.body.model = 'mutated'
+          return { success: true, value: request.body.model, logs: [], durationMilliseconds: 1 }
+        },
+      },
+    })
+
+    const payload = result.outputPayload as { request: { body: { model: string } }; route: { requestedModel: string; scriptResult: string } }
+    expect(payload.route.scriptResult).toBe('mutated')
+    expect(payload.request.body.model).toBe('gpt-4o-mini')
+    expect(payload.route.requestedModel).toBe('gpt-4o-mini')
+  })
+
+  it('没有注入沙箱能力时记为失败，但仍然继续走完整张图', async () => {
+    const result = await runWorkflowEngine(createScriptGraph(), scriptPayload)
+
+    const scriptTrace = result.trace.find(item => item.nodeId === 'script')
+    expect(scriptTrace?.success).toBe(false)
+    expect(scriptTrace?.message).toContain('沙箱运行时')
+    expect(result.stopReason).toBe('output')
+  })
+
+  it('脚本内容为空时不调用沙箱能力', async () => {
+    const calls: ScriptInvocation[] = []
+    const result = await runWorkflowEngine(createScriptGraph({ code: '   ' }), scriptPayload, {
+      capabilities: {
+        runScript: async (invocation) => {
+          calls.push(invocation)
+          return { success: true, value: null, logs: [], durationMilliseconds: 1 }
+        },
+      },
+    })
+
+    expect(calls).toHaveLength(0)
+    expect(result.trace.find(item => item.nodeId === 'script')?.message).toContain('脚本内容为空')
+  })
+
+  it('沙箱抛出的异常被转成一句可读的失败信息', async () => {
+    const result = await runWorkflowEngine(createScriptGraph(), scriptPayload, {
+      capabilities: {
+        runScript: async () => {
+          throw new Error('脚本执行超时（> 2000 ms），已中断')
+        },
+      },
+    })
+
+    const scriptTrace = result.trace.find(item => item.nodeId === 'script')
+    expect(scriptTrace?.success).toBe(false)
+    expect(scriptTrace?.message).toContain('脚本执行超时')
+    expect(scriptTrace?.details).toMatchObject({ error: '脚本执行超时（> 2000 ms），已中断' })
+  })
+
+  it('沙箱返回失败时把错误写进 trace，不写入结果路径', async () => {
+    const result = await runWorkflowEngine(createScriptGraph(), scriptPayload, {
+      capabilities: {
+        runScript: async () => ({ success: false, logs: [], error: 'ReferenceError: foo is not defined', durationMilliseconds: 2 }),
+      },
+    })
+
+    const scriptTrace = result.trace.find(item => item.nodeId === 'script')
+    expect(scriptTrace?.success).toBe(false)
+    expect(scriptTrace?.message).toContain('ReferenceError')
+    expect((result.outputPayload as { route: { scriptResult?: unknown } }).route.scriptResult).toBeUndefined()
+  })
+})
+
+/* ------------------------------------------------------------------------- *
+ * LLM 节点
+ * ------------------------------------------------------------------------- */
+
+/** LLM 节点的可覆盖字段。 */
+type PromptNodeOverrides = Partial<Extract<WorkflowNodeModel, { kind: 'prompt' }>>
+
+/** 提示词图：输入 → 协议发现 → LLM 节点 → 输出。 */
+function createPromptGraph(overrides?: PromptNodeOverrides): WorkflowGraph {
+  return {
+    version: 1,
+    nodes: [
+      { id: 'input', kind: 'input', name: '输入', enabled: true, description: '', position: { x: 0, y: 0 } },
+      { id: 'protocol', kind: 'protocol-discovery', name: '协议发现', enabled: true, description: '', position: { x: 100, y: 0 } },
+      {
+        id: 'prompt',
+        kind: 'prompt',
+        name: 'LLM 节点',
+        enabled: true,
+        description: '',
+        position: { x: 200, y: 0 },
+        logicalModelId: 'model-vip',
+        systemPrompt: '租户 ${request.body.tenant} 的路由助手',
+        promptTemplate: '请在 ${logicalModels[*].id} 里挑一个，请求模型是 ${route.requestedModel}，未知字段是 ${route.neverSet}。',
+        resultPath: 'route.promptResult',
+        temperature: 0.2,
+        maxTokens: 256,
+        timeoutMilliseconds: PROMPT_TIMEOUT_DEFAULT,
+        ...overrides,
+      },
+      { id: 'output', kind: 'output', name: '输出', enabled: true, description: '', position: { x: 300, y: 0 }, includeTrace: true, summaryLevel: 'brief' },
+    ],
+    edges: [edge('input', 'out', 'protocol'), edge('protocol', 'openai-completions', 'prompt'), edge('prompt', 'out', 'output')],
+  }
+}
+
+const promptPayload = {
+  request: { path: '/v1/chat/completions', headers: { 'x-provider': 'openai' }, body: { model: 'gpt-4o-mini', tenant: 'vip-1' } },
+  logicalModels: [{ id: 'model-vip', name: 'VIP', enabled: true }, { id: 'model-default', name: '默认', enabled: true }],
+  metadata: {},
+}
+
+describe('router engine · LLM 节点', () => {
+  it('提示词先按当前运行数据插值，再交给逻辑模型执行', async () => {
+    const invocations: PromptInvocation[] = []
+    const result = await runWorkflowEngine(createPromptGraph(), promptPayload, {
+      capabilities: {
+        runPrompt: async (invocation) => {
+          invocations.push(invocation)
+          return { success: true, text: 'model-vip', target: 'openai/gpt-4o-mini', durationMilliseconds: 42 }
+        },
+      },
+    })
+
+    expect(invocations).toHaveLength(1)
+    const invocation = invocations[0]
+    expect(invocation.nodeId).toBe('prompt')
+    expect(invocation.logicalModelId).toBe('model-vip')
+    expect(invocation.systemPrompt).toBe('租户 vip-1 的路由助手')
+    expect(invocation.prompt).toContain('gpt-4o-mini')
+    expect(invocation.prompt).toContain('model-vip')
+    // 取不到的变量渲染成空串，不会把 `${...}` 原样发给上游。
+    expect(invocation.prompt).not.toContain('${')
+    expect(invocation.temperature).toBe(0.2)
+    expect(invocation.maxTokens).toBe(256)
+    expect(invocation.timeoutMilliseconds).toBe(PROMPT_TIMEOUT_DEFAULT)
+    expect(invocation.protocol).toBe('openai-completions')
+
+    const payload = result.outputPayload as { route: { promptResult: string } }
+    expect(payload.route.promptResult).toBe('model-vip')
+
+    const promptTrace = result.trace.find(item => item.nodeId === 'prompt')
+    expect(promptTrace?.success).toBe(true)
+    expect(promptTrace?.details).toMatchObject({
+      logicalModelId: 'model-vip',
+      target: 'openai/gpt-4o-mini',
+      resultPath: 'route.promptResult',
+      durationMilliseconds: 42,
+    })
+    expect(result.nodeOutputs.prompt?.map(item => item.name)).toEqual(['逻辑模型', '提示词', '回复', '耗时'])
+    expect(result.stopReason).toBe('output')
+  })
+
+  it('没有选择逻辑模型时不调用执行能力', async () => {
+    const invocations: PromptInvocation[] = []
+    const result = await runWorkflowEngine(createPromptGraph({ logicalModelId: '  ' }), promptPayload, {
+      capabilities: {
+        runPrompt: async (invocation) => {
+          invocations.push(invocation)
+          return { success: true, text: 'unused', durationMilliseconds: 1 }
+        },
+      },
+    })
+
+    expect(invocations).toHaveLength(0)
+    expect(result.trace.find(item => item.nodeId === 'prompt')?.message).toContain('尚未选择逻辑模型')
+  })
+
+  it('没有注入执行能力时记为失败，但仍然继续走完整张图', async () => {
+    const result = await runWorkflowEngine(createPromptGraph(), promptPayload)
+
+    const promptTrace = result.trace.find(item => item.nodeId === 'prompt')
+    expect(promptTrace?.success).toBe(false)
+    expect(promptTrace?.message).toContain('服务端执行能力')
+    expect(result.stopReason).toBe('output')
+  })
+
+  it('上游调用失败时把错误写进 trace，不写入结果路径', async () => {
+    const result = await runWorkflowEngine(createPromptGraph(), promptPayload, {
+      capabilities: {
+        runPrompt: async () => ({ success: false, text: '', error: '上游 429：rate limit exceeded', durationMilliseconds: 8 }),
+      },
+    })
+
+    const promptTrace = result.trace.find(item => item.nodeId === 'prompt')
+    expect(promptTrace?.success).toBe(false)
+    expect(promptTrace?.message).toContain('上游 429')
+    expect((result.outputPayload as { route: { promptResult?: unknown } }).route.promptResult).toBeUndefined()
+  })
+
+  it('执行能力抛出的异常被转成一句可读的失败信息', async () => {
+    const result = await runWorkflowEngine(createPromptGraph(), promptPayload, {
+      capabilities: {
+        runPrompt: async () => {
+          throw new Error('LLM 调用超时（> 60000 ms），已中断')
+        },
+      },
+    })
+
+    const promptTrace = result.trace.find(item => item.nodeId === 'prompt')
+    expect(promptTrace?.success).toBe(false)
+    expect(promptTrace?.message).toContain('LLM 调用超时')
+  })
+})
+
+/* ------------------------------------------------------------------------- *
+ * 图 schema：新节点类型
+ * ------------------------------------------------------------------------- */
+
+describe('router graph schema · 脚本与 LLM 节点', () => {
+  it('脚本节点通过校验，缺失字段按默认值补齐', () => {
+    const parsed = WorkflowGraphSchema.safeParse({
+      version: 1,
+      nodes: [{ id: 'script', kind: 'script', name: 'JS 脚本', enabled: true, description: '', position: { x: 0, y: 0 } }],
+      edges: [],
+    })
+
+    expect(parsed.success).toBe(true)
+    expect(parsed.data?.nodes[0]).toMatchObject({
+      kind: 'script',
+      code: '',
+      resultPath: 'route.scriptResult',
+      timeoutMilliseconds: SCRIPT_TIMEOUT_DEFAULT,
+    })
+  })
+
+  it('LLM 节点通过校验，缺失字段按默认值补齐', () => {
+    const parsed = WorkflowGraphSchema.safeParse({
+      version: 1,
+      nodes: [{ id: 'prompt', kind: 'prompt', name: 'LLM 节点', enabled: true, description: '', position: { x: 0, y: 0 } }],
+      edges: [],
+    })
+
+    expect(parsed.success).toBe(true)
+    expect(parsed.data?.nodes[0]).toMatchObject({
+      kind: 'prompt',
+      logicalModelId: '',
+      systemPrompt: '',
+      resultPath: 'route.promptResult',
+      temperature: 0.7,
+      maxTokens: 1_024,
+      timeoutMilliseconds: PROMPT_TIMEOUT_DEFAULT,
+    })
+  })
+
+  it('超时超过上限的脚本节点校验失败', () => {
+    const parsed = WorkflowGraphSchema.safeParse({
+      version: 1,
+      nodes: [{ id: 'script', kind: 'script', name: 'JS 脚本', enabled: true, description: '', position: { x: 0, y: 0 }, code: 'return 1', resultPath: 'route.r', timeoutMilliseconds: 999_999 }],
+      edges: [],
+    })
+
+    expect(parsed.success).toBe(false)
+  })
+
+  it('温度超出 0..2 的 LLM 节点校验失败', () => {
+    const parsed = WorkflowGraphSchema.safeParse({
+      version: 1,
+      nodes: [{ id: 'prompt', kind: 'prompt', name: 'LLM 节点', enabled: true, description: '', position: { x: 0, y: 0 }, temperature: 3 }],
+      edges: [],
+    })
+
+    expect(parsed.success).toBe(false)
+  })
+})

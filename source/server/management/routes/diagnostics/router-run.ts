@@ -5,6 +5,7 @@ import { WorkflowGraphSchema, RouteContextInputSchema } from '@render/source/pag
 import { HttpRouter } from '@server/http-router'
 import type { ManagementHandler } from '../../core/response'
 import { sendSuccess } from '../../core/response'
+import { createRouterCapabilities } from './router-capabilities'
 
 const RouterRunRequestSchema = z.object({
   graph: WorkflowGraphSchema,
@@ -16,6 +17,7 @@ export const routerRunRoutes = new HttpRouter<ManagementHandler>()
 
 async function handleRouterRun(_req: IncomingMessage, res: ServerResponse, body: unknown): Promise<void> {
   const input = RouterRunRequestSchema.parse(body)
-  const result = runWorkflow(input.graph, input.inputPayload)
+  // 脚本节点与 LLM 节点的外部资源（沙箱 / 网络）由服务端注入。
+  const result = await runWorkflow(input.graph, input.inputPayload, { capabilities: createRouterCapabilities() })
   sendSuccess(res, result)
 }

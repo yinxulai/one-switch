@@ -16,6 +16,8 @@ const workflowNodeTypes = {
   condition: WorkflowNode,
   'model-select': WorkflowNode,
   iteration: WorkflowNode,
+  script: WorkflowNode,
+  prompt: WorkflowNode,
 }
 
 /**

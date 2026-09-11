@@ -10,6 +10,8 @@ import type { NodeRunStatus } from './node-data'
 import {
   DEFAULT_MODEL_IDS,
   DEFAULT_OPERATOR_SET,
+  PROMPT_TIMEOUT_DEFAULT,
+  SCRIPT_TIMEOUT_DEFAULT,
   type ConditionCase,
   type ConditionOperator,
   type ConditionRule,
@@ -147,6 +149,38 @@ export function createNodeByKind(kind: AppendableKind, position: NodePosition): 
       collectMode: 'first',
       resultPath: 'route.modelIds',
       maxIterations: 10,
+    }
+  }
+
+  if (kind === 'script') {
+    return {
+      id,
+      kind,
+      name: 'JS 脚本节点',
+      enabled: true,
+      description: '在沙箱里跑一段 JS，把结果写回运行数据。',
+      position,
+      code: '// payload 是本次运行数据的深拷贝，get(路径) 支持 a[*].b 通配投影\nreturn get(\'logicalModels[*].id\') || []',
+      resultPath: 'route.scriptResult',
+      timeoutMilliseconds: SCRIPT_TIMEOUT_DEFAULT,
+    }
+  }
+
+  if (kind === 'prompt') {
+    return {
+      id,
+      kind,
+      name: 'LLM 节点',
+      enabled: true,
+      description: '用指定逻辑模型执行提示词，回复写回运行数据。',
+      position,
+      logicalModelId: '',
+      systemPrompt: '',
+      promptTemplate: '请从 ${logicalModels[*].id} 里挑一个最适合当前请求的逻辑模型，只回答 id。',
+      resultPath: 'route.promptResult',
+      temperature: 0.7,
+      maxTokens: 1_024,
+      timeoutMilliseconds: PROMPT_TIMEOUT_DEFAULT,
     }
   }
 

@@ -66,6 +66,51 @@ interface IterationNode extends WorkflowNodeBase {
 
 循环状态属于一次执行，不写回用户配置。旧版设计里设想的 `metadata.iteration` / `metadata.loop` 没有落地：作用域统一收在 `route.iteration` 下，离开循环后它就是最后一轮的值，调用方读不读都不影响流程。
 
+## 能力注入：脚本与 LLM 节点
+
+`script` 与 `prompt` 两类节点需要外部资源（JS 沙箱、上游模型调用），而引擎代码位于渲染层、真正执行却在服务端进程：因此引擎**不直接依赖任何运行时模块**，需要外部资源的部分由调用方按需注入。
+
+```ts
+interface RunCapabilities {
+  runScript?: (invocation: ScriptInvocation) => Promise<ScriptInvocationResult>
+  runPrompt?: (invocation: PromptInvocation) => Promise<PromptInvocationResult>
+}
+
+runWorkflow(graph, inputPayload, { capabilities })
+```
+
+约定：
+
+- **能力缺省时引擎照常跑完整张图**，只是这些节点产出 `success: false` 的 trace（「当前运行环境没有注入该能力」），不影响其它分支；
+- 能力抛出的异常在引擎侧被转成一句可读的错误信息并记进 trace，不会打断整轮运行；
+- 超时由节点配置并在引擎侧夹一次（脚本上限 10s、LLM 上限 10min），能力实现负责真正的中断；
+- 引擎传给脚本的是 payload 的**深拷贝**，脚本里的赋值不会污染引擎正在使用的决策数据；
+- 服务端实现见 `source/server/management/routes/diagnostics/router-capabilities.ts`：脚本走 `node:vm` 沙箱，LLM 走真实请求通路（逻辑模型 → 协议发现 → 密钥 → 故障转移）。
+
+```ts
+interface ScriptNode extends WorkflowNodeBase {
+  kind: 'script'
+  code: string                  // 函数体形式的 JS，用 return 交回结果
+  resultPath: string            // 结果写回路径
+  timeoutMilliseconds: number
+}
+
+interface PromptNode extends WorkflowNodeBase {
+  kind: 'prompt'
+  logicalModelId: string        // 用哪个逻辑模型执行
+  systemPrompt: string
+  promptTemplate: string        // 支持 ${路径} 插值
+  resultPath: string            // 回复文本写回路径
+  temperature: number
+  maxTokens: number
+  timeoutMilliseconds: number
+}
+```
+
+- **脚本节点**只提供 `payload`（深拷贝）、`get(路径)`（与条件节点同一套路径语义，含 `a[*].b` 通配投影）与 `console`；没有 `require` / `import` / `eval` / 网络 / 文件系统，超时即中断；
+- **LLM 节点**的提示词模板用 `${路径}` 插值（取值不存在的变量渲染成空串），调用走的是逻辑模型自己的上游通路，因此密钥、协议转换、故障转移全部复用，不需要在路由图里再配置一遍；
+- 两个节点的 `resultPath` 都是**节点上自由配置的写回路径**（默认 `route.scriptResult` / `route.promptResult`），不是 `route` 命名空间的固定字段；写回值类型未知，下游条件节点在 `unknown` 下不限制操作符（见 [route-design.md](./route-design.md) §2.9）。
+
 ## 输出契约
 
 引擎每次运行返回 `{ outputPayload, protocol, nodeOutputs, stopReason, trace }`：
