@@ -1,8 +1,16 @@
 import type { ReactNode } from 'react'
 
-import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
+
+/** 浮层面板外观，复制自 Dify `packages/dify-ui/src/overlay-shared.ts` 的 `menuPopupSurfaceClassName`。
+   *  `workflow-dify-surface` 用于在浮层（被 portal 到 body）内还原 Dify 的圆角刻度。 */
+  export const PANEL_POPUP_SURFACE_CLASSNAME =
+    'workflow-dify-surface rounded-xl border-[0.5px] border-components-panel-border bg-components-panel-bg-blur p-1 ring-0 shadow-none backdrop-blur-[5px] focus:ring-0 focus:shadow-none'
+
+/** 浮层菜单项，复制自 Dify `overlay-shared.ts` 的 `menuItemClassName`。 */
+export const PANEL_POPUP_ITEM_CLASSNAME =
+  'mx-1 h-8 gap-1 rounded-lg px-2 text-[13px] leading-4 text-text-secondary focus:bg-state-base-hover focus:text-text-primary not-data-[variant=destructive]:focus:**:text-text-primary'
 
 type NodePanelHintProps = {
   children: ReactNode
@@ -16,8 +24,10 @@ export function NodePanelHint(props: NodePanelHintProps) {
   return (
     <div
       className={cn(
-        'rounded-lg px-2.5 py-2 text-[11px] leading-4',
-        tone === 'warning' ? 'bg-warning/14 text-warning' : 'bg-muted/45 text-muted-foreground',
+        'rounded-lg px-2.5 py-2 system-xs-regular',
+        tone === 'warning'
+          ? 'bg-state-warning-hover text-text-warning'
+          : 'bg-workflow-block-parma-bg text-text-tertiary',
       )}
     >
       {children}
@@ -33,7 +43,7 @@ type NodePanelCardProps = {
 /** 面板里的分组卡片。 */
 export function NodePanelCard(props: NodePanelCardProps) {
   const { children, className } = props
-  return <div className={cn('grid gap-2.5 rounded-lg bg-muted/35 p-2.5', className)}>{children}</div>
+  return <div className={cn('grid gap-2.5 rounded-lg bg-workflow-block-parma-bg p-2.5', className)}>{children}</div>
 }
 
 type NodePanelFieldProps = {
@@ -48,7 +58,8 @@ export function NodePanelField(props: NodePanelFieldProps) {
 
   return (
     <div className={cn('grid gap-1.5', className)}>
-      <Label className="text-[11px] text-muted-foreground">{label}</Label>
+      {/* 不用 shadcn Label：它的 `text-sm leading-none` 会盖过 Dify 的 system-sm-medium。 */}
+      <label className="w-fit py-1 system-sm-medium text-text-secondary">{label}</label>
       {children}
     </div>
   )
@@ -65,8 +76,8 @@ export function NodePanelSwitchRow(props: NodePanelSwitchRowProps) {
   const { label, checked, onCheckedChange } = props
 
   return (
-    <div className="flex items-center justify-between rounded-lg bg-muted/45 px-2.5 py-2">
-      <span className="text-xs">{label}</span>
+    <div className="flex items-center justify-between rounded-lg bg-workflow-block-parma-bg px-2.5 py-2">
+      <span className="system-xs-regular text-text-secondary">{label}</span>
       <Switch checked={checked} onCheckedChange={onCheckedChange} />
     </div>
   )
@@ -83,7 +94,7 @@ export function NodePanelGroupHeader(props: NodePanelGroupHeaderProps) {
 
   return (
     <div className="flex items-center justify-between gap-2">
-      <span className="text-xs font-medium">{title}</span>
+      <span className="py-1 system-sm-medium text-text-secondary">{title}</span>
       {action}
     </div>
   )

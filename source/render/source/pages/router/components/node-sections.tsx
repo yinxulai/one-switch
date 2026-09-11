@@ -14,16 +14,16 @@ type NodeHeaderMetaProps = {
 /** 标题行右侧的状态标记（复制自 Dify `nodes/_base/node-sections.tsx` 的 NodeHeaderMeta）。 */
 export function NodeHeaderMeta(props: NodeHeaderMetaProps) {
   const { status, enabled } = props
-  if (!enabled) return <TriangleAlert className="size-3.5 shrink-0 text-warning" aria-hidden />
+  if (!enabled) return <TriangleAlert className="size-3.5 shrink-0 text-text-warning" aria-hidden />
 
   if (status === 'running') {
-    return <LoaderCircle className="size-3.5 shrink-0 animate-spin text-info" aria-hidden />
+    return <LoaderCircle className="size-3.5 shrink-0 animate-spin text-text-accent" aria-hidden />
   }
   if (status === 'failed') {
-    return <CircleAlert className="size-3.5 shrink-0 text-destructive" aria-hidden />
+    return <CircleAlert className="size-3.5 shrink-0 text-text-destructive" aria-hidden />
   }
   if (status === 'succeeded') {
-    return <CircleCheckBig className="size-3.5 shrink-0 text-success" aria-hidden />
+    return <CircleCheckBig className="size-3.5 shrink-0 text-text-success" aria-hidden />
   }
   return null
 }
@@ -39,7 +39,7 @@ export function NodeDescription(props: NodeDescriptionProps) {
   if (!model.description) return null
 
   return (
-    <div className={cn('px-3 pt-1 pb-2 text-xs font-normal wrap-break-word whitespace-pre-line text-muted-foreground/70', className)}>
+    <div className={cn('px-3 pt-1 pb-2 wrap-break-word whitespace-pre-line system-xs-regular text-text-tertiary', className)}>
       {model.description}
     </div>
   )
@@ -82,8 +82,8 @@ export function NodeBranchRow(props: NodeBranchRowProps) {
   return (
     <div className={cn('relative flex h-6 items-center px-1', className)}>
       <div className="flex w-full items-center justify-between">
-        <div className="min-w-0 truncate text-[10px] font-semibold text-muted-foreground/70">{caption}</div>
-        <div className="shrink-0 text-[12px] font-semibold text-muted-foreground">{label}</div>
+        <div className="min-w-0 truncate system-2xs-semibold-uppercase text-text-tertiary">{caption}</div>
+        <div className="shrink-0 system-xs-semibold text-text-secondary">{label}</div>
       </div>
       {children}
     </div>
@@ -95,10 +95,12 @@ interface NodeConditionChipProps {
   children: ReactNode
 }
 
-/** 条件条目，对应 Dify `nodes/if-else/components/condition-value.tsx` 的圆角浅底容器。 */
+/** 条件条目，对应 Dify `nodes/if-else/components/condition-value.tsx` 的圆角浅底容器。
+ *  Dify 依赖变量标签自带的最大宽度避免折行；我们改成 `flex-nowrap` + 变量/值两侧截断，
+ *  保证条目恒定 24px 单行，不会撑破 `h-6` 的分支行。 */
 export function NodeConditionChip(props: NodeConditionChipProps) {
   const { className, children } = props
-  return <div className={cn('flex flex-wrap items-center rounded-md bg-muted', className)}>{children}</div>
+  return <div className={cn('flex flex-nowrap items-center rounded-md bg-workflow-block-parma-bg', className)}>{children}</div>
 }
 
 interface NodeRowProps {
@@ -116,12 +118,14 @@ export function NodeRow(props: NodeRowProps) {
   const { className, icon, name, meta } = props
 
   return (
-    <div className={cn('flex h-6 items-center justify-between gap-1 rounded-md bg-muted px-1', className)}>
+    <div className={cn('flex h-6 items-center justify-between gap-1 rounded-md bg-workflow-block-parma-bg px-1', className)}>
       <div className="flex w-0 grow items-center gap-1">
         {icon}
-        <div className="w-0 grow truncate text-xs text-muted-foreground">{name}</div>
+        <div className="w-0 grow truncate system-xs-regular text-text-secondary">{name}</div>
       </div>
-      {meta && <div className="ml-1 flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground/70 uppercase">{meta}</div>}
+      {meta && (
+        <div className="ml-1 flex shrink-0 items-center gap-1 uppercase system-2xs-regular text-text-tertiary">{meta}</div>
+      )}
     </div>
   )
 }

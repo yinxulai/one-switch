@@ -5,7 +5,8 @@ import { kindIcon, kindTone } from '../node-meta'
 
 /**
  * 节点图标块，逐字对齐 Dify `app/components/workflow/block-icon.tsx`：
- * 圆角色块 + 白色图标 + 半像素白描边。
+ * 圆角色块 + 半像素白描边 + 白色图标，底色取自同一份 `util-colors-*-500` 色板
+ * （见 `node-meta.ts` 的 NODE_KIND_META.tone）。
  * 尺寸表同样取自 Dify 的 ICON_CONTAINER_CLASSNAME_SIZE_MAP / ICON_CLASSNAME_SIZE_MAP，
  * 但按仓库偏好去掉了 shadow-xs / shadow-md，层次改由色块本身的明度承担。
  */

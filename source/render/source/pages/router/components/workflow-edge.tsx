@@ -121,13 +121,15 @@ export const WorkflowEdge = memo(function WorkflowEdge(props: EdgeProps<Workflow
                   type="button"
                   aria-label="在连线上插入节点"
                   className={cn(
-                    'flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground',
+                    'flex size-4 items-center justify-center rounded-full',
+                    'bg-components-button-primary-bg text-white',
+                    'hover:bg-components-button-primary-bg-hover',
                     'transition-transform duration-150 hover:scale-150',
                   )}
                   onPointerDown={event => event.stopPropagation()}
                   onMouseDown={event => event.stopPropagation()}
                 >
-                  <Plus className="size-3" aria-hidden />
+                  <Plus className="size-2.5" aria-hidden />
                 </button>
               )}
             />

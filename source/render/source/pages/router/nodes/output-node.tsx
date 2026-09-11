@@ -10,10 +10,10 @@ export function OutputNodeView(props: RouteNodeProps) {
   return (
     <NodeBody className="mb-1 py-1">
       <NodeRowList>
-        <div className="flex h-6 items-center rounded-md bg-muted px-1 text-xs text-muted-foreground">
+        <div className="flex h-6 items-center rounded-md bg-workflow-block-parma-bg px-1 system-xs-regular text-text-secondary">
           {model.summaryLevel === 'detailed' ? '详细摘要' : '简要摘要'}
         </div>
-        <div className="flex h-6 items-center rounded-md bg-muted px-1 text-xs text-muted-foreground">
+        <div className="flex h-6 items-center rounded-md bg-workflow-block-parma-bg px-1 system-xs-regular text-text-secondary">
           {model.includeTrace ? '含 trace' : '不含 trace'}
         </div>
       </NodeRowList>

@@ -12,7 +12,7 @@ export function QueueSelectPanel(props: NodePanelProps) {
 
       <div className="grid gap-1.5">
         {logicalModels.map(logicalModel => (
-          <label key={logicalModel.id} className="flex items-center gap-2 rounded-lg bg-muted/35 px-2.5 py-2 text-xs">
+          <label key={logicalModel.id} className="flex items-center gap-2 rounded-lg bg-workflow-block-parma-bg px-2.5 py-2 system-xs-regular text-text-secondary">
             <input
               type="checkbox"
               checked={node.queueIds.includes(logicalModel.id)}
@@ -26,7 +26,7 @@ export function QueueSelectPanel(props: NodePanelProps) {
                 : current)}
             />
             <span className="min-w-0 flex-1 truncate">{logicalModel.name}</span>
-            <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{logicalModel.id}</span>
+            <span className="shrink-0 font-mono system-2xs-regular text-text-tertiary">{logicalModel.id}</span>
           </label>
         ))}
       </div>

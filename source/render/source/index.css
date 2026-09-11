@@ -95,6 +95,385 @@ html[data-magicui-theme-vt="active"] [data-slot="app-sidebar"] > div:first-child
     calc(var(--radius) * 2.6);
 }
 
+/* ==========================================================================
+   Dify 工作流设计 token
+   逐字复制自 dify-web@1.17.0 的 `@langgenius/dify-ui` 包：
+   - 色板  : packages/dify-ui/src/themes/light.css、dark.css
+   - 排版  : packages/dify-ui/src/styles/utilities.css
+   变量名与 Dify 完全一致，因此组件里可以直接写 Dify 的原始类名
+   （`bg-workflow-block-bg`、`text-text-secondary`、`system-sm-semibold-uppercase` 等），
+   设计 token 的明暗切换由同名变量在 `.dark` 上覆盖完成。
+   ========================================================================== */
+@theme {
+  /* 排版基准：Dify 在 styles.css 里额外声明的小号字阶 */
+  --text-2xs: 0.625rem;
+
+  /* 文本 */
+  --color-text-primary: #101828;
+  --color-text-secondary: #354052;
+  --color-text-tertiary: #676f83;
+  --color-text-quaternary: rgb(16 24 40 / 0.3);
+  --color-text-accent: #0033ff;
+  --color-text-accent-secondary: #085afc;
+  --color-text-destructive: #d92d20;
+  --color-text-success: #079455;
+  --color-text-success-secondary: #17b26a;
+  --color-text-warning: #dc6803;
+  --color-text-warning-secondary: #f79009;
+  --color-text-disabled: #d0d5dc;
+  --color-text-inverted: #000000;
+
+  /* 底色 */
+  --color-background-body: #f2f4f7;
+  --color-background-default: #ffffff;
+  --color-background-default-hover: #f9fafb;
+  --color-background-default-subtle: #fcfcfd;
+  --color-background-default-dimmed: #e9ebf0;
+  --color-background-default-dodge: #ffffff;
+
+  /* 交互态 */
+  --color-state-base-hover: rgb(200 206 218 / 0.2);
+  --color-state-base-hover-alt: rgb(200 206 218 / 0.4);
+  --color-state-base-active: rgb(200 206 218 / 0.4);
+  --color-state-base-handle: rgb(16 24 40 / 0.2);
+  --color-state-base-handle-hover: rgb(16 24 40 / 0.3);
+  --color-state-accent-solid: #0033ff;
+  --color-state-accent-hover: #e9f0ff;
+  --color-state-accent-active: rgb(0 51 255 / 0.08);
+  --color-state-success-solid: #17b26a;
+  --color-state-warning-solid: #f79009;
+  --color-state-destructive-solid: #f04438;
+  --color-state-destructive-hover: #fef3f2;
+  --color-state-warning-hover: #fffaeb;
+
+  /* 工作流节点 */
+  --color-workflow-block-bg: #fcfcfd;
+  --color-workflow-block-bg-transparent: rgb(252 252 253 / 0.9);
+  --color-workflow-block-border: #ffffff;
+  --color-workflow-block-border-highlight: rgb(0 51 255 / 0.14);
+  --color-workflow-block-parma-bg: #f2f4f7;
+  /* 非 Dify token：Dify 用 `hover:shadow-lg` 表达节点悬浮，本仓库偏好不用阴影，
+     改用一档明度台阶承担同样的层次（亮色提亮、暗色提亮）。 */
+  --color-workflow-block-bg-hover: #ffffff;
+
+  /* 工作流连线 */
+  --color-workflow-link-line-normal: #d0d5dc;
+  --color-workflow-link-line-normal-transparent: rgb(208 213 220 / 0.2);
+  --color-workflow-link-line-active: #085afc;
+  --color-workflow-link-line-handle: #085afc;
+  --color-workflow-link-line-failure-active: #f79009;
+  --color-workflow-link-line-failure-handle: #f79009;
+  --color-workflow-link-line-failure-button-bg: #dc6803;
+  --color-workflow-link-line-success-active: #17b26a;
+  --color-workflow-link-line-success-handle: #17b26a;
+  --color-workflow-link-line-error-active: #f04438;
+  --color-workflow-link-line-error-handle: #f04438;
+
+  /* 工作流画布 */
+  --color-workflow-canvas-workflow-dot-color: rgb(133 133 173 / 0.15);
+  --color-workflow-canvas-workflow-bg: #f2f4f7;
+
+  /* 组件 */
+  --color-components-option-card-option-bg: #fcfcfd;
+  --color-components-option-card-option-border: #e9ebf0;
+  --color-components-option-card-option-bg-hover: #ffffff;
+  --color-components-option-card-option-border-hover: #d0d5dc;
+  --color-components-option-card-option-selected-bg: #ffffff;
+  --color-components-option-card-option-selected-border: #0033ff;
+  --color-components-actionbar-bg: rgb(255 255 255 / 0.95);
+  --color-components-actionbar-border: rgb(16 24 40 / 0.04);
+  --color-components-panel-bg: #ffffff;
+  --color-components-panel-bg-blur: rgb(255 255 255 / 0.95);
+  --color-components-panel-border: rgb(16 24 40 / 0.08);
+  --color-components-tooltip-bg: rgb(255 255 255 / 0.95);
+  --color-components-input-bg-normal: rgb(200 206 218 / 0.25);
+  --color-components-input-bg-hover: rgb(200 206 218 / 0.14);
+  --color-components-input-bg-active: #f9fafb;
+  --color-components-input-bg-disabled: rgb(200 206 218 / 0.14);
+  --color-components-input-text-filled: #101828;
+  --color-components-input-text-filled-disabled: #676f83;
+  --color-components-input-text-placeholder: #98a2b2;
+  --color-components-input-border-hover: #d0d5dc;
+  --color-components-input-border-active: #d0d5dc;
+  --color-components-button-primary-bg: #0033ff;
+  --color-components-button-primary-bg-hover: #002cde;
+  --color-components-button-primary-text: #ffffff;
+  --color-components-button-primary-border: rgb(16 24 40 / 0.04);
+  --color-components-button-secondary-bg: #ffffff;
+  --color-components-button-secondary-bg-hover: #f9fafb;
+  --color-components-button-secondary-text: #354052;
+  --color-components-button-secondary-accent-text: #0033ff;
+  --color-components-button-secondary-border: rgb(16 24 40 / 0.14);
+  --color-components-button-secondary-border-hover: rgb(16 24 40 / 0.2);
+  --color-components-button-tertiary-bg: #f2f4f7;
+  --color-components-button-tertiary-bg-hover: #e9ebf0;
+  --color-components-button-tertiary-text: #354052;
+  --color-components-button-ghost-text: #354052;
+  --color-components-button-ghost-bg-hover: rgb(200 206 218 / 0.2);
+  --color-components-button-destructive-ghost-text: #d92d20;
+  --color-components-button-destructive-ghost-bg-hover: #fee4e2;
+  --color-state-accent-hover: #e9f0ff;
+
+  /* util-colors：Dify 图标色块专用，明暗共用同一组值 */
+  --color-util-colors-blue-brand-blue-brand-500: #085afc;
+  --color-util-colors-indigo-indigo-500: #6172f3;
+  --color-util-colors-blue-blue-500: #2e90fa;
+  --color-util-colors-cyan-cyan-500: #06aed4;
+  --color-util-colors-green-green-500: #17b26a;
+  --color-util-colors-warning-warning-500: #f79009;
+  --color-util-colors-violet-violet-500: #875bf7;
+}
+
+@layer base {
+  /* 暗色：同名覆盖 `@theme` 的亮色值 */
+  .dark {
+    --color-text-primary: #fbfbfc;
+    --color-text-secondary: #d9d9de;
+    --color-text-tertiary: rgb(200 206 218 / 0.6);
+    --color-text-quaternary: rgb(200 206 218 / 0.4);
+    --color-text-accent: #6694ff;
+    --color-text-accent-secondary: #3072ff;
+    --color-text-destructive: #f97066;
+    --color-text-success: #17b26a;
+    --color-text-success-secondary: #47cd89;
+    --color-text-warning: #f79009;
+    --color-text-warning-secondary: #fdb022;
+    --color-text-disabled: rgb(200 206 218 / 0.3);
+    --color-text-inverted: #ffffff;
+
+    --color-background-body: #1d1d20;
+    --color-background-default: #222225;
+    --color-background-default-hover: #27272b;
+    --color-background-default-subtle: #222225;
+    --color-background-default-dimmed: #27272b;
+    --color-background-default-dodge: #3a3a40;
+
+    --color-state-base-hover: rgb(200 206 218 / 0.08);
+    --color-state-base-hover-alt: rgb(200 206 218 / 0.14);
+    --color-state-base-active: rgb(200 206 218 / 0.2);
+    --color-state-base-handle: rgb(200 206 218 / 0.3);
+    --color-state-base-handle-hover: rgb(200 206 218 / 0.5);
+    --color-state-accent-solid: #3072ff;
+    --color-state-accent-hover: rgb(8 90 252 / 0.14);
+    --color-state-accent-active: rgb(8 90 252 / 0.14);
+    --color-state-success-solid: #47cd89;
+    --color-state-warning-solid: #f79009;
+    --color-state-destructive-solid: #f97066;
+    --color-state-destructive-hover: rgb(240 68 56 / 0.14);
+    --color-state-warning-hover: rgb(247 144 9 / 0.14);
+
+    --color-workflow-block-bg: #27272b;
+    --color-workflow-block-bg-transparent: rgb(39 39 43 / 0.96);
+    --color-workflow-block-border: rgb(255 255 255 / 0.08);
+    --color-workflow-block-border-highlight: rgb(200 206 218 / 0.2);
+    --color-workflow-block-parma-bg: rgb(255 255 255 / 0.05);
+    --color-workflow-block-bg-hover: #303035;
+
+    --color-workflow-link-line-normal: #676f83;
+    --color-workflow-link-line-normal-transparent: rgb(103 111 131 / 0.2);
+    --color-workflow-link-line-active: #3072ff;
+    --color-workflow-link-line-handle: #3072ff;
+    --color-workflow-link-line-failure-active: #fdb022;
+    --color-workflow-link-line-failure-handle: #fdb022;
+    --color-workflow-link-line-failure-button-bg: #f79009;
+    --color-workflow-link-line-success-active: #47cd89;
+    --color-workflow-link-line-success-handle: #47cd89;
+    --color-workflow-link-line-error-active: #f97066;
+    --color-workflow-link-line-error-handle: #f97066;
+
+    --color-workflow-canvas-workflow-dot-color: rgb(133 133 173 / 0.11);
+    --color-workflow-canvas-workflow-bg: #1d1d20;
+
+    --color-components-option-card-option-bg: rgb(200 206 218 / 0.04);
+    --color-components-option-card-option-border: rgb(200 206 218 / 0.2);
+    --color-components-option-card-option-bg-hover: rgb(200 206 218 / 0.14);
+    --color-components-option-card-option-border-hover: rgb(200 206 218 / 0.3);
+    --color-components-option-card-option-selected-bg: rgb(255 255 255 / 0.05);
+    --color-components-option-card-option-selected-border: #3072ff;
+    --color-components-actionbar-bg: #222225;
+    --color-components-actionbar-border: rgb(200 206 218 / 0.08);
+    --color-components-panel-bg: #222225;
+    --color-components-panel-bg-blur: rgb(44 44 48 / 0.95);
+    --color-components-panel-border: rgb(200 206 218 / 0.14);
+    --color-components-tooltip-bg: rgb(24 24 27 / 0.95);
+    --color-components-input-bg-normal: rgb(255 255 255 / 0.08);
+    --color-components-input-bg-hover: rgb(255 255 255 / 0.03);
+    --color-components-input-bg-active: rgb(255 255 255 / 0.05);
+    --color-components-input-bg-disabled: rgb(255 255 255 / 0.03);
+    --color-components-input-text-filled: #f4f4f5;
+    --color-components-input-text-filled-disabled: rgb(200 206 218 / 0.6);
+    --color-components-input-text-placeholder: rgb(200 206 218 / 0.3);
+    --color-components-input-border-hover: #3a3a40;
+    --color-components-input-border-active: #747481;
+    --color-components-button-primary-bg: #085afc;
+    --color-components-button-primary-bg-hover: #3072ff;
+    --color-components-button-primary-text: rgb(255 255 255 / 0.95);
+    --color-components-button-primary-border: rgb(255 255 255 / 0.12);
+    --color-components-button-secondary-bg: rgb(255 255 255 / 0.12);
+    --color-components-button-secondary-bg-hover: rgb(255 255 255 / 0.2);
+    --color-components-button-secondary-text: rgb(255 255 255 / 0.8);
+    --color-components-button-secondary-accent-text: rgb(255 255 255 / 0.8);
+    --color-components-button-secondary-border: rgb(255 255 255 / 0.08);
+    --color-components-button-secondary-border-hover: rgb(255 255 255 / 0.12);
+    --color-components-button-tertiary-bg: rgb(255 255 255 / 0.08);
+    --color-components-button-tertiary-bg-hover: rgb(255 255 255 / 0.12);
+    --color-components-button-tertiary-text: #d9d9de;
+    --color-components-button-ghost-text: #d9d9de;
+    --color-components-button-ghost-bg-hover: rgb(200 206 218 / 0.08);
+    --color-components-button-destructive-ghost-text: #f97066;
+    --color-components-button-destructive-ghost-bg-hover: rgb(240 68 56 / 0.14);
+    --color-state-accent-hover: rgb(8 90 252 / 0.14);
+  }
+}
+
+/* Dify 排版语义类，逐字复制自 packages/dify-ui/src/styles/utilities.css（system-2xs ~ system-xl 与 system-kbd）。 */
+@utility system-2xs-regular-uppercase {
+  font-size: 10px;
+  font-weight: 400;
+  text-transform: uppercase;
+  line-height: 12px;
+}
+
+@utility system-2xs-regular {
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 12px;
+}
+
+@utility system-2xs-medium {
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 12px;
+}
+
+@utility system-2xs-medium-uppercase {
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  line-height: 12px;
+}
+
+@utility system-2xs-semibold-uppercase {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  line-height: 12px;
+}
+
+@utility system-xs-regular {
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16px;
+}
+
+@utility system-xs-regular-uppercase {
+  font-size: 12px;
+  font-weight: 400;
+  text-transform: uppercase;
+  line-height: 16px;
+}
+
+@utility system-xs-medium {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+@utility system-xs-medium-uppercase {
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  line-height: 16px;
+}
+
+@utility system-xs-semibold {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+@utility system-xs-semibold-uppercase {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  line-height: 16px;
+}
+
+@utility system-sm-regular {
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 16px;
+}
+
+@utility system-sm-medium {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+@utility system-sm-medium-uppercase {
+  font-size: 13px;
+  font-weight: 500;
+  text-transform: uppercase;
+  line-height: 16px;
+}
+
+@utility system-sm-semibold {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+@utility system-sm-semibold-uppercase {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  line-height: 16px;
+}
+
+@utility system-md-regular {
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+}
+
+@utility system-md-medium {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+@utility system-md-semibold {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+@utility system-md-semibold-uppercase {
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: uppercase;
+  line-height: 20px;
+}
+
+@utility system-xl-medium {
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+}
+
+@utility system-xl-semibold {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+@utility system-kbd {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;
@@ -264,9 +643,9 @@ html[data-magicui-theme-vt="active"] [data-slot="app-sidebar"] > div:first-child
   display: flex;
   gap: 6px;
   padding: 6px;
-  border: 1px solid hsl(var(--border) / 0.85);
+  border: 1px solid var(--color-components-panel-border);
   border-radius: 12px;
-  background: hsl(var(--card) / 0.96);
+  background: var(--color-components-actionbar-bg);
   box-shadow: none;
 }
 
@@ -275,13 +654,14 @@ html[data-magicui-theme-vt="active"] [data-slot="app-sidebar"] > div:first-child
   height: 30px;
   border: 0;
   border-radius: 10px;
-  background: hsl(var(--muted) / 0.65);
-  color: hsl(var(--foreground));
+  background: transparent;
+  color: var(--color-text-secondary);
   box-shadow: none;
 }
 
 .workflow-reactflow .react-flow__controls-button:hover {
-  background: hsl(var(--muted));
+  background: var(--color-state-base-hover-alt);
+  color: var(--color-text-primary);
 }
 
 .workflow-reactflow .react-flow__controls-button svg {
@@ -294,21 +674,126 @@ html[data-magicui-theme-vt="active"] [data-slot="app-sidebar"] > div:first-child
 }
 
 /* 框选矩形，复制自 Dify `workflow/style.css` 的 `#workflow-container .react-flow__selection`
-   与 `.react-flow__nodesselection-rect`，颜色从它的硬编码蓝改成主题强调色。 */
+   与 `.react-flow__nodesselection-rect`，颜色换成 Dify 的连线激活色 token。 */
 .workflow-reactflow .react-flow__selection {
-  border: 1px solid hsl(var(--primary) / 0.7);
-  background: hsl(var(--primary) / 0.05);
+  border: 1px solid var(--color-workflow-link-line-active);
+  background: var(--color-state-accent-active);
 }
 
 .workflow-reactflow .react-flow__nodesselection-rect {
-  border: 1px solid hsl(var(--primary) / 0.7);
-  background: hsl(var(--primary) / 0.05);
+  border: 1px solid var(--color-workflow-link-line-active);
+  background: var(--color-state-accent-active);
   cursor: move;
 }
 
 /* 节点键盘聚焦描边，对应 Dify 的 `#workflow-container .react-flow__node:focus-visible`。 */
 .workflow-reactflow .react-flow__node:focus-visible {
-  outline: 2px solid hsl(var(--primary));
+  outline: 2px solid var(--color-state-accent-solid);
   outline-offset: 4px;
   border-radius: 16px;
+}
+
+/* Dify 的圆角刻度：本仓库把 Tailwind 的 `--radius-*` 整体调小了
+   （lg = 6px、md = 4px、xl = 10px、2xl ≈ 10.8px），直接复制 Dify 的
+   `rounded-md / lg / xl / 2xl` 会得到偏小的圆角。这里在 Dify 作用域内还原
+   Tailwind 默认刻度（md 6px / lg 8px / xl 12px / 2xl 16px），与 Dify 一致。
+   作用域类由节点画布、节点面板、测试抽屉各自携带——浮层会被 portal 到 body，
+   所以 `PANEL_POPUP_SURFACE_CLASSNAME` 里也要带上。未分层样式优先于 @layer utilities，故无需 !important。 */
+.workflow-dify-surface.rounded-md,
+.workflow-dify-surface .rounded-md {
+  border-radius: 6px;
+}
+
+.workflow-dify-surface.rounded-lg,
+.workflow-dify-surface .rounded-lg {
+  border-radius: 8px;
+}
+
+.workflow-dify-surface.rounded-xl,
+.workflow-dify-surface .rounded-xl {
+  border-radius: 12px;
+}
+
+.workflow-dify-surface.rounded-2xl,
+.workflow-dify-surface .rounded-2xl {
+  border-radius: 16px;
+}
+
+.workflow-dify-surface .rounded-t-2xl {
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+}
+
+/* 右侧节点面板与测试运行抽屉里的表单控件统一成 Dify 的输入外观。
+   输入框复制自 `packages/dify-ui/src/input/index.tsx` 与 `form-control-shared.ts`：
+   透明描边 → 悬浮/聚焦才显形，底色走 `--color-components-input-*` token，排版用 system-sm-regular。
+   Select 触发器复制自 `packages/dify-ui/src/select/index.tsx` 的 `selectTriggerVariants`。 */
+:is(.workflow-node-panel, .workflow-test-drawer) [data-slot='input'],
+:is(.workflow-node-panel, .workflow-test-drawer) [data-slot='textarea'] {
+  padding: 7px 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background-color: var(--color-components-input-bg-normal);
+  font-size: 13px;
+  line-height: 16px;
+  color: var(--color-components-input-text-filled);
+  box-shadow: none;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+:is(.workflow-node-panel, .workflow-test-drawer) [data-slot='select-trigger'] {
+  height: 32px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 8px;
+  background-color: var(--color-components-input-bg-normal);
+  font-size: 13px;
+  line-height: 16px;
+  color: var(--color-components-input-text-filled);
+  box-shadow: none;
+  transition: background-color 120ms ease;
+}
+
+:is(.workflow-node-panel, .workflow-test-drawer) [data-slot='input']:hover:not(:disabled),
+:is(.workflow-node-panel, .workflow-test-drawer) [data-slot='textarea']:hover:not(:disabled) {
+  border-color: var(--color-components-input-border-hover);
+  background-color: var(--color-components-input-bg-hover);
+}
+
+:is(.workflow-node-panel, .workflow-test-drawer) [data-slot='select-trigger']:hover:not(:disabled),
+:is(.workflow-node-panel, .workflow-test-drawer) [data-slot='select-trigger'][data-state='open'] {
+  background-color: var(--color-state-base-hover-alt);
+}
+
+:is(.workflow-node-panel, .workflow-test-drawer) [data-slot='input']:focus,
+:is(.workflow-node-panel, .workflow-test-drawer) [data-slot='textarea']:focus {
+  border-color: var(--color-components-input-border-active);
+  background-color: var(--color-components-input-bg-active);
+}
+
+:is(.workflow-node-panel, .workflow-test-drawer) [data-slot='select-trigger']:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-state-accent-solid);
+}
+
+:is(.workflow-node-panel, .workflow-test-drawer) [data-slot='input']::placeholder,
+:is(.workflow-node-panel, .workflow-test-drawer) [data-slot='textarea']::placeholder {
+  color: var(--color-components-input-text-placeholder);
+}
+
+:is(.workflow-node-panel, .workflow-test-drawer) [data-slot='input']:disabled,
+:is(.workflow-node-panel, .workflow-test-drawer) [data-slot='select-trigger']:disabled {
+  border-color: transparent;
+  background-color: var(--color-components-input-bg-disabled);
+  color: var(--color-components-input-text-filled-disabled);
+  opacity: 1;
+}
+
+/* Dify Select 的箭头颜色：常态 quaternary，悬浮/展开时升到 secondary。 */
+:is(.workflow-node-panel, .workflow-test-drawer) [data-slot='select-trigger'] svg {
+  color: var(--color-text-quaternary);
+}
+
+:is(.workflow-node-panel, .workflow-test-drawer) [data-slot='select-trigger']:hover svg,
+:is(.workflow-node-panel, .workflow-test-drawer) [data-slot='select-trigger'][data-state='open'] svg {
+  color: var(--color-text-secondary);
 }

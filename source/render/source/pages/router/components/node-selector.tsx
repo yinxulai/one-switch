@@ -17,6 +17,8 @@ type NodeSelectorProps = {
   variant?: NodeSelectorVariant
   placement?: 'left' | 'right' | 'top' | 'bottom'
   className?: string
+  /** 节点已选中时端口按钮常驻（对应 Dify 的 `data.selected && 'opacity-100'`） */
+  alwaysVisible?: boolean
   /** 受控触发元件；不传时使用内置的 + 号圆钮 */
   trigger?: React.ReactElement
 }
@@ -35,6 +37,7 @@ export function NodeSelector(props: NodeSelectorProps) {
     variant = 'handle',
     placement = 'right',
     className,
+    alwaysVisible = false,
     trigger,
   } = props
 
@@ -69,10 +72,14 @@ export function NodeSelector(props: NodeSelectorProps) {
       type="button"
       aria-label="在此处插入节点"
       className={cn(
-        'absolute top-1/2 left-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-primary text-primary-foreground opacity-0 shadow-none transition-opacity duration-150',
+        'absolute top-1/2 left-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-components-button-primary-bg text-white transition-opacity duration-150',
+        'hover:bg-components-button-primary-bg-hover',
         variant === 'handle' ? 'size-4' : 'size-5',
-        'pointer-events-none group-hover/node:pointer-events-auto group-hover/node:opacity-100',
+        // 逐字对应 Dify block-selector 触发器的 `opacity-0 pointer-events-none group-hover:opacity-100`：
+        // 默认收起，悬浮节点或已选中时才显形。
+        'pointer-events-none opacity-0 group-hover/node:pointer-events-auto group-hover/node:opacity-100',
         'data-[state=open]:pointer-events-auto data-[state=open]:opacity-100',
+        alwaysVisible && 'pointer-events-auto opacity-100',
       )}
       onPointerDown={event => event.stopPropagation()}
       onMouseDown={event => event.stopPropagation()}
@@ -91,17 +98,19 @@ export function NodeSelector(props: NodeSelectorProps) {
         side={placement}
         align="center"
         sideOffset={10}
-        className={cn('w-64 gap-0 overflow-hidden p-1.5', className)}
+        // `workflow-dify-surface`：浮层被 portal 到 body，脱离画布作用域，需要自带圆角还原标记。
+        // `gap-0 rounded-xl p-1.5 shadow-none ring-0` 覆盖 shadcn PopoverContent 默认的圆角 / 阴影 / 描边。
+        className={cn('workflow-dify-surface w-64 gap-0 overflow-hidden rounded-xl border-[0.5px] border-components-panel-border bg-components-panel-bg p-1.5 shadow-none ring-0', className)}
         onClick={event => event.stopPropagation()}
       >
-        <div className="flex items-center gap-2 rounded-lg bg-muted/50 px-2 py-1.5">
-          <Search className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+        <div className="flex items-center gap-2 rounded-lg bg-components-input-bg-normal px-2 py-1.5">
+          <Search className="size-3.5 shrink-0 text-text-tertiary" aria-hidden />
           <input
             autoFocus
             value={keyword}
             onChange={event => setKeyword(event.target.value)}
             placeholder="搜索节点"
-            className="h-5 w-full min-w-0 bg-transparent text-xs outline-none placeholder:text-muted-foreground/70"
+            className="h-5 w-full min-w-0 bg-transparent system-xs-regular text-components-input-text-filled outline-none placeholder:text-components-input-text-placeholder"
           />
         </div>
 
@@ -110,7 +119,7 @@ export function NodeSelector(props: NodeSelectorProps) {
             <button
               key={item.kind}
               type="button"
-              className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left transition-colors hover:bg-accent"
+              className="flex w-full items-center gap-2 rounded-lg px-1.5 py-1.5 text-left transition-colors hover:bg-state-base-hover"
               onClick={() => {
                 handleOpenChange(false)
                 onSelect(item.kind)
@@ -118,14 +127,14 @@ export function NodeSelector(props: NodeSelectorProps) {
             >
               <BlockIcon kind={item.kind} size="sm" />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-xs text-foreground">{item.meta.label}</span>
-                <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">{item.meta.hint}</span>
+                <span className="block truncate system-xs-medium text-text-primary">{item.meta.label}</span>
+                <span className="mt-0.5 block truncate system-2xs-regular text-text-tertiary">{item.meta.hint}</span>
               </span>
             </button>
           ))}
 
           {items.length === 0 && (
-            <div className="px-2 py-4 text-center text-xs text-muted-foreground">没有匹配的节点</div>
+            <div className="px-2 py-4 text-center system-xs-regular text-text-tertiary">没有匹配的节点</div>
           )}
         </div>
       </PopoverContent>

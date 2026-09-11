@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react'
+import { Plus } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -9,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { DifyButton } from '../components/dify-button'
 import { createConditionCase, createConditionRule, getOperatorsByType } from '../graph-model'
 import type { NodePanelProps } from '../node-data'
 import type {
@@ -22,6 +23,8 @@ import {
   NodePanelField,
   NodePanelGroupHeader,
   NodePanelHint,
+  PANEL_POPUP_ITEM_CLASSNAME,
+  PANEL_POPUP_SURFACE_CLASSNAME,
 } from './panel-fields'
 
 export function ConditionPanel(props: NodePanelProps) {
@@ -50,17 +53,15 @@ export function ConditionPanel(props: NodePanelProps) {
           <NodePanelGroupHeader
             title={`IF 分支 ${caseIndex + 1}`}
             action={(
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
+              <DifyButton
+                variant="ghost-destructive"
                 disabled={node.cases.length <= 1}
                 onClick={() => update(current => current.kind === 'condition'
                   ? { ...current, cases: current.cases.filter(item => item.id !== conditionCase.id) }
                   : current)}
               >
                 删除分支
-              </Button>
+              </DifyButton>
             )}
           />
 
@@ -91,9 +92,9 @@ export function ConditionPanel(props: NodePanelProps) {
                 : current)}
             >
               <SelectTrigger className="w-full"><SelectValue placeholder="logical operator" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="and">全部满足（AND）</SelectItem>
-                <SelectItem value="or">任一满足（OR）</SelectItem>
+              <SelectContent className={PANEL_POPUP_SURFACE_CLASSNAME}>
+                <SelectItem className={PANEL_POPUP_ITEM_CLASSNAME} value="and">全部满足（AND）</SelectItem>
+                <SelectItem className={PANEL_POPUP_ITEM_CLASSNAME} value="or">任一满足（OR）</SelectItem>
               </SelectContent>
             </Select>
           </NodePanelField>
@@ -118,14 +119,12 @@ export function ConditionPanel(props: NodePanelProps) {
                 : current)
 
               return (
-                <div key={`${conditionCase.id}-${ruleIndex}`} className="grid gap-2 rounded-lg bg-muted/45 p-2">
+                <div key={`${conditionCase.id}-${ruleIndex}`} className="grid gap-2 rounded-lg bg-workflow-block-parma-bg p-2">
                   <NodePanelGroupHeader
                     title={`条件 ${ruleIndex + 1}`}
                     action={(
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
+                      <DifyButton
+                        variant="ghost-destructive"
                         disabled={conditionCase.conditions.length <= 1}
                         onClick={() => update(current => current.kind === 'condition'
                           ? {
@@ -140,7 +139,7 @@ export function ConditionPanel(props: NodePanelProps) {
                           : current)}
                       >
                         删除
-                      </Button>
+                      </DifyButton>
                     )}
                   />
 
@@ -171,9 +170,9 @@ export function ConditionPanel(props: NodePanelProps) {
                       })}
                     >
                       <SelectTrigger className="w-full"><SelectValue placeholder="field path" /></SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className={PANEL_POPUP_SURFACE_CLASSNAME}>
                         {conditionFieldHints.map(field => (
-                          <SelectItem key={field.path} value={field.path}>
+                          <SelectItem className={PANEL_POPUP_ITEM_CLASSNAME} key={field.path} value={field.path}>
                             {field.path} · {field.valueType} · {sourceNameOf.get(field.sourceNodeId) ?? field.sourceNodeId}
                           </SelectItem>
                         ))}
@@ -198,9 +197,9 @@ export function ConditionPanel(props: NodePanelProps) {
                         onValueChange={value => patchRule({ operator: value as ConditionOperator })}
                       >
                         <SelectTrigger className="w-full"><SelectValue placeholder="operator" /></SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className={PANEL_POPUP_SURFACE_CLASSNAME}>
                           {operators.map(operator => (
-                            <SelectItem key={operator} value={operator}>{operator}</SelectItem>
+                            <SelectItem className={PANEL_POPUP_ITEM_CLASSNAME} key={operator} value={operator}>{operator}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -233,9 +232,7 @@ export function ConditionPanel(props: NodePanelProps) {
             })}
           </div>
 
-          <Button
-            type="button"
-            variant="outline"
+          <DifyButton
             onClick={() => update(current => current.kind === 'condition'
               ? {
                 ...current,
@@ -245,20 +242,18 @@ export function ConditionPanel(props: NodePanelProps) {
               }
               : current)}
           >
-            添加条件
-          </Button>
+            <Plus className="size-3.5" aria-hidden /> 添加条件
+          </DifyButton>
         </NodePanelCard>
       ))}
 
-      <Button
-        type="button"
-        variant="outline"
+      <DifyButton
         onClick={() => update(current => current.kind === 'condition'
           ? { ...current, cases: [...current.cases, createConditionCase()] }
           : current)}
       >
-        添加 IF 分支
-      </Button>
+        <Plus className="size-3.5" aria-hidden /> 添加 IF 分支
+      </DifyButton>
 
       <NodePanelHint>
         每个分支与 ELSE 的目标节点通过画布连线设置；首个命中的分支生效，否则走 ELSE。

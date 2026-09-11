@@ -27,14 +27,14 @@ export function NodeActionBar(props: NodeActionBarProps) {
         selected ? 'visible' : 'invisible group-hover/node:visible',
       )}
     >
-      {/* 对齐 Dify node-control.tsx 的内层类名，按仓库偏好省掉 border-[0.5px] 与 shadow-md：
-          浮层与画布已有明度差，靠 bg-popover 就够分层。 */}
-      <div className="nodrag nopan nowheel flex h-6 items-center rounded-lg bg-popover px-0.5 text-muted-foreground backdrop-blur-[5px]">
+      {/* 对齐 Dify node-control.tsx 的内层类名：操作条压在节点卡片上，
+          亮色下 actionbar 底色与节点底色几乎一致，因此保留 Dify 的 0.5px 描边、省掉 shadow-md。 */}
+      <div className="nodrag nopan nowheel flex h-6 items-center rounded-lg border-[0.5px] border-components-actionbar-border bg-components-actionbar-bg px-0.5 text-text-tertiary backdrop-blur-[5px]">
         {canDuplicate && (
           <button
             type="button"
             aria-label="复制节点"
-            className="flex size-5 items-center justify-center rounded-md transition-colors hover:bg-accent hover:text-foreground"
+            className="flex size-5 items-center justify-center rounded-md transition-colors hover:bg-state-base-hover hover:text-text-secondary"
             onMouseDown={event => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation()
@@ -48,7 +48,7 @@ export function NodeActionBar(props: NodeActionBarProps) {
           <button
             type="button"
             aria-label="删除节点"
-            className="flex size-5 items-center justify-center rounded-md transition-colors hover:bg-destructive/12 hover:text-destructive"
+            className="flex size-5 items-center justify-center rounded-md transition-colors hover:bg-state-destructive-hover hover:text-text-destructive"
             onMouseDown={event => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation()

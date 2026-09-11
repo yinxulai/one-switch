@@ -1,3 +1,4 @@
+import { cn } from '@/lib/utils'
 import { NodeHandle } from '../components/node-handle'
 import { NodeBody, NodeRow, NodeRowList } from '../components/node-sections'
 import type { RouteNodeProps } from '../node-data'
@@ -18,7 +19,11 @@ export function ControlInputNodeView(props: RouteNodeProps) {
     <>
       <NodeBody className="mb-1 py-1">
         {controls.length === 0
-          ? <div className="flex h-6 items-center rounded-md bg-muted px-1 text-xs text-muted-foreground">尚未添加控制项</div>
+          ? (
+            <div className="flex h-6 items-center rounded-md bg-workflow-block-parma-bg px-1 system-xs-regular text-text-tertiary">
+              尚未添加控制项
+            </div>
+          )
           : (
             <NodeRowList>
               {controls.map(control => (
@@ -28,7 +33,10 @@ export function ControlInputNodeView(props: RouteNodeProps) {
                   meta={<span className="font-mono normal-case">{control.key}</span>}
                   icon={(
                     <span
-                      className={control.enabled ? 'size-1.5 shrink-0 rounded-full bg-emerald-500' : 'size-1.5 shrink-0 rounded-full bg-muted-foreground/40'}
+                      className={cn(
+                        'size-1.5 shrink-0 rounded-full',
+                        control.enabled ? 'bg-state-success-solid' : 'bg-state-base-handle',
+                      )}
                     />
                   )}
                 />
