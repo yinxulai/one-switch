@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { runWorkflow } from './engine'
 import { appendNode, cloneNode, connectEdge, insertNode, portKey, primarySourcePort, removeEdges, removeNode, resolveInsertAnchor } from './graph-ops'
-import { createDefaultGraph, createDefaultPolicyGraph, createIterationGraph, createNodeByKind } from './graph-model'
+import { createDefaultGraph, createDefaultPolicyGraph, createIterationGraph, createNodeByKind, findPolicyPreset, ROUTER_POLICY_PRESETS } from './graph-model'
 import { APPENDABLE_KINDS } from './node-meta'
 import { WorkflowGraphSchema } from './schemas'
 import type { ConditionNode, ControlInputNode, WorkflowGraph, WorkflowNodeModel } from './types'
@@ -312,6 +312,22 @@ describe('图谱校验（回归）', () => {
       // 一旦校验失败，缓存就会被丢弃、用户的改动会整张丢失，所以这里必须为空。
       expect({ kind, issues: WorkflowGraphSchema.safeParse(next).error?.issues }).toEqual({ kind, issues: undefined })
     }
+  })
+
+  it('每个预设都能通过 schema 校验，且预设注册表保持「唯一 id + 第一个是默认策略」', () => {
+    // 预设是用户第一次打开路由页时看到的样板，坏掉一个就等于入口不可用。
+    const ids = ROUTER_POLICY_PRESETS.map(preset => preset.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    expect(ROUTER_POLICY_PRESETS[0].isDefault).toBe(true)
+    expect(ROUTER_POLICY_PRESETS.filter(preset => preset.isDefault)).toHaveLength(1)
+
+    for (const preset of ROUTER_POLICY_PRESETS) {
+      expect({ id: preset.id, issues: WorkflowGraphSchema.safeParse(preset.createGraph()).error?.issues }).toEqual({ id: preset.id, issues: undefined })
+      // 工厂必须每次返回全新对象，否则套用预设会污染上一个图。
+      expect(preset.createGraph()).not.toBe(preset.createGraph())
+      expect(findPolicyPreset(preset.id)?.name).toBe(preset.name)
+    }
+    expect(findPolicyPreset('not-a-preset')).toBeUndefined()
   })
 })
 

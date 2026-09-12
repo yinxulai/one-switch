@@ -50,7 +50,7 @@ interface IterationNode extends WorkflowNodeBase {
   sourcePath: string                  // 遍历来源，支持通配投影（如 logicalModels[*].id）
   collectPath: string                 // 每轮结束后读取的结果路径（判定本轮是否命中）
   collectMode: 'first' | 'last' | 'list' | 'count'
-  resultPath: string                  // 汇总结果写回路径
+  resultPath: string                  // 汇总结果写回路径，留空表示不写回
   maxIterations: number               // 业务轮数上限
 }
 ```
@@ -62,6 +62,7 @@ interface IterationNode extends WorkflowNodeBase {
 - 每轮开头把当前作用域投影写入 `route.iteration = { source, item, index, key, total }`，循环体里的条件可直接选 `route.iteration.item.enabled` 这类路径；
 - 遍历来源是数组时按元素展开（`key` 是下标），是对象时按键值对展开（`key` 是键名），是标量时当成只有一项的集合；取不到时为 0 项，直接写回空结果；
 - `collectMode` 决定汇总方式：`first` 命中即停止，`last` 保留最后一个命中值，`list` 汇总所有命中值，`count` 只记轮数（不受命中影响）；
+- **命中判定读 `collectPath`，汇总结果写 `resultPath`，两者互不干扰**：`collectPath` 每轮结束读一次，非空即本轮命中；`resultPath` 留空（`''`）表示只判定命中、不写回，`route` 里该路径保持循环体自己写下的值。要做「循环体负责产出、下游再兜底」的拼法就必须留空，否则整轮没命中时汇总结果会用空数组把循环体写下的落点覆盖掉（见 [route-design.md](./route-design.md) §2.7）；
 - `maxIterations` 是单个迭代节点的业务预算，全局步骤预算只负责防止恶意或错误图无限执行；被上限截断时会在 trace 的 `stoppedReason` 里写明剩余项数。
 
 循环状态属于一次执行，不写回用户配置。旧版设计里设想的 `metadata.iteration` / `metadata.loop` 没有落地：作用域统一收在 `route.iteration` 下，离开循环后它就是最后一轮的值，调用方读不读都不影响流程。

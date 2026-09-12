@@ -144,7 +144,26 @@ Input ─▶ Condition（route.requestedModel in logicalModels[*].id）
 
 旧图里用过的 `mode: 'follow-request-model'` 会在读取时迁移为「`source: 'variable'` + `variablePath: 'route.requestedModel'`」，行为不变；旧的 `queue-select` 节点同样会在解析时迁移成 `model-select`。
 
-预设策略放在 `graph-model.ts` 的 `ROUTER_POLICY_PRESETS` 中，第一个即默认策略，其它预设（如遍历迭代模板）同样由基础节点拼成，UI 侧由 `components/policy-menu.tsx` 呈现。
+预设策略放在 `graph-model.ts` 的 `ROUTER_POLICY_PRESETS` 中，第一个即默认策略，其它预设同样由基础节点拼成，UI 侧由 `components/policy-menu.tsx` 呈现：
+
+| 预设 id | 名称 | 拼法 |
+| --- | --- | --- |
+| `model-direct` | 默认策略：模型直达 | 条件（`route.requestedModel in logicalModels[*].id`）+ 两次逻辑模型选择 |
+| `iteration-model-match` | 遍历匹配模板：命中请求模型 | 遍历 `logicalModels` 逐个比对 `route.iteration.item.id` 与 `route.requestedModel`，命中就直连该模型；整轮没命中回落兜底逻辑模型 |
+| `ua-source-routing` | UA 分流模板：按客户端来源 | 遍历 `request.headers` 的头值识别客户端（Cursor / Claude CLI），分流到不同逻辑模型；认不出来回落兜底逻辑模型 |
+| `protocol-then-condition` | 协议分流模板 | 协议发现 + 条件 + 逻辑模型选择 |
+| `iteration-first-enabled` | 遍历迭代模板：首个启用模型 | 遍历 `logicalModels` 判断 `enabled`，首次命中即停止 |
+
+`iteration-model-match` 与 `ua-source-routing` 共用一套「循环体写落点、迭代节点只判定命中」的拼法，和 `iteration-first-enabled` 的关键差别在 `resultPath`：
+
+- **循环体负责产出**：循环体末端的 `model-select`（固定值或取 `route.iteration.item.id`）把落点写进 `route.modelIds`，这就是唯一的结果载体；
+- **命中判定复用同一路径**：迭代节点的 `collectPath` 直接填 `route.modelIds`，每轮结束读一次，非空即「本轮命中」；`collectMode: 'first'` 表示命中即停止遍历；
+- **`resultPath` 留空**：`resultPath` 是「整轮汇总结果」的写回位置。`iteration-first-enabled` 把汇总结果本身当作落点，所以填 `route.modelIds`（没找到启用模型时写回空数组、输出节点据此报「没有可用逻辑模型」）；而这两个模板要区分「命中」和「没命中」，若同样填 `route.modelIds`，整轮没命中时会用空数组把循环体已经写下的落点覆盖掉，因此留空，让 `route.modelIds` 保持迭代结束时的状态；
+- **兜底交给下游**：循环体下游再接一个 `source: 'variable'`、`variablePath: 'route.modelIds'` 的逻辑模型选择节点，命中时它读到循环体写的 id（`matched: true`、不标记回落），没命中时读到空值、走自己的 `fallbackModelIds`（`matched: false`、`route.fallback = true`）。一个节点同时覆盖「命中沿用」和「未命中兜底」，不需要额外条件分支。
+
+`ua-source-routing` 之所以遍历 `request.headers` 而不是直接取 `request.headers.user-agent`：**判定的是头值里出现的客户端标识，不是某个固定头名**。头名大小写、由哪个头携带（`user-agent` / `x-client-name` / 自定义头）都不影响结果，客户端改名或换头也不用改图；代价是兜底分支要负责「一个都没认出来」。
+
+循环体用**回边**闭合：从迭代节点的 `body` 端口连出去，末端连回迭代节点自身即代表「本轮结束」，不是死循环。
 
 ### 2.8 路径取值与通配投影
 
