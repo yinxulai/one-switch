@@ -467,7 +467,9 @@ html[data-magicui-theme-vt="active"] [data-slot="app-sidebar"] > div:first-child
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
+    /* 与暗色同一套思路：靠明度阶梯分层（sidebar < background < card/popover），
+       卡片在画布上先站住，边框就只是次要的收边。 */
+    --background: 0 0% 98%;
     --foreground: 0 0% 9%;
     --card: 0 0% 100%;
     --card-foreground: 0 0% 9%;
@@ -498,9 +500,9 @@ html[data-magicui-theme-vt="active"] [data-slot="app-sidebar"] > div:first-child
     --warning-foreground: 30 20% 8%;
     --info: 210 70% 45%;
     --info-foreground: 0 0% 100%;
-    --inset: 0 0% 97%;
+    --inset: 0 0% 96%;
 
-    --sidebar-background: 0 0% 98%;
+    --sidebar-background: 0 0% 96%;
     --sidebar-foreground: 0 0% 28%;
     --sidebar-primary: 0 0% 9%;
     --sidebar-primary-foreground: 0 0% 100%;
@@ -511,24 +513,26 @@ html[data-magicui-theme-vt="active"] [data-slot="app-sidebar"] > div:first-child
   }
 
   .dark {
+    /* 暗色层次靠明度阶梯区分（sidebar < background < card < muted/secondary < popover），
+       所以按钮/输入框这类小面积控件下面的底色能自然分开，不靠边框和阴影。 */
     --background: 0 0% 7%;
     --foreground: 0 0% 98%;
-    --card: 0 0% 13%;
+    --card: 0 0% 12%;
     --card-foreground: 0 0% 98%;
-    --popover: 0 0% 14%;
+    --popover: 0 0% 19%;
     --popover-foreground: 0 0% 98%;
     --primary: 0 0% 98%;
     --primary-foreground: 0 0% 9%;
-    --secondary: 0 0% 17%;
+    --secondary: 0 0% 15%;
     --secondary-foreground: 0 0% 98%;
-    --muted: 0 0% 17%;
+    --muted: 0 0% 15%;
     --muted-foreground: 0 0% 66%;
     --accent: 0 0% 98% / 0.12;
     --accent-foreground: 0 0% 98%;
     --destructive: 6 65% 42%;
     --destructive-foreground: 0 0% 98%;
     --border: 0 0% 20%;
-    --input: 0 0% 17%;
+    --input: 0 0% 16%;
     --ring: 0 0% 98%;
     --chart-1: 220 70% 50%;
     --chart-2: 160 60% 45%;
@@ -542,9 +546,9 @@ html[data-magicui-theme-vt="active"] [data-slot="app-sidebar"] > div:first-child
     --warning-foreground: 30 20% 8%;
     --info: 207 90% 60%;
     --info-foreground: 0 0% 100%;
-    --inset: 0 0% 4%;
+    --inset: 0 0% 5%;
 
-    --sidebar-background: 0 0% 6%;
+    --sidebar-background: 0 0% 5%;
     --sidebar-foreground: 0 0% 82%;
     --sidebar-primary: 0 0% 98%;
     --sidebar-primary-foreground: 0 0% 9%;

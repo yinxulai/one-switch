@@ -160,14 +160,14 @@ export function OverviewPage(props: OverviewPageProps) {
         actions={(
           <div className="flex items-center gap-2">
             <Tabs value={props.range} onValueChange={value => props.onRangeChange(value as AnalyticsRange)}>
-              <TabsList className="h-7">
-                <TabsTrigger value="today" className="h-6 px-2.5 text-xs">今日</TabsTrigger>
-                <TabsTrigger value="7d" className="h-6 px-2.5 text-xs">近 7 天</TabsTrigger>
-                <TabsTrigger value="30d" className="h-6 px-2.5 text-xs">近 30 天</TabsTrigger>
+              <TabsList>
+                <TabsTrigger value="today" className="px-2.5 text-xs">今日</TabsTrigger>
+                <TabsTrigger value="7d" className="px-2.5 text-xs">近 7 天</TabsTrigger>
+                <TabsTrigger value="30d" className="px-2.5 text-xs">近 30 天</TabsTrigger>
               </TabsList>
             </Tabs>
-            <Button variant="outline" size="icon-sm" title="刷新统计数据" aria-label="刷新统计数据" disabled={activeRefreshing} onClick={() => void refreshActiveView()}>
-              <RefreshCw className={cn('size-3.5', activeRefreshing && 'animate-spin')} />
+            <Button variant="outline" size="icon" title="刷新统计数据" aria-label="刷新统计数据" disabled={activeRefreshing} onClick={() => void refreshActiveView()}>
+              <RefreshCw size={14} className={cn(activeRefreshing && 'animate-spin')} />
             </Button>
           </div>
         )}

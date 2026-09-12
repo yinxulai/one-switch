@@ -568,7 +568,7 @@ function WorkflowStudioCanvas() {
   return (
     <PageLayout>
       <PageHeader
-        title="Router"
+        title="智能路由"
         description="用基础节点组合出路由策略：输入 → 协议发现 → 条件 → 逻辑模型选择 → 输出"
         // 面板占掉右侧后标题栏会变窄，说明文案保持单行截断，避免换行把标题栏撑高、
         // 进而让画布高度在「选中/取消选中节点」之间跳动。

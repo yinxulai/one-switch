@@ -36,7 +36,9 @@ const buttonVariants = cva(
     },
     defaultVariants: {
       variant: "default",
-      size: "sm",
+      // 默认尺寸与 Input / Select 保持一致（h-8、text-sm）：
+      // 表单行里按钮和输入框不等高是最容易看出来的不齐，所以默认值不再取 sm。
+      size: "default",
     },
   }
 )
@@ -44,7 +46,9 @@ const buttonVariants = cva(
 function Button({
   className,
   variant = "default",
-  size = "sm",
+  // 这里不再写 size 的参数默认值：写了会盖掉 cva 的 defaultVariants，
+  // 于是所有未指定尺寸的按钮都退回 h-7，和 h-8 的 Input / Select 对不齐。
+  size,
   asChild = false,
   ...props
 }: React.ComponentProps<"button"> &
