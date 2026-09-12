@@ -250,7 +250,11 @@ export interface IterationNode extends WorkflowNodeBase {
   collectPath: string
   /** 汇总方式 */
   collectMode: IterationCollectMode
-  /** 汇总结果写回的字段路径；`count` 模式写入轮数 */
+  /**
+   * 汇总结果写回的字段路径；`count` 模式写入轮数。
+   * 留空（`''`）表示只判定命中、不写回，适合「循环体自己写落点、下游节点再兜底」的拼法：
+   * 否则整轮没命中时会用空数组覆盖掉循环体已经写下的值。
+   */
   resultPath: string
   /** 轮数上限（业务预算），与全局步骤预算相互独立 */
   maxIterations: number

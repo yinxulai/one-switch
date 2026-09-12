@@ -31,6 +31,7 @@ export const routerStorageKey = 'one-switch.router.graph.v1'
  * 测试运行用的示例原始输入。
  * 保持最小形态：只有路由真正会读到的请求事实（路径 / 方法 / 头 / 体），
  * 不再预置业务字段。`logicalModels` 由页面在运行时注入真实模型列表。
+ * `user-agent` 是给「UA 分流模板」用的：不预置它，那个模板跑起来只能走兜底分支。
  */
 export const samplePayload = {
   request: {
@@ -39,6 +40,7 @@ export const samplePayload = {
     headers: {
       'content-type': 'application/json',
       'x-provider': 'openai',
+      'user-agent': 'Cursor/0.42.3 (darwin arm64)',
     },
     body: {
       model: 'gpt-4o-mini',
@@ -465,6 +467,223 @@ export function createIterationGraph(): WorkflowGraph {
   return { version: 1, nodes, edges }
 }
 
+/**
+ * 遍历匹配模板：逐个逻辑模型比对请求模型 id，命中就直连它，整轮没命中则回落默认。
+ *
+ * 与默认策略（一条 `in` 条件做整体判定）是同一件事的两种写法，
+ * 差别在于这里把「查找」交给迭代节点，适合还想在循环体里做更多判断的场景：
+ * 输入 → 迭代（来源 logicalModels，命中值收进 route.modelIds）
+ *        └─ 循环体：条件（route.iteration.item.id === route.requestedModel）
+ *                  ├─ 命中 → 逻辑模型选择（变量 route.iteration.item.id）→ 回迭代节点
+ *                  └─ 未命中 → 回迭代节点（继续下一轮）
+ *        迭代 out → 逻辑模型选择（变量 route.modelIds，兜底 default）→ 出口
+ *
+ * `collectPath` 直接复用 `route.modelIds`：命中时循环体已经把 id 写在那里，
+ * 迭代节点读到非空值即「本轮命中」；`resultPath` 留空，避免整轮没命中时把 `route.modelIds`
+ * 覆盖成空数组，兜底逻辑因此可以完全交给下游的逻辑模型选择节点。
+ */
+export function createIterationMatchGraph(): WorkflowGraph {
+  const matchCase: ConditionCase = {
+    id: 'case-1',
+    name: '本轮 id 命中请求模型',
+    logicalOperator: 'and',
+    conditions: [
+      {
+        fieldPath: 'route.iteration.item.id',
+        valueType: 'string',
+        operator: 'equals',
+        valueSource: 'field',
+        valueFieldPath: 'route.requestedModel',
+      },
+    ],
+  }
+
+  const nodes: WorkflowNodeModel[] = [
+    createInputNode({ x: 80, y: 280 }),
+    {
+      id: 'iteration',
+      kind: 'iteration',
+      name: '遍历逻辑模型找请求模型',
+      enabled: true,
+      description: '逐个遍历 logicalModels，把 id 等于 route.requestedModel 的那个收进 route.modelIds。',
+      position: { x: 460, y: 280 },
+      sourcePath: 'logicalModels',
+      collectPath: 'route.modelIds',
+      collectMode: 'first',
+      resultPath: '',
+      maxIterations: 50,
+    },
+    {
+      id: 'match-condition',
+      kind: 'condition',
+      name: '本轮 id 是否命中',
+      enabled: true,
+      description: 'route.iteration.item.id 等于 route.requestedModel 时命中，命中即停止遍历。',
+      position: { x: 840, y: 140 },
+      cases: [matchCase],
+    },
+    {
+      id: 'match-model',
+      kind: 'model-select',
+      name: '命中：直连该逻辑模型',
+      enabled: true,
+      description: '把本轮元素 id 当作落点逻辑模型，写进 route.modelIds。',
+      position: { x: 1220, y: 40 },
+      source: 'variable',
+      variablePath: 'route.iteration.item.id',
+      modelIds: [],
+      fallbackModelIds: [],
+    },
+    {
+      id: 'fallback-model',
+      kind: 'model-select',
+      name: '落点：命中即用，否则兜底',
+      enabled: true,
+      description: '迭代命中时 route.modelIds 已经有值，直接沿用；整轮没命中时才回落到兜底逻辑模型。',
+      position: { x: 1220, y: 480 },
+      source: 'variable',
+      variablePath: 'route.modelIds',
+      modelIds: [],
+      fallbackModelIds: [...DEFAULT_MODEL_IDS],
+    },
+    createOutputNode({ x: 1600, y: 280 }),
+  ]
+
+  const edges: WorkflowEdge[] = [
+    { id: 'edge-input-iteration', sourceNodeId: 'input', sourcePort: 'out', targetNodeId: 'iteration' },
+    { id: 'edge-iteration-body', sourceNodeId: 'iteration', sourcePort: 'body', targetNodeId: 'match-condition' },
+    { id: 'edge-condition-hit', sourceNodeId: 'match-condition', sourcePort: matchCase.id, targetNodeId: 'match-model' },
+    // 未命中也要回到迭代节点：这一条边代表「本轮结束」，不是死循环。
+    { id: 'edge-condition-miss-back', sourceNodeId: 'match-condition', sourcePort: 'else', targetNodeId: 'iteration' },
+    { id: 'edge-match-back', sourceNodeId: 'match-model', sourcePort: 'out', targetNodeId: 'iteration' },
+    { id: 'edge-iteration-fallback', sourceNodeId: 'iteration', sourcePort: 'out', targetNodeId: 'fallback-model' },
+    { id: 'edge-fallback-output', sourceNodeId: 'fallback-model', sourcePort: 'out', targetNodeId: 'output' },
+  ]
+
+  return { version: 1, nodes, edges }
+}
+
+/**
+ * UA 分流模板：按客户端来源分流到不同逻辑模型，其余来源回落默认。
+ *
+ * 「来源」不依赖具体头名：遍历 `request.headers` 逐个看头值，
+ * 值里出现哪个客户端标识就走哪个分支 —— 头名大小写、由哪个头携带都不影响判定，
+ * 这正是遍历迭代相对「直接取 `request.headers.user-agent`」的价值所在。
+ *
+ * 两个分支的落点是占位 id（`cursor` / `claude-cli`），换成自己的逻辑模型即可；
+ * 命中判定同样走 `collectPath: 'route.modelIds'`，因此落点必须先填好，
+ * 否则循环体写不出非空值、迭代节点读不到命中。
+ */
+export function createUserAgentGraph(): WorkflowGraph {
+  const cursorCase: ConditionCase = {
+    id: 'case-cursor',
+    name: 'Cursor 客户端',
+    logicalOperator: 'and',
+    conditions: [
+      {
+        fieldPath: 'route.iteration.item',
+        valueType: 'string',
+        operator: 'contains',
+        valueSource: 'literal',
+        value: 'Cursor',
+      },
+    ],
+  }
+
+  const claudeCliCase: ConditionCase = {
+    id: 'case-claude-cli',
+    name: 'Claude CLI 客户端',
+    logicalOperator: 'and',
+    conditions: [
+      {
+        fieldPath: 'route.iteration.item',
+        valueType: 'string',
+        operator: 'contains',
+        valueSource: 'literal',
+        value: 'claude-cli',
+      },
+    ],
+  }
+
+  const nodes: WorkflowNodeModel[] = [
+    createInputNode({ x: 80, y: 340 }),
+    {
+      id: 'iteration',
+      kind: 'iteration',
+      name: '遍历请求头识别来源',
+      enabled: true,
+      description: '逐个遍历 request.headers 的头值，命中客户端标识时把落点逻辑模型收进 route.modelIds。',
+      position: { x: 460, y: 340 },
+      sourcePath: 'request.headers',
+      collectPath: 'route.modelIds',
+      collectMode: 'first',
+      resultPath: '',
+      maxIterations: 20,
+    },
+    {
+      id: 'ua-condition',
+      kind: 'condition',
+      name: '头值里的客户端标识',
+      enabled: true,
+      description: '按头值里出现的客户端标识分流：Cursor / Claude CLI，其余头继续下一轮。',
+      position: { x: 880, y: 200 },
+      cases: [cursorCase, claudeCliCase],
+    },
+    {
+      id: 'model-cursor',
+      kind: 'model-select',
+      name: 'Cursor 落点',
+      enabled: true,
+      description: 'Cursor 客户端落到这个逻辑模型；占位 id 换成自己的逻辑模型。',
+      position: { x: 1280, y: 40 },
+      source: 'fixed',
+      variablePath: '',
+      modelIds: ['cursor'],
+      fallbackModelIds: [],
+    },
+    {
+      id: 'model-claude-cli',
+      kind: 'model-select',
+      name: 'Claude CLI 落点',
+      enabled: true,
+      description: 'Claude CLI 客户端落到这个逻辑模型；占位 id 换成自己的逻辑模型。',
+      position: { x: 1280, y: 300 },
+      source: 'fixed',
+      variablePath: '',
+      modelIds: ['claude-cli'],
+      fallbackModelIds: [],
+    },
+    {
+      id: 'fallback-model',
+      kind: 'model-select',
+      name: '落点：命中即用，否则兜底',
+      enabled: true,
+      description: '识别出客户端时沿用迭代收到的落点；整轮都没识别出来才回落到兜底逻辑模型。',
+      position: { x: 1280, y: 560 },
+      source: 'variable',
+      variablePath: 'route.modelIds',
+      modelIds: [],
+      fallbackModelIds: [...DEFAULT_MODEL_IDS],
+    },
+    createOutputNode({ x: 1680, y: 340 }),
+  ]
+
+  const edges: WorkflowEdge[] = [
+    { id: 'edge-input-iteration', sourceNodeId: 'input', sourcePort: 'out', targetNodeId: 'iteration' },
+    { id: 'edge-iteration-body', sourceNodeId: 'iteration', sourcePort: 'body', targetNodeId: 'ua-condition' },
+    { id: 'edge-ua-cursor', sourceNodeId: 'ua-condition', sourcePort: cursorCase.id, targetNodeId: 'model-cursor' },
+    { id: 'edge-ua-claude-cli', sourceNodeId: 'ua-condition', sourcePort: claudeCliCase.id, targetNodeId: 'model-claude-cli' },
+    // 没识别出客户端也要回到迭代节点：这一条边代表「本轮结束」，不是死循环。
+    { id: 'edge-ua-miss-back', sourceNodeId: 'ua-condition', sourcePort: 'else', targetNodeId: 'iteration' },
+    { id: 'edge-cursor-back', sourceNodeId: 'model-cursor', sourcePort: 'out', targetNodeId: 'iteration' },
+    { id: 'edge-claude-cli-back', sourceNodeId: 'model-claude-cli', sourcePort: 'out', targetNodeId: 'iteration' },
+    { id: 'edge-iteration-fallback', sourceNodeId: 'iteration', sourcePort: 'out', targetNodeId: 'fallback-model' },
+    { id: 'edge-fallback-output', sourceNodeId: 'fallback-model', sourcePort: 'out', targetNodeId: 'output' },
+  ]
+
+  return { version: 1, nodes, edges }
+}
+
 /** 策略预设：一键把画布换成某种内置规则，随时可切回默认策略。 */
 export const ROUTER_POLICY_PRESETS: RouterPolicyPreset[] = [
   {
@@ -473,6 +692,20 @@ export const ROUTER_POLICY_PRESETS: RouterPolicyPreset[] = [
     description: '请求模型命中逻辑模型列表就直连该模型，否则落到默认逻辑模型（条件 + 两次逻辑模型选择）。',
     isDefault: true,
     createGraph: createDefaultPolicyGraph,
+  },
+  {
+    id: 'iteration-model-match',
+    name: '遍历匹配模板：命中请求模型',
+    description: '遍历 logicalModels 逐个比对 id，命中就直连它；整轮没命中则回落到默认逻辑模型。',
+    isDefault: false,
+    createGraph: createIterationMatchGraph,
+  },
+  {
+    id: 'ua-source-routing',
+    name: 'UA 分流模板：按客户端来源',
+    description: '遍历 request.headers 识别客户端（Cursor / Claude CLI），分流到不同逻辑模型，其余来源回落默认。',
+    isDefault: false,
+    createGraph: createUserAgentGraph,
   },
   {
     id: 'protocol-then-condition',

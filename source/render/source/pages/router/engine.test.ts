@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { runWorkflow as runWorkflowEngine } from './engine'
-import { createDefaultPolicyGraph } from './graph-model'
+import { createDefaultPolicyGraph, createIterationMatchGraph, createUserAgentGraph } from './graph-model'
 import { WorkflowGraphSchema } from './schemas'
 import { PROMPT_TIMEOUT_DEFAULT, SCRIPT_TIMEOUT_DEFAULT } from './types'
 import type { ConditionCase, ConditionRule, PromptInvocation, ScriptInvocation, WorkflowGraph, WorkflowNodeModel } from './types'
@@ -10,6 +10,12 @@ const edge = (sourceNodeId: string, sourcePort: string, targetNodeId: string) =>
 function runWorkflow(graph: WorkflowGraph, inputPayload: unknown) {
   return runWorkflowEngine(graph, inputPayload)
 }
+
+/** 策略预设测试用的逻辑模型列表：`default` 是内置默认落点。 */
+const presetLogicalModels = [
+  { id: 'default', name: 'Default', enabled: true },
+  { id: 'model-fast', name: 'Model Fast', enabled: true },
+]
 
 function singleCase(conditions: ConditionRule[] = [{ fieldPath: 'request.body.tenant', valueType: 'string', operator: 'startsWith', value: 'vip-' }]): ConditionCase {
   return { id: 'case-1', name: '分支 1', logicalOperator: 'and', conditions }
@@ -636,6 +642,89 @@ describe('router engine', () => {
     expect(payload.route.modelIds).toEqual(['default'])
     expect(result.nodeOutputs).not.toHaveProperty('model-direct')
     expect(result.trace.some(item => item.nodeId === 'condition' && !item.success)).toBe(true)
+  })
+
+  it('遍历匹配模板：请求模型命中逻辑模型时直连它，命中即停止遍历', async () => {
+    const result = await runWorkflow(createIterationMatchGraph(), {
+      request: { path: '/v1/chat/completions', headers: { 'x-provider': 'openai' }, body: { model: 'model-fast' } },
+      logicalModels: presetLogicalModels,
+      metadata: {},
+    })
+
+    const payload = result.outputPayload as { route: { modelIds: string[]; fallback: boolean } }
+    expect(result.stopReason).toBe('output')
+    expect(payload.route.modelIds).toEqual(['model-fast'])
+    expect(payload.route.fallback).toBe(false)
+    // default 不匹配、model-fast 命中：跑满两轮后提前收工。
+    expect(result.trace.find(item => item.nodeId === 'iteration')?.details)
+      .toMatchObject({ sourcePath: 'logicalModels', itemCount: 2, executed: 2, hitCount: 1, hitKeys: ['1'] })
+  })
+
+  it('遍历匹配模板：整轮没命中时回落默认逻辑模型，且不覆盖 route.modelIds', async () => {
+    const result = await runWorkflow(createIterationMatchGraph(), {
+      request: { path: '/v1/chat/completions', headers: { 'x-provider': 'openai' }, body: { model: 'gpt-4o-mini' } },
+      logicalModels: presetLogicalModels,
+      metadata: {},
+    })
+
+    const payload = result.outputPayload as { route: { modelIds: string[]; fallback: boolean } }
+    expect(payload.route.modelIds).toEqual(['default'])
+    expect(payload.route.fallback).toBe(true)
+    // resultPath 留空：整轮没命中时汇总结果不能把 route.modelIds 覆盖成空数组。
+    expect(result.trace.find(item => item.nodeId === 'iteration')?.details)
+      .toMatchObject({ executed: 2, hitCount: 0, hitKeys: [], resultPath: '' })
+  })
+
+  it('UA 分流模板：按头值里的客户端标识落到不同逻辑模型', async () => {
+    const cursor = await runWorkflow(createUserAgentGraph(), {
+      request: { path: '/v1/chat/completions', headers: { 'content-type': 'application/json', 'user-agent': 'Cursor/0.42.3' }, body: { model: 'gpt-4o-mini' } },
+      logicalModels: presetLogicalModels,
+      metadata: {},
+    })
+    const cursorPayload = cursor.outputPayload as { route: { modelIds: string[]; fallback: boolean } }
+    expect(cursorPayload.route.modelIds).toEqual(['cursor'])
+    expect(cursorPayload.route.fallback).toBe(false)
+
+    const claudeCli = await runWorkflow(createUserAgentGraph(), {
+      request: { path: '/v1/chat/completions', headers: { 'user-agent': 'claude-cli/1.0.0 (external, cli)' }, body: { model: 'gpt-4o-mini' } },
+      logicalModels: presetLogicalModels,
+      metadata: {},
+    })
+    expect((claudeCli.outputPayload as { route: { modelIds: string[] } }).route.modelIds).toEqual(['claude-cli'])
+  })
+
+  it('UA 分流模板：头名大小写不影响判定，认不出的来源回落默认', async () => {
+    // 遍历的是头值，所以 `User-Agent` 这种大写头名照样能识别出客户端。
+    const mixedCase = await runWorkflow(createUserAgentGraph(), {
+      request: { path: '/v1/chat/completions', headers: { 'User-Agent': 'Cursor/0.42.3' }, body: { model: 'gpt-4o-mini' } },
+      logicalModels: presetLogicalModels,
+      metadata: {},
+    })
+    expect((mixedCase.outputPayload as { route: { modelIds: string[] } }).route.modelIds).toEqual(['cursor'])
+
+    const unknown = await runWorkflow(createUserAgentGraph(), {
+      request: { path: '/v1/chat/completions', headers: { 'user-agent': 'curl/8.4.0' }, body: { model: 'gpt-4o-mini' } },
+      logicalModels: presetLogicalModels,
+      metadata: {},
+    })
+    const unknownPayload = unknown.outputPayload as { route: { modelIds: string[]; fallback: boolean } }
+    expect(unknownPayload.route.modelIds).toEqual(['default'])
+    expect(unknownPayload.route.fallback).toBe(true)
+  })
+
+  it('两个新预设都通过 schema 校验，且循环体靠回边闭合', () => {
+    for (const graph of [createIterationMatchGraph(), createUserAgentGraph()]) {
+      expect(WorkflowGraphSchema.safeParse(graph).error?.issues).toBeUndefined()
+      const iteration = graph.nodes.find(node => node.kind === 'iteration')
+      expect(iteration).toBeDefined()
+      const bodyEdge = graph.edges.find(item => item.sourceNodeId === iteration?.id && item.sourcePort === 'body')
+      expect(bodyEdge).toBeDefined()
+      // 从 body 端口进循环体，末端能回到迭代节点本身，说明循环是闭合的。
+      const backEdges = graph.edges.filter(item => item.targetNodeId === iteration?.id && item.sourceNodeId !== 'input')
+      expect(backEdges.length).toBeGreaterThanOrEqual(2)
+      // 循环体外还有 out 端口通向出口链路。
+      expect(graph.edges.some(item => item.sourceNodeId === iteration?.id && item.sourcePort === 'out')).toBe(true)
+    }
   })
 
   it('变量取值：字段为空时回落到兜底逻辑模型', async () => {
