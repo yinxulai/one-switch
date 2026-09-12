@@ -1,7 +1,7 @@
 import type http from 'node:http'
 import type { IncomingHttpHeaders, OutgoingHttpHeaders } from 'node:http'
 import type { AttemptStatus, Protocol, RawUsage, RequestAttribute, RequestStatus } from '@common/schemas'
-import type { DeliveryMode, UpstreamTarget } from '@server/proxy/contracts'
+import type { TransportKind, UpstreamTarget } from '@server/proxy/contracts'
 import type { ProxyObservationHooks } from '@server/proxy/observability/hooks'
 
 export interface RequestLoggingInput {
@@ -16,12 +16,12 @@ export interface RequestLoggingInput {
   attributes?: Array<Omit<RequestAttribute, 'requestId' | 'createdTime'>>
   requestBody: Buffer
   /**
-   * 客户端要求的交付方式。入口按接口的封装描述解析一次，落库时再投影成布尔。
+   * 客户端跳的传输形态（**预期**）。入口按接口的封装描述解析一次后原样落库。
    *
-   * 这里保留轴上取值而不是提前压成 `boolean`：写入点需要的是「事实」，
-   * 而 `request_logs.streaming` 是一个布尔列——投影只应该发生在那一个地方。
+   * 保留轴上的取值而不是提前压成 `boolean`：`request_logs.transport` 是一列取值，
+   * 而「上游跳是不是同一个形态」是另一回事（落在尝试行的 `upstreamTransport`）。
    */
-  delivery: DeliveryMode
+  transport: TransportKind
   captureRequestContent: boolean
   hooks?: ProxyObservationHooks
 }
@@ -117,20 +117,20 @@ export interface AttemptLoggingInput {
  * 一次性完成「尝试记录 + 正文捕获」的入参。
  * 供 attempt 执行器在收到上游响应（或失败）后统一落库使用。
  *
- * 「是否流式」在两个视角上是两件不同的事，因此分居两张表：
- * - 客户端是否要求流式：请求级事实，写在 `request_logs.streaming`；
- * - 上游是否以 SSE 返回：尝试级事实，写到这里的 {@link streaming}。
+ * 「形态」在两个视角上是两件不同的事，因此分居两张表：
+ * - 客户端跳的传输形态：请求级**预期**，写在 `request_logs.transport`；
+ * - 上游跳实际是什么形态：尝试级**事实**，写到这里的 {@link upstreamTransport}。
  */
 export interface AttemptFinalizationInput {
   status: AttemptStatus
   httpStatus: number | null
   retryable: boolean
   /**
-   * 本次尝试上游是否以流式（SSE）返回。
+   * 上游跳实际是什么形态。
    *
-   * 未收到响应（网络错误、请求取消）时无从判断，因此为 `null`——不假称「不是流式」。
+   * 未收到响应（网络错误、请求取消）时无从判断，因此为 `null`——不假称「是 http」。
    */
-  streaming: boolean | null
+  upstreamTransport: TransportKind | null
   /**
    * 这次尝试是否就是「服务该请求」的那次尝试。
    *

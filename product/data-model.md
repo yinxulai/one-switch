@@ -22,7 +22,7 @@ One Switch 的配置内容会持续增加，尤其是供应商、模型端点、
 12. **领域前缀按对象边界使用：`provider*` 是配置身份，`client*` 是客户端一侧，`upstream*` 是实际远端 hop。**
 13. **请求级协议是 `clientProtocol`；每次 attempt 保存自己的 `upstreamProtocol`。**
 14. **一张表 = 一个视角。列名不带视角前缀——视角由表名唯一确定。**
-15. **事实永远写入，载荷才受开关控制。** `captureRequestContent` 只决定是否保存正文；是否发生协议转换、命中的改写规则 id、尝试耗时、TTFT、是否流式都是**事实**，无论开关如何都必须落库。
+15. **事实永远写入，载荷才受开关控制。** `captureRequestContent` 只决定是否保存正文；是否发生协议转换、命中的改写规则 id、尝试耗时、TTFT、上游跳形态都是**事实**，无论开关如何都必须落库。
 
 ### 1.1 术语边界
 
@@ -32,7 +32,7 @@ One Switch 的配置内容会持续增加，尤其是供应商、模型端点、
 - `clientProtocol`、`clientRequest*` 和 `clientResponse*` 描述客户端边界；
 - `upstreamProtocol`、`upstreamRequest*` 和 `upstreamResponse*` 描述实际远端 HTTP hop；
 - `request_attempts` 只保存一次 attempt 的 upstream 事实快照；
-- **协议转换是派生事实，不单独建表**：`clientProtocol` ≠ `request_attempts.upstreamProtocol` 即说明发生了转换，是否流式由 `request_attempts.streaming` 表达。转换不需要第三张表，因为第三张表只能重复保存前两张表已有的信息；
+- **协议转换是派生事实，不单独建表**：`clientProtocol` ≠ `request_attempts.upstreamProtocol` 即说明发生了转换，上游跳以什么形态回来由 `request_attempts.upstreamTransport` 表达。转换不需要第三张表，因为第三张表只能重复保存前两张表已有的信息；
 - 客户端视角载荷归 `request_contents`，上游视角载荷归 `attempt_contents`；
 - 用量也按视角拆表：请求级用量归 `request_usages`，尝试级用量归 `attempt_usages`。**不存在用可空列判别归属的行**——如果一行的含义取决于某列是否为空，那它其实是两张表；
 - 正文表的一行只属于一个视角，因此表名即视角，列名不再带 `client` / `upstream` 前缀。
@@ -205,7 +205,7 @@ erDiagram
     text id PK
     text logicalModelId
     text clientProtocol
-    boolean streaming
+    text transport
     text status
     integer totalDurationMilliseconds
     integer createdTime
@@ -270,7 +270,7 @@ erDiagram
     integer httpStatus
     integer attemptIndex
     integer durationMilliseconds
-    boolean streaming
+    text upstreamTransport
     integer ttftMilliseconds
     text requestRewriteRuleIds
     text responseRewriteRuleIds
@@ -595,14 +595,14 @@ CREATE TABLE provider_model_health (
 
 ### 3.9 `request_logs`
 
-请求日志只保存请求身份、客户端协议、流式标记、状态、逻辑模型和总耗时。Token、缓存等可聚合数值不放入 `request_logs`，分别存入 `request_usages` 和 `attempt_usages`，避免持续修改日志主表。
+请求日志只保存请求身份、客户端协议、客户端声明的传输形态、状态、逻辑模型和总耗时。Token、缓存等可聚合数值不放入 `request_logs`，分别存入 `request_usages` 和 `attempt_usages`，避免持续修改日志主表。
 
 ```sql
 CREATE TABLE request_logs (
   id TEXT PRIMARY KEY,
   status TEXT NOT NULL CHECK (status IN ('pending', 'success', 'failed', 'cancelled')),
   clientProtocol TEXT,
-  streaming INTEGER NOT NULL DEFAULT 0,
+  transport TEXT NOT NULL DEFAULT 'http',
   logicalModelId TEXT,
   totalDurationMilliseconds INTEGER NOT NULL DEFAULT 0,
   createdTime INTEGER NOT NULL
@@ -626,7 +626,7 @@ CREATE INDEX idx_request_logs_client_protocol
 
 `clientProtocol` 与 `logicalModelId` 均可为空：请求可能在协议识别或模型解析之前就被拒掉，但它同样是用户真实发出的请求，必须留下记录。为空表达的是「还没走到那一步」，不是「没有这一列」。
 
-`streaming` 在请求进入代理时就已确定（客户端是否以流式方式发起），因此属于请求级事实；上游是否流式是尝试级事实，写在 `request_attempts.streaming` 上。`totalDurationMilliseconds` 是从收到请求到写完响应的总耗时，它无法由尝试耗时稳定推导（尝试之间还有调度与等待），因此落在日志主表。
+`transport` 是**请求进入代理时就已经定下的预期**（客户端要整包还是增量，见 [proxy-engine.md](./proxy-engine.md) §1.6.1）——它是客户端跳的形态，取自入口对请求体的解析，因此属于请求级事实；上游跳实际是什么形态是**上游视角的事实**，写在 `request_attempts.upstreamTransport` 上。两者不相等不是「上游不配合」这种可容错的小事，而是「本次传输无法按声明兑现」——代理不自己攒出一份整包来弥合（见 [proxy-engine.md](./proxy-engine.md) §1.6.2）。`totalDurationMilliseconds` 是从收到请求到写完响应的总耗时，它无法由尝试耗时稳定推导（尝试之间还有调度与等待），因此落在日志主表。
 
 原始协议 `usage` 报文不再占用日志主表的列：它属于某个视角的一份事实，以 `type = 'raw'` 的记录保存在对应的用量表里（见 3.10）。
 
@@ -700,13 +700,13 @@ CREATE INDEX idx_attempt_usages_created_time
 
 名称快照不放在 `request_logs`：`request_attempts` 已在写入时保存 `providerName`、`providerModelName` 和实际 `url`，供配置实体被删除后日志详情页仍能展示；`request_logs.logicalModelId` 是稳定列。请求级不再复制一份供应商快照——一次请求可能尝试过多个供应商，「请求级的供应商快照」必须回答「记哪个」这个没有确定答案的问题，而尝试级快照天然没有这个问题。
 
-请求总耗时是请求级事实，落在 `request_logs.totalDurationMilliseconds`；缓存命中是派生量，由 `cachedInputTokens > 0` 现算，不单独落库。Token、缓存 Token 和其他协议用量按视角放入 `request_usages` / `attempt_usages`，不得重复记录。TTFT 是**尝试级事实**，写在 `request_attempts.ttftMilliseconds` 上——把尝试级样本平均成「请求级 TTFT」会直接污染延迟分布；需要请求粒度展示时按 `min(ttftMilliseconds)` 现算，不落库。`request_logs` 只保留请求身份、客户端协议、流式标记、状态、逻辑模型、总耗时和创建时间等稳定字段。
+请求总耗时是请求级事实，落在 `request_logs.totalDurationMilliseconds`；缓存命中是派生量，由 `cachedInputTokens > 0` 现算，不单独落库。Token、缓存 Token 和其他协议用量按视角放入 `request_usages` / `attempt_usages`，不得重复记录。TTFT 是**尝试级事实**，写在 `request_attempts.ttftMilliseconds` 上——把尝试级样本平均成「请求级 TTFT」会直接污染延迟分布；需要请求粒度展示时按 `min(ttftMilliseconds)` 现算，不落库。`request_logs` 只保留请求身份、客户端协议、传输形态、状态、逻辑模型、总耗时和创建时间等稳定字段。
 
 日志表的稳定查询字段为：
 
 - `logicalModelId`；
 - `clientProtocol`；
-- `streaming`；
+- `transport`；
 - `totalDurationMilliseconds`；
 - `status`；
 - `createdTime`。
@@ -745,7 +745,7 @@ CREATE INDEX idx_attempt_usages_created_time
 - `responseHeaders`：上游返回的响应头（脱敏后）；
 - `responseBody`：上游返回的响应正文（协议转换前的原始形态）。
 
-`attempt_contents` **只保存载荷**。改写规则 id、是否流式、TTFT 都是事实，写在 `request_attempts` 上：规则按 ProviderModel 匹配，归属单位是「尝试」；而事实必须在采集开关关闭时依然完整落库，不能和正文挤在同一张表里。日志详情页需要的规则集合由 `request_attempts.requestRewriteRuleIds` ∪ `responseRewriteRuleIds` 聚合而成。
+`attempt_contents` **只保存载荷**。改写规则 id、上游跳形态、TTFT 都是事实，写在 `request_attempts` 上：规则按 ProviderModel 匹配，归属单位是「尝试」；而事实必须在采集开关关闭时依然完整落库，不能和正文挤在同一张表里。日志详情页需要的规则集合由 `request_attempts.requestRewriteRuleIds` ∪ `responseRewriteRuleIds` 聚合而成。
 
 `captureStatus` 枚举定稿：
 
@@ -809,9 +809,9 @@ CREATE UNIQUE INDEX idx_attempt_contents_attempt
 }
 ```
 
-正文 envelope 只有两种形态，由**本次交付是否逐帧**决定（`DeliveryMode`，不是「是不是流式请求」——见 [proxy-engine.md](./proxy-engine.md) §1.6.1）：
+正文 envelope 只有两种形态，由**本次传输是否逐帧**决定（`request_logs.transport` 是不是 `http-stream`，不是「是不是流式请求」——见 [proxy-engine.md](./proxy-engine.md) §1.6.1）：
 
-逐帧交付时存分块 envelope，保留每个 chunk 的原始文本（SSE 事件可能跨 chunk，拼回去才能重放）：
+逐帧传输时存分块 envelope，保留每个 chunk 的原始文本（SSE 事件可能跨 chunk，拼回去才能重放）：
 
 ```json
 {
@@ -822,7 +822,7 @@ CREATE UNIQUE INDEX idx_attempt_contents_attempt
 
 其余情况存脱敏后的原文文本（JSON 也存文本，不做二次解析——代理对报文内容只做改写，不做建模）。
 
-> 早期草图里曾有 `body` / `bodyText` / `contentType` / `isStreaming` 四个字段，已全部废弃：前三个是为了让读取方直接拿到结构化正文，但那等于把「谁解析报文」从代理挪到了渲染进程；`isStreaming` 则是被人为混成一根轴的旧布尔，它的两半各归其位——库里的 `request_logs.streaming` 只表示**客户端意图**（代理层对应 `ExchangeView.delivery`），`request_attempts.streaming` 才是**上游实际怎么回**。
+> 早期草图里曾有 `body` / `bodyText` / `contentType` / `isStreaming` 四个字段，已全部废弃：前三个是为了让读取方直接拿到结构化正文，但那等于把「谁解析报文」从代理挪到了渲染进程；`isStreaming` 则是被人为混成一根轴的旧布尔，它的两半各归其位——库里的 `request_logs.transport` 只表示**客户端跳的传输形态**（代理层对应 `ExchangeView.transport`），`request_attempts.upstreamTransport` 才是**上游跳实际是什么形态**。
 
 #### 3.11.1 转换事实为什么不再建表
 
@@ -832,7 +832,7 @@ CREATE UNIQUE INDEX idx_attempt_contents_attempt
 | --- | --- |
 | `clientProtocol` | `request_logs.clientProtocol` |
 | `upstreamProtocol` | `request_attempts.upstreamProtocol` |
-| `streaming` | `request_attempts.streaming` |
+| `upstreamTransport` | `request_attempts.upstreamTransport` |
 | `durationMilliseconds` | `request_attempts.durationMilliseconds` |
 | `requestId` | `request_attempts.requestId` |
 
@@ -858,7 +858,7 @@ CREATE UNIQUE INDEX idx_attempt_contents_attempt
 | 真实供应商响应 | `attempt_contents.responseHeaders` / `responseBody` |
 | 返回客户端的响应 | `request_contents.responseHeaders` / `responseBody` |
 | 已应用修改器 | `request_attempts.requestRewriteRuleIds` ∪ `responseRewriteRuleIds` |
-| 协议与流式标记 | `request_attempts.upstreamProtocol` ∪ `request_attempts.streaming`，与 `request_logs.clientProtocol` 对比得出转换 |
+| 协议与上游跳形态 | `request_attempts.upstreamProtocol` ∪ `request_attempts.upstreamTransport`，与 `request_logs.clientProtocol` / `request_logs.transport` 对比得出转换 |
 
 安全与容量约束：
 
@@ -867,13 +867,13 @@ CREATE UNIQUE INDEX idx_attempt_contents_attempt
 - API Key、Authorization、Cookie、Set-Cookie 等敏感请求头必须脱敏，正文自身不视为已脱敏；
 - 本地工具不限制正文大小，完整读取并保存已接收的请求和响应内容，以支持超长上下文和大体积请求；由此产生的内存与存储占用属于明确设计取舍；
 - 流式响应记录已接收的事件/文本片段，不阻塞代理转发，不因日志写入失败影响请求；
-- 流式响应按 transport 每次收到或写出的原始 chunk 字符串数组保存，不聚合为统一消息正文，也不重新按 SSE 事件切分；
+- 流式响应按客户端跳声明的传输形态，将每次收到或写出的原始 chunk 字符串数组保存，不聚合为统一消息正文，也不重新按 SSE 事件切分；
 - 清理请求日志时，依次删除 `attempt_contents`、`attempt_usages`、`request_contents`、`request_usages`、`request_attributes`、`request_attempts`，最后删除 `request_logs`；一边删子行一边删父行会撞上外键约束，因此每次必须先把子行删完；
 - 导出日志必须明确包含正文和指标的开关，默认不导出正文但保留可选指标。
 
 ### 3.12 `request_attempts`
 
-每次实际 Upstream 尝试一行。除了故障转移顺序和统计所需字段，这张表还承载**所有与「这次尝试发生了什么」相关的非载荷事实**：协议转换、是否流式、TTFT、命中的改写规则。原始 `usage` 报文不属于这里——它是用量，按视角保存在 `attempt_usages` 的 `raw` 行里。
+每次实际 Upstream 尝试一行。除了故障转移顺序和统计所需字段，这张表还承载**所有与「这次尝试发生了什么」相关的非载荷事实**：协议转换、上游跳形态、TTFT、命中的改写规则。原始 `usage` 报文不属于这里——它是用量，按视角保存在 `attempt_usages` 的 `raw` 行里。
 
 ```sql
 CREATE TABLE request_attempts (
@@ -889,7 +889,7 @@ CREATE TABLE request_attempts (
   status TEXT NOT NULL CHECK (status IN ('success', 'failed', 'cancelled')),
   httpStatus INTEGER,
   retryable INTEGER NOT NULL DEFAULT 0 CHECK (retryable IN (0, 1)),
-  streaming INTEGER CHECK (streaming IN (0, 1)),
+  upstreamTransport TEXT,
   attemptIndex INTEGER NOT NULL,
   durationMilliseconds INTEGER NOT NULL,
   ttftMilliseconds INTEGER,
@@ -920,7 +920,7 @@ CREATE INDEX idx_request_attempts_created_time
 
 `providerId` 和 `providerModelId` 均不建立外键：历史尝试不依赖 Provider 或 ProviderModel 的当前存在性（配置实体未来可能物理删除）。由于详情页必须在配置删除后仍能展示名称，`request_attempts` 还必须在写入时保存 `providerName`、`providerModelName` 和实际 `url` 快照；ID 仅用于关联和筛选，不得依赖当前配置反查。
 
-`httpStatus`、`retryable`、`upstreamProtocol`、`streaming`、`ttftMilliseconds` 和两侧规则 id 数组都是稳定的观测字段，必须使用独立列；错误摘要（`errorCode` / `errorMessage`）同理。这张表不再有 `details` 这类协议私有 JSON 列：协议私有的原始报文按视角归入用量表的 `raw` 行，与载荷无关的事实则一律有独立列。`streaming` 与 `ttftMilliseconds` 都可能为 `NULL`，因为一次尝试可能根本没拿到上游响应（网络错误、请求取消）；此时「不知道」必须与「不是流式」区分开。规则 id 数组用 JSON 文本保存是因为它们是**集合**而不是标量；它们不是正文，因此不受 `captureRequestContent` 影响。
+`httpStatus`、`retryable`、`upstreamProtocol`、`upstreamTransport`、`ttftMilliseconds` 和两侧规则 id 数组都是稳定的观测字段，必须使用独立列；错误摘要（`errorCode` / `errorMessage`）同理。这张表不再有 `details` 这类协议私有 JSON 列：协议私有的原始报文按视角归入用量表的 `raw` 行，与载荷无关的事实则一律有独立列。`upstreamTransport` 与 `ttftMilliseconds` 都可能为 `NULL`，因为一次尝试可能根本没拿到上游响应（网络错误、请求取消）；此时「不知道」必须与「上游回了 `http`」区分开。规则 id 数组用 JSON 文本保存是因为它们是**集合**而不是标量；它们不是正文，因此不受 `captureRequestContent` 影响。
 
 保留独立列的字段：
 
@@ -933,7 +933,7 @@ CREATE INDEX idx_request_attempts_created_time
 - `attemptIndex`；
 - `status`；
 - `upstreamProtocol`；
-- `streaming`；
+- `upstreamTransport`；
 - `durationMilliseconds`；
 - `ttftMilliseconds`；
 - `requestRewriteRuleIds`；
@@ -1115,9 +1115,9 @@ LogicalModel name / description / enabled / routing strategy
 ProviderModel modelName / enabled；scheduling_policies priority / weight / enabled
 Provider protocol / URL / ProviderModel endpoint binding / conversion client protocol / enabled
 日志 status / protocol / model IDs / provider ID
-请求级耗时与流式标记 -> `request_logs.totalDurationMilliseconds` / `request_logs.streaming`
+请求级耗时与传输形态 -> `request_logs.totalDurationMilliseconds` / `request_logs.transport`
 Token、缓存 Token 和其他协议用量 -> `request_usages` / `attempt_usages`
-是否流式、是否发生协议转换、TTFT、命中的改写规则 id -> `request_attempts` 独立列
+上游跳形态、是否发生协议转换、TTFT、命中的改写规则 id -> `request_attempts` 独立列
 健康计数、冷却时间和时间戳
 ```
 

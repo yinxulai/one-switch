@@ -64,7 +64,9 @@ One Switch 既是本地代理，也是一套请求路由与模型选择系统。
 
 `request` 只保留归一化之后的最小形状：`method` / `path` / `headers` / `body`。`headers` 是**扁平的字符串字典**（`Record<string, string>`）——代理入口已经把同名头按 `,` 合并，路由侧不需要多值头，因此也不再为它展开字段路径。
 
-上下文里还可以带上调用方已经确定的两件事：`protocol`（`openai-completions` / `openai-responses` / `anthropic-messages`）与 `transport`（`http` / `http-sse` / `websocket`）。入口在认路径时就已经知道它们，所以引擎优先采信声明值，只有缺省时才按路径与请求头做启发式识别——避免同一次运行里两套依据各算一遍。
+上下文里还可以带上调用方已经确定的两个值：`protocol`（`openai-completions` / `openai-responses` / `anthropic-messages`）与 `transport`（`http` / `http-stream` / `websocket`，**传输形态**：这条对话在线上长什么样）。入口在认路径时就已经知道协议，从请求体拿出 `stream` 后就知道形态；引擎优先采信声明值，只有缺省时才按路径与请求头做启发式识别——避免同一次运行里两套依据各算一遍。
+
+这两个词表共用 `@common/schemas`，不要再立一套「工作流传输」枚举。它们都是**一手事实**：`protocol` 由端点匹配得出，`transport` 由客户端请求体里的 `stream` 直接读出——`stream: true` 就是 `http-stream`，不存在需要算的乘积，也不存在回推不出的投影。所以图上裸露的就是 `route.protocol` 与 `route.transport` **两个字段**，它们就是 [proxy-engine.md](./proxy-engine.md) §1.6.1 里定义的那两个词，不在路由层另起含义。曾经短暂存在过的 `carrier` + `delivery` 两根轴（再让调用方 `resolveTransport(载体, 交付方式)` 算投影）是多余的：连接形态由 URL scheme 表达（`wss://` = WebSocket），而不是一个需要跟着每一跳复制的枚举（`engine.ts` 的 `writeRouteProtocol` 与 `field-hints.ts` 都有逐字说明）。
 
 后续节点统一对该对象读取或写入，而不是去猜测 API 差异。
 
@@ -96,7 +98,7 @@ Input -> ModelSelect -> Output
 interface RouteDecision {
   traceId: string                      // 本次运行的追踪 id
   protocol: WorkflowProtocol           // 识别到的请求协议，未识别为 unknown
-  transport: WorkflowTransport         // http | http-sse | websocket
+  transport: TransportKind             // http | http-stream | websocket —— 客户端跳的传输形态（事实）
   modelIds: string[]                   // 最终落点逻辑模型（决策结果）
   fallback: boolean                    // 是否走了兜底策略
   requestedModel: string               // request.body.model
@@ -108,6 +110,7 @@ interface RouteDecision {
 约定：
 
 - **决策结果**（`modelIds`）与**决策依据**（`protocol` / `transport` / `requestedModel` / `controls` …）都放在 `route` 下，条件节点可直接按 `route.*` 选字段；
+- **协议与形态是同一层的两个平级事实**：`route.protocol` 与 `route.transport` 都是**一手事实**，分别由端点匹配和请求体里的 `stream` 读出，谁也不是谁的投影，也没有需要按跳复制的第三个词。要注意的是：**不要把流式并进「连接方式」**（旧的 `http-sse`）——SSE 只是 `http-stream` 这一档的线格式，连接本身还是一根 HTTP 请求；也**不要把客户端形态喂给规划器**——上游跳用 `http` 还是 `http-stream` 由 `resolveUpstreamTransport()` 从上游端点地址与客户端跳推出来（`wss://` → `websocket`，否则镜像客户端跳），而客户端偏好从来不改变哪个上游端点合法。后者曾经是实际存在的耦合缺陷（`route.transport` 一路流进 `PlannerInput.transport` → `UpstreamTarget` 的形态字段），已于 2026-09-12 断开：`PlannerInput` 不再有任何传输字段。详见 [proxy-engine.md](./proxy-engine.md) §1.6.1 与 §2.3；
 - **可推导的数据不落库**：像「本次可见的逻辑模型 id 列表」这种由 `logicalModels` 直接推出来的数组不再单独写进 `route`，需要时用通配投影 `logicalModels[*].id` 现算（见 §2.8）；
 - **过程性数据**只进 trace，不进 payload —— 例如协议归一化后的请求体（`{protocol, transport, model, messages}`）与每个节点的判定明细，避免 payload 里出现只有调试才看的字段；
 - **引擎不预计算业务判定**：像「请求模型是否命中逻辑模型列表」这种结论由条件节点在图上现场算出，引擎只提供原始字段（`requestedModel` / `logicalModels`）；
@@ -253,10 +256,11 @@ Input ─▶ Condition（route.requestedModel in logicalModels[*].id）
 ```text
 客户端请求
   └─▶ 入口
-        ├─ 认路径：matchProtocolEndpoint(method, path, transport) 定出协议与传输
+        ├─ 认路径：matchProtocolEndpoint(method, path, 客户端形态) 定出协议与封装描述
         ├─ 跑图：resolveRoute() 取当前生效的图 + 逻辑模型列表 → runWorkflow()
         │      └─▶ RouteDecision.modelIds（落点逻辑模型，按优先级排序）
         ├─ 落点 → 候选：planLandingTargets() 逐个落点问规划器要 UpstreamTarget
+        │      ※ 上游形态由端点地址 + 客户端跳推出，不回传客户端形态
         └─ 执行：第一个落点有可用候选就交给它，否则换下一个落点
 ```
 

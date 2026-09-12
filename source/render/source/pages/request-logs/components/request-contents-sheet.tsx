@@ -9,7 +9,7 @@ import { useToast } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
 import { searchBlocks, type ContentSearchResult, type SectionHighlight } from '../lib/content-search'
 import { formatContent, isLocalFailureBody } from '../lib/format-content'
-import { PROTOCOL_LABEL, distinctAttemptErrorCode, distinctAttemptErrorMessage, formatAttemptOutcome } from '../lib/format'
+import { PROTOCOL_LABEL, distinctAttemptErrorCode, distinctAttemptErrorMessage, formatAttemptOutcome, formatTransport } from '../lib/format'
 
 interface ContentSectionProps {
   id: string
@@ -119,7 +119,7 @@ function factsOf(attempt: RequestLogEntryAttempt): FactItem[] {
     { label: 'Provider', value: attempt.providerName },
     { label: '上游模型', value: attempt.providerModelName },
     { label: '上游协议', value: attempt.upstreamProtocol ?? '未识别' },
-    { label: '上游流式', value: attempt.streaming === null ? '未知' : attempt.streaming ? 'SSE' : '非流式' },
+    { label: '上游传输形态', value: formatTransport(attempt.upstreamTransport) },
     { label: '首字延迟', value: attempt.ttftMilliseconds === null ? '无输出' : `${attempt.ttftMilliseconds} ms` },
     { label: '耗时', value: `${attempt.durationMilliseconds} ms` },
     { label: '可重试', value: attempt.retryable ? '是' : '否' },

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { TransportKindSchema } from '@common/schemas'
 import { PROMPT_TIMEOUT_DEFAULT, PROMPT_TIMEOUT_LIMIT, SCRIPT_TIMEOUT_DEFAULT, SCRIPT_TIMEOUT_LIMIT } from './types'
 
 const LogicalModelContextSchema = z.object({
@@ -204,7 +205,7 @@ export const RouteContextInputSchema = z.object({
   request: RequestPayloadSchema,
   logicalModels: z.array(LogicalModelContextSchema).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
-  /** 调用方已经确定的请求协议 / 传输；缺省时引擎自行推演 */
+  /** 调用方已经确定的请求协议 / 传输形态；缺省时引擎自行推演 */
   protocol: z.enum(['openai-completions', 'openai-responses', 'anthropic-messages', 'unknown']).optional(),
-  transport: z.enum(['http', 'http-sse', 'websocket']).optional(),
+  transport: TransportKindSchema.optional(),
 })

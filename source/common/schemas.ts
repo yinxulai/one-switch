@@ -9,6 +9,36 @@ export const ProtocolSchema = z.enum([
 ])
 export type Protocol = z.infer<typeof ProtocolSchema>
 
+/**
+ * 传输：一次对话在线上长什么样。**全仓唯一的「形态」词。**
+ *
+ * 它把「用哪种连接」与「字节怎么回来」合成一句话说 —— 因为这两件事在协议上本来就是同一件
+ * 事的两面，拆成两根轴之后必然要再造第三个词去描述它们的乘积：
+ * - `http`：一问一答，响应体整包回来；
+ * - `http-stream`：一问一答，响应体逐帧回来（SSE）。与 `http` 在建连、TLS、超时、abort、
+ *   出网方式上一字不差，差别只在响应体怎么分帧；
+ * - `websocket`：双向多轮。
+ *
+ * **每「跳」各自一个传输。** 一次交换有两跳：
+ * - 客户端跳由接口声明的请求写法读出（OpenAI 系请求体里的 `stream: true` 就是 `http-stream`）；
+ * - 上游跳由端点**地址**与客户端跳的形态一起定下来（`wss://` 是 WebSocket；其余地址上我们
+ *   忠实转发，发出去什么形态，上游就按什么形态回）。
+ *
+ * 因此读到 `transport` 要能立刻回答「哪一跳」。它也**不是**客户端偏好：上游用哪种连接形态由
+ * 端点自己的地址决定，客户端说要 WebSocket 也改变不了一个 `https://` 端点的形态。
+ *
+ * 词表定义在这里（`@common`）而不是代理层，是因为**代理层与工作流层必须共用同一套**：
+ * 两层各写一份「形态」枚举，迟早会出现「上层说有、下层不认」的漂移。
+ *
+ * `'websocket'` 是唯一**已声明、未实现**的取值：入口对 `Upgrade` 请求明确回 501，传输注册表
+ * 对它明确抛错。保留它是因为「这个端点地址是 `wss://`，我们用不了」必须在类型上说得出来，
+ * 退化成对地址字符串做正则只会让拒绝逻辑散到各处。
+ */
+export const TransportKindSchema = z.enum(['http', 'http-stream', 'websocket'])
+export type TransportKind = z.infer<typeof TransportKindSchema>
+/** 引擎认识的全部传输形态；枚举与列表同源，避免两处各写一份。 */
+export const ALL_TRANSPORT_KINDS: TransportKind[] = [...TransportKindSchema.options]
+
 export const RuleStageSchema = z.enum(['request', 'response'])
 export type RuleStage = z.infer<typeof RuleStageSchema>
 export const RuleScopeSchema = z.enum(['global', 'model']).default('model')
@@ -28,7 +58,8 @@ export const RequestRewriteRuleTestCaseSchema = z.object({
   headers: z.string().max(64 * 1024),
   clientProtocol: ProtocolSchema.default('openai-completions'),
   upstreamProtocol: ProtocolSchema.default('openai-completions'),
-  streaming: z.boolean().default(false),
+  /** 试跑时假设的传输形态；响应阶段的规则在 `http-stream` 下没有能做的事。 */
+  transport: TransportKindSchema.default('http'),
 })
 export type RequestRewriteRuleTestCase = z.infer<typeof RequestRewriteRuleTestCaseSchema>
 const RequestRewriteRuleActionBaseSchema = z.object({ stage: RuleStageSchema.default('request') })
@@ -263,8 +294,13 @@ export const RequestLogSchema = z.object({
   logicalModelId: z.string().nullable(),
   /** 为 `null` 表示请求连 API 路径都无法识别，不存在「客户端协议」这个事实。 */
   clientProtocol: ProtocolSchema.nullable(),
-  /** 客户端是否要求流式响应。请求体里即可确定，与上游实际是否流式无关。 */
-  streaming: z.boolean(),
+  /**
+   * 客户端跳的传输形态。**这是预期**，解析完请求体即可确定，与上游实际怎么回的无关。
+   *
+   * 保留轴上的取值而不是布尔列：`http` 与 `http-stream` 是这一根轴上的两档，
+   * 「上游实际按哪一档作答」落在 {@link RequestAttemptSchema} 的 `upstreamTransport`。
+   */
+  transport: TransportKindSchema,
   status: RequestStatusSchema,
   totalDurationMilliseconds: z.number().int().nonnegative(),
   /**
@@ -325,13 +361,14 @@ export const RequestAttemptSchema = z.object({
   httpStatus: z.number().int().nullable(),
   retryable: z.boolean(),
   /**
-   * 本次尝试上游是否以流式（SSE）返回。
+   * 上游本次尝试实际按哪一档形态作答。
    *
-   * 这是**上游视角**的事实。「客户端是否要求流式」是请求级事实，落在
-   * `request_logs.streaming`，两者是不同的东西，不能互相顶替。
+   * 这是**上游视角**的事实。「客户端跳的形态」是请求级事实，落在 `request_logs.transport`，
+   * 两者是不同的东西，不能互相顶替；两者不一致（要 `http-stream` 却回了整包）就是上游违约，
+   * 在代码里表现为这次尝试被判 failover（§1.6.2）。
    * 未收到响应（网络错误、请求取消）时无从判断，因此为 `null`。
    */
-  streaming: z.boolean().nullable(),
+  upstreamTransport: TransportKindSchema.nullable(),
   errorCode: z.string().nullable(),
   errorMessage: z.string().nullable(),
   durationMilliseconds: z.number().int().nonnegative(),
@@ -363,8 +400,8 @@ export type RequestContentCaptureStatus = z.infer<typeof RequestContentCaptureSt
 // 「发生过协议转换」这个事实不单独建表：它由
 // `request_attempts.upstreamProtocol` 与请求的 `clientProtocol` 是否相同
 // 唯一确定，单独存一份必然会漂移。
-// 是否流式则按视角拆成两个事实：客户端是否要求流式落在 `request_logs.streaming`，
-// 上游是否以流式返回落在 `request_attempts.streaming`。
+// 形态则按视角拆成两个事实：客户端跳声明的形态落在 `request_logs.transport`，
+// 上游跳实际是什么形态落在 `request_attempts.upstreamTransport`。
 
 /**
  * 客户端视角的正文记录：客户端原始请求 + 最终回给客户端的响应。
@@ -488,8 +525,8 @@ export const RequestLogEntryAttemptSchema = z.object({
   url: z.string(),
   httpStatus: z.number().int().nullable(),
   retryable: z.boolean(),
-  /** 本次尝试上游是否以流式（SSE）返回；未收到响应时为 `null`。 */
-  streaming: z.boolean().nullable(),
+  /** 上游跳实际是什么形态；未收到响应时为 `null`。 */
+  upstreamTransport: TransportKindSchema.nullable(),
   /** 本次尝试从发出请求到上游首个输出的耗时；未产生输出时为 null。 */
   ttftMilliseconds: z.number().int().nonnegative().nullable(),
   /** 该次尝试在请求阶段命中的改写规则 id。 */
@@ -509,8 +546,8 @@ export const RequestLogEntrySchema = z.object({
   logicalModelId: z.string().nullable(),
   /** 为 `null` 表示请求连 API 路径都无法识别。 */
   clientProtocol: ProtocolSchema.nullable(),
-  /** 客户端是否要求流式响应。 */
-  streaming: z.boolean(),
+  /** 客户端跳声明的形态（预期）；与尝试行的 `upstreamTransport` 是两个事实。 */
+  transport: TransportKindSchema,
   status: RequestStatusSchema,
   totalDurationMilliseconds: z.number().int().nonnegative(),
   totalTokens: z.number().int().nonnegative().nullable(),

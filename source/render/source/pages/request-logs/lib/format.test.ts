@@ -22,7 +22,7 @@ function attemptOf(overrides: Partial<RequestLogEntryAttempt>): RequestLogEntryA
     url: 'https://example.com/v1/chat/completions',
     httpStatus: 200,
     retryable: false,
-    streaming: true,
+    upstreamTransport: 'http-stream',
     ttftMilliseconds: null,
     requestRewriteRuleIds: [],
     responseRewriteRuleIds: [],

@@ -1,5 +1,5 @@
 import type { Protocol } from '@common/schemas'
-import type { TransportKind, UpstreamTarget } from './transport'
+import type { UpstreamTarget } from './transport'
 
 /** 候选耗尽的原因。执行器用它决定拒绝码，不再自己判断空数组的含义。 */
 export type PlanExhaustedReason = 'model-not-configured' | 'manual-model-unavailable' | 'no-available-provider' | 'none'
@@ -10,16 +10,6 @@ export interface PlannerInput {
   readonly clientProtocol: Protocol
   /** 管理端手工锁定的模型。非空时规划器只返回它，并忽略健康状态与启用开关。 */
   readonly manualModelId: string | null
-  /**
-   * 这次连接需要的传输能力。
-   *
-   * 规划器据此排除承载不了的候选：WebSocket 需要上游原生支持该协议（跨协议桥接不在 P1 范围内），
-   * 而 HTTP 可以走协议转换，因此同一份模型配置在两种传输下会得出不同的候选集合。
-   *
-   * 今天只有 `'http'` 会被真正传进来（入口只有 http 匹配规则），因此这个参数与它的分支
-   * 现在是一道**防线**：它保证「传输」这个轴在规划器里是被总处理的，而不是默默默认成 HTTP。
-   */
-  readonly transport: TransportKind
 }
 
 export interface PlanResult {

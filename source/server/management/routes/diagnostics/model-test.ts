@@ -107,7 +107,7 @@ async function handleTestModels(req: IncomingMessage, res: ServerResponse, body:
         },
         provider,
       }
-      const target = buildUpstreamTarget(candidate, protocol, 'http')
+      const target = buildUpstreamTarget(candidate, protocol)
       if (!target) {
         results.push({
           modelId: model.id,

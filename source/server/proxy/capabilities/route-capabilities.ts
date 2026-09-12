@@ -200,7 +200,6 @@ async function executePrompt(invocation: PromptInvocation): Promise<PromptInvoca
     logicalModelId: invocation.logicalModelId,
     clientProtocol: protocol,
     manualModelId: getManualModel(invocation.logicalModelId),
-    transport: 'http',
   })
 
   if (plan.targets.length === 0) {

@@ -17,7 +17,7 @@ export const openAiCompletionsDescriptor: ProtocolDescriptor = {
         { method: 'POST', path: '/v1/completions' },
         { method: 'POST', path: '/completions' },
       ],
-      envelopes: { http: chatEnvelope },
+      envelope: chatEnvelope,
     },
     {
       id: 'embeddings',
@@ -25,7 +25,7 @@ export const openAiCompletionsDescriptor: ProtocolDescriptor = {
         { method: 'POST', path: '/v1/embeddings' },
         { method: 'POST', path: '/embeddings' },
       ],
-      envelopes: { http: embeddingsEnvelope },
+      envelope: embeddingsEnvelope,
     },
   ],
   createAdapters: () => [

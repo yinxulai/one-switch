@@ -13,6 +13,23 @@ export const STATUS_LABEL: Record<string, string> = {
   cancelled: '已取消',
 }
 
+/**
+ * 传输形态的展示标签。
+ *
+ * 一根轴三个取值，不需要再做任何组合推断：`http` 是整包收送，`http-stream` 是增量收送。
+ * 加一个 `websocket` 只为让「声明了但没实现」在界面上也读得懂。
+ */
+export const TRANSPORT_LABEL: Record<string, string> = {
+  'http': '整包',
+  'http-stream': '增量',
+  websocket: 'WebSocket',
+}
+
+export function formatTransport(transport: string | null | undefined): string {
+  if (transport == null) return '未知'
+  return TRANSPORT_LABEL[transport] ?? transport
+}
+
 export function formatTime(ts: number): string {
   const d = new Date(ts)
   return d.toLocaleTimeString('zh-CN', { hour12: false })

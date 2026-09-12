@@ -1,4 +1,4 @@
-import type { Protocol } from '@common/schemas'
+import type { Protocol, TransportKind } from '@common/schemas'
 import type { HttpResponseSink } from '@server/proxy/adapters/http-response-sink'
 import type { AttemptObserver } from '@server/proxy/observers/attempt-observer'
 import type { AttemptLogger, UpstreamContentInput } from '@server/proxy/observability/logging-types'
@@ -25,8 +25,10 @@ export interface AttemptConclusionInput {
   readonly response: ProxyResponse
   readonly statusCode: number
   readonly disposition: UpstreamStatusDisposition
-  /** 上游是否以流式（SSE）返回。 */
-  readonly upstreamStreaming: boolean
+  /** 上游跳实际是什么形态。**纯上游事实**，与客户端跳的要求无关。 */
+  readonly upstreamTransport: TransportKind | null
+  /** 上游跳没有兼现客户端跳要求的形态（2xx 但要 `http-stream` 却回了非 SSE）。 */
+  readonly transportMismatch: boolean
   readonly upstreamRequestId: string | null
   readonly durationMilliseconds: number
   /** 真正发往上游的协议；只有发生了协议转换时非空。 */
@@ -64,7 +66,7 @@ export async function concludeInterruptedAttempt(input: InterruptedAttemptInput)
       status: 'failed',
       httpStatus: input.statusCode,
       retryable: true,
-      streaming: input.upstreamStreaming,
+      upstreamTransport: input.upstreamTransport,
       // 本次尝试已被放弃，客户端未收到任何响应，因此不承担请求级用量。
       servesRequest: false,
       errorCode: 'UPSTREAM_STREAM_ERROR',
@@ -78,13 +80,14 @@ export async function concludeInterruptedAttempt(input: InterruptedAttemptInput)
       durationMilliseconds: input.durationMilliseconds,
       upstreamRequestId: input.upstreamRequestId,
       upstreamResponseBody: partialBody,
+      transportMismatch: input.transportMismatch,
     })
   }
   await input.attemptLogger.finalizeAttempt({
     status: 'failed',
     httpStatus: input.statusCode,
     retryable: false,
-    streaming: input.upstreamStreaming,
+    upstreamTransport: input.upstreamTransport,
     // 响应已经开始写出客户端，部分内容已经到达，因此它仍然是服务这个请求的尝试。
     servesRequest: true,
     errorCode: 'UPSTREAM_STREAM_ERROR',
@@ -122,7 +125,7 @@ export async function concludeUndeliverableAttempt(input: AttemptConclusionInput
     status: 'failed',
     httpStatus: input.statusCode,
     retryable: true,
-    streaming: input.upstreamStreaming,
+    upstreamTransport: input.upstreamTransport,
     servesRequest: false,
     errorCode: `Status_${input.statusCode}`,
     errorMessage: `上游返回 ${input.statusCode}`,
@@ -136,6 +139,7 @@ export async function concludeUndeliverableAttempt(input: AttemptConclusionInput
     durationMilliseconds: input.durationMilliseconds,
     upstreamRequestId,
     upstreamResponseBody: input.observer.rawBody(),
+    transportMismatch: input.transportMismatch,
   }
 }
 
@@ -155,7 +159,7 @@ export async function concludeDeliveredAttempt(input: AttemptConclusionInput): P
     status: successful ? 'success' : 'failed',
     httpStatus: input.statusCode,
     retryable: false,
-    streaming: input.upstreamStreaming,
+    upstreamTransport: input.upstreamTransport,
     // 响应已经写出客户端，因此它就是服务这个请求的那次尝试。
     servesRequest: true,
     errorCode: successful ? undefined : `Status_${input.statusCode}`,

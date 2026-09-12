@@ -1,6 +1,6 @@
+import { ALL_TRANSPORT_KINDS, type TransportKind } from '@common/schemas'
 import {
   ALL_WORKFLOW_PROTOCOLS,
-  ALL_WORKFLOW_TRANSPORTS,
   PATH_WILDCARD_SUFFIX,
   PROMPT_TIMEOUT_LIMIT,
   SCRIPT_TIMEOUT_LIMIT,
@@ -25,7 +25,6 @@ import {
   type WorkflowRequestPayload,
   type WorkflowGraph,
   type WorkflowProtocol,
-  type WorkflowTransport,
   type WorkflowRunResult,
   type WorkflowTrace,
 } from './types'
@@ -248,14 +247,14 @@ function getHeader(headers: Record<string, unknown>, name: string): string {
 }
 
 /**
- * 本次请求的传输。
+ * 本次请求在**客户端跳**的传输形态。
  *
- * 优先采用调用方给出的事实（代理入口匹配端点时就知道传输是 http / http-sse / websocket），
- * 只有在调用方没说的时候才从请求头与请求体里推演。
+ * 优先采用调用方给出的事实（代理入口从接口的封装描述里读到），只有在调用方没说的时候
+ * 才按请求头与请求体推演（渲染进程的测试运行就是这样）。
  */
-function readKnownTransport(payload: Record<string, unknown>): WorkflowTransport {
+function readKnownTransport(payload: Record<string, unknown>): TransportKind {
   const declared = payload.transport
-  return isWorkflowTransport(declared) ? declared : detectTransport(payload)
+  return isTransportKind(declared) ? declared : detectTransport(payload)
 }
 
 /** 本次请求的协议。同样优先采用调用方给出的事实，否则交给协议发现节点现场推演。 */
@@ -264,27 +263,38 @@ function readKnownProtocol(payload: Record<string, unknown>): WorkflowProtocol {
   return isWorkflowProtocol(declared) ? declared : 'unknown'
 }
 
-function isWorkflowTransport(value: unknown): value is WorkflowTransport {
-  return ALL_WORKFLOW_TRANSPORTS.some(transport => transport === value)
+function isTransportKind(value: unknown): value is TransportKind {
+  return ALL_TRANSPORT_KINDS.some(transport => transport === value)
 }
 
 function isWorkflowProtocol(value: unknown): value is WorkflowProtocol {
   return ALL_WORKFLOW_PROTOCOLS.some(protocol => protocol === value)
 }
 
-function detectTransport(payload: Record<string, unknown>): WorkflowTransport {
+/** 取请求头字典；不是对象时给空对象，调用方不必各自兜底。 */
+function readRequestHeaders(payload: Record<string, unknown>): Record<string, unknown> {
   const headersValue = getByPath(payload, 'request.headers')
-  const headers = headersValue && typeof headersValue === 'object'
+  return headersValue && typeof headersValue === 'object'
     ? (headersValue as Record<string, unknown>)
     : {}
+}
 
+/**
+ * 从请求头与请求体推演传输形态。
+ *
+ * `upgrade: websocket` 是唯一的 WebSocket 信号；否则看客户端有没有表达「边收边发」的意思
+ * （`accept` / `content-type` / `body.stream` 三个信号命中一个即成立 —— 客户端不保证三样都写，
+ * 而这三样都只说明同一件事）。都没有就是整包的一问一答。
+ */
+function detectTransport(payload: Record<string, unknown>): TransportKind {
+  const headers = readRequestHeaders(payload)
+  if (getHeader(headers, 'upgrade').toLowerCase().includes('websocket')) return 'websocket'
   const accept = getHeader(headers, 'accept').toLowerCase()
   const contentType = getHeader(headers, 'content-type').toLowerCase()
   const stream = getByPath(payload, 'request.body.stream')
   if (accept.includes('text/event-stream') || contentType.includes('text/event-stream') || stream === true) {
-    return 'http-sse'
+    return 'http-stream'
   }
-
   return 'http'
 }
 
@@ -485,10 +495,17 @@ function evaluateCase(caseNode: ConditionCase, payload: Record<string, unknown>)
 
 function discoverProtocol(_node: ProtocolDiscoveryNode, payload: Record<string, unknown>): {
   protocol: WorkflowProtocol
-  transport: WorkflowTransport
+  transport: TransportKind
   reason: string
 } {
   const transport = readKnownTransport(payload)
+  /**
+   * 传输形态是调用方给出的事实时直接采信，只在 reason 里说清楚依据。
+   * 它不是「被发现的」，而是随请求一起进来的确凿事实 —— 协议才需要猜，
+   * 客户端跳的形态在入口处就已经知道了。
+   */
+  const settled = (protocol: WorkflowProtocol, reason: string) => ({ protocol, transport, reason })
+
   /**
    * 调用方已经确定协议时不再猜：代理入口在匹配 `(方法, 路径)` 时就定下了协议，
    * 它比任何基于路径形状与请求头的猜测都准。猜的那一套只在调用方没说的时候用
@@ -496,50 +513,28 @@ function discoverProtocol(_node: ProtocolDiscoveryNode, payload: Record<string, 
    */
   const declared = readKnownProtocol(payload)
   if (declared !== 'unknown') {
-    return { protocol: declared, transport, reason: `调用方已确定协议为 ${declared}，传输 ${transport}` }
+    return settled(declared, `调用方已确定协议为 ${declared}，形态 ${transport}`)
   }
 
   const path = String(getByPath(payload, 'request.path') ?? '').toLowerCase()
-  const headersValue = getByPath(payload, 'request.headers')
-  const headers = headersValue && typeof headersValue === 'object'
-    ? (headersValue as Record<string, unknown>)
-    : {}
+  const headers = readRequestHeaders(payload)
 
   const providerHeader = getHeader(headers, 'x-provider').toLowerCase()
   const modelId = String(getByPath(payload, 'request.body.model') ?? '').toLowerCase()
 
   if (providerHeader.includes('openai') || path.includes('/chat/completions')) {
-    const protocol: WorkflowProtocol = 'openai-completions'
-    return {
-      protocol,
-      transport,
-      reason: `根据 header/path 判定为 openai-completions，传输 ${transport}`,
-    }
+    return settled('openai-completions', `根据 header/path 判定为 openai-completions，形态 ${transport}`)
   }
 
   if (path.includes('/responses')) {
-    const protocol: WorkflowProtocol = 'openai-responses'
-    return {
-      protocol,
-      transport,
-      reason: `根据 path 判定为 openai-responses，传输 ${transport}`,
-    }
+    return settled('openai-responses', `根据 path 判定为 openai-responses，形态 ${transport}`)
   }
 
   if (providerHeader.includes('anthropic') || path.includes('/messages') || modelId.includes('claude')) {
-    const protocol: WorkflowProtocol = 'anthropic-messages'
-    return {
-      protocol,
-      transport,
-      reason: `根据 header/path/model 判定为 anthropic-messages，传输 ${transport}`,
-    }
+    return settled('anthropic-messages', `根据 header/path/model 判定为 anthropic-messages，形态 ${transport}`)
   }
 
-  return {
-    protocol: 'unknown',
-    transport,
-    reason: `自动识别未命中，归类 unknown，传输 ${transport}`,
-  }
+  return settled('unknown', `自动识别未命中，归类 unknown，形态 ${transport}`)
 }
 
 function normalizeProtocolMessageContent(content: unknown): unknown {
@@ -571,7 +566,7 @@ function normalizeProtocolMessages(candidate: unknown): Array<Record<string, unk
   })
 }
 
-function buildNormalizedProtocolOutput(protocol: WorkflowProtocol, transport: WorkflowTransport, payload: Record<string, unknown>): Record<string, unknown> {
+function buildNormalizedProtocolOutput(protocol: WorkflowProtocol, transport: TransportKind, payload: Record<string, unknown>): Record<string, unknown> {
   const requestBody = (getByPath(payload, 'request.body') ?? {}) as Record<string, unknown>
   const model = typeof requestBody.model === 'string' ? requestBody.model : ''
   const bodyMessages = Array.isArray(requestBody.messages)
@@ -594,7 +589,7 @@ function buildNormalizedProtocolOutput(protocol: WorkflowProtocol, transport: Wo
  * `route.protocol` / `route.transport` 是决策依据，写进 payload；
  * 归一化后的请求体只是解析过程的产物，仅作为返回值交给 trace 详情。
  */
-function writeRouteProtocol(payload: Record<string, unknown>, protocol: WorkflowProtocol, transport: WorkflowTransport): Record<string, unknown> {
+function writeRouteProtocol(payload: Record<string, unknown>, protocol: WorkflowProtocol, transport: TransportKind): Record<string, unknown> {
   const route = routeOf(payload)
   route.protocol = protocol
   route.transport = transport
@@ -803,7 +798,7 @@ export async function runWorkflow(graph: WorkflowGraph, inputPayload: unknown, o
         protocol = discovered.protocol
         const normalized = writeRouteProtocol(outputPayload, protocol, discovered.transport)
         addNodeOutput(nodeOutputs, current.id, '协议', protocol)
-        addNodeOutput(nodeOutputs, current.id, '传输方式', discovered.transport)
+        addNodeOutput(nodeOutputs, current.id, '传输形态', discovered.transport)
         trace.push({
           nodeId: current.id,
           nodeName: current.name,
@@ -1136,6 +1131,20 @@ export function createRouteContextInput(payload: RouteContextInput): RouteContex
 }
 
 /**
+ * 从一次运行的产出里取路由决策本身（协议 / 传输 / 交付方式 / 落点）。
+ *
+ * 调用方（代理入口）读到的应该是**同一份**决策，而不是自己在入口再算一遍协议与交付方式：
+ * 图里的协议发现节点可能把协议判成 `unknown`，也可能有节点改写落点，
+ * 两套依据各算一遍迟早会分叉。还没走到该写决策的节点时返回 `null`。
+ */
+export function readRouteDecision(outputPayload: unknown): RouteDecision | null {
+  if (!outputPayload || typeof outputPayload !== 'object') return null
+  const route = (outputPayload as Record<string, unknown>).route
+  if (!route || typeof route !== 'object') return null
+  return route as RouteDecision
+}
+
+/**
  * 从一次运行的产出里取最终落点逻辑模型 id。
  *
  * 调用方（代理入口）只关心这一件事，不该自己去翻 `route` 命名空间：
@@ -1143,10 +1152,7 @@ export function createRouteContextInput(payload: RouteContextInput): RouteContex
  * 还没走到输出节点时返回空数组。
  */
 export function readLandingModelIds(outputPayload: unknown): string[] {
-  if (!outputPayload || typeof outputPayload !== 'object') return []
-  const route = (outputPayload as Record<string, unknown>).route
-  if (!route || typeof route !== 'object') return []
-  const modelIds = (route as Record<string, unknown>).modelIds
-  if (!Array.isArray(modelIds)) return []
-  return normalizeModelIds(modelIds.map(id => String(id)))
+  const route = readRouteDecision(outputPayload)
+  if (!route || !Array.isArray(route.modelIds)) return []
+  return normalizeModelIds(route.modelIds.map(id => String(id)))
 }

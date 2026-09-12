@@ -96,7 +96,7 @@ describe('router engine', () => {
     expect(payload.metadata).toEqual({ source: 'desktop' })
   })
 
-  it('detects http-sse transport and writes it into route', async () => {
+  it('把增量的客户端意图记成一档传输形态，而不是另立一个载体', async () => {
     const graph = createBaseGraph()
 
     const result = await runWorkflow(graph, {
@@ -115,9 +115,29 @@ describe('router engine', () => {
       metadata: {},
     })
 
+    // 变的只是客户端想怎么收字节，所以是轴上的另一个取值 `http-stream`，
+    // 而不是「HTTP 载体 + 流式交付」的乘积，也不是一个 `http-sse` 载体。
     const payload = result.outputPayload as { route: { protocol: string; transport: string } }
-    expect(payload.route.transport).toBe('http-sse')
+    expect(payload.route.transport).toBe('http-stream')
     expect(payload.route.protocol).toBe('openai-completions')
+  })
+
+  it('优先采信调用方声明的传输形态', async () => {
+    const graph = createBaseGraph()
+
+    const result = await runWorkflow(graph, {
+      request: {
+        path: '/v1/chat/completions',
+        headers: { 'x-provider': 'openai' },
+        body: { tenant: 'vip-cn', model: 'gpt-4o-mini' },
+      },
+      protocol: 'openai-completions',
+      transport: 'websocket',
+      metadata: {},
+    })
+
+    const payload = result.outputPayload as { route: { transport: string } }
+    expect(payload.route.transport).toBe('websocket')
   })
 
   it('routes openai-completions requests through IF and resolver nodes', async () => {
@@ -407,7 +427,7 @@ describe('router engine', () => {
     expect(result.nodeOutputs['control-input']).toEqual([{ name: '功能开关', value: true, note: 'featureEnabled' }])
     expect(result.nodeOutputs.protocol).toEqual([
       { name: '协议', value: 'openai-completions' },
-      { name: '传输方式', value: 'http' },
+      { name: '传输形态', value: 'http' },
     ])
     expect(result.nodeOutputs['condition-gate']).toEqual([{ name: '分支 1', value: '命中' }])
     expect(result.nodeOutputs['model-select']).toEqual([{ name: '落点逻辑模型', value: ['model-vip', 'model-default'] }])

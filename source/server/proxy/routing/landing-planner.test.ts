@@ -39,7 +39,6 @@ function target(providerModelId: string): UpstreamTarget {
     endpointId: `endpoint_${providerModelId}`,
     protocol: 'openai-completions',
     url: `https://example.test/${providerModelId}`,
-    transport: 'http',
     timeoutMilliseconds: 30_000,
   }
 }
@@ -52,7 +51,7 @@ function expectMiss(plan: LandingPlan): LandingPlanMiss {
 
 describe('planLandingTargets', () => {
   it('reports a missing landing when the graph returned no logical model', async () => {
-    const plan = await planLandingTargets({ logicalModelIds: [], clientProtocol: 'openai-completions', transport: 'http' })
+    const plan = await planLandingTargets({ logicalModelIds: [], clientProtocol: 'openai-completions' })
 
     expect(plan).toEqual({ logicalModelId: null, targets: [], manualModelId: null, reason: 'model-not-configured', detail: NO_LANDING_DETAIL })
     expect(mocks.planned).toEqual([])
@@ -62,7 +61,7 @@ describe('planLandingTargets', () => {
     mocks.plans.set('first', { targets: [], reason: 'no-available-provider', detail: '第一个落点没有可用供应商' })
     mocks.plans.set('second', { targets: [target('model_b')], reason: 'none' })
 
-    const plan = await planLandingTargets({ logicalModelIds: ['first', 'second', 'third'], clientProtocol: 'openai-completions', transport: 'http' })
+    const plan = await planLandingTargets({ logicalModelIds: ['first', 'second', 'third'], clientProtocol: 'openai-completions' })
 
     expect(plan.logicalModelId).toBe('second')
     expect(plan.targets).toHaveLength(1)
@@ -75,7 +74,7 @@ describe('planLandingTargets', () => {
     mocks.manualModels.set('second', 'model_manual')
     mocks.plans.set('second', { targets: [target('model_manual')], reason: 'none' })
 
-    const plan = await planLandingTargets({ logicalModelIds: ['second'], clientProtocol: 'openai-completions', transport: 'http' })
+    const plan = await planLandingTargets({ logicalModelIds: ['second'], clientProtocol: 'openai-completions' })
 
     expect(plan).toMatchObject({ logicalModelId: 'second', manualModelId: 'model_manual' })
   })
@@ -84,7 +83,7 @@ describe('planLandingTargets', () => {
     mocks.plans.set('first', { targets: [], reason: 'no-available-provider', detail: '没有已启用且健康的供应商模型' })
     mocks.plans.set('second', { targets: [], reason: 'no-available-provider' })
 
-    const plan = await planLandingTargets({ logicalModelIds: ['first', 'second'], clientProtocol: 'openai-completions', transport: 'http' })
+    const plan = await planLandingTargets({ logicalModelIds: ['first', 'second'], clientProtocol: 'openai-completions' })
 
     const miss = expectMiss(plan)
     expect(miss.reason).toBe('no-available-provider')
@@ -98,7 +97,7 @@ describe('planLandingTargets', () => {
     mocks.plans.set('first', { targets: [], reason: 'manual-model-unavailable', detail: '手动指定的 ProviderModel 当前不可用于该协议' })
     mocks.plans.set('second', { targets: [], reason: 'no-available-provider' })
 
-    const plan = await planLandingTargets({ logicalModelIds: ['first', 'second'], clientProtocol: 'openai-completions', transport: 'http' })
+    const plan = await planLandingTargets({ logicalModelIds: ['first', 'second'], clientProtocol: 'openai-completions' })
 
     expect(expectMiss(plan).reason).toBe('manual-model-unavailable')
   })

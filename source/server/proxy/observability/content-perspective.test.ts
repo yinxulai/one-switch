@@ -49,7 +49,7 @@ function requestLoggingInput() {
     path: '/v1/chat/completions',
     headers: { 'content-type': 'application/json', authorization: 'Bearer client-secret' },
     requestBody: Buffer.from('{"client":"request-body"}'),
-    delivery: 'buffered' as const,
+    transport: 'http' as const,
     captureRequestContent: true,
   }
 }
@@ -69,7 +69,6 @@ function attemptLoggingInput(): AttemptLoggingInput {
       endpointId: 'model_test:openai-completions',
       protocol: 'openai-completions',
       url: 'https://example.com/v1/chat/completions',
-      transport: 'http',
       timeoutMilliseconds: 30000,
     },
     upstreamRequestHeaders: { 'content-type': 'application/json', authorization: 'Bearer upstream-secret' },
@@ -113,7 +112,7 @@ describe('内容记录的视角隔离', () => {
       status: 'success',
       httpStatus: 200,
       retryable: false,
-      streaming: true,
+      upstreamTransport: 'http-stream',
       servesRequest: true,
       ttftMilliseconds: 88,
       upstreamContent: {
@@ -150,7 +149,7 @@ describe('内容记录的视角隔离', () => {
       status: 'success',
       httpStatus: 200,
       retryable: false,
-      streaming: true,
+      upstreamTransport: 'http-stream',
       servesRequest: true,
       ttftMilliseconds: 91,
       responseRewriteRuleIds: ['rule_response'],
@@ -165,7 +164,7 @@ describe('内容记录的视角隔离', () => {
     expect(mocks.createAttemptContent).not.toHaveBeenCalled()
     expect(mocks.createRequestAttempt).toHaveBeenCalledTimes(1)
     expect(mocks.createRequestAttempt.mock.calls[0]![0]).toEqual(expect.objectContaining({
-      streaming: true,
+      upstreamTransport: 'http-stream',
       ttftMilliseconds: 91,
       requestRewriteRuleIds: ['rule_request'],
       responseRewriteRuleIds: ['rule_response'],
@@ -182,8 +181,8 @@ describe('内容记录的视角隔离', () => {
       status: 'failed',
       httpStatus: 503,
       retryable: true,
-      // 失败切换的尝试没等到上游响应，流式与否无从判断。
-      streaming: null,
+      // 失败切换的尝试没等到上游响应，形态无从判断。
+      upstreamTransport: null,
       servesRequest: false,
       errorCode: 'Status_503',
       upstreamContent: {
@@ -226,8 +225,8 @@ describe('内容记录的视角隔离', () => {
       status: 'failed',
       httpStatus: null,
       retryable: true,
-      // 上游没有任何响应，因此无从判断它是否在流式返回。
-      streaming: null,
+      // 上游没有任何响应，因此无从判断它是什么形态。
+      upstreamTransport: null,
       servesRequest: false,
       errorCode: 'UPSTREAM_ERROR',
       errorMessage: 'socket hang up',
@@ -242,7 +241,7 @@ describe('内容记录的视角隔离', () => {
     expect(mocks.createRequestAttempt.mock.calls[0]![0]).toEqual(expect.objectContaining({
       status: 'failed',
       httpStatus: null,
-      streaming: null,
+      upstreamTransport: null,
       errorCode: 'UPSTREAM_ERROR',
       errorMessage: 'socket hang up',
     }))

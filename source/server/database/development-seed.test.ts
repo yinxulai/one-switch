@@ -83,9 +83,9 @@ describe('development seed', () => {
     const failedAttempts = await listAttemptsByRequest(failedRequestId)
     // 事实（TTFT、规则、原始 usage）与是否采集正文无关，总是写入。
     expect(failedAttempts.every(attempt => attempt.requestRewriteRuleIds.length === 0)).toBe(true)
-    // 上游流式与否是尝试级事实：没等到响应的那次尝试无从判断，成功那次总有个确定值。
-    expect(failedAttempts.find(attempt => attempt.status === 'failed')?.streaming).toBeNull()
-    expect(typeof failedAttempts.find(attempt => attempt.status === 'success')?.streaming).toBe('boolean')
+    // 上游形态是尝试级事实：没等到响应的那次尝试无从判断，成功那次总有个确定值。
+    expect(failedAttempts.find(attempt => attempt.status === 'failed')?.upstreamTransport).toBeNull()
+    expect(['http', 'http-stream']).toContain(failedAttempts.find(attempt => attempt.status === 'success')?.upstreamTransport)
     const successfulAttempt = (await listAttemptsByRequest(successfulRequestId))[0]
     expect(await getAttemptUsage(successfulAttempt.id)).toEqual(expect.objectContaining({ totalTokens: expect.any(Number) }))
     expect(new Set((await listRequestLogs()).map(request => request.clientProtocol))).toEqual(new Set([

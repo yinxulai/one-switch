@@ -11,8 +11,9 @@ import type {
   RequestLog,
   RequestLogUpdate,
   RequestStatus,
+  TransportKind,
 } from '@common/schemas'
-import { AttemptStatusSchema, ProtocolSchema, RequestContentCaptureStatusSchema, RequestStatusSchema } from '@common/schemas'
+import { AttemptStatusSchema, ProtocolSchema, RequestContentCaptureStatusSchema, RequestStatusSchema, TransportKindSchema } from '@common/schemas'
 import { generateId, now } from '@common/utils'
 import { getDb } from './index'
 import { attemptContents, attemptUsages, requestAttributes, requestAttempts, requestContents, requestLogs, requestUsages } from './schema'
@@ -27,8 +28,8 @@ interface CreateRequestLogInput {
   id?: string
   logicalModelId: string | null
   clientProtocol: Protocol | null
-  /** 客户端是否要求流式响应。 */
-  streaming: boolean
+  /** 客户端跳声明的传输形态（预期）。 */
+  transport: TransportKind
   status: RequestStatus
   totalDurationMilliseconds?: number
   attributes?: Array<Omit<RequestAttribute, 'requestId' | 'createdTime'>>
@@ -133,7 +134,7 @@ export async function createRequestLog(input: CreateRequestLogInput): Promise<Re
     id,
     logicalModelId: input.logicalModelId,
     clientProtocol: input.clientProtocol,
-    streaming: input.streaming,
+    transport: input.transport,
     status: input.status,
     totalDurationMilliseconds,
     createdTime: time,
@@ -145,7 +146,7 @@ export async function createRequestLog(input: CreateRequestLogInput): Promise<Re
     id,
     logicalModelId: input.logicalModelId,
     clientProtocol: input.clientProtocol,
-    streaming: input.streaming,
+    transport: input.transport,
     status: input.status,
     totalDurationMilliseconds,
     // 刚建立的请求还没有任何尝试，用量与 TTFT 都只能是「还不知道」。
@@ -422,6 +423,12 @@ function parseProtocol(value: string | null): Protocol | null {
   return parsed.success ? parsed.data : null
 }
 
+function parseTransportKind(value: string | null): TransportKind | null {
+  if (value === null) return null
+  const parsed = TransportKindSchema.safeParse(value)
+  return parsed.success ? parsed.data : null
+}
+
 /**
  * 批量把请求行映射成契约对象。
  *
@@ -446,7 +453,7 @@ function mapRequestLogs(rows: Array<typeof requestLogs.$inferSelect>): RequestLo
       id: row.id,
       logicalModelId: row.logicalModelId,
       clientProtocol: parseProtocol(row.clientProtocol),
-      streaming: row.streaming,
+      transport: parseTransportKind(row.transport) ?? 'http',
       status: parseRequestStatus(row.status),
       totalDurationMilliseconds: Number(row.totalDurationMilliseconds),
       totalTokens: totalTokensOf(usage),
@@ -490,7 +497,7 @@ function mapRequestAttempt(row: typeof requestAttempts.$inferSelect): RequestAtt
     status: parseAttemptStatus(row.status),
     httpStatus: row.httpStatus,
     retryable: row.retryable,
-    streaming: row.streaming,
+    upstreamTransport: parseTransportKind(row.upstreamTransport),
     errorCode: row.errorCode,
     errorMessage: row.errorMessage,
     durationMilliseconds: row.durationMilliseconds,

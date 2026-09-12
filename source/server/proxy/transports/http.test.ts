@@ -13,7 +13,6 @@ function createExchange(body: string, headers: Record<string, string> = {}): Exc
     path: '/v1/chat/completions',
     headers,
     body: Buffer.from(body),
-    delivery: 'buffered',
     signal: new AbortController().signal,
   }
 }
@@ -29,7 +28,6 @@ function createTarget(url: string): UpstreamTarget {
     endpointId: 'chat-completions',
     protocol: 'openai-completions',
     url,
-    transport: 'http',
     timeoutMilliseconds: 5000,
   }
 }

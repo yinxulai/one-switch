@@ -1,36 +1,40 @@
-import type { DeliveryMode, Frame, FrameSink, HeadFrame, HeaderMap } from '@server/proxy/contracts'
+import type { Frame, FrameSink, HeadFrame, HeaderMap, TransportKind } from '@server/proxy/contracts'
 import type { ProxyResponse } from '@server/proxy/response/proxy-response'
 
 /**
- * 出口策略：客户端要增量交付 **且** 上游确实以 SSE 返回时，才边收边发。
+ * 上游响应的分帧格式：手里这堆字节是 SSE 还是整包 JSON。
  *
- * 两个条件缺一不可，而且它们是两根轴上的事实：前者是客户端意图（`DeliveryMode`），
- * 后者是上游响应头。只看这两个事实，不看协议、不看适配器：协议差异已经在修改器里被抹平——
- * 转换器把上游报文换成客户端协议之后，这里拿到的仍然是「客户端要不要增量」+「上游是不是 SSE」。
- * 缺了前半段（客户端没要）就必须攒完再发，否则会把 SSE 字节配上 JSON 语义发出去。
+ * 这是**事实**（上游怎么回的），与客户端的**预期**（`exchange.transport`）是两件事，因此读它
+ * 之前先想清楚要哪一半（§1.6.2）：选解析器用它，决定交付行为用预期。
  */
-export function isStreamingDelivery(delivery: DeliveryMode, headers: HeaderMap): boolean {
-  return delivery === 'stream' && isEventStreamResponse(headers)
-}
-
 export function isEventStreamResponse(headers: HeaderMap): boolean {
   return String(headers['content-type'] ?? '').includes('text/event-stream')
 }
 
 /**
- * 分块快照的落库格式。流式正文不存原文而存分块列表，才能复现「逐块到达」的时序。
+ * 分块快照的**落库格式**。
+ *
+ * 名字里不带「流式」二字：这个函数只回答「分块列表怎么写进库里」，与「字节怎么发出去」无关。
+ * 流式正文不存原文而存分块列表，是为了复现「逐块到达」的时序。
  *
  * 出口与观察者共用这一份定义：两边都得把「收到的字节」表示成同一个形状，
  * 否则同一次请求的上游视角与客户端视角会长得不一样。
  */
-export function serializeStreamingChunks(chunks: readonly string[]): string {
+export function serializeChunkSnapshot(chunks: readonly string[]): string {
   return JSON.stringify({ schemaVersion: 1, chunks })
 }
 
 export interface HttpResponseSinkOptions {
   response: ProxyResponse
-  /** 客户端要求的交付方式。 */
-  delivery: DeliveryMode
+  /**
+   * 客户端跳的传输形态。
+   *
+   * 它是**预期**，也是出口唯一的交付依据：`http-stream` 才边收边发，否则攒完再发。
+   * 上游回了一个非 SSE 的 2xx 时，执行器已经在上游响应头落地的那一刻把这次尝试判成
+   * failover（见 `attempt-executor.ts`），因此出口不需要、也不允许再去读上游响应头
+   * 来重新回答「这次到底算不算流式」（§1.6.2）。
+   */
+  transport: TransportKind
   /** 是否记录写出的字节。关闭时只保留缓冲分支的兜底正文。 */
   captureEnabled: boolean
 }
@@ -63,7 +67,6 @@ export function createHttpResponseSink(options: HttpResponseSinkOptions): HttpRe
 class HttpFrameSink implements HttpResponseSink {
   private readonly options: HttpResponseSinkOptions
   private head: HeadFrame | null = null
-  private streaming = false
   private discarded = false
   private finished = false
   private failed: Error | null = null
@@ -83,13 +86,12 @@ class HttpFrameSink implements HttpResponseSink {
     if (this.finished || this.discarded) return
     if (frame.kind === 'head') {
       this.head = frame
-      this.streaming = isStreamingDelivery(this.options.delivery, frame.headers)
-      if (this.streaming) this.startDownstream()
+      if (this.options.transport === 'http-stream') this.startDownstream()
       return
     }
     if (frame.kind === 'data') {
       const text = frame.body.toString('utf8')
-      if (this.streaming) this.writeDownstream(text)
+      if (this.options.transport === 'http-stream') this.writeDownstream(text)
       else this.buffered.push(text)
       return
     }
@@ -107,7 +109,7 @@ class HttpFrameSink implements HttpResponseSink {
   }
 
   downstreamBody(): string | null {
-    if (this.streaming) return serializeStreamingChunks(this.captured)
+    if (this.options.transport === 'http-stream') return serializeChunkSnapshot(this.captured)
     return this.captured.join('') || this.bufferedWritten
   }
 
@@ -129,15 +131,16 @@ class HttpFrameSink implements HttpResponseSink {
     this.finished = true
     const head = this.head
     if (!head || this.discarded) return
-    const body = this.buffered.join('')
-    // 已写出的正文与响应是否还能写无关：客户端视角的记录不该因为连接已关闭而消失。
-    if (!this.streaming) this.bufferedWritten = body || null
     const sink = this.options.response
-    if (sink.writableEnded) return
-    if (this.streaming) {
-      sink.end()
+    // 增量交付时数据帧已经逐条写出去了，收尾只需关掉响应。
+    if (this.options.transport === 'http-stream') {
+      if (!sink.writableEnded) sink.end()
       return
     }
+    const body = this.buffered.join('')
+    // 已写出的正文与响应是否还能写无关：客户端视角的记录不该因为连接已关闭而消失。
+    this.bufferedWritten = body || null
+    if (sink.writableEnded) return
     if (!sink.headersSent) sink.start(head.status, head.headers)
     if (body) this.writeDownstream(body)
     sink.end()

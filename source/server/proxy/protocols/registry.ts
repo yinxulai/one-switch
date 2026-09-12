@@ -1,6 +1,6 @@
 import type { Protocol } from '@common/schemas'
 import { HTTP_METHODS, HttpRouter, normalizePathname, type HttpMethod } from '@server/http-router'
-import type { ProtocolEnvelope, TransportKind } from '@server/proxy/contracts'
+import type { ProtocolEnvelope } from '@server/proxy/contracts'
 import type { ProtocolAdapter, ProtocolAdapterRegistry } from './shared/types'
 import type { ProtocolDescriptor } from './descriptor'
 import { anthropicMessagesDescriptor } from './anthropic-messages/descriptor'
@@ -20,11 +20,9 @@ export interface DeclaredProtocolRoute {
   readonly path: string
   readonly protocol: Protocol
   readonly endpointId: string
-  /** 这个入口在哪些传输上成立。同一个 (方法, 路径) 可以由多条匹配规则归集出多个传输。 */
-  readonly transports: readonly TransportKind[]
 }
 
-/** 入口匹配的结果：协议、接口、以及该接口在该传输上的封装描述。 */
+/** 入口匹配的结果：协议、接口、以及该接口的封装描述。 */
 export interface ProtocolEndpointMatch {
   readonly protocol: Protocol
   readonly endpointId: string
@@ -35,8 +33,6 @@ interface DeclaredEndpoint {
   readonly protocol: Protocol
   readonly endpointId: string
   readonly spec: ProtocolEndpointSpec
-  /** 这个入口在哪些传输上成立。命中路径但传输不在其中 = 该接口在该传输上不存在。 */
-  readonly transports: ReadonlySet<TransportKind>
 }
 
 const adapters = new Map<string, ProtocolAdapter>()
@@ -54,34 +50,25 @@ for (const descriptor of protocolDescriptors) {
     const key = `${descriptor.id}:${endpoint.id}`
     if (endpointsByKey.has(key)) throw new Error(`协议接口重复声明: ${key}`)
     endpointsByKey.set(key, endpoint)
-    // 一个接口可以有多条匹配规则，它们可能落到同一个 (方法, 路径) 上（同一接口在两种传输上
-    // 用同样的方法），因此先把规则归集成「这个入口在哪些传输上成立」再挂载一次。
-    // 传输是 handler 的属性而不是路由键的一部分：`HttpRouter` 一个 (方法, 路径) 只能挂一个 handler。
-    const declaredTransports = Object.keys(endpoint.envelopes) as TransportKind[]
-    const entries: { method: string, path: string, transports: Set<TransportKind> }[] = []
+    // 一个接口可以有多条匹配规则（`*` 方法、多个路径别名），先展开成具体的 (方法, 路径)。
+    // 路由键里没有传输形态：`HttpRouter` 一个键只能挂一个 handler，而形态的差异在响应体
+    // 怎么分帧，不影响「这个请求该交给哪个协议接口」。
+    const entries: { method: string, path: string }[] = []
     for (const matcher of endpoint.match) {
-      if (matcher.transport && !endpoint.envelopes[matcher.transport]) {
-        throw new Error(`入口声明的传输没有对应封装: ${key} ${matcher.method} ${matcher.path} transport=${matcher.transport}`)
-      }
-      // 没写传输即「接口声明了封装的每个传输都适用这条规则」。
-      const transports = matcher.transport ? [matcher.transport] : declaredTransports
       const methods = matcher.method === '*' ? HTTP_METHODS : [matcher.method]
       for (const method of methods) {
         const path = normalizePathname(matcher.path)
-        let entry = entries.find(candidate => candidate.method === method && candidate.path === path)
-        if (!entry) {
-          entry = { method, path, transports: new Set<TransportKind>() }
-          entries.push(entry)
+        if (!entries.some(entry => entry.method === method && entry.path === path)) {
+          entries.push({ method, path })
         }
-        for (const transport of transports) entry.transports.add(transport)
       }
     }
     for (const entry of entries) {
       if (routes.some(route => route.method === entry.method && route.path === entry.path)) {
         throw new Error(`入口重复声明: ${entry.method} ${entry.path}`)
       }
-      routes.push({ method: entry.method, path: entry.path, protocol: descriptor.id, endpointId: endpoint.id, transports: [...entry.transports] })
-      declaredEndpointRouter.mount({ [entry.path]: { protocol: descriptor.id, endpointId: endpoint.id, spec: endpoint, transports: entry.transports } }, entry.method as HttpMethod)
+      routes.push({ method: entry.method, path: entry.path, protocol: descriptor.id, endpointId: endpoint.id })
+      declaredEndpointRouter.mount({ [entry.path]: { protocol: descriptor.id, endpointId: endpoint.id, spec: endpoint } }, entry.method as HttpMethod)
     }
   }
 }
@@ -109,18 +96,12 @@ export function getProtocolEndpoint(protocol: Protocol, endpointId: string): Pro
 }
 
 /**
- * 从请求方法、路径与传输匹配接口。协议入口只在这里匹配一次。
- *
- * 判定分两步，顺序有意如此：先按 (方法, 路径) 命中接口，再看这个接口**在该传输上是否有封装**。
- * 两步合一的收益是拒绝原因可区分——`POST /v1/responses` 走 WS 是「这个路径上没有 WS 封装」，
- * 而 `POST /v1/messages` 走 WS 是「路径压根不认识」。
+ * 从请求方法与路径匹配接口。协议入口只在这里匹配一次。
  */
-export function matchProtocolEndpoint(method: string | undefined, pathname: string, transport: TransportKind = 'http'): ProtocolEndpointMatch | null {
+export function matchProtocolEndpoint(method: string | undefined, pathname: string): ProtocolEndpointMatch | null {
   const declared = declaredEndpointRouter.match(method, pathname)?.handler
-  if (!declared || !declared.transports.has(transport)) return null
-  const envelope = declared.spec.envelopes[transport]
-  if (!envelope) return null
-  return { protocol: declared.protocol, endpointId: declared.endpointId, envelope }
+  if (!declared) return null
+  return { protocol: declared.protocol, endpointId: declared.endpointId, envelope: declared.spec.envelope }
 }
 
 /** 从请求方法与路径检测协议。 */

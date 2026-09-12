@@ -237,10 +237,10 @@ export const requestLogs = sqliteTable(
      */
     clientProtocol: text('clientProtocol'),
     /**
-     * 客户端是否要求流式响应。请求体里即可确定，与上游实际是否流式返回无关
-     * （后者是上游视角的事实，落在 `request_attempts.streaming`）。
+     * 客户端跳声明的传输形态（**预期**）。请求体里即可确定，与上游跳实际是什么形态无关
+     * （后者是上游视角的事实，落在 `request_attempts.upstreamTransport`）。
      */
-    streaming: integer('streaming', { mode: 'boolean' }).notNull().default(false),
+    transport: text('transport').notNull().default('http'),
     /**
      * 本次请求解析出的逻辑模型。为 `null` 表示请求在解析出逻辑模型之前
      * 就已经失败（模型非法 / 没有启用的逻辑模型），此时该请求不会产生任何
@@ -357,10 +357,10 @@ export const requestAttempts = sqliteTable(
     httpStatus: integer('httpStatus'),
     retryable: integer('retryable', { mode: 'boolean' }).notNull().default(false),
     /**
-     * 本次尝试上游是否以流式（SSE）返回。上游视角的事实，与客户端是否要求流式无关；
+     * 上游跳实际是什么形态。上游视角的事实，与客户端跳声明的形态无关；
      * 未收到响应（网络错误、请求取消）时无从判断，因此为 `null`。
      */
-    streaming: integer('streaming', { mode: 'boolean' }),
+    upstreamTransport: text('upstreamTransport'),
     attemptIndex: integer('attemptIndex').notNull(),
     durationMilliseconds: integer('durationMilliseconds').notNull(),
     /** 本次尝试从发出请求到上游首个输出的耗时；未产生输出时为 `null`。 */

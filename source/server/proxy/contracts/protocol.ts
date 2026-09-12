@@ -1,7 +1,6 @@
-import type { DeliveryMode } from './delivery'
+import type { TransportKind } from '@common/schemas'
 import type { HeaderMap } from './headers'
 import type { RouteMatcher } from './route-matcher'
-import type { TransportKind } from './transport'
 
 /** 请求体的封装种类。内核不解析 body，只有封装描述会。 */
 export type ProtocolBodyKind = 'json' | 'binary'
@@ -40,24 +39,30 @@ export interface ProtocolEnvelope {
   /** 写入模型名。允许同时改写 URL（路径携带模型的协议）。 */
   writeModel(input: EnvelopeInput, modelName: string): EnvelopeWriteResult
   /**
-   * 本次请求要求的交付方式。
+   * 本次请求在客户端跳的传输形态。
    *
    * 返回**轴上的取值**而不是布尔量：调用方把它当作请求级事实直接往下传，
-   * 不需要两处各自把 `true` 翻译成 `'stream'`（也就不会有两处翻得不一样）。
+   * 不需要两处各自把 `true` 翻译成 `'http-stream'`（也就不会有两处翻得不一样）。
    *
-   * 上游是否真的逐块返回不在这里：那是响应头的事实，与协议无关。
+   * 上游是否真的逐块返回不在这里：那是响应头的事实，与请求封装无关。
    */
-  resolveDelivery(input: EnvelopeInput): DeliveryMode
+  resolveTransport(input: EnvelopeInput): TransportKind
 }
 
 /**
  * 接口声明：一个协议对外暴露的一个入口。
  *
- * 新增接口 = 新增一个 `ProtocolEndpointSpec`，不需要改动路径检测、流式判定或任何调用方。
- * `envelopes` 缺少某种传输，表示该协议在该传输上不提供这个接口（入口匹配直接拒绝）。
+ * 新增接口 = 新增一个 `ProtocolEndpointSpec`，不需要改动路径检测、传输形态判定或任何调用方。
  */
 export interface ProtocolEndpointSpec {
   readonly id: string
   readonly match: readonly RouteMatcher[]
-  readonly envelopes: Partial<Record<TransportKind, ProtocolEnvelope>>
+  /**
+   * 该接口的请求封装。
+   *
+   * 一对一：入口在解析请求体之前就要选中它，而一个接口在客户端跳上只会收到一种形态
+   * 的请求（要么一问一答，要么 SSE）—— 形态的差别在响应体怎么分帧，不在请求封装。
+   * 真需要两种封装时就是两个接口，`match` 会把它们区分开。
+   */
+  readonly envelope: ProtocolEnvelope
 }

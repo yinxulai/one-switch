@@ -1,4 +1,4 @@
-import type { Protocol } from '@common/schemas'
+import type { Protocol, TransportKind } from '@common/schemas'
 
 export type WorkflowNodeKind =
   | 'input'
@@ -14,14 +14,6 @@ export type WorkflowNodeKind =
 export type WorkflowProtocol = Protocol | 'unknown'
 
 /**
- * 请求走的传输。
- *
- * 它由**调用方**给出确凿事实（代理入口在匹配端点时就知道了），引擎只在调用方没说的时候
- * 才从请求头里推演（渲染进程的测试运行就是这种情况）。
- */
-export type WorkflowTransport = 'http' | 'http-sse' | 'websocket'
-
-/**
  * 引擎认识的全部请求协议，`unknown`（没认出来）也是其中一条合法分支。
  *
  * 协议发现节点的端口、字段候选里的枚举、引擎的合法性判断都取自这一份，
@@ -34,8 +26,15 @@ export const ALL_WORKFLOW_PROTOCOLS: WorkflowProtocol[] = [
   'unknown',
 ]
 
-/** 引擎认识的全部传输方式。 */
-export const ALL_WORKFLOW_TRANSPORTS: WorkflowTransport[] = ['http', 'http-sse', 'websocket']
+/**
+ * 请求走的**传输形态**（一次对话在线上长什么样）词表定义在 `@common/schemas`
+ * （`TransportKindSchema`），代理层与工作流层共用同一份 —— 这里不再另立一套
+ * 「工作流传输」枚举。
+ *
+ * 曾经的 `WorkflowTransport = 'http' | 'http-sse' | 'websocket'` 与随后短暂存在过的
+ * 「载体 × 交付方式」两根轴都是错的：前者把「客户端要不要增量」当成连接形态的一档，
+ * 后者把同一件事拆成两个词、再让调用方去算它们的乘积。现在只有一根轴。
+ */
 
 /**
  * 可以新增到画布上的节点类型。
@@ -154,8 +153,9 @@ export interface RouteContext {
 /**
  * 路由运行的入参。
  *
- * `protocol` / `transport` 是**调用方提供的确凿事实**：代理入口在匹配端点时就已经知道
- * 客户端用的是什么协议、走的什么传输，让引擎再从请求头里猜一遍只会多一个可能猜错的来源。
+ * `protocol` / `transport` 是**调用方提供的确凿事实**：代理入口在匹配端点
+ * 与读封装描述时就已经知道客户端用的是什么协议、这条对话是什么形态，
+ * 让引擎再从请求头里猜一遍只会多一个可能猜错的来源。
  * 调用方不知道时留空，引擎照旧自行推演（渲染进程的测试运行就是这种情况）。
  */
 export interface RouteContextInput {
@@ -165,8 +165,8 @@ export interface RouteContextInput {
   metadata?: Record<string, unknown>
   /** 调用方已经确定的请求协议 */
   protocol?: WorkflowProtocol
-  /** 调用方已经确定的传输方式 */
-  transport?: WorkflowTransport
+  /** 调用方已经确定的客户端跳传输形态 */
+  transport?: TransportKind
 }
 
 export interface RouteContextEnvelope {
@@ -451,8 +451,8 @@ export interface RouteDecision {
   traceId: string
   /** 识别到的请求协议；未识别时为 `unknown` */
   protocol: WorkflowProtocol
-  /** 传输方式，来自请求头 / `request.body.stream` */
-  transport: WorkflowTransport
+  /** 客户端跳的传输形态；调用方给出，缺省时按请求头与请求体推演 */
+  transport: TransportKind
   /** 最终落点逻辑模型；既没有命中也没有兜底时为空数组 */
   modelIds: string[]
   /** 是否走了兜底策略（变量取值没有命中，转而使用兜底逻辑模型） */

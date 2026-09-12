@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { TransportKind } from '@common/schemas'
 import { createDefaultPolicyGraph } from '@common/router/presets'
 import type { RuntimeLogicalModel, WorkflowGraph } from '@common/router/types'
 import { parseRouteBody, resolveRoute, toRouteHeaders } from '@server/proxy/routing/route-resolver'
@@ -37,7 +38,7 @@ function useDefaultPolicy(models: RuntimeLogicalModel[]): void {
   mocks.graph = createDefaultPolicyGraph(models)
 }
 
-function resolveWithBody(body: Record<string, unknown>, transport: 'http' | 'http-sse' | 'websocket' = 'http') {
+function resolveWithBody(body: Record<string, unknown>, transport: TransportKind = 'http') {
   return resolveRoute({
     request: { path: '/v1/chat/completions', method: 'POST', headers: { authorization: 'Bearer test' }, body },
     clientProtocol: 'openai-completions',
@@ -79,7 +80,7 @@ describe('resolveRoute', () => {
     expect(resolution.logicalModelIds).toEqual([])
   })
 
-  it('reads the graph version from the resolved snapshot and passes the transport through', async () => {
+  it('reads the graph version from the resolved snapshot and hands back the transport axis', async () => {
     useDefaultPolicy([model('default')])
     mocks.graphVersion = 7
 
@@ -87,6 +88,17 @@ describe('resolveRoute', () => {
 
     expect(resolution.graphVersion).toBe(7)
     expect(resolution.logicalModelIds).toEqual(['default'])
+    // 图把入口上报的事实原样回读：传输形态只有一个来源，没有第二个可派生的字段。
+    expect(resolution.transport).toBe('websocket')
+    expect(resolution.protocol).toBe('openai-completions')
+  })
+
+  it('传输形态是入口写下的，不从协议或落点推导', async () => {
+    useDefaultPolicy([model('default')])
+
+    // 同一个协议上两种传输形态都成立 —— 这正是把 SSE 做成一档载体、或者再拆成两根轴会丢掉的信息。
+    expect((await resolveWithBody({ model: 'default' }, 'http-stream')).transport).toBe('http-stream')
+    expect((await resolveWithBody({ model: 'default' }, 'http')).transport).toBe('http')
   })
 })
 

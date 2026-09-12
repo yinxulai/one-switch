@@ -19,13 +19,12 @@ function createExchange(): ExchangeView {
     requestId: 'req-1',
     logicalModelId: 'logical-1',
     clientProtocol: 'openai-responses',
-    // 内核不关心载体是谁，只关心连接有没有写入侧，因此这里用的取值不影响被测行为。
+    // 内核只关心连接有没有写入侧，不关心传输形态，因此这里用的取值不影响被测行为。
     transport: 'http',
     method: 'POST',
     path: '/v1/responses',
     headers: {},
     body: Buffer.alloc(0),
-    delivery: 'buffered',
     signal: new AbortController().signal,
   }
 }
@@ -60,7 +59,6 @@ function createTarget(): UpstreamTarget {
     endpointId: 'model_alpha:openai-responses',
     protocol: 'openai-responses',
     url: 'https://upstream.example.com/v1/responses',
-    transport: 'http',
     timeoutMilliseconds: 1_000,
   }
 }
@@ -259,7 +257,7 @@ describe('建连与搬运的分工', () => {
   it('connects through the transport before relaying the connection it got back', async () => {
     const upstream = createUpstream({ frames: [HEAD, END] })
     const connect = vi.fn().mockResolvedValue(upstream.connection)
-    const transport: Transport = { kind: 'http', connect }
+    const transport: Transport = { transports: ['http', 'http-stream'], connect }
     const exchange = createExchange()
     const target = createTarget()
     const sink = createSink()

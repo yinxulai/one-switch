@@ -1,4 +1,4 @@
-import type { DeliveryMode, EnvelopeInput, EnvelopeWriteResult, ProtocolEnvelope, ProtocolModelReadResult } from '@server/proxy/contracts'
+import type { EnvelopeInput, EnvelopeWriteResult, ProtocolEnvelope, ProtocolModelReadResult, TransportKind } from '@server/proxy/contracts'
 
 /** 「请求体必须是 JSON 对象」是模型读写与默认值补齐共用的失败文案。 */
 export const JSON_BODY_REQUIRED_MESSAGE = '请求体必须是 JSON 对象'
@@ -60,7 +60,7 @@ export interface JsonEnvelopeOptions {
 /**
  * JSON 封装的协议。
  *
- * 今天三种协议的请求封装形状相同（模型名与交付方式都在 JSON 字段里），所以共用这一个工厂；
+ * 今天三种协议的请求封装形状相同（模型名与传输形态都在 JSON 字段里），所以共用这一个工厂；
  * 将来接入路径携带模型的协议（例如 `/v1beta/models/{model}:generateContent`）时，
  * 新协议写自己的 `ProtocolEnvelope` 即可，内核与执行器不需要任何改动。
  */
@@ -73,9 +73,9 @@ export function createJsonEnvelope(options: JsonEnvelopeOptions): ProtocolEnvelo
     writeModel(input: EnvelopeInput, modelName: string): EnvelopeWriteResult {
       return { body: writeJsonModel(input.body, modelName), url: input.url }
     },
-    resolveDelivery(input: EnvelopeInput): DeliveryMode {
-      if (options.streamingField === null) return 'buffered'
-      return parseJsonObject(input.body)?.[options.streamingField] === true ? 'stream' : 'buffered'
+    resolveTransport(input: EnvelopeInput): TransportKind {
+      if (options.streamingField === null) return 'http'
+      return parseJsonObject(input.body)?.[options.streamingField] === true ? 'http-stream' : 'http'
     },
   }
 }

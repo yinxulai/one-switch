@@ -1374,10 +1374,10 @@ describe('handleProxyRequest', () => {
       captureStatus: 'captured',
       responseStatus: 200,
     }))
-    // 转换事实（双方协议与流式标记）现在是尝试行上的列，不再单独建表。
+    // 转换事实（双方协议与上游跳形态）现在是尝试行上的列，不再单独建表。
     expect(mocks.createRequestAttempt).toHaveBeenCalledWith(expect.objectContaining({
       upstreamProtocol: 'openai-completions',
-      streaming: true,
+      upstreamTransport: 'http-stream',
     }))
     expect(JSON.parse(String(attemptContent?.responseBody))).toEqual({
       schemaVersion: 1,

@@ -63,16 +63,16 @@ describe('createJsonEnvelope', () => {
     expect(written.url).toEqual(input.url)
   })
 
-  it('resolves the delivery mode from the declared field only', () => {
-    expect(envelope.resolveDelivery(envelopeInput(JSON.stringify({ stream: true })))).toBe('stream')
-    expect(envelope.resolveDelivery(envelopeInput(JSON.stringify({ stream: 'true' })))).toBe('buffered')
-    expect(envelope.resolveDelivery(envelopeInput(JSON.stringify({ stream: 1 })))).toBe('buffered')
-    expect(envelope.resolveDelivery(envelopeInput(JSON.stringify({})))).toBe('buffered')
-    expect(envelope.resolveDelivery(envelopeInput('{'))).toBe('buffered')
+  it('resolves the transport from the declared field only', () => {
+    expect(envelope.resolveTransport(envelopeInput(JSON.stringify({ stream: true })))).toBe('http-stream')
+    expect(envelope.resolveTransport(envelopeInput(JSON.stringify({ stream: 'true' })))).toBe('http')
+    expect(envelope.resolveTransport(envelopeInput(JSON.stringify({ stream: 1 })))).toBe('http')
+    expect(envelope.resolveTransport(envelopeInput(JSON.stringify({})))).toBe('http')
+    expect(envelope.resolveTransport(envelopeInput('{'))).toBe('http')
   })
 
-  it('has no incremental delivery when the field is null', () => {
+  it('has no incremental transport when the field is null', () => {
     const embeddings = createJsonEnvelope({ streamingField: null })
-    expect(embeddings.resolveDelivery(envelopeInput(JSON.stringify({ stream: true })))).toBe('buffered')
+    expect(embeddings.resolveTransport(envelopeInput(JSON.stringify({ stream: true })))).toBe('http')
   })
 })

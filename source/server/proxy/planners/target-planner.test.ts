@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Protocol } from '@common/schemas'
-import type { PlanResult, TransportKind } from '@server/proxy/contracts'
+import type { PlanResult } from '@server/proxy/contracts'
 import type * as RouterModule from '@server/proxy/routing/router'
 import type { ModelWithProvider } from '@server/proxy/routing/router'
 
@@ -69,8 +69,10 @@ function candidate(id: string, endpoints: EndpointFixture[], providerId = 'prov_
   }
 }
 
-function plan(clientProtocol: Protocol, transport: TransportKind = 'http', manualModelId: string | null = null): Promise<PlanResult> {
-  return Promise.resolve(proxyTargetPlanner.plan({ logicalModelId: 'default', clientProtocol, manualModelId, transport }))
+function plan(clientProtocol: Protocol, manualModelId: string | null = null): Promise<PlanResult> {
+  // 上游载体不在这里传：它由端点自己的地址决定（`wss://` 就是 websocket）。
+  // 客户端跳的取值从不改变哪个端点合法。
+  return Promise.resolve(proxyTargetPlanner.plan({ logicalModelId: 'default', clientProtocol, manualModelId }))
 }
 
 describe('端点匹配', () => {
@@ -97,7 +99,7 @@ describe('端点匹配', () => {
 
     expect(result.targets).toHaveLength(1)
     // 目标说的是「我们实际连到哪儿」——上游协议是 completions，客户端协议由转换适配器负责。
-    expect(result.targets[0]).toMatchObject({ protocol: 'openai-completions', transport: 'http' })
+    expect(result.targets[0]).toMatchObject({ protocol: 'openai-completions', url: 'https://upstream.example.com/v1/chat/completions' })
   })
 
   it('rejects a convertible endpoint when conversion is off', async () => {
@@ -114,25 +116,19 @@ describe('端点匹配', () => {
     expect(result.detail).toContain('prov_alpha/model_alpha-upstream')
   })
 
-  it('never plans a convertible endpoint for websocket transport', async () => {
+  it('never plans a convertible endpoint on a websocket endpoint', async () => {
     mocks.models = [candidate('model_alpha', [
-      { protocol: 'openai-completions', url: 'https://upstream.example.com/v1/chat/completions', conversionEnabled: true },
+      { protocol: 'openai-completions', url: 'wss://upstream.example.com/v1/chat/completions', conversionEnabled: true },
     ])]
 
-    const result = await plan('openai-responses', 'websocket')
+    const result = await plan('openai-responses')
 
     // 双向长连接跨协议需要 WS ↔ HTTP 桥接，不在 P1 的范围内：只给原生候选，宁可拒绝。
+    // 判据是**端点自己的地址**（`wss://`），不是客户端声明的传输形态。
     expect(result.targets).toHaveLength(0)
     expect(result.reason).toBe('no-available-provider')
-    expect(result.detail).toContain('原生支持 openai-responses')
-  })
-
-  it('plans a native endpoint for websocket transport', async () => {
-    mocks.models = [candidate('model_alpha', [{ protocol: 'openai-responses', url: 'wss://upstream.example.com/v1/responses' }])]
-
-    const result = await plan('openai-responses', 'websocket')
-
-    expect(result.targets[0]).toMatchObject({ transport: 'websocket', url: 'wss://upstream.example.com/v1/responses' })
+    // 报错不能把原因说成「未开启协议转换」：转换是开的，拦住它的是形态。
+    expect(result.detail).toContain('跨形态转换不在支持范围')
   })
 })
 
@@ -148,7 +144,7 @@ describe('候选为空时的原因', () => {
   it('reports manual-model-unavailable when the manually locked model is gone', async () => {
     mocks.models = [candidate('model_alpha', [{ protocol: 'openai-completions', url: 'https://upstream.example.com/v1/chat/completions' }])]
 
-    const result = await plan('openai-completions', 'http', 'model_missing')
+    const result = await plan('openai-completions', 'model_missing')
 
     // 手动锁定的模型不可用绝不能退化成「没有可用供应商」：那会是一句与用户操作无关的报错。
     expect(result.reason).toBe('manual-model-unavailable')
@@ -158,7 +154,7 @@ describe('候选为空时的原因', () => {
   it('reports manual-model-unavailable when the locked model cannot serve the protocol', async () => {
     mocks.models = [candidate('model_alpha', [{ protocol: 'openai-completions', url: 'https://upstream.example.com/v1/chat/completions' }])]
 
-    const result = await plan('anthropic-messages', 'http', 'model_alpha')
+    const result = await plan('anthropic-messages', 'model_alpha')
 
     expect(result.targets).toHaveLength(0)
     expect(result.reason).toBe('manual-model-unavailable')
@@ -183,7 +179,6 @@ describe('目标字段', () => {
       endpointId: 'model_alpha:anthropic-messages',
       protocol: 'anthropic-messages',
       url: 'https://api.anthropic.com/v1/messages',
-      transport: 'http',
       timeoutMilliseconds: 1_000,
     })
   })
@@ -202,7 +197,7 @@ describe('目标字段', () => {
   it('passes a websocket url through untouched', async () => {
     mocks.models = [candidate('model_alpha', [{ protocol: 'openai-responses', url: 'wss://upstream.example.com/v1/responses' }])]
 
-    const result = await plan('openai-responses', 'websocket')
+    const result = await plan('openai-responses')
 
     // 规划器不是校验器：非 http(s) 的地址属于传输层的事，原样下发。
     expect(result.targets[0].url).toBe('wss://upstream.example.com/v1/responses')
@@ -226,16 +221,15 @@ describe('buildUpstreamTarget', () => {
   it('returns null when the candidate cannot serve the protocol', () => {
     const candidateModel = candidate('model_alpha', [{ protocol: 'openai-completions', url: 'https://upstream.example.com/v1/chat/completions' }])
 
-    expect(buildUpstreamTarget(candidateModel, 'openai-responses', 'http')).toBeNull()
+    expect(buildUpstreamTarget(candidateModel, 'openai-responses')).toBeNull()
   })
 
   it('builds a single target for callers that test one specific model', () => {
     const candidateModel = candidate('model_alpha', [{ protocol: 'openai-completions', url: 'https://upstream.example.com/v1/chat/completions' }])
 
-    expect(buildUpstreamTarget(candidateModel, 'openai-completions', 'http')).toMatchObject({
+    expect(buildUpstreamTarget(candidateModel, 'openai-completions')).toMatchObject({
       providerModelId: 'model_alpha',
       endpointId: 'model_alpha:openai-completions',
-      transport: 'http',
     })
   })
 })

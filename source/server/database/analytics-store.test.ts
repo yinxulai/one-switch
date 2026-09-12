@@ -26,7 +26,7 @@ async function createLog(totalDurationMilliseconds = 1): Promise<string> {
   const log = await createRequestLog({
     logicalModelId: 'model_default',
     clientProtocol: 'openai-responses',
-    streaming: false,
+    transport: 'http',
     status: 'success',
     totalDurationMilliseconds,
   })
@@ -54,7 +54,7 @@ async function createAttemptWithTtft(input: AttemptWithTtftInput): Promise<void>
     status: 'success',
     httpStatus: 200,
     retryable: false,
-    streaming: false,
+    upstreamTransport: 'http',
     attemptIndex: input.attemptIndex ?? 0,
     durationMilliseconds: 1,
     ttftMilliseconds: input.ttftMilliseconds,
@@ -114,7 +114,7 @@ describe('getLatencyDistribution', () => {
     await createRequestLog({
       logicalModelId: 'model_default',
       clientProtocol: 'openai-responses',
-      streaming: false,
+      transport: 'http',
       status: 'success',
       totalDurationMilliseconds: 10,
     })
@@ -165,7 +165,7 @@ describe('getModelStats', () => {
       status: input.status ?? 'success',
       httpStatus: 200,
       retryable: false,
-      streaming: false,
+      upstreamTransport: 'http',
       attemptIndex: 0,
       durationMilliseconds: input.durationMilliseconds ?? 10,
     })
@@ -210,7 +210,7 @@ describe('getModelStats', () => {
       status: 'success',
       httpStatus: 200,
       retryable: false,
-      streaming: false,
+      upstreamTransport: 'http',
       attemptIndex: 0,
       durationMilliseconds: 10,
     })

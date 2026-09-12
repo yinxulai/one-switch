@@ -120,7 +120,7 @@ describe('applyRequestRewriteRules', () => {
   })
 
   it('响应流式场景跳过响应动作', () => {
-    const result = applyRequestRewriteRules(body({ text: 'old' }), {}, [rule([jsonAction({ type: 'body-replace', path: '$.text', search: 'old', replacement: 'new', regex: false }, 'response')])], context('response', { incrementalDelivery: true }))
+    const result = applyRequestRewriteRules(body({ text: 'old' }), {}, [rule([jsonAction({ type: 'body-replace', path: '$.text', search: 'old', replacement: 'new', regex: false }, 'response')])], context('response', { transport: 'http-stream' }))
     expect(result.appliedRuleIds).toEqual([])
     expect(result.skippedRuleIds).toEqual(['rule-test'])
     expect(parsed(result)).toEqual({ text: 'old' })

@@ -4,13 +4,13 @@ import { createHttpTransport, type HttpTransportOptions } from './http'
 /**
  * 建连需要的外部输入。
  *
- * `kind` 决定用哪种传输，其余字段是各传输自己的输入。把它们放在同一个对象里，是为了让调用方
- * 能在「运行时才知道传输种类」的地方取实现：执行器只知道 `target.transport`，如果它必须自己
- * 写一个 `switch`，那「新增一种传输」就又要改一次调用方——而调用方本来只该知道一件事：我要一个
- * 能连到 `target.transport` 的东西。
+ * `transport` 决定用哪种传输实现，其余字段是各实现自己的输入。把它们放在同一个对象里，是为了让调用方
+ * 能在「运行时才知道形态」的地方取实现：如果调用方必须自己写一个 `switch`，那「新增一种传输」就又要
+ * 改一次调用方——而调用方本来只该知道一件事：我要一个能连到这种形态的东西。
  */
 export interface TransportResolution {
-  readonly kind: TransportKind
+  /** 上游跳的传输形态，由 `resolveUpstreamTransport(url, 客户端形态)` 算出来。 */
+  readonly transport: TransportKind
   /**
    * 上游两个数据块之间允许的最长静默时间（毫秒），<=0 表示不超时。
    *
@@ -22,15 +22,18 @@ export interface TransportResolution {
 }
 
 /**
- * 按传输种类取实现。
+ * 按**传输形态**取实现。
  *
- * 这是全仓唯一一处「传输种类 → 传输实现」的映射，因此也是「新增传输」唯一需要新增分支的地方。
- * 没有它，执行器就会写死 HTTP：`target.transport` 是一个已声明的事实，写死等于把一个声明出来的
- * 字段变成装饰——将来规划器真的给出另一种传输的候选时，代码会静默地用错实现。
+ * 这是全仓唯一一处「形态 → 实现」的映射，因此也是「新增一种传输」唯一需要新增分支的地方。
+ * 没有它，执行器就会写死 HTTP：`transport` 是一个已声明的事实，写死等于把一个声明出来的
+ * 字段变成装饰——将来真的给出另一种形态的候选时，代码会静默地用错实现。
+ *
+ * 注意一个实现可以服务多种形态：HTTP 实现同时服务 `'http'` 与 `'http-stream'`，
+ * 因为它们在建连、TLS、超时、abort、出网方式上一字不差，差别只在响应体怎么分帧。
  */
-export function resolveTransport(resolution: TransportResolution): Transport {
-  if (resolution.kind === 'websocket') {
-    // `'websocket'` 是已声明但未实现的轴取值（见 `contracts/transport.ts`）。走到这里说明规划器
+export function resolveTransportImplementation(resolution: TransportResolution): Transport {
+  if (resolution.transport === 'websocket') {
+    // `'websocket'` 是已声明但未实现的取值（见 `contracts/transport.ts`）。走到这里说明规划器
     // 真的给出了一条 WS 候选，而它本不该：没有实现时就不能产生这种候选。报错比静默回退到 HTTP
     // 好得多——后者会拿一个 WS 地址去发 HTTP 请求，失败原因与真实原因相差十万八千里。
     throw new Error('WebSocket 传输尚未实现：规划器不应产出 websocket 候选')

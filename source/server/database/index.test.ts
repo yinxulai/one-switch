@@ -141,13 +141,13 @@ describe('database lifecycle', () => {
     // `PRAGMA table_info` 返回的是物理列顺序；整库现在由一个首发基线建表，物理顺序等于
     // schema 声明顺序。这里仍然比较集合，避免测试在有人重排 `schema.ts` 时无意义地变红。
     expect(requestLogColumns.map(column => (column as { name: string }).name).sort()).toEqual([
-      'clientProtocol', 'createdTime', 'id', 'logicalModelId', 'status', 'streaming', 'totalDurationMilliseconds',
+      'clientProtocol', 'createdTime', 'id', 'logicalModelId', 'status', 'totalDurationMilliseconds', 'transport',
     ])
     expect(settingsColumns.map(column => (column as { name: string }).name)).toEqual([
       'key', 'value', 'valueType', 'updatedTime',
     ])
     expect(attemptColumns.map(column => (column as { name: string }).name)).toEqual(
-      expect.arrayContaining(['providerModelId', 'providerName', 'providerModelName', 'url', 'httpStatus', 'retryable', 'streaming', 'ttftMilliseconds', 'requestRewriteRuleIds', 'responseRewriteRuleIds']),
+      expect.arrayContaining(['providerModelId', 'providerName', 'providerModelName', 'url', 'httpStatus', 'retryable', 'upstreamTransport', 'ttftMilliseconds', 'requestRewriteRuleIds', 'responseRewriteRuleIds']),
     )
     expect(workflowColumns.map(column => (column as { name: string }).name).sort()).toEqual([
       'createdTime', 'definition', 'deletedTime', 'id', 'name', 'type', 'updatedTime', 'version',

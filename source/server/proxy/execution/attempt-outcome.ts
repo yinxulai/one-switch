@@ -36,6 +36,12 @@ export interface AttemptOutcome {
    */
   upstreamResponseBody?: string | null
   /**
+   * 这次尝试的失败是不是「上游跳没兼现客户端跳要求的形态」（2xx 但要 `http-stream` 却回了非 SSE）。
+   *
+   * 健康度分类需要它：这种失败的状态码是 `200`，按状态码分类只会得到 `'none'`（§1.6.2）。
+   */
+  transportMismatch?: boolean
+  /**
    * 客户端视角的最终响应；仅当响应真正写出客户端时存在。
    * failover 中途放弃、请求改写被拒等场景下为 `undefined`。
    */
@@ -83,8 +89,8 @@ export function toRequestContentOutcome(outcome: AttemptOutcome): RequestContent
 }
 
 /** 记录健康度失败，并返回这次失败影响到哪一层（供应商还是单个模型）。 */
-export async function recordHealthFailure(target: UpstreamTarget, statusCode: number | null, responseBody?: string | null): Promise<HealthFailureScope> {
-  const scope = classifyHealthFailure(statusCode, responseBody)
+export async function recordHealthFailure(target: UpstreamTarget, statusCode: number | null, responseBody?: string | null, transportMismatch = false): Promise<HealthFailureScope> {
+  const scope = classifyHealthFailure({ statusCode, responseBody, transportMismatch })
   if (scope === 'provider') await markProviderFailure(target.providerId)
   if (scope === 'provider-model') await markProviderModelFailure(target.providerModelId)
   return scope
