@@ -1,21 +1,12 @@
 import type { Protocol } from '@common/schemas'
-import {
-  type OpenAiToAnthropicState,
-  finishOpenAiToAnthropic,
-  openAiChunkToAnthropicEvents,
-  openAiResponseToAnthropic,
-} from './response-conversion-openai-to-anthropic'
-import { openAiChunkToResponsesEvents, openAiResponseToResponses } from './response-conversion-openai-to-responses'
-import {
-  type AnthropicToOpenAiState,
-  anthropicEventToOpenAiChunks,
-  anthropicResponseToOpenAi,
-} from './response-conversion-anthropic-to-openai'
+import { findResponseDirection } from './conversion-registry'
 
 /**
  * 响应转换：将上游端点协议的响应（含 SSE 流）转换回客户端协议的响应。
  * 流式转换采用增量方式：每个上游 SSE event 转换为一个下游 SSE event，
  * 不做跨 event 聚合，保证低延迟透传。
+ *
+ * 方向表在 `conversion-registry.ts`，本文件只管 SSE 解析/序列化与流程。
  */
 
 type Json = Record<string, unknown>
@@ -67,18 +58,13 @@ export function convertResponseBody(clientProtocol: Protocol, endpointProtocol: 
     throw new Error(`同协议响应不应进入转换路径: ${clientProtocol}`)
   }
 
-  const payload = JSON.parse(body.toString('utf8')) as Json
+  const direction = findResponseDirection(endpointProtocol, clientProtocol)
+  if (!direction) {
+    throw new Error(`不支持的响应转换方向: ${endpointProtocol} -> ${clientProtocol}`)
+  }
 
-  if (endpointProtocol === 'openai-completions' && clientProtocol === 'anthropic-messages') {
-    return Buffer.from(JSON.stringify(openAiResponseToAnthropic(payload)))
-  }
-  if (endpointProtocol === 'openai-completions' && clientProtocol === 'openai-responses') {
-    return Buffer.from(JSON.stringify(openAiResponseToResponses(payload)))
-  }
-  if (endpointProtocol === 'anthropic-messages' && clientProtocol === 'openai-completions') {
-    return Buffer.from(JSON.stringify(anthropicResponseToOpenAi(payload)))
-  }
-  throw new Error(`不支持的响应转换方向: ${endpointProtocol} -> ${clientProtocol}`)
+  const payload = JSON.parse(body.toString('utf8')) as Json
+  return Buffer.from(JSON.stringify(direction.convert(payload)))
 }
 
 /**
@@ -90,32 +76,33 @@ export function createSseConverter(clientProtocol: Protocol, endpointProtocol: P
     throw new Error(`同协议流式响应不应进入转换路径: ${clientProtocol}`)
   }
 
+  const direction = findResponseDirection(endpointProtocol, clientProtocol)
+  if (!direction) {
+    throw new Error(`不支持的响应转换方向: ${endpointProtocol} -> ${clientProtocol}`)
+  }
+
   let buffer = ''
-  const openAiState: OpenAiToAnthropicState = { started: false, textBlock: false, toolBlocks: new Set(), stopped: false, id: '', model: '' }
-  const anthropicState: AnthropicToOpenAiState = { id: '', model: '', toolCalls: new Map(), started: false }
+  const events = direction.createSseConverter()
+
+  /** OpenAI 上游的 [DONE] 只是结束信号，不属于任何目标协议的事件模型。 */
+  const isUpstreamDoneSignal = (data: string): boolean => endpointProtocol === 'openai-completions' && data.trim() === '[DONE]'
 
   const convertEvent = (event: SseEvent): string => {
     let payload: Json
     try {
       payload = JSON.parse(event.data) as Json
     } catch {
-      // OpenAI 的 [DONE] 只作为流结束信号，不应暴露为 Anthropic JSON 事件。
-      return event.data.trim() === '[DONE]' && endpointProtocol === 'openai-completions' && clientProtocol === 'anthropic-messages'
-        ? ''
-        : serializeSseEvent(event)
+      return isUpstreamDoneSignal(event.data) ? '' : serializeSseEvent(event)
     }
+    return serializeEvents(events.push(payload))
+  }
 
-    let outputs: Json[] = []
-    if (endpointProtocol === 'openai-completions' && clientProtocol === 'anthropic-messages') {
-      outputs = openAiChunkToAnthropicEvents(payload, openAiState)
-    } else if (endpointProtocol === 'openai-completions' && clientProtocol === 'openai-responses') {
-      outputs = openAiChunkToResponsesEvents(payload)
-    } else if (endpointProtocol === 'anthropic-messages' && clientProtocol === 'openai-completions') {
-      outputs = anthropicEventToOpenAiChunks(payload, anthropicState)
-    }
+  /** 流结束时的收尾事件，各方向按需实现。 */
+  const finishEvents = (): Json[] => events.finish()
 
+  const serializeEvents = (events: Json[]): string => {
     let out = ''
-    for (const item of outputs) out += serializeSseEvent({ data: JSON.stringify(item) })
+    for (const item of events) out += serializeSseEvent({ data: JSON.stringify(item) })
     return out
   }
 
@@ -129,26 +116,21 @@ export function createSseConverter(clientProtocol: Protocol, endpointProtocol: P
       return out
     },
     flush(): string {
-      if (!buffer.trim()) return ''
-      const raw = buffer
-      buffer = ''
-      // 剩余文本可能已含 data: 前缀，也可能只是裸 JSON
-      const stripped = raw
-        .split('\n')
-        .map(line => (line.startsWith('data:') ? line.slice(5).trim() : line))
-        .join('\n')
-      let out = stripped.trim() ? convertEvent({ data: stripped }) : ''
-      if (endpointProtocol === 'openai-completions' && clientProtocol === 'anthropic-messages') {
-        for (const item of finishOpenAiToAnthropic(openAiState)) out += serializeSseEvent({ data: JSON.stringify(item) })
-      }
-      return out
-    },
-    finish: () => {
       let out = ''
-      if (endpointProtocol === 'openai-completions' && clientProtocol === 'anthropic-messages') {
-        for (const item of finishOpenAiToAnthropic(openAiState)) out += serializeSseEvent({ data: JSON.stringify(item) })
+      if (buffer.trim()) {
+        const raw = buffer
+        buffer = ''
+        // 剩余文本可能已含 data: 前缀，也可能只是裸 JSON
+        const stripped = raw
+          .split('\n')
+          .map(line => (line.startsWith('data:') ? line.slice(5).trim() : line))
+          .join('\n')
+        if (stripped.trim()) out += convertEvent({ data: stripped })
       }
-      return out
+      return out + serializeEvents(finishEvents())
+    },
+    finish(): string {
+      return serializeEvents(finishEvents())
     },
   }
 }

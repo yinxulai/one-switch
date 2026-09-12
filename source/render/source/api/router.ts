@@ -1,6 +1,17 @@
-import type { WorkflowGraph, WorkflowRunResult } from '@/pages/router/types'
+import type { RouterGraphSaveResult, RouterGraphSnapshot, RouterGraphVersionSummary, WorkflowGraph, WorkflowRunResult } from '@common/router/types'
 import { request } from './client'
 
+/**
+ * 路由图的读写接口。
+ *
+ * 图只有服务端一份：界面不缓存它，读到的就是代理正在执行的那一张。
+ * 试跑也交给服务端，因为脚本与提示词节点需要主进程的沙箱与网络能力。
+ */
 export const routerApi = {
   run: (graph: WorkflowGraph, inputPayload: unknown, signal?: AbortSignal) => request<WorkflowRunResult>('/router/run', { graph, inputPayload }, { signal }),
+  /** 最近保存的图；一版都没保存过时返回 `null`。 */
+  getGraph: () => request<RouterGraphSnapshot | null>('/router/graph'),
+  getGraphVersions: () => request<RouterGraphVersionSummary[]>('/router/graph/versions'),
+  getGraphVersion: (version: number) => request<RouterGraphSnapshot | null>('/router/graph/version', { version }),
+  saveGraph: (graph: WorkflowGraph, name?: string) => request<RouterGraphSaveResult>('/router/graph/save', { graph, name }),
 }

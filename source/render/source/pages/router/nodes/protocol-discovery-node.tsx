@@ -1,6 +1,6 @@
+import { ALL_WORKFLOW_PROTOCOLS } from '@common/router/types'
 import { NodeHandle } from '../components/node-handle'
 import { NodeBody, NodeBranchRow } from '../components/node-sections'
-import { WORKFLOW_PROTOCOLS } from '../field-hints'
 import type { RouteNodeProps } from '../node-data'
 
 /**
@@ -14,7 +14,7 @@ export function ProtocolDiscoveryNodeView(props: RouteNodeProps) {
 
   return (
     <NodeBody className="pb-1">
-      {WORKFLOW_PROTOCOLS.map((protocol, index) => {
+      {ALL_WORKFLOW_PROTOCOLS.map((protocol, index) => {
         const isFallback = protocol === 'unknown'
         const label = isFallback ? 'ELSE' : index === 0 ? 'IF' : 'ELIF'
 

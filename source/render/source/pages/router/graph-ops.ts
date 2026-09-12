@@ -1,6 +1,6 @@
-import { createId } from './graph-model'
+import { createId } from '@common/router/presets'
 import type { NodeInsertRequest } from './node-data'
-import type { WorkflowEdge, WorkflowGraph, WorkflowNodeModel } from './types'
+import type { WorkflowEdge, WorkflowGraph, WorkflowNodeModel } from '@common/router/types'
 
 /** 端口的唯一定位键：一个 source 端口最多只能有一条出边（与引擎的 Map 语义一致）。 */
 export function portKey(sourceNodeId: string, sourcePort: string): string {

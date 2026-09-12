@@ -3,7 +3,8 @@ import { Plus, Search } from 'lucide-react'
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
-import { APPENDABLE_KINDS, NODE_KIND_META, type AppendableKind } from '../node-meta'
+import { APPENDABLE_KINDS, NODE_KIND_META } from '../node-meta'
+import type { AppendableKind } from '@common/router/types'
 import { BlockIcon } from './block-icon'
 
 export type NodeSelectorVariant = 'handle' | 'edge'

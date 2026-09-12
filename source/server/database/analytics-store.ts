@@ -342,11 +342,18 @@ export async function getModelStats(sinceMs: number, limit = 10, providerId?: st
   // 失败尝试的用量不算进这些列；未命中透视的尝试以 0 参与。
   const successOnly = (type: UsageTokenType) => sql<number>`coalesce(sum(case when ${requestAttempts.status} = 'success' then ${pivot[type]} else 0 end), 0)`
   const rows = getDb().select({
+    // 排行单位是「上游模型」：一个 providerModelId 只属于一个提供方，所以只按它分组。
+    // 旧实现按 (providerModelId, providerId) 分组：历史尝试里留下的旧提供方快照
+    // 会把同一个模型拆成两行，排行榜上同一个模型出现两次，还要各占一个 TOP 名额。
     providerModelId: requestAttempts.providerModelId,
-    // 分组键（providerId + providerModelId）已经确定了名称，直接把它带出来即可。
-    providerModelName: sql<string>`max(${requestAttempts.providerModelName})`.as('providerModelName'),
+    providerModelName: requestAttempts.providerModelName,
     providerId: requestAttempts.providerId,
-    providerName: sql<string>`max(${requestAttempts.providerName})`.as('providerName'),
+    providerName: requestAttempts.providerName,
+    // 上面四个是「裸列」，取值来源由下面这个唯一的 max() 决定：
+    // SQLite 在查询里只有 min()/max() 这一种极值聚合、且只出现一次时，
+    // 所有裸列都取该极值所在的那一行。于是模型名与提供方一定来自同一条尝试记录，
+    // 不会出现「A 家的 id 配 B 家的名字」。**新增 min()/max() 会破坏这个约定。**
+    latestAttemptCreatedTime: sql<number>`max(${requestAttempts.createdTime})`.as('latestAttemptCreatedTime'),
     attempts: sql<number>`count(*)`.as('attempts'),
     success: sql<number>`sum(case when ${requestAttempts.status} = 'success' then 1 else 0 end)`.as('success'),
     avgLatency: sql<number>`avg(case when ${requestAttempts.status} = 'success' then ${requestAttempts.durationMilliseconds} end)`.as('avgLatency'),
@@ -360,8 +367,9 @@ export async function getModelStats(sinceMs: number, limit = 10, providerId?: st
   }).from(requestAttempts)
     .leftJoin(pivot, eq(pivot.attemptId, requestAttempts.id))
     .where(and(...filters))
-    .groupBy(requestAttempts.providerModelId, requestAttempts.providerId)
-    .orderBy(sql`attempts desc`)
+    .groupBy(requestAttempts.providerModelId)
+    // 尝试数相同时用 id 兜底：排行榜不该在多次刷新之间自己换位置。
+    .orderBy(sql`attempts desc, ${requestAttempts.providerModelId} asc`)
     .limit(limit)
     .all()
   return rows.map(row => ({ providerModelId: row.providerModelId, providerModelName: row.providerModelName, providerId: row.providerId, providerName: normalizeDevelopmentProviderName(row.providerId, row.providerName), attempts: row.attempts ?? 0, success: row.success ?? 0, avgLatencyMs: row.avgLatency ?? 0, avgTtftMs: row.avgTtft ?? null, cachedInputTokens: row.cachedInputTokens ?? 0, inputTokens: row.inputTokens ?? 0, outputTokens: row.outputTokens ?? 0, successGenerationDurationMs: row.successGenerationDurationMs ?? 0 }))

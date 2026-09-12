@@ -752,23 +752,20 @@ CREATE UNIQUE INDEX idx_attempt_contents_attempt
 }
 ```
 
-正文 envelope 示例：
+正文 envelope 只有两种形态，由**本次交付是否逐帧**决定（`DeliveryMode`，不是「是不是流式请求」——见 [proxy-engine.md](./proxy-engine.md) §1.6.1）：
+
+逐帧交付时存分块 envelope，保留每个 chunk 的原始文本（SSE 事件可能跨 chunk，拼回去才能重放）：
 
 ```json
 {
   "schemaVersion": 1,
-  "body": {
-    "model": "client-model",
-    "messages": []
-  },
-  "bodyText": null,
-  "contentType": "application/json",
-  "isStreaming": false,
-  "capturedAt": 1755643200000
+  "chunks": ["data: {...}\n\n", "data: [DONE]\n\n"]
 }
 ```
 
-`body` 保存可解析的 JSON 正文；非 JSON 或二进制正文使用 `bodyText` 保存原文文本（二进制内容 base64 编码并标注 `contentType`）。
+其余情况存脱敏后的原文文本（JSON 也存文本，不做二次解析——代理对报文内容只做改写，不做建模）。
+
+> 早期草图里曾有 `body` / `bodyText` / `contentType` / `isStreaming` 四个字段，已全部废弃：前三个是为了让读取方直接拿到结构化正文，但那等于把「谁解析报文」从代理挪到了渲染进程；`isStreaming` 则是被人为混成一根轴的旧布尔，它的两半各归其位——库里的 `request_logs.streaming` 只表示**客户端意图**（代理层对应 `ExchangeView.delivery`），`request_attempts.streaming` 才是**上游实际怎么回**。
 
 #### 3.11.1 转换事实为什么不再建表
 

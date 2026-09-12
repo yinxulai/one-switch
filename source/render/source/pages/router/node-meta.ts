@@ -12,16 +12,7 @@ import {
 } from 'lucide-react'
 
 import type { NodeRunStatus } from './node-data'
-import type { IterationCollectMode, WorkflowNodeKind, WorkflowNodeModel } from './types'
-
-/**
- * 可以新增到画布上的节点类型。
- * 输入 / 输出节点是固定节点，不允许新增，也不允许删除。
- */
-export type AppendableKind = Extract<
-  WorkflowNodeKind,
-  'control-input' | 'protocol-discovery' | 'condition' | 'model-select' | 'iteration' | 'script' | 'prompt'
->
+import type { AppendableKind, IterationCollectMode, WorkflowNodeKind, WorkflowNodeModel } from '@common/router/types'
 
 /** React Flow 中注册的节点类型名。 */
 export type CanvasNodeType =

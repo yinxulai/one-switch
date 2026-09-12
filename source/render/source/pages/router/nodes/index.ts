@@ -1,6 +1,6 @@
 import type { ComponentType } from 'react'
 
-import type { WorkflowNodeKind } from '../types'
+import type { WorkflowNodeKind } from '@common/router/types'
 import type { RouteNodeProps } from '../node-data'
 import { ConditionNodeView } from './condition-node'
 import { ControlInputNodeView } from './control-input-node'

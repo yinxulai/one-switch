@@ -57,6 +57,20 @@ describe('logical model routes', () => {
     expect(responseData(res)).toMatchObject({ success: false, errorCode: 'NOT_FOUND' })
   })
 
+  it('reorders logical models through the management route', async () => {
+    await createLogicalModel({ id: 'route-order-a', name: 'route-order-a' })
+    await createLogicalModel({ id: 'route-order-b', name: 'route-order-b' })
+
+    const listRes = mockResponse()
+    await modelRoutes.invoke('/api/logical-model/list', listRes)
+    const before = (responseData(listRes).data as { id: string }[]).map(model => model.id)
+    const reversed = [...before].reverse()
+
+    const reorderRes = mockResponse()
+    await modelRoutes.invoke('/api/logical-model/reorder', reorderRes, { ids: reversed })
+    expect((responseData(reorderRes).data as { id: string }[]).map(model => model.id)).toEqual(reversed)
+  })
+
   it('creates a model from the underlying store with default fields', async () => {
     const model = await createLogicalModel({ id: 'store-model', name: 'store-model' })
     expect(model).toMatchObject({ name: 'store-model', enabled: true, description: '' })

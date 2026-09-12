@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { runWorkflow } from './engine'
+import { runWorkflow } from '@common/router/engine'
 import { appendNode, cloneNode, connectEdge, insertNode, portKey, primarySourcePort, removeEdges, removeNode, resolveInsertAnchor } from './graph-ops'
-import { createDefaultGraph, createDefaultPolicyGraph, createLlmComplexityGraph, createNodeByKind, createPresetModelPool, createUserAgentGraph, findPolicyPreset, resolveLandingModelIds, ROUTER_POLICY_PRESETS } from './graph-model'
+import { createDefaultGraph, createDefaultPolicyGraph, createLlmComplexityGraph, createNodeByKind, createPresetModelPool, createUserAgentGraph, findPolicyPreset, resolveLandingModelIds, ROUTER_POLICY_PRESETS } from '@common/router/presets'
 import { APPENDABLE_KINDS } from './node-meta'
-import { WorkflowGraphSchema } from './schemas'
-import type { ConditionNode, ControlInputNode, RuntimeLogicalModel, WorkflowGraph, WorkflowNodeModel } from './types'
+import { WorkflowGraphSchema } from '@common/router/schemas'
+import type { ConditionNode, ControlInputNode, RuntimeLogicalModel, WorkflowGraph, WorkflowNodeModel } from '@common/router/types'
 
 /**
  * 图操作回归测试。

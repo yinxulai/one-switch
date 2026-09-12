@@ -2,11 +2,12 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { eq } from 'drizzle-orm'
 import { closeDatabase, getDb, initDatabase } from './index'
 import { TEST_DATABASE_FILE_NAME } from './test-support'
 import { createRequestAttempt, createRequestLog } from './request-log-store'
-import { requestLogs } from './schema'
-import { formatLatencyBucketRange, getLatencyDistribution } from './analytics-store'
+import { requestAttempts, requestLogs } from './schema'
+import { formatLatencyBucketRange, getLatencyDistribution, getModelStats } from './analytics-store'
 
 let temporaryDirectory: string
 
@@ -138,5 +139,85 @@ describe('getLatencyDistribution', () => {
 
     expect(await getLatencyDistribution(0, 'prov_first')).toEqual([{ range: '100ms-200ms', count: 1 }])
     expect(await getLatencyDistribution(0, 'prov_second')).toEqual([{ range: '200ms-500ms', count: 1 }])
+  })
+})
+
+describe('getModelStats', () => {
+  interface RankedAttemptInput {
+    providerId: string
+    providerName: string
+    status?: 'success' | 'failed'
+    durationMilliseconds?: number
+  }
+
+  /** 造一条归属确定的尝试，以便控制排行榜里的「同一模型、不同提供方快照」。 */
+  async function createRankedAttempt(input: RankedAttemptInput): Promise<string> {
+    const requestId = await createLog()
+    await createRequestAttempt({
+      requestId,
+      providerId: input.providerId,
+      providerModelId: 'model_ranking',
+      providerName: input.providerName,
+      providerModelName: 'ranking-model',
+      upstreamProtocol: 'openai-responses',
+      upstreamRequestId: null,
+      url: 'https://example.com/v1/responses',
+      status: input.status ?? 'success',
+      httpStatus: 200,
+      retryable: false,
+      streaming: false,
+      attemptIndex: 0,
+      durationMilliseconds: input.durationMilliseconds ?? 10,
+    })
+    return requestId
+  }
+
+  it('keeps one row per upstream model even when older attempts carry a stale provider snapshot', async () => {
+    // 一个 providerModelId 只属于一个提供方：旧快照代表的是同一个模型的不同时期，
+    // 而不是排行榜上的两个模型（否则同一个模型会占掉两个 TOP 名额）。
+    await createRankedAttempt({ providerId: 'prov_stale', providerName: '旧提供方' })
+    await createRankedAttempt({ providerId: 'prov_current', providerName: '现提供方' })
+
+    const stats = await getModelStats(0)
+    expect(stats).toHaveLength(1)
+    expect(stats[0]).toMatchObject({ providerModelId: 'model_ranking', attempts: 2 })
+  })
+
+  it('describes the model with the provider snapshot of its latest attempt', async () => {
+    // 模型名与提供方必须来自同一条记录：不能出现「A 家的 id 配 B 家的名字」。
+    await createRankedAttempt({ providerId: 'prov_current', providerName: '现提供方' })
+    const staleRequestId = await createRankedAttempt({ providerId: 'prov_stale', providerName: '旧提供方' })
+    const staleAttemptId = getDb().select({ id: requestAttempts.id }).from(requestAttempts).where(eq(requestAttempts.requestId, staleRequestId)).all()[0].id
+    getDb().$client.prepare('UPDATE request_attempts SET createdTime = ? WHERE id = ?').run(1, staleAttemptId)
+
+    expect(await getModelStats(0)).toEqual([
+      expect.objectContaining({ providerId: 'prov_current', providerName: '现提供方', providerModelName: 'ranking-model', attempts: 2 }),
+    ])
+  })
+
+  it('orders the ranking deterministically when attempt counts tie', async () => {
+    await createRankedAttempt({ providerId: 'prov_a', providerName: 'A' })
+    const otherRequestId = await createLog()
+    await createRequestAttempt({
+      requestId: otherRequestId,
+      providerId: 'prov_b',
+      providerModelId: 'model_ranking_b',
+      providerName: 'B',
+      providerModelName: 'ranking-model-b',
+      upstreamProtocol: 'openai-responses',
+      upstreamRequestId: null,
+      url: 'https://example.com/v1/responses',
+      status: 'success',
+      httpStatus: 200,
+      retryable: false,
+      streaming: false,
+      attemptIndex: 0,
+      durationMilliseconds: 10,
+    })
+
+    const first = await getModelStats(0)
+    const second = await getModelStats(0)
+    expect(first.map(stat => stat.providerModelId)).toEqual(['model_ranking', 'model_ranking_b'])
+    expect(second.map(stat => stat.providerModelId)).toEqual(first.map(stat => stat.providerModelId))
   })
 })

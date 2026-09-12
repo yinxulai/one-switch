@@ -8,7 +8,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { NodePanelProps } from '../node-data'
-import type { ModelSelectSource, RuntimeLogicalModel } from '../types'
+import type { ModelSelectSource, RuntimeLogicalModel } from '@common/router/types'
 import {
   NodePanelField,
   NodePanelGroupHeader,
@@ -169,7 +169,7 @@ function ModelPicker(props: ModelPickerProps) {
       {logicalModels.length === 0 && <NodePanelHint tone="warning">{emptyHint}</NodePanelHint>}
       <div className="grid gap-1.5">
         {logicalModels.map(logicalModel => (
-          <label key={logicalModel.id} className="flex items-center gap-2 rounded-lg bg-workflow-block-parma-bg px-2.5 py-2 system-xs-regular text-text-secondary">
+          <label key={logicalModel.id} className="flex items-center gap-2 rounded-lg border border-module-border bg-workflow-block-parma-bg px-2.5 py-2 system-xs-regular text-text-secondary">
             <input
               type="checkbox"
               checked={selectedIds.includes(logicalModel.id)}

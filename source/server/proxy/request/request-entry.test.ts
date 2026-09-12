@@ -52,6 +52,27 @@ vi.mock('@server/database/logical-model-store', () => ({
   ],
 }))
 
+/**
+ * 代理入口的落点由当前生效的**工作流图**决定，而图存在数据库里。
+ *
+ * 这个文件测的是入口自身的流程（拒绝、日志、流式搬运），不是图的执行，因此这里不去初始化
+ * 数据库，而是用内建默认策略当场生成一张图——它对应的正是「一版图都没保存过」这个真实运行状态，
+ * 行为与用户开箱得到的路由完全一致。
+ */
+vi.mock('@server/database/router-graph-store', async () => {
+  const { createDefaultPolicyGraph } = await import('@common/router/presets')
+  return {
+    resolveRouterGraph: async () => ({
+      graph: createDefaultPolicyGraph([
+        { id: 'default', name: 'default', enabled: true },
+        { id: 'secondary', name: 'secondary', enabled: true },
+      ]),
+      version: 0,
+      savedAt: 0,
+    }),
+  }
+})
+
 vi.mock('@server/database/request-log-store', () => ({
   createRequestLog: mocks.createRequestLog,
   createRequestAttempt: mocks.createRequestAttempt,

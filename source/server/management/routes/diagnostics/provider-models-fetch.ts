@@ -4,7 +4,7 @@ import { ProtocolSchema, type Protocol } from '@common/schemas'
 import { getProvider, listProviderEndpoints } from '@server/database/provider-store'
 import { getSecretStore } from '@server/infrastructure/secrets/secret-store'
 import { coreNetworkClient } from '@server/infrastructure/network/core-network'
-import { createAuthHeaders } from '../../../proxy/upstream/auth'
+import { createProtocolAuthHeaders } from '@common/protocols'
 import { HttpRouter } from '@server/http-router'
 import type { ManagementHandler } from '../../core/response'
 import { sendError, sendSuccess } from '../../core/response'
@@ -146,7 +146,7 @@ async function fetchModelList(urlPath: string, protocol: Protocol, apiKey: strin
       port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
       path: parsed.pathname + parsed.search,
       method: 'GET',
-      headers: { ...createAuthHeaders(protocol, apiKey, null), Accept: 'application/json' },
+      headers: { ...createProtocolAuthHeaders(protocol, apiKey, null), Accept: 'application/json' },
       timeout,
       signal,
     }, Buffer.alloc(0))

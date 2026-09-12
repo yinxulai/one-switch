@@ -14,6 +14,7 @@
 |------|------|
 | [architecture.md](./architecture.md) | 系统架构、核心概念、零协议转换原则 |
 | [proxy.md](./proxy.md) | 本地代理服务：协议识别、路由、自动切换、流式边界 |
+| [proxy-engine.md](./proxy-engine.md) | 代理引擎结构：协议无关透传内核、观察/修改扩展接口、WS 与多接口的接入方式、迁移阶段 |
 | [route-design.md](./route-design.md) | 路由工作台设计：节点类型、执行模型、审计跟踪与落地顺序 |
 | [outbound-proxy.md](./outbound-proxy.md) | 上游出站代理设置：代理协议、绕过规则、连接测试、安全边界与传输接入 |
 | [websocket-transport.md](./websocket-transport.md) | proxy.md 传输层补充：`/v1/responses` 的 WS 透传中继、握手降级、连接级观测（原生透传，非协议转换） |

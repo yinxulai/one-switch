@@ -4,7 +4,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { closeDatabase, initDatabase } from './index'
 import { TEST_DATABASE_FILE_NAME } from './test-support'
-import { createLogicalModel, deleteLogicalModel, listLogicalModels, listSchedulingPolicies, updateLogicalModel, upsertSchedulingPolicy } from './logical-model-store'
+import { createLogicalModel, deleteLogicalModel, listLogicalModels, listSchedulingPolicies, reorderLogicalModels, updateLogicalModel, upsertSchedulingPolicy } from './logical-model-store'
 import { createProvider } from './provider-store'
 import { createProviderModelRoute } from './model-store'
 
@@ -80,5 +80,16 @@ describe('logical model store', () => {
     expect(await listLogicalModels(true)).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'default', deletedTime: expect.any(Number) }),
     ]))
+  })
+
+  it('persists the dragged logical model order across reads', async () => {
+    await createLogicalModel({ id: 'alpha', name: 'alpha' })
+    await createLogicalModel({ id: 'beta', name: 'beta' })
+
+    const before = (await listLogicalModels()).map(model => model.id)
+    const reversed = [...before].reverse()
+    await reorderLogicalModels(reversed)
+
+    expect((await listLogicalModels()).map(model => model.id)).toEqual(reversed)
   })
 })

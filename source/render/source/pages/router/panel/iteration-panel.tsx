@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/select'
 import { ITERATION_COLLECT_MODE_HINTS, ITERATION_COLLECT_MODE_LABELS } from '../node-meta'
 import type { NodePanelProps } from '../node-data'
-import type { IterationCollectMode, IterationNode } from '../types'
+import type { IterationCollectMode, IterationNode } from '@common/router/types'
 import {
   NodePanelField,
   NodePanelHint,

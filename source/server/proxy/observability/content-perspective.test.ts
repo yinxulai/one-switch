@@ -49,6 +49,7 @@ function requestLoggingInput() {
     path: '/v1/chat/completions',
     headers: { 'content-type': 'application/json', authorization: 'Bearer client-secret' },
     requestBody: Buffer.from('{"client":"request-body"}'),
+    delivery: 'buffered' as const,
     captureRequestContent: true,
   }
 }
@@ -58,13 +59,18 @@ function attemptLoggingInput(): AttemptLoggingInput {
     requestId: CLIENT_REQUEST_ID,
     attemptIndex: 0,
     startedAt: Date.now(),
-    snapshot: {
+    target: {
       providerId: 'prov_test',
-      providerModelId: 'model_test',
       providerName: 'prov_test',
+      providerModelId: 'model_test',
       providerModelName: 'test-model',
-      upstreamProtocol: 'openai-completions',
+      apiKeyReference: 'api-key-prov_test',
+      customAuthHeader: 'authorization',
+      endpointId: 'model_test:openai-completions',
+      protocol: 'openai-completions',
       url: 'https://example.com/v1/chat/completions',
+      transport: 'http',
+      timeoutMilliseconds: 30000,
     },
     upstreamRequestHeaders: { 'content-type': 'application/json', authorization: 'Bearer upstream-secret' },
     upstreamRequestBody: Buffer.from('{"upstream":"request-body"}'),

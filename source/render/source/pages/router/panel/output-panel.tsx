@@ -6,7 +6,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { NodePanelProps } from '../node-data'
-import type { OutputNode } from '../types'
+import type { OutputNode } from '@common/router/types'
 import { NodePanelField, NodePanelSwitchRow, PANEL_POPUP_ITEM_CLASSNAME, PANEL_POPUP_SURFACE_CLASSNAME } from './panel-fields'
 
 export function OutputPanel(props: NodePanelProps) {

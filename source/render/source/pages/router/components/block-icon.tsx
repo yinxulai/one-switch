@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils'
 
-import type { WorkflowNodeKind } from '../types'
+import type { WorkflowNodeKind } from '@common/router/types'
 import { kindIcon, kindTone } from '../node-meta'
 
 /**

@@ -1,6 +1,18 @@
 import type { IncomingHttpHeaders, OutgoingHttpHeaders, ServerResponse } from 'node:http'
-import type { ResponseSink } from '@server/proxy/response/response-pipeline'
 
+/** 响应写出口的最小形状：只要能把字符串写出去并收尾，就能作为出口（含测试替身）。 */
+export interface ResponseSink {
+  readonly writableEnded: boolean
+  write(chunk: string): void
+  end(): void
+}
+
+/**
+ * 代理响应出口。
+ *
+ * 只负责「把字节交给客户端」，不认识协议、不认识帧、不解析正文：
+ * 协议差异在修改器里抹平，字节搬运在中继里完成，这里只做最后一步落地。
+ */
 export interface ProxyResponse extends ResponseSink {
   readonly headersSent: boolean
   readonly destroyed: boolean

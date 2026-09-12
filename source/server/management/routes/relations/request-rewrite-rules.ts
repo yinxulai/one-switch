@@ -22,7 +22,9 @@ export const requestRewriteRuleRoutes = new HttpRouter<ManagementHandler>()
     const input = TestSchema.parse(body)
     const parsedBody = JSON.parse(input.testCase.body) as object
     const parsedHeaders = JSON.parse(input.testCase.headers) as Record<string, string | string[] | undefined>
-    const result = applyRequestRewriteRules(Buffer.from(JSON.stringify(parsedBody)), parsedHeaders, [input.rule], { stage: input.testCase.stage, clientProtocol: input.testCase.clientProtocol as Parameters<typeof applyRequestRewriteRules>[3]['clientProtocol'], upstreamProtocol: input.testCase.upstreamProtocol as Parameters<typeof applyRequestRewriteRules>[3]['upstreamProtocol'], streaming: input.testCase.streaming })
+    // 试跑入参叫 `streaming`（落库的用例字段，改名要迁数据），语义是「假设这次响应是分块交付」，
+    // 因此在这里映射到改写引擎的 `incrementalDelivery`，不把旧名带进引擎。
+    const result = applyRequestRewriteRules(Buffer.from(JSON.stringify(parsedBody)), parsedHeaders, [input.rule], { stage: input.testCase.stage, clientProtocol: input.testCase.clientProtocol as Parameters<typeof applyRequestRewriteRules>[3]['clientProtocol'], upstreamProtocol: input.testCase.upstreamProtocol as Parameters<typeof applyRequestRewriteRules>[3]['upstreamProtocol'], incrementalDelivery: input.testCase.streaming })
     sendSuccess(res, { ...result, body: result.body.toString('utf8') })
   })
   .post('/api/request-rewrite-rule/bindings', async (_req, res, body) => sendSuccess(res, await listProviderModelRequestRewriteRules(ModelSchema.parse(body).providerModelId)))

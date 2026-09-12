@@ -10,8 +10,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
+import { createConditionCase, createConditionRule, getOperatorsByType } from '@common/router/presets'
 import { DifyButton } from '../components/dify-button'
-import { createConditionCase, createConditionRule, getOperatorsByType } from '../graph-model'
 import type { NodePanelProps } from '../node-data'
 import {
   CONDITION_OPERATOR_META,
@@ -21,7 +21,7 @@ import {
   type ConditionOperator,
   type ConditionValueSource,
   type SchemaValueType,
-} from '../types'
+} from '@common/router/types'
 import {
   NodePanelCard,
   NodePanelField,
@@ -134,7 +134,7 @@ export function ConditionPanel(props: NodePanelProps) {
               const usesFieldOperand = supportsFieldOperand && rule.valueSource === 'field'
 
               return (
-                <div key={`${conditionCase.id}-${ruleIndex}`} className="grid gap-2 rounded-lg bg-workflow-block-parma-bg p-2">
+                <div key={`${conditionCase.id}-${ruleIndex}`} className="grid gap-2 rounded-lg border border-module-border bg-workflow-block-parma-bg p-2">
                   <NodePanelGroupHeader
                     title={`条件 ${ruleIndex + 1}`}
                     action={(

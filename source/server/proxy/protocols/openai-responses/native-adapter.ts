@@ -1,7 +1,7 @@
 import type { Protocol } from '@common/schemas'
-import { rewriteRequestModel } from '@server/proxy/request/request'
 import type { RequestContext } from '@server/proxy/request/request-context'
 import type { NativeProtocolAdapter, StreamConverter } from '../shared/types'
+import { writeJsonModel } from '../shared/json-envelope'
 import { applyOpenAiResponsesRequestDefaults } from './request-defaults'
 
 export class OpenAiResponsesNativeAdapter implements NativeProtocolAdapter {
@@ -12,7 +12,7 @@ export class OpenAiResponsesNativeAdapter implements NativeProtocolAdapter {
 
   prepareRequest(context: RequestContext, providerModelName: string): Buffer {
     return applyOpenAiResponsesRequestDefaults(
-      rewriteRequestModel(context.requestBody, providerModelName),
+      writeJsonModel(context.requestBody, providerModelName),
     )
   }
 

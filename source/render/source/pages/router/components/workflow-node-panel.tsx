@@ -9,7 +9,7 @@ import { PANEL_COMPONENT_MAP } from '../panel'
 import { NodePanelHint } from '../panel/panel-fields'
 import { isProtectedNode, nodePanelHint } from '../node-meta'
 import type { NodePanelUpdate, NodePanelProps as NodePanelBodyProps } from '../node-data'
-import type { WorkflowNodeModel } from '../types'
+import type { WorkflowNodeModel } from '@common/router/types'
 import { BlockIcon } from './block-icon'
 import { DifyButton } from './dify-button'
 
@@ -68,9 +68,16 @@ export function WorkflowNodePanel(props: WorkflowNodePanelProps) {
   const maxWidth = computeMaxPanelWidth(canvasWidth)
   const boundedWidth = Math.min(Math.max(width, MIN_PANEL_WIDTH), maxWidth)
 
+  // 画布变窄时把超宽的面板拽回来。
+  //
+  // 这里刻意用 `widthRef` 读当前宽度、而不是把 `width` 写进依赖数组：
+  // 本副作用会写 `onWidthChange`（父级 `panelWidth`），如果 `width` 也是依赖，
+  // 就成了「副作用写自己的依赖」，正是 Maximum update depth 的成因。
+  // 依赖只留外部的 `canvasWidth` 后，只有画布真的变化才会跑一次。
   useEffect(() => {
-    if (width > maxWidth) onWidthChange(maxWidth)
-  }, [maxWidth, onWidthChange, width])
+    const current = widthRef.current
+    if (current > computeMaxPanelWidth(canvasWidth)) onWidthChange(computeMaxPanelWidth(canvasWidth))
+  }, [canvasWidth, onWidthChange])
 
   const handleResizeStart = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault()

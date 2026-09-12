@@ -74,6 +74,17 @@ P1 优先实现三个最高频方向：
 - usage 统计在转换层从上游格式解析后按客户端协议格式回填
 - 空闲超时、切换边界规则与透传路径一致：一旦已向客户端下发转换后的事件，不再切换
 
+#### 流式状态机约定
+
+| 方向 | 约定 |
+|------|------|
+| OpenAI → Anthropic | content block index 由转换器统一分配：文本块占用首个 index，`tool_calls` 的 OpenAI index 通过映射表固定到各自的 Anthropic index，不允许直接复用 OpenAI 的 tool index |
+| OpenAI → Anthropic | `message_start` 在首次出现内容时合成；`message_delta` + `message_stop` 仅在同时拿到 `finish_reason` 与 `usage` 后发出；上游提前结束（缺 `usage`）时在流结束时用最近一次 `finish_reason` 兜底关闭 |
+| Anthropic → OpenAI | Anthropic 的 block index 会重新压缩为连续的 OpenAI `tool_calls` index；`thinking_delta`、`content_block_stop` 等无对应语义的事件被忽略；`message_delta` 缺少 `stop_reason` 时只回填 usage，由 `message_stop` 兜底补 `finish_reason` |
+| OpenAI → Responses | 必须合成完整事件生命周期：`response.created` → `response.in_progress` → `output_item.added` → `content_part.added` → `output_text.delta`* → `output_text.done` → `content_part.done` → `output_item.done` → `response.completed`；文本 item 在切换到 function call item 前必须先关闭 |
+| OpenAI 上游 → 任意客户端 | 上游 `data: [DONE]` 只表示 OpenAI SSE 结束，转换器必须消费并丢弃，不能转发给 Anthropic 或 Responses 客户端 |
+| 任意方向 | `flush()` 与 `finish()` 必须幂等；即使没有残留缓冲也要补齐收尾事件，保证客户端总能收到终止事件 |
+
 ## 数据模型变更
 
 - 新增 `provider_endpoints`：Provider 按原生协议维护默认端点。
@@ -147,16 +158,22 @@ P1 优先实现三个最高频方向：
 ## 转换器模块设计
 
 ```
-source/server/conversion/
-  index.ts                  # 转换器注册表：CONVERTERS[fromProtocol][toProtocol]
-  types.ts                  # Converter 接口与支持度枚举
-  request/
-    anthropic-to-openai-completions.ts
-    responses-to-openai-completions.ts
-    openai-completions-to-anthropic.ts
-  response/                 # 非流式响应反向转换
-  stream/                   # SSE 逐事件有状态转换
+source/server/proxy/protocols/
+  shared/
+    conversion-utils.ts                          # JSON 取值/序列化工具，畸形输入统一降级
+    request-conversion.ts                        # convertRequestBody 入口：按方向分发
+    request-conversion-openai-to-anthropic.ts
+    request-conversion-anthropic-to-openai.ts
+    request-conversion-responses-to-openai.ts
+    response-conversion.ts                       # convertResponseBody + createSseConverter 入口
+    response-conversion-openai-to-anthropic.ts   # 非流式 + 有状态 SSE
+    response-conversion-anthropic-to-openai.ts   # 非流式 + 有状态 SSE
+    response-conversion-openai-to-responses.ts   # 非流式 + 有状态 SSE（Responses 事件生命周期）
+  types.ts                                       # StreamConverter / NativeProtocolAdapter / ProtocolConversionAdapter
+  registry.ts                                    # 转换器注册表：按 (endpointProtocol, clientProtocol) 分发
 ```
+
+每个方向的实现都拆成「请求转换」与「响应转换」两个文件，响应转换文件同时导出非流式转换函数、状态工厂（`create*State`）、逐事件转换函数（`*Events`）与收尾函数（`finish*`），便于对状态机做单元测试而无需构造完整 SSE 流。
 
 `Converter` 接口（每个方向一组）：
 
@@ -177,9 +194,11 @@ interface ProtocolConverter {
 - **保守转换**：无法映射的字段丢弃并记录 debug 日志，不报错
 - **修改器边界**：请求修改器在 upstream 请求转换完成后、发送真实供应商前执行；响应修改器在真实供应商响应完成反向协议转换、写回客户端前执行。修改器不介入协议转换器内部的中间报文。
 - **系统提示词**：`system` 顶层字段 ↔ `messages` 中 `role: system` 首条消息
-- **工具调用**：OpenAI `tool_calls` ↔ Anthropic `tool_use` / `tool_result` content block 双向映射
+- **工具调用**：OpenAI `tool_calls` ↔ Anthropic `tool_use` / `tool_result` content block 双向映射；assistant 消息同时含文本与工具调用时两者都要保留，连续的 `role: tool` 结果必须合并进同一条消息的多个 `tool_result` block，以维持 OpenAI 要求的「工具结果紧随 assistant」顺序
+- **工具选择**：`tool_choice` 四种形态双向映射（`auto` / `required` ↔ `any` / `none` / 指定工具）；`parallel_tool_calls: false` ↔ `disable_parallel_tool_use: true`
+- **Responses 输入项**：`input` 数组中的 `function_call` / `function_call_output` 既可出现在顶层项，也可内嵌在 `message.content` 中，两种形态都要识别；`reasoning` / `item_reference` 无对应语义，直接丢弃
 - **多模态**：图片 base64 双向映射；视频等单侧能力降级为文本提示
-- **采样参数**：`temperature` / `top_p` / `max_tokens` 直接映射；`stop` ↔ `stop_sequences`
+- **采样参数**：`temperature` / `top_p` / `max_tokens`（Responses 为 `max_output_tokens`）直接映射；`stop` ↔ `stop_sequences`；`reasoning.effort` ↔ `reasoning_effort`
 - **usage**：按目标协议格式回填；不能把 OpenAI 总输入与 Anthropic 未缓存输入直接等同。
 - 不做角色扮演式 hack（不注入「你在扮演 Claude」之类的提示词）
 

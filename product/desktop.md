@@ -201,7 +201,7 @@ Electron + Node + TypeScript + React/Vite
 
 两个 `model-select` 的落点都在生成预设时按当前逻辑模型列表定好：直连分支由变量取值决定，回落分支取内建默认逻辑模型，因此套用后直接能跑。
 
-这套规则在代理链路里目前还有一份**服务端内建实现**（`source/server/proxy/routing/logical-model-resolver.ts`），HTTP 与 WebSocket 入口共用它：请求模型命中已启用逻辑模型的 id 或 name 就直连，否则回落到内建默认逻辑模型，没有可用的内建默认逻辑模型时直接 503。它之所以还在，是因为代理由 `proxy-runtime.ts` 直接调用请求入口，并不读取也不执行用户保存的路由图（`runWorkflow` 唯一的落点是试运行接口 `POST /api/router/run`）。等路由图真正驱动代理之后，这份实现连同两个入口里的调用一起删除即可，判据就是 `logical-model-resolver.test.ts` 里那组与默认策略预设等价的用例。
+这套规则在代理链路里**只有这一份图**：HTTP 与 WS 入口都先把请求交给当前生效的路由图（`resolveRoute()`），再拿图算出的落点去问规划器要候选。请求模型命中已启用逻辑模型的 id 或 name 就直连，否则走兜底落点；图选不出落点时按入口给错（HTTP 503、WS 426）。一版图都没保存过时代理就用 `createDefaultPolicyGraph()` 现场生成的内建默认策略，因此「开箱即用」与「用户保存的图」走同一段执行路径。
 
 #### 规则 2：Header 来源分流
 

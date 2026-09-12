@@ -3,7 +3,7 @@ import { SquareCode, Timer } from 'lucide-react'
 import { NodeHandle } from '../components/node-handle'
 import { NodeBody, NodeRow, NodeRowList } from '../components/node-sections'
 import type { RouteNodeProps } from '../node-data'
-import type { ScriptNode } from '../types'
+import type { ScriptNode } from '@common/router/types'
 
 /**
  * JS 脚本节点视图。

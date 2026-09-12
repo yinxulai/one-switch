@@ -1,6 +1,7 @@
 import type http from 'node:http'
 import type { IncomingHttpHeaders, OutgoingHttpHeaders } from 'node:http'
 import type { AttemptStatus, Protocol, RawUsage, RequestAttribute, RequestStatus } from '@common/schemas'
+import type { DeliveryMode, UpstreamTarget } from '@server/proxy/contracts'
 import type { ProxyObservationHooks } from '@server/proxy/observability/hooks'
 
 export interface RequestLoggingInput {
@@ -14,6 +15,13 @@ export interface RequestLoggingInput {
   headers: http.IncomingHttpHeaders
   attributes?: Array<Omit<RequestAttribute, 'requestId' | 'createdTime'>>
   requestBody: Buffer
+  /**
+   * 客户端要求的交付方式。入口按接口的封装描述解析一次，落库时再投影成布尔。
+   *
+   * 这里保留轴上取值而不是提前压成 `boolean`：写入点需要的是「事实」，
+   * 而 `request_logs.streaming` 是一个布尔列——投影只应该发生在那一个地方。
+   */
+  delivery: DeliveryMode
   captureRequestContent: boolean
   hooks?: ProxyObservationHooks
 }
@@ -42,6 +50,12 @@ export interface RequestContentOutcome {
   responseBody?: string | null
 }
 
+/**
+ * 一次尝试要记录的上游事实。
+ *
+ * 这是从规划器的 {@link UpstreamTarget} 投影出来的窄视图：观测层只声明它真正要落库的字段，
+ * 不去拿整个目标对象（否则每加一个字段都会自动进入写入路径）。
+ */
 export interface AttemptLogSnapshot {
   providerId: string
   providerModelId: string
@@ -86,7 +100,8 @@ export interface AttemptLoggingInput {
   requestId: string
   attemptIndex: number
   startedAt: number
-  snapshot: AttemptLogSnapshot
+  /** 这次尝试真正连到的上游；落库用的上游事实全部从它投影。 */
+  target: UpstreamTarget
   /** 实际发往上游的请求头（已完成改写与协议转换）。 */
   upstreamRequestHeaders: http.OutgoingHttpHeaders
   /** 实际发往上游的请求体（已完成改写与协议转换）。 */

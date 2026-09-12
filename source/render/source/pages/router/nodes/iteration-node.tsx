@@ -4,7 +4,7 @@ import { NodeHandle } from '../components/node-handle'
 import { NodeBody, NodeBranchRow, NodeRow, NodeRowList } from '../components/node-sections'
 import { ITERATION_COLLECT_MODE_LABELS } from '../node-meta'
 import type { RouteNodeProps } from '../node-data'
-import type { IterationNode } from '../types'
+import type { IterationNode } from '@common/router/types'
 
 /**
  * 遍历迭代节点视图。

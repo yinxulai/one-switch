@@ -10,10 +10,10 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { createControlItem } from '@common/router/presets'
 import { DifyButton } from '../components/dify-button'
-import { createControlItem } from '../graph-model'
 import type { NodePanelProps } from '../node-data'
-import type { ControlInputNode } from '../types'
+import type { ControlInputNode } from '@common/router/types'
 import {
   NodePanelCard,
   NodePanelField,
@@ -109,7 +109,7 @@ export function ControlInputPanel(props: NodePanelProps) {
                 </Select>
               </NodePanelField>
 
-              <div className="flex items-end justify-between gap-2 rounded-lg bg-workflow-block-parma-bg px-2.5 py-2">
+              <div className="flex items-end justify-between gap-2 rounded-lg border border-module-border bg-workflow-block-parma-bg px-2.5 py-2">
                 <span className="system-xs-regular text-text-secondary">启用</span>
                 <Switch
                   checked={control.enabled}
@@ -119,7 +119,7 @@ export function ControlInputPanel(props: NodePanelProps) {
             </div>
 
             {control.kind === 'switch' && (
-              <div className="flex items-center justify-between rounded-lg bg-workflow-block-parma-bg px-2.5 py-2">
+              <div className="flex items-center justify-between rounded-lg border border-module-border bg-workflow-block-parma-bg px-2.5 py-2">
                 <span className="system-xs-regular text-text-secondary">默认开启</span>
                 <Switch
                   checked={Boolean(control.defaultValue)}
