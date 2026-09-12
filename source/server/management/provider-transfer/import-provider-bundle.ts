@@ -1,6 +1,7 @@
 import { generateKeyReference } from '@common/keychain'
 import { ProviderBundleImportRequestSchema } from '@common/provider-bundle'
 import type { ProviderBundleImportRequest, ProviderBundleModel, ProviderBundleProvider, ProviderBundleSetting } from '@common/provider-bundle'
+import { BUILT_IN_DEFAULT_LOGICAL_MODEL_NAME } from '@common/schemas'
 import { AppError } from '@server/errors'
 import { upsertSchedulingPolicy } from '@server/database/logical-model-store'
 import { createProviderModelRoute, deleteProviderModelRoute, listProviderModels, updateProviderModelRoute } from '@server/database/model-store'
@@ -27,7 +28,6 @@ export interface ProviderBundleImportResult {
  * 模型建策略，搬过来的供应商就会变成一个不参与任何路由的空壳。所以新建的模型按手工新建的默认
  * 行为挂到 `default`，已有模型的调度位置则完全不动。
  */
-const DEFAULT_LOGICAL_MODEL_ID = 'default'
 
 /**
  * 导入供应商包。
@@ -137,7 +137,7 @@ async function applyModels(providerId: string, models: ProviderBundleModel[]): P
     } else {
       // priority 属于调度策略（`scheduling_policies.priority`），不属于供应商包，这里只占位。
       const created = await createProviderModelRoute({ providerId, modelName: model.modelName, enabled: model.enabled, endpoints, priority: 0 })
-      await upsertSchedulingPolicy({ logicalModelId: DEFAULT_LOGICAL_MODEL_ID, providerModelId: created.id, priority: 0 })
+      await upsertSchedulingPolicy({ logicalModelId: BUILT_IN_DEFAULT_LOGICAL_MODEL_NAME, providerModelId: created.id, priority: 0 })
     }
   }
 

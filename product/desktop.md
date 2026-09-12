@@ -197,7 +197,11 @@ Electron + Node + TypeScript + React/Vite
 - `claude-sonnet-*` -> `reasoning-lane`
 - 其他 -> `default`
 
-这条规则是系统默认规则，开箱即用。在路由工作台里它以**默认策略预设**的形式内建，并且完全由基础节点组合而成：`input → condition(route.requestedModel in logicalModels[*].id) → model-select(变量取值 route.requestedModel) / model-select(固定 default) → output`。命中判断由条件节点的「字段取值」比较完成，引擎不预计算布尔结果。不需要逐条维护模型映射表，逻辑模型增减时规则自动生效。页头的「策略」下拉可随时切回该默认策略，详见 [route-design.md](./route-design.md) §2.7。
+这条规则是系统默认规则，开箱即用。在路由工作台里它以**默认策略预设**的形式内建，并且完全由基础节点组合而成：`input → condition(route.requestedModel in logicalModels[*].id) → model-select(变量取值 route.requestedModel) / model-select(落点) → output`。命中判断由条件节点的「字段取值」比较完成，引擎不预计算布尔结果。不需要逐条维护模型映射表，逻辑模型增减时规则自动生效。页头的「策略」下拉可随时切回该默认策略，详见 [route-design.md](./route-design.md) §2.7。
+
+两个 `model-select` 的落点都在生成预设时按当前逻辑模型列表定好：直连分支由变量取值决定，回落分支取内建默认逻辑模型，因此套用后直接能跑。
+
+这套规则在代理链路里目前还有一份**服务端内建实现**（`source/server/proxy/routing/logical-model-resolver.ts`），HTTP 与 WebSocket 入口共用它：请求模型命中已启用逻辑模型的 id 或 name 就直连，否则回落到内建默认逻辑模型，没有可用的内建默认逻辑模型时直接 503。它之所以还在，是因为代理由 `proxy-runtime.ts` 直接调用请求入口，并不读取也不执行用户保存的路由图（`runWorkflow` 唯一的落点是试运行接口 `POST /api/router/run`）。等路由图真正驱动代理之后，这份实现连同两个入口里的调用一起删除即可，判据就是 `logical-model-resolver.test.ts` 里那组与默认策略预设等价的用例。
 
 #### 规则 2：Header 来源分流
 

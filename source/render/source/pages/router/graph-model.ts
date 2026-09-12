@@ -1,5 +1,6 @@
 import { MarkerType, type Edge } from '@xyflow/react'
 
+import { isBuiltInDefaultLogicalModel } from '@common/schemas'
 import {
   NODE_KIND_ORDER,
   edgeRunStatusStroke,
@@ -8,7 +9,6 @@ import {
 } from './node-meta'
 import type { NodeRunStatus } from './node-data'
 import {
-  DEFAULT_MODEL_IDS,
   DEFAULT_OPERATOR_SET,
   PROMPT_TIMEOUT_DEFAULT,
   SCRIPT_TIMEOUT_DEFAULT,
@@ -18,6 +18,7 @@ import {
   type ControlInputItem,
   type ControlInputKind,
   type NodePosition,
+  type RuntimeLogicalModel,
   type SchemaValueType,
   type WorkflowEdge,
   type WorkflowGraph,
@@ -256,6 +257,46 @@ export function createOutputNode(position: NodePosition): WorkflowNodeModel {
   }
 }
 
+/** 预设生成时的落点来源：预设里每个落点都必须是真实存在的逻辑模型 id。 */
+export interface PresetModelPool {
+  /** 兜底落点 id；一个已启用逻辑模型都没有时为 `null`。 */
+  fallbackModelId: string | null
+  /** 可用于分流落点的 id，按当前顺序排列，已排除兜底落点。 */
+  landingModelIds: string[]
+}
+
+/**
+ * 从当前可见的逻辑模型里挑出预设的落点。
+ *
+ * 预设的意义是「选完就能跑」：写一个不存在的 id，运行结果只会报「没有可用逻辑模型」，
+ * 用户还得先去猜该填什么。所以落点一律在生成时按现有逻辑模型定好——
+ * 兜底落点取内建默认逻辑模型，分流落点按顺序取兜底之外的其他逻辑模型。
+ *
+ * 内建默认逻辑模型被停用/删掉时退回第一个已启用模型：
+ * 这一条比服务端的回落规则（`resolveLogicalModel`，此时直接回 503）宽松，是故意的——
+ * 生成预设是「帮你先把图填上」，前面已经有一个可视可选的真逻辑模型，就没必要留个空落点；
+ * 而运行时遇到同样情况则宁可拒绝，也不能替用户猜一个上游。
+ */
+export function createPresetModelPool(models: RuntimeLogicalModel[]): PresetModelPool {
+  const enabledModels = models.filter(model => model.enabled)
+  const fallbackModel = enabledModels.find(isBuiltInDefaultLogicalModel) ?? enabledModels[0]
+  return {
+    fallbackModelId: fallbackModel?.id ?? null,
+    landingModelIds: enabledModels.filter(model => model.id !== fallbackModel?.id).map(model => model.id),
+  }
+}
+
+/**
+ * 取落点逻辑模型：`index` 为 `null` 时取兜底落点，否则取第 `index` 个分流落点。
+ *
+ * 分流候选不够时退回兜底落点——宁可几条分支落到同一个逻辑模型，也不要留下一个死落点；
+ * 连兜底都没有（一个已启用逻辑模型都没有）时返回空数组，出口节点会照实报「没有可用逻辑模型」。
+ */
+export function resolveLandingModelIds(pool: PresetModelPool, index: number | null): string[] {
+  const landingModelId = index === null ? pool.fallbackModelId : pool.landingModelIds[index] ?? pool.fallbackModelId
+  return landingModelId ? [landingModelId] : []
+}
+
 /**
  * 默认策略：请求模型命中逻辑模型 id 就直连它，否则落到默认逻辑模型。
  *
@@ -263,12 +304,16 @@ export function createOutputNode(position: NodePosition): WorkflowNodeModel {
  * 命中判断就是一条普通的「字段 in 字段」条件：
  * 输入 → 条件（route.requestedModel in logicalModels[*].id）
  *        ├─ IF   → 逻辑模型选择（变量取值 route.requestedModel）→ 出口
- *        └─ ELSE → 逻辑模型选择（固定 default）→ 出口
+ *        └─ ELSE → 逻辑模型选择（兜底落点，生成时定好具体 id）→ 出口
  *
  * 注意比较右侧用的是通配投影 `logicalModels[*].id`：
  * 上下文里本来就带着完整的逻辑模型列表，没必要再派生一份 id 数组。
+ *
+ * 兜底落点在生成时从传入的逻辑模型里挑真实 id，所以这条策略套用即可运行，
+ * 不会因为写死了一个不存在的 id 而一上手就报「没有可用逻辑模型」。
  */
-export function createDefaultPolicyGraph(): WorkflowGraph {
+export function createDefaultPolicyGraph(models: RuntimeLogicalModel[]): WorkflowGraph {
+  const pool = createPresetModelPool(models)
   const conditionCase: ConditionCase = {
     ...createConditionCase('case-1'),
     name: '请求模型在逻辑模型列表里',
@@ -317,7 +362,7 @@ export function createDefaultPolicyGraph(): WorkflowGraph {
         position: { x: 860, y: 330 },
         source: 'fixed',
         variablePath: '',
-        modelIds: [...DEFAULT_MODEL_IDS],
+        modelIds: resolveLandingModelIds(pool, null),
         fallbackModelIds: [],
       },
       createOutputNode({ x: 1260, y: 220 }),
@@ -395,7 +440,8 @@ export interface RouterPolicyPreset {
   description: string
   /** 是否是系统内建的默认策略（列表第一项，可在任何时刻一键选回）。 */
   isDefault: boolean
-  createGraph: () => WorkflowGraph
+  /** 生成预设图；落点逻辑模型由传入的当前逻辑模型列表定好，保证套用后即可运行。 */
+  createGraph: (models: RuntimeLogicalModel[]) => WorkflowGraph
 }
 
 /**
@@ -405,14 +451,19 @@ export interface RouterPolicyPreset {
  * 值里出现哪个客户端标识就走哪个分支 —— 头名大小写、由哪个头携带都不影响判定，
  * 这正是遍历迭代相对「直接取 `request.headers.user-agent`」的价值所在。
  *
- * 两个分支的落点是占位 id（`cursor` / `claude-cli`），换成自己的逻辑模型即可。
+ * 两个分支的落点在生成时按传入的逻辑模型列表定好：优先取兜底之外的其他逻辑模型，
+ * 所以套用后直接能跑；想按自己的意图分流，把落点改成目标逻辑模型即可。
  *
  * 循环与命中判定靠三条约定咬合：
  * - 循环体末端把落点写进 `route.modelIds`，迭代节点读同一个 `collectPath` 判定本轮命中；
  * - `resultPath` 留空：整轮都没命中时，汇总结果不能用空数组把循环体已写下的值盖掉；
  * - 兜底放在下游一个变量取值的逻辑模型选择节点里，它同时覆盖「命中沿用」与「未命中兜底」。
  */
-export function createUserAgentGraph(): WorkflowGraph {
+export function createUserAgentGraph(models: RuntimeLogicalModel[]): WorkflowGraph {
+  const pool = createPresetModelPool(models)
+  const cursorLanding = resolveLandingModelIds(pool, 0)
+  const claudeCliLanding = resolveLandingModelIds(pool, 1)
+  const fallbackLanding = resolveLandingModelIds(pool, null)
   const cursorCase: ConditionCase = {
     id: 'case-cursor',
     name: 'Cursor 客户端',
@@ -472,11 +523,11 @@ export function createUserAgentGraph(): WorkflowGraph {
       kind: 'model-select',
       name: 'Cursor 落点',
       enabled: true,
-      description: 'Cursor 客户端落到这个逻辑模型；占位 id 换成自己的逻辑模型。',
+      description: 'Cursor 客户端落到这个逻辑模型。',
       position: { x: 1280, y: 40 },
       source: 'fixed',
       variablePath: '',
-      modelIds: ['cursor'],
+      modelIds: cursorLanding,
       fallbackModelIds: [],
     },
     {
@@ -484,11 +535,11 @@ export function createUserAgentGraph(): WorkflowGraph {
       kind: 'model-select',
       name: 'Claude CLI 落点',
       enabled: true,
-      description: 'Claude CLI 客户端落到这个逻辑模型；占位 id 换成自己的逻辑模型。',
+      description: 'Claude CLI 客户端落到这个逻辑模型。',
       position: { x: 1280, y: 300 },
       source: 'fixed',
       variablePath: '',
-      modelIds: ['claude-cli'],
+      modelIds: claudeCliLanding,
       fallbackModelIds: [],
     },
     {
@@ -501,7 +552,7 @@ export function createUserAgentGraph(): WorkflowGraph {
       source: 'variable',
       variablePath: 'route.modelIds',
       modelIds: [],
-      fallbackModelIds: [...DEFAULT_MODEL_IDS],
+      fallbackModelIds: fallbackLanding,
     },
     createOutputNode({ x: 1680, y: 340 }),
   ]
@@ -527,17 +578,20 @@ export function createUserAgentGraph(): WorkflowGraph {
  *
  * 输入 → LLM 节点（判断复杂度，回复写进 route.complexity）
  *        → 条件（route.complexity 匹配正则 [Cc]omplex）
- *          ├─ 复杂 → 逻辑模型选择（固定 high-effort）→ 出口
- *          └─ 其余 → 逻辑模型选择（固定 fast-cheap）→ 出口
+ *          ├─ 复杂 → 逻辑模型选择（固定复杂落点）→ 出口
+ *          └─ 其余 → 逻辑模型选择（固定简单落点）→ 出口
  *
  * 判定用「匹配正则」而不是「等于」：LLM 的回复是自由文本，正则不锚定首尾，
  * 天然容忍多余空白，`[Cc]` 又顺手兼容了首字母大写。
  * 想让判定绝对可靠，就把提示词改成「只回答 JSON」，再用脚本节点解析它。
  *
- * LLM 节点默认借用内置的 default 逻辑模型，换成专门的判定用小模型更省；
- * 两个落点都是占位 id，替换成自己的逻辑模型即可。
+ * LLM 节点默认借用兜底逻辑模型（生成时定好），换成专门的判定用小模型更省；
+ * 两个落点也在生成时按传入的逻辑模型列表定好，套用后直接能跑。
  */
-export function createLlmComplexityGraph(): WorkflowGraph {
+export function createLlmComplexityGraph(models: RuntimeLogicalModel[]): WorkflowGraph {
+  const pool = createPresetModelPool(models)
+  const complexLanding = resolveLandingModelIds(pool, 0)
+  const simpleLanding = resolveLandingModelIds(pool, 1)
   const complexCase: ConditionCase = {
     id: 'case-complex',
     name: '复杂请求',
@@ -562,7 +616,7 @@ export function createLlmComplexityGraph(): WorkflowGraph {
       enabled: true,
       description: '把请求交给逻辑模型读一遍，只让它回一个词：simple 或 complex。',
       position: { x: 460, y: 300 },
-      logicalModelId: DEFAULT_MODEL_IDS[0],
+      logicalModelId: pool.fallbackModelId ?? '',
       systemPrompt: '你是模型路由助手：只判断请求复杂度，不回答请求内容，也不做任何解释。',
       promptTemplate: '判断下面这次请求的复杂度，只回答一个词：simple 或 complex。\n\n请求：${request.body}',
       resultPath: 'route.complexity',
@@ -584,11 +638,11 @@ export function createLlmComplexityGraph(): WorkflowGraph {
       kind: 'model-select',
       name: '复杂请求落点',
       enabled: true,
-      description: '复杂请求落到这个逻辑模型；占位 id，换成自己的高性能模型。',
+      description: '复杂请求落到这个逻辑模型。',
       position: { x: 1300, y: 140 },
       source: 'fixed',
       variablePath: '',
-      modelIds: ['high-effort'],
+      modelIds: complexLanding,
       fallbackModelIds: [],
     },
     {
@@ -596,11 +650,11 @@ export function createLlmComplexityGraph(): WorkflowGraph {
       kind: 'model-select',
       name: '其余请求落点',
       enabled: true,
-      description: '简单请求落到这个逻辑模型；占位 id，换成自己的快而便宜的模型。',
+      description: '简单请求落到这个逻辑模型。',
       position: { x: 1300, y: 460 },
       source: 'fixed',
       variablePath: '',
-      modelIds: ['fast-cheap'],
+      modelIds: simpleLanding,
       fallbackModelIds: [],
     },
     createOutputNode({ x: 1720, y: 300 }),
@@ -623,14 +677,17 @@ export function createLlmComplexityGraph(): WorkflowGraph {
  *
  * 输入 → JS 脚本节点（算消息数 / 上下文字数 / 工具数，返回 simple 或 complex）
  *        → 条件（route.complexity 等于 complex）
- *          ├─ 复杂 → 逻辑模型选择（固定 high-effort）→ 出口
- *          └─ 其余 → 逻辑模型选择（固定 fast-cheap）→ 出口
+ *          ├─ 复杂 → 逻辑模型选择（固定复杂落点）→ 出口
+ *          └─ 其余 → 逻辑模型选择（固定简单落点）→ 出口
  *
  * 与 LLM 模板的分流骨架完全一致，差别只在「谁来判定」：
  * 脚本的返回值是确定的字符串，所以这里用「等于」精确判定，不需要正则去容错。
  * `console.log` 会进 trace 的「控制台」，打分过程可以在测试运行面板里直接核对。
  */
-export function createScriptRoutingGraph(): WorkflowGraph {
+export function createScriptRoutingGraph(models: RuntimeLogicalModel[]): WorkflowGraph {
+  const pool = createPresetModelPool(models)
+  const complexLanding = resolveLandingModelIds(pool, 0)
+  const simpleLanding = resolveLandingModelIds(pool, 1)
   const complexCase: ConditionCase = {
     id: 'case-complex',
     name: '复杂请求',
@@ -685,11 +742,11 @@ return isComplex ? 'complex' : 'simple'`,
       kind: 'model-select',
       name: '复杂请求落点',
       enabled: true,
-      description: '复杂请求落到这个逻辑模型；占位 id，换成自己的高性能模型。',
+      description: '复杂请求落到这个逻辑模型。',
       position: { x: 1300, y: 140 },
       source: 'fixed',
       variablePath: '',
-      modelIds: ['high-effort'],
+      modelIds: complexLanding,
       fallbackModelIds: [],
     },
     {
@@ -697,11 +754,11 @@ return isComplex ? 'complex' : 'simple'`,
       kind: 'model-select',
       name: '其余请求落点',
       enabled: true,
-      description: '简单请求落到这个逻辑模型；占位 id，换成自己的快而便宜的模型。',
+      description: '简单请求落到这个逻辑模型。',
       position: { x: 1300, y: 460 },
       source: 'fixed',
       variablePath: '',
-      modelIds: ['fast-cheap'],
+      modelIds: simpleLanding,
       fallbackModelIds: [],
     },
     createOutputNode({ x: 1720, y: 300 }),

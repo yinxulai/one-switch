@@ -220,9 +220,6 @@ export interface ModelSelection {
   reason: string
 }
 
-/** 内置默认逻辑模型：默认策略里「未命中」分支的落点。 */
-export const DEFAULT_MODEL_IDS: string[] = ['default']
-
 /**
  * 迭代结果的汇总方式。
  * - `first`：首个非空的每轮结果即停止（「在数组里找第一个满足条件的元素」）；

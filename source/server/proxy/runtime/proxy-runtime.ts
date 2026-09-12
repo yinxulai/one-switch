@@ -1,6 +1,9 @@
 import type { Server } from 'node:http'
 import http from 'node:http'
+import type { Socket } from 'node:net'
 import { handleProxyRequest } from '@server/proxy/request/request-entry'
+import { handleWebSocketRequest } from '@server/proxy/request/websocket-entry'
+import { matchLocalEndpoint } from '@server/proxy/local/registry'
 import { getErrorResponseMessage, isErrorCode, normalizeError } from '@server/errors'
 
 export interface ProxyEndpoint {
@@ -117,14 +120,16 @@ export class ProxyRuntime {
   }
 
   private createServer(): Server {
-    return http.createServer(async (req, res) => {
+    const server = http.createServer(async (req, res) => {
       try {
         const url = new URL(req.url!, 'http://localhost')
-        if (url.pathname === '/v1/models') {
-          writeModelsResponse(res)
+        const localEndpoint = matchLocalEndpoint(req.method, url.pathname)
+        if (localEndpoint) {
+          await localEndpoint.handle({ request: req, response: res })
           return
         }
-        await handleProxyRequest(req, res, 'default')
+        // 代理入口不需要指定逻辑模型：请求自己带的模型名决定落到哪个逻辑模型。
+        await handleProxyRequest(req, res)
       } catch (error) {
         const normalized = normalizeError(error)
         if (isErrorCode(normalized, 'CLIENT_REQUEST_ABORTED')) {
@@ -139,7 +144,25 @@ export class ProxyRuntime {
         writeJsonError(res, normalized.statusCode, normalized.code, getErrorResponseMessage(normalized, '代理处理失败'))
       }
     })
+    server.on('upgrade', (req, socket, head) => {
+      // `upgrade` 的类型签名是通用 `Duplex`，但运行时交出来的是网络 socket（`UpgradeEvent` 文档语义），
+      // WS 服务端需要读写 socket 属性，因此在这里就这一次转型。
+      handleWebSocketUpgrade(req, socket as Socket, head)
+    })
+    return server
   }
+}
+
+/**
+ * 升级事件必须有人接管：没有监听器时 Node 会直接销毁 socket，客户端只会看到「连接失败」而拿不到
+ * 任何可解释的响应。异常也要在这里收住——`upgrade` 事件没有响应对象可以写错误，只能断开。
+ */
+function handleWebSocketUpgrade(req: http.IncomingMessage, socket: Socket, head: Buffer): void {
+  void handleWebSocketRequest(req, socket, head).catch(error => {
+    const normalized = normalizeError(error)
+    console.error(`[proxy-ws] upgrade boundary failed: ${req.method ?? 'UNKNOWN'} ${req.url ?? '/'} code=${normalized.code} message=${normalized.message}`)
+    socket.destroy(normalized)
+  })
 }
 
 function listen(server: Server, endpoint: ProxyEndpoint): Promise<void> {
@@ -163,12 +186,6 @@ function close(server: Server | null): Promise<void> {
   server.closeIdleConnections?.()
   server.closeAllConnections?.()
   return new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
-}
-
-function writeModelsResponse(res: http.ServerResponse): void {
-  res.statusCode = 200
-  res.setHeader('Content-Type', 'application/json')
-  res.end(JSON.stringify({ object: 'list', data: [{ id: 'default', object: 'model', created: 0, owned_by: 'one-switch' }] }))
 }
 
 function writeJsonError(res: http.ServerResponse, statusCode: number, errorCode: string, errorMessage: string): void {

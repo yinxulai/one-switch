@@ -3,6 +3,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
 import { DATABASE_FILE_PREFIX } from '@common/database-file'
+import { BUILT_IN_DEFAULT_LOGICAL_MODEL_NAME } from '@common/schemas'
 import { drizzle } from 'drizzle-orm/node-sqlite'
 import { migrate } from 'drizzle-orm/node-sqlite/migrator'
 
@@ -180,12 +181,19 @@ function readAppliedMigrationNames(client: DatabaseSync): string[] {
     .filter((name): name is string => typeof name === 'string')
 }
 
+/**
+ * 保证内建默认逻辑模型存在。
+ *
+ * 这条记录是内建「模型直达」规则的落点：客户端发来的模型名大概率不是本机配的逻辑模型，
+ * 没有它就没有任何可用的上游起点。名字取 `BUILT_IN_DEFAULT_LOGICAL_MODEL_NAME`，
+ * 与服务端的回落匹配共用同一个常量。
+ */
 function ensureDefaultLogicalModel(db: DatabaseSync): void {
   const time = BigInt(Date.now())
   db.prepare(`INSERT OR IGNORE INTO logical_models
     (id, name, description, enabled, createdTime, updatedTime)
-    VALUES ('default', 'default', 'Default fallback routing model', 1, ?, ?)`)
-    .run(time, time)
+    VALUES (?, ?, 'Default fallback routing model', 1, ?, ?)`)
+    .run(BUILT_IN_DEFAULT_LOGICAL_MODEL_NAME, BUILT_IN_DEFAULT_LOGICAL_MODEL_NAME, time, time)
 }
 
 /**

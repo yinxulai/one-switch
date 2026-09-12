@@ -1,46 +1,63 @@
-import type { IncomingMessage, OutgoingHttpHeaders, ServerResponse } from 'node:http'
-import type { Protocol, RequestAttribute, RequestStatus } from '@common/schemas'
+import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { Protocol, RequestAttribute } from '@common/schemas'
 import { listLogicalModels } from '@server/database/logical-model-store'
 import { getSettings } from '@server/database/settings-store'
 import { generateId } from '@common/utils'
+import type { DeliveryMode } from '../contracts'
 import { executeProxyRequest } from '../execution/attempt-executor'
-import { initializeRequestLogger } from '../observability/logging'
+import { initializeRequestLogger, type RequestLogger } from '../observability/logging'
 import { NOOP_PROXY_OBSERVATION_HOOKS, type ProxyObservationHooks } from '../observability/hooks'
 import { NodeProxyResponse } from '../response/proxy-response'
 import { createRequestContext } from './request-context'
-import { validateLogicalModel } from './request'
-import { resolveProxyTargets } from '../routing/routing'
-import { detectProtocolFromPath } from '../routing/router'
+import { proxyTargetPlanner } from '../planners/target-planner'
+import { matchProtocolEndpoint } from '../protocols/registry'
 import { getManualModel } from '../routing/manual-routing'
+import { resolveLogicalModel } from '../routing/logical-model-resolver'
 import { collectRequestAttributes, extractClientRequestId } from '@server/proxy/observability/request-attribute-collector'
 
 /**
- * 「没走进代理执行链路就被拒掉」的请求记录入参。
+ * 一次交换在入口处就已确定、且不随拒绝原因变化的事实。
  *
- * 这些分支在请求上下文建立之前就返回了，但它们同样是用户真实发出的请求。
+ * 「没走进代理执行链路就被拒掉」的请求同样是用户真实发出的请求，也必须落库：
  * 如果这里不写日志，「日志里没有」就会被误读成「没有发过这个请求」。
  */
-interface RejectedRequestRecord {
+interface ExchangeIdentity {
   requestId: string
-  /** 已解析出的逻辑模型；尚未解析到时为 `null`。 */
-  logicalModelId: string | null
-  /** 已识别出的客户端协议；连 API 路径都无法识别时为 `null`。 */
-  clientProtocol: Protocol | null
   method: string
   path: string
   headers: IncomingMessage['headers']
   attributes: Array<Omit<RequestAttribute, 'requestId' | 'createdTime'>>
-  /** 已读到的请求体。客户端中途断开时是断开前已经收到的部分，可能不完整。 */
-  requestBody: Buffer
-  /** 是否采集正文——决定是否同时写 `request_contents`。 */
-  captureRequestContent: boolean
   startedAt: number
-  status: RequestStatus
-  statusCode: number
-  responseHeaders: OutgoingHttpHeaders
-  responseBody: string
   hooks: ProxyObservationHooks
 }
+
+/** 入口阶段已解析出的事实；尚未解析到时为 `null`。 */
+interface ExchangeResolution {
+  /** 已解析出的逻辑模型；尚未进入逻辑模型解析时为 `null`。 */
+  logicalModelId: string | null
+  /** 已识别出的客户端协议；连 API 路径都无法识别时为 `null`。 */
+  clientProtocol: Protocol | null
+  /** 已读到的请求体。客户端中途断开时是断开前已经收到的部分，可能不完整。 */
+  requestBody: Buffer
+  /** 客户端要求的交付方式。由接口的封装描述解析；接口都无法识别时为 `'buffered'`。 */
+  delivery: DeliveryMode
+}
+
+/** 我们回给客户端的拒绝响应。 */
+interface ExchangeRefusal {
+  statusCode: number
+  errorCode: string
+  errorMessage: string
+}
+
+interface RejectedExchange extends ExchangeIdentity, ExchangeResolution {
+  refusal: ExchangeRefusal
+}
+
+type AbortedExchange = ExchangeIdentity & ExchangeResolution
+
+/** 尚未读到请求体时的占位，避免在多个分支里重复分配。 */
+const NO_REQUEST_BODY = Buffer.alloc(0)
 
 /** 读取客户端请求体的结果；`aborted` 为真表示客户端没把正文发完就断开了。 */
 interface RequestBodyReadResult {
@@ -48,101 +65,68 @@ interface RequestBodyReadResult {
   aborted: boolean
 }
 
-export async function handleProxyRequest(req: IncomingMessage, res: ServerResponse, logicalModelId: string, hooks: ProxyObservationHooks = NOOP_PROXY_OBSERVATION_HOOKS): Promise<void> {
+/**
+ * 处理一次 HTTP 代理请求。
+ *
+ * 逻辑模型不靠调用方指定：一律由请求自己带的模型名解析出来（见下面的 `resolveLogicalModel`）。
+ * 早先这里有个 `logicalModelId` 入参，但它在函数内部一解析完就被覆盖掉，
+ * 留着只会让人误以为可以在外部指定逻辑模型，已经删掉。
+ */
+export async function handleProxyRequest(req: IncomingMessage, res: ServerResponse, hooks: ProxyObservationHooks = NOOP_PROXY_OBSERVATION_HOOKS): Promise<void> {
   const startedAt = Date.now()
   const requestId = generateId('req_')
   const method = req.method ?? 'POST'
   const path = req.url ?? '/'
   const attributes = collectRequestAttributes(req.headers)
-  const protocol = detectProtocolFromPath(req.url!)
-  if (!protocol) {
-    console.warn(`[proxy] unknown API path method=${method} path=${path} logicalModelId=${logicalModelId} requestId=${requestId}`)
-    const responseBody = writeJsonError(res, 404, 'UNKNOWN_API_PATH', '无法识别的 API 路径')
-    const settings = await getSettings()
-    await recordRejectedRequest({
-      requestId,
-      logicalModelId: null,
-      clientProtocol: null,
-      method,
-      path,
-      headers: req.headers,
-      attributes,
-      requestBody: Buffer.alloc(0),
-      captureRequestContent: settings.captureRequestContent,
-      startedAt,
-      status: 'failed',
-      statusCode: 404,
-      responseHeaders: res.getHeaders(),
-      responseBody,
-      hooks,
-    })
+  // 交换标识在这里一次绑好：下面所有拒绝分支共用同一份，不必逐条重复。
+  const identity: ExchangeIdentity = { requestId, method, path, headers: req.headers, attributes, startedAt, hooks }
+  /** 拒绝这次交换：回错误响应 + 记一条失败日志。 */
+  const reject = (refusal: ExchangeRefusal, resolution: ExchangeResolution) => rejectExchange(res, { ...identity, ...resolution, refusal })
+  /** 客户端中途断开：没有响应可写，只记一条已取消。 */
+  const abort = (resolution: ExchangeResolution) => recordAbortedExchange({ ...identity, ...resolution })
+
+  // 入口匹配一次，同时定下协议、接口与封装描述；后面的模型读写与流式判定都问这个结果。
+  const endpoint = matchProtocolEndpoint(method, path)
+  if (!endpoint) {
+    console.warn(`[proxy] unknown API path method=${method} path=${path} requestId=${requestId}`)
+    await reject({ statusCode: 404, errorCode: 'UNKNOWN_API_PATH', errorMessage: '无法识别的 API 路径' }, { logicalModelId: null, clientProtocol: null, requestBody: NO_REQUEST_BODY, delivery: 'buffered' })
     return
   }
+  const protocol = endpoint.protocol
+  const requestUrl = new URL(path, 'http://localhost')
+  /** 封装描述的入参：模型读写与流式判定都只看这三样。 */
+  const readEnvelope = (body: Buffer) => ({ headers: req.headers, body, url: requestUrl })
 
   const { body: requestBody, aborted } = await readRequestBody(req)
   if (aborted) {
     // 客户端在正文读完前断开：请求确实到达了代理，但我们既拿不到完整正文，
     // 也没有任何响应能写回客户端，只能记成「已取消」——但不能因此不记。
     console.debug(`[proxy] client request aborted requestId=${requestId} phase=read-body bodyBytes=${requestBody.length}`)
-    await recordAbortedRequest({ requestId, logicalModelId: null, clientProtocol: protocol, method, path, headers: req.headers, attributes, requestBody, startedAt, hooks })
+    await abort({ logicalModelId: null, clientProtocol: protocol, requestBody, delivery: endpoint.envelope.resolveDelivery(readEnvelope(requestBody)) })
     return
   }
   const clientRequestId = extractClientRequestId(req.headers)
-  console.debug(`[proxy] request accepted requestId=${requestId} clientRequestId=${clientRequestId ?? 'none'} method=${req.method ?? 'POST'} path=${req.url ?? '/'} protocol=${protocol} bodyBytes=${requestBody.length}`)
-  const modelValidationError = validateLogicalModel(requestBody)
-  if (modelValidationError) {
-    console.warn(`[proxy] invalid model request requestId=${requestId} protocol=${protocol} reason=${modelValidationError}`)
-    const responseBody = writeJsonError(res, 400, 'INVALID_MODEL', modelValidationError)
-    const settings = await getSettings()
-    await recordRejectedRequest({
-      requestId,
-      logicalModelId: null,
-      clientProtocol: protocol,
-      method,
-      path,
-      headers: req.headers,
-      attributes,
-      requestBody,
-      captureRequestContent: settings.captureRequestContent,
-      startedAt,
-      status: 'failed',
-      statusCode: 400,
-      responseHeaders: res.getHeaders(),
-      responseBody,
-      hooks,
-    })
+  console.debug(`[proxy] request accepted requestId=${requestId} clientRequestId=${clientRequestId ?? 'none'} method=${req.method ?? 'POST'} path=${req.url ?? '/'} protocol=${protocol} endpoint=${endpoint.endpointId} bodyBytes=${requestBody.length}`)
+  const envelopeInput = readEnvelope(requestBody)
+  const delivery = endpoint.envelope.resolveDelivery(envelopeInput)
+  const modelResult = endpoint.envelope.readModel(envelopeInput)
+  if (!modelResult.ok) {
+    console.warn(`[proxy] invalid model request requestId=${requestId} protocol=${protocol} reason=${modelResult.reason}`)
+    await reject({ statusCode: 400, errorCode: 'INVALID_MODEL', errorMessage: modelResult.reason }, { logicalModelId: null, clientProtocol: protocol, requestBody, delivery })
     return
   }
 
-  const requestedModel = (JSON.parse(requestBody.toString('utf8')) as { model: string }).model.trim()
-  const logicalModels = await listLogicalModels()
-  const requestedLogicalModel = logicalModels.find(model => model.enabled && (model.id === requestedModel || model.name === requestedModel))
-  const resolvedLogicalModel = requestedLogicalModel ?? logicalModels.find(model => model.enabled && model.name === 'default')
-  if (!resolvedLogicalModel) {
+  // 请求模型 → 逻辑模型：命中就直连，没命中回落到内建默认逻辑模型。
+  // 解析规则收敛在 `resolveLogicalModel` 里，WebSocket 入口用的是同一个函数。
+  const requestedModel = modelResult.model.trim()
+  const resolution = resolveLogicalModel(await listLogicalModels(), requestedModel)
+  if (!resolution) {
     console.error(`[proxy] no enabled logical model requestId=${requestId} requestedModel=${requestedModel}`)
-    const responseBody = writeJsonError(res, 503, 'NO_MODEL_CONFIGURED', '还没有配置已启用的 default 逻辑模型')
-    const settings = await getSettings()
-    await recordRejectedRequest({
-      requestId,
-      logicalModelId: null,
-      clientProtocol: protocol,
-      method,
-      path,
-      headers: req.headers,
-      attributes,
-      requestBody,
-      captureRequestContent: settings.captureRequestContent,
-      startedAt,
-      status: 'failed',
-      statusCode: 503,
-      responseHeaders: res.getHeaders(),
-      responseBody,
-      hooks,
-    })
+    await reject({ statusCode: 503, errorCode: 'NO_MODEL_CONFIGURED', errorMessage: '还没有配置已启用的 default 逻辑模型' }, { logicalModelId: null, clientProtocol: protocol, requestBody, delivery })
     return
   }
-  logicalModelId = resolvedLogicalModel.id
-  console.debug(`[proxy] logical model resolved requestId=${requestId} requestedModel=${requestedModel} logicalModelId=${logicalModelId} fallback=${requestedLogicalModel === undefined}`)
+  const logicalModelId = resolution.logicalModel.id
+  console.debug(`[proxy] logical model resolved requestId=${requestId} requestedModel=${requestedModel} logicalModelId=${logicalModelId} fallback=${!resolution.matched}`)
 
   const controller = new AbortController()
   req.once('aborted', () => controller.abort())
@@ -153,97 +137,44 @@ export async function handleProxyRequest(req: IncomingMessage, res: ServerRespon
     requestId,
     logicalModelId,
     clientProtocol: protocol,
-    method: req.method ?? 'POST',
-    path: req.url ?? '/',
+    // 这个入口就是 HTTP：传输在这里定一次，后面的交换投影与修改器上下文共用它。
+    transport: 'http',
+    method,
+    path,
     headers: req.headers,
-    attributes: collectRequestAttributes(req.headers),
+    attributes,
     requestBody,
+    delivery,
     signal: controller.signal,
   })
 
   const manualModelId = getManualModel(logicalModelId)
-  const { availableModels, targets, manualModelUnavailable } = await resolveProxyTargets(logicalModelId, protocol)
-  console.debug(`[proxy] routing resolved requestId=${requestId} logicalModelId=${logicalModelId} protocol=${protocol} manualModelId=${manualModelId ?? 'none'} availableModels=${availableModels.length} targets=${targets.length} targetOrder=${targets.map(target => target.model.id).join(',') || 'none'} manualModelUnavailable=${manualModelUnavailable}`)
-  if (manualModelUnavailable) {
-    console.warn(`[proxy] manual provider model unavailable requestId=${requestId} logicalModelId=${logicalModelId} protocol=${protocol}`)
-    const responseBody = writeJsonError(res, 409, 'MANUAL_MODEL_UNAVAILABLE', '手动指定的 ProviderModel 当前不可用于该协议')
-    const settings = await getSettings()
-    await recordRejectedRequest({
-      requestId,
-      logicalModelId,
-      clientProtocol: protocol,
-      method,
-      path,
-      headers: req.headers,
-      attributes,
-      requestBody,
-      captureRequestContent: settings.captureRequestContent,
-      startedAt,
-      status: 'failed',
-      statusCode: 409,
-      responseHeaders: res.getHeaders(),
-      responseBody,
-      hooks,
-    })
+  const plan = await proxyTargetPlanner.plan({ logicalModelId, clientProtocol: protocol, manualModelId, transport: 'http' })
+  console.debug(`[proxy] routing planned requestId=${requestId} logicalModelId=${logicalModelId} protocol=${protocol} planner=${proxyTargetPlanner.id} manualModelId=${manualModelId ?? 'none'} reason=${plan.reason} targets=${plan.targets.length} targetOrder=${plan.targets.map(target => target.providerModelId).join(',') || 'none'}`)
+  if (plan.reason === 'manual-model-unavailable') {
+    console.warn(`[proxy] manual provider model unavailable requestId=${requestId} logicalModelId=${logicalModelId} protocol=${protocol} detail=${plan.detail ?? 'none'}`)
+    await reject({ statusCode: 409, errorCode: 'MANUAL_MODEL_UNAVAILABLE', errorMessage: plan.detail ?? '手动指定的 ProviderModel 当前不可用于该协议' }, { logicalModelId, clientProtocol: protocol, requestBody, delivery })
     return
   }
-  if (targets.length === 0) {
-    const configuredProtocols = [...new Set(availableModels.flatMap(candidate => candidate.model.endpoints.map(endpoint => endpoint.protocol)))]
-    const reason = availableModels.length === 0
-      ? '该逻辑模型没有已启用且健康的供应商模型'
-      : `可用供应商模型未配置 ${protocol} 协议且未开启协议转换（当前配置协议: ${configuredProtocols.join(', ') || '无'}）`
-    const availableTargets = availableModels.length > 0
-      ? `，已发现: ${availableModels.map(target => `${target.provider.name}/${target.model.modelName}`).join(', ')}`
-      : ''
-    console.warn(`[proxy] 没有可用的上游供应商: ${req.method} ${req.url} (protocol=${protocol}, logicalModel=${resolvedLogicalModel.name} [${logicalModelId}], requestId=${requestId}, reason=${reason}${availableTargets})`)
-    const responseBody = writeJsonError(res, 503, 'NO_AVAILABLE_PROVIDER', `没有可用的上游 Provider：${reason}`)
-    const settings = await getSettings()
-    await recordRejectedRequest({
-      requestId,
-      logicalModelId,
-      clientProtocol: protocol,
-      method,
-      path,
-      headers: req.headers,
-      attributes,
-      requestBody,
-      captureRequestContent: settings.captureRequestContent,
-      startedAt,
-      status: 'failed',
-      statusCode: 503,
-      responseHeaders: res.getHeaders(),
-      responseBody,
-      hooks,
-    })
+  if (plan.targets.length === 0) {
+    const detail = plan.detail ?? '该逻辑模型没有已启用且健康的供应商模型'
+    console.warn(`[proxy] 没有可用的上游供应商: ${req.method} ${req.url} (protocol=${protocol}, logicalModel=${resolution.logicalModel.name} [${logicalModelId}], requestId=${requestId}, reason=${plan.reason}, detail=${detail})`)
+    await reject({ statusCode: 503, errorCode: 'NO_AVAILABLE_PROVIDER', errorMessage: `没有可用的上游 Provider：${detail}` }, { logicalModelId, clientProtocol: protocol, requestBody, delivery })
     return
   }
 
-  console.debug(`[proxy] execution started requestId=${requestId} logicalModelId=${logicalModelId} targets=${targets.length}`)
-  await executeProxyRequest({ context, targets, response: new NodeProxyResponse(res), hooks })
+  console.debug(`[proxy] execution started requestId=${requestId} logicalModelId=${logicalModelId} targets=${plan.targets.length}`)
+  await executeProxyRequest({ context, targets: plan.targets, response: new NodeProxyResponse(res), hooks })
 }
 
-/** 写入一条被拒绝的请求记录：请求行 + 我们回给客户端的错误响应。 */
-async function recordRejectedRequest(record: RejectedRequestRecord): Promise<void> {
-  const logger = await initializeRequestLogger({
-    requestId: record.requestId,
-    logicalModelId: record.logicalModelId,
-    clientProtocol: record.clientProtocol,
-    method: record.method,
-    path: record.path,
-    headers: record.headers,
-    attributes: record.attributes,
-    requestBody: record.requestBody,
-    captureRequestContent: record.captureRequestContent,
-    hooks: record.hooks,
-  })
-  await logger.finalizeLocalErrorContent(record.statusCode, record.responseHeaders, record.responseBody)
-  await logger.finalizeRequestLog(record.status, record.startedAt)
-}
-
-/** 写入一条被客户端中断的请求记录：没有响应写出，因此不写客户端正文的响应侧。 */
-async function recordAbortedRequest(input: Omit<RejectedRequestRecord, 'captureRequestContent' | 'status' | 'statusCode' | 'responseHeaders' | 'responseBody'>): Promise<void> {
+/**
+ * 打开这次交换的日志器，并补齐「是否采集正文」这个唯一来自设置的字段。
+ *
+ * 入口阶段的两条出口（拒绝、中断）都从这里拿日志器，保证这个判断只有一个点。
+ */
+async function openExchangeLogger(input: ExchangeIdentity & ExchangeResolution): Promise<RequestLogger> {
   const settings = await getSettings()
-  const logger = await initializeRequestLogger({
+  return initializeRequestLogger({
     requestId: input.requestId,
     logicalModelId: input.logicalModelId,
     clientProtocol: input.clientProtocol,
@@ -252,9 +183,23 @@ async function recordAbortedRequest(input: Omit<RejectedRequestRecord, 'captureR
     headers: input.headers,
     attributes: input.attributes,
     requestBody: input.requestBody,
+    delivery: input.delivery,
     captureRequestContent: settings.captureRequestContent,
     hooks: input.hooks,
   })
+}
+
+/** 拒绝收尾：回一条错误响应，再记一条失败日志。入口处所有拒绝分支共用。 */
+async function rejectExchange(res: ServerResponse, input: RejectedExchange): Promise<void> {
+  const responseBody = writeJsonError(res, input.refusal.statusCode, input.refusal.errorCode, input.refusal.errorMessage)
+  const logger = await openExchangeLogger(input)
+  await logger.finalizeLocalErrorContent(input.refusal.statusCode, res.getHeaders(), responseBody)
+  await logger.finalizeRequestLog('failed', input.startedAt)
+}
+
+/** 中断收尾：写入一条被客户端中断的记录，没有响应写出，因此不写客户端正文的响应侧。 */
+async function recordAbortedExchange(input: AbortedExchange): Promise<void> {
+  const logger = await openExchangeLogger(input)
   await logger.finalizeRequestLog('cancelled', input.startedAt)
 }
 

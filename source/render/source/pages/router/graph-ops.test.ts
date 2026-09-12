@@ -1,16 +1,23 @@
 import { describe, expect, it } from 'vitest'
 import { runWorkflow } from './engine'
 import { appendNode, cloneNode, connectEdge, insertNode, portKey, primarySourcePort, removeEdges, removeNode, resolveInsertAnchor } from './graph-ops'
-import { createDefaultGraph, createDefaultPolicyGraph, createNodeByKind, createUserAgentGraph, findPolicyPreset, ROUTER_POLICY_PRESETS } from './graph-model'
+import { createDefaultGraph, createDefaultPolicyGraph, createLlmComplexityGraph, createNodeByKind, createPresetModelPool, createUserAgentGraph, findPolicyPreset, resolveLandingModelIds, ROUTER_POLICY_PRESETS } from './graph-model'
 import { APPENDABLE_KINDS } from './node-meta'
 import { WorkflowGraphSchema } from './schemas'
-import type { ConditionNode, ControlInputNode, WorkflowGraph, WorkflowNodeModel } from './types'
+import type { ConditionNode, ControlInputNode, RuntimeLogicalModel, WorkflowGraph, WorkflowNodeModel } from './types'
 
 /**
  * 图操作回归测试。
  * 这些函数是画布与路由引擎之间唯一的写入口，任何改动都必须保持
  * 「一个 source 端口最多一条出边」这一引擎前提。
  */
+
+/** 预设生成用的逻辑模型列表：`default` 是兜底落点，另两个给分流落点用。 */
+const presetLogicalModels: RuntimeLogicalModel[] = [
+  { id: 'default', name: 'Default', enabled: true },
+  { id: 'model-fast', name: 'Model Fast', enabled: true },
+  { id: 'model-smart', name: 'Model Smart', enabled: true },
+]
 
 function nodeById(graph: WorkflowGraph, nodeId: string): WorkflowNodeModel {
   const node = graph.nodes.find(item => item.id === nodeId)
@@ -243,7 +250,7 @@ describe('图谱校验（回归）', () => {
   })
 
   it('默认策略图由基础节点组合而成，同样必须通过 schema 校验', () => {
-    const graph = createDefaultPolicyGraph()
+    const graph = createDefaultPolicyGraph(presetLogicalModels)
     expect(WorkflowGraphSchema.safeParse(graph).error?.issues).toBeUndefined()
     // 规则完全由既有基础节点表达，没有任何专用节点类型。
     expect(new Set(graph.nodes.map(node => node.kind))).toEqual(new Set(['input', 'condition', 'model-select', 'output']))
@@ -259,7 +266,7 @@ describe('图谱校验（回归）', () => {
   })
 
   it('UA 预设必须通过 schema 校验，且循环体靠回边闭合', () => {
-    const graph = createUserAgentGraph()
+    const graph = createUserAgentGraph(presetLogicalModels)
     expect(WorkflowGraphSchema.safeParse(graph).error?.issues).toBeUndefined()
 
     const iteration = graph.nodes.find(node => node.kind === 'iteration')
@@ -326,12 +333,93 @@ describe('图谱校验（回归）', () => {
     expect(ROUTER_POLICY_PRESETS.filter(preset => preset.isDefault)).toHaveLength(1)
 
     for (const preset of ROUTER_POLICY_PRESETS) {
-      expect({ id: preset.id, issues: WorkflowGraphSchema.safeParse(preset.createGraph()).error?.issues }).toEqual({ id: preset.id, issues: undefined })
+      const graph = preset.createGraph(presetLogicalModels)
+      expect({ id: preset.id, issues: WorkflowGraphSchema.safeParse(graph).error?.issues }).toEqual({ id: preset.id, issues: undefined })
       // 工厂必须每次返回全新对象，否则套用预设会污染上一个图。
-      expect(preset.createGraph()).not.toBe(preset.createGraph())
+      expect(preset.createGraph(presetLogicalModels)).not.toBe(preset.createGraph(presetLogicalModels))
       expect(findPolicyPreset(preset.id)?.name).toBe(preset.name)
     }
     expect(findPolicyPreset('not-a-preset')).toBeUndefined()
+  })
+
+  it('每个预设的落点 id 都是传入列表里的真实逻辑模型，不会留下写死的占位值', () => {
+    // 「套用即能用」的核心判据：预设里出现的每个模型 id 都必须存在，否则一跑就报没有可用逻辑模型。
+    const knownIds = new Set(presetLogicalModels.map(model => model.id))
+
+    for (const preset of ROUTER_POLICY_PRESETS) {
+      const graph = preset.createGraph(presetLogicalModels)
+      const modelIds = graph.nodes.flatMap(node => {
+        if (node.kind !== 'model-select') return []
+        return [...node.modelIds, ...node.fallbackModelIds]
+      })
+      // 至少有一个落点，否则出口节点只会报「没有可用逻辑模型」。
+      expect({ id: preset.id, modelIds }).toEqual({ id: preset.id, modelIds: expect.arrayContaining([expect.any(String)]) })
+      for (const modelId of modelIds) expect({ id: preset.id, knownIds: knownIds.has(modelId) }).toEqual({ id: preset.id, knownIds: true })
+    }
+
+    // LLM 预设的判定节点也要拿到真实模型，否则提示词节点一上来就是失败的。
+    const prompt = createLlmComplexityGraph(presetLogicalModels).nodes.find(node => node.kind === 'prompt')
+    expect(prompt?.kind === 'prompt' && knownIds.has(prompt.logicalModelId)).toBe(true)
+  })
+
+  it('一个已启用逻辑模型都没有时，预设不会留下写死的落点', () => {
+    // 空列表是过渡态（用户还没配逻辑模型），此时宁可没有落点，也不要编一个不存在的 id。
+    for (const preset of ROUTER_POLICY_PRESETS) {
+      const graph = preset.createGraph([])
+      expect(WorkflowGraphSchema.safeParse(graph).error?.issues).toBeUndefined()
+      const modelIds = graph.nodes.flatMap(node => (node.kind === 'model-select' ? [...node.modelIds, ...node.fallbackModelIds] : []))
+      expect({ id: preset.id, modelIds }).toEqual({ id: preset.id, modelIds: [] })
+    }
+  })
+})
+
+describe('预设落点解析', () => {
+  it('兜底落点取内建默认逻辑模型，其余逻辑模型留给分流', () => {
+    const pool = createPresetModelPool([
+      { id: 'model-fast', name: 'Model Fast', enabled: true },
+      { id: 'default', name: 'default', enabled: true },
+      { id: 'model-smart', name: 'Model Smart', enabled: true },
+    ])
+    expect(pool.fallbackModelId).toBe('default')
+    // 兜底落点要从分流候选里排除，否则两个分支会撞到同一个逻辑模型。
+    expect(pool.landingModelIds).toEqual(['model-fast', 'model-smart'])
+  })
+
+  it('内建默认逻辑模型只对上 id 或只对上 name 都算数', () => {
+    expect(createPresetModelPool([{ id: 'default', name: '默认模型', enabled: true }]).fallbackModelId).toBe('default')
+    expect(createPresetModelPool([{ id: 'model-default', name: 'default', enabled: true }]).fallbackModelId).toBe('model-default')
+  })
+
+  it('停用的逻辑模型不参与落点', () => {
+    const pool = createPresetModelPool([
+      { id: 'default', name: 'default', enabled: true },
+      { id: 'model-off', name: 'Model Off', enabled: false },
+    ])
+    expect(pool.landingModelIds).toEqual([])
+  })
+
+  it('内建默认逻辑模型不可用时退回第一个已启用模型', () => {
+    // 生成预设是「帮你先把图填上」，前面有真模型就不留空落点；运行时遇到同样情况则是直接拒绝。
+    expect(createPresetModelPool([{ id: 'model-fast', name: 'Model Fast', enabled: true }]).fallbackModelId).toBe('model-fast')
+  })
+
+  it('一个逻辑模型都没有时兜底为空，落点解析出空数组', () => {
+    const pool = createPresetModelPool([])
+    expect(pool).toEqual({ fallbackModelId: null, landingModelIds: [] })
+    expect(resolveLandingModelIds(pool, null)).toEqual([])
+    expect(resolveLandingModelIds(pool, 0)).toEqual([])
+  })
+
+  it('分流候选不够时退回兜底落点，不留死落点', () => {
+    const pool = createPresetModelPool([
+      { id: 'default', name: 'default', enabled: true },
+      { id: 'model-fast', name: 'Model Fast', enabled: true },
+    ])
+    expect(resolveLandingModelIds(pool, null)).toEqual(['default'])
+    expect(resolveLandingModelIds(pool, 0)).toEqual(['model-fast'])
+    // 只有一个分流候选，第二条分支没有自己的落点，只能和兜底落点重合。
+    expect(resolveLandingModelIds(pool, 1)).toEqual(['default'])
+    expect(resolveLandingModelIds(pool, 99)).toEqual(['default'])
   })
 })
 

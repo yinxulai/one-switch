@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { Check, Copy, KeyRound, Plug, Server } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { FormField } from '@/components/form-kit'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -38,7 +38,7 @@ export function ProxyConfigCard(props: ProxyConfigCardProps) {
     <Card className="bg-card">
       <CardHeader className="flex-row justify-between gap-3 pb-3">
         <div className="flex min-w-0 items-start gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary">
+          <div className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <Server size={16} />
           </div>
           <div>
@@ -51,24 +51,24 @@ export function ProxyConfigCard(props: ProxyConfigCardProps) {
       </CardHeader>
       <CardContent className="space-y-3 p-4 pt-0">
         <div className="grid gap-3 md:grid-cols-[minmax(0,2fr)_1fr]">
-          <div className="space-y-1.5">
-            <Label className="text-[11px] text-muted-foreground">
-              <Plug size={11} className="mr-1 inline" />接入地址
-            </Label>
+          <FormField
+            label={<span className="flex items-center gap-1"><Plug className="size-3.5" aria-hidden />接入地址</span>}
+            htmlFor="proxy-protocol"
+          >
             <div className="flex gap-2">
               <Select value={selectedProtocol} onValueChange={setSelectedProtocol}>
-                <SelectTrigger className="h-8 w-44 shrink-0 text-xs">
+                <SelectTrigger id="proxy-protocol" className="w-44 shrink-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {PROTOCOLS.map(p => (
-                    <SelectItem key={p.key} value={p.key} className="text-xs">
+                    <SelectItem key={p.key} value={p.key}>
                       {p.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              <Input readOnly value={fullUrl} className="h-8 flex-1 font-mono text-xs" />
+              <Input readOnly value={fullUrl} className="flex-1 font-mono" />
               <Button
                 variant="outline"
                 className="shrink-0"
@@ -78,41 +78,38 @@ export function ProxyConfigCard(props: ProxyConfigCardProps) {
                 <Copy size={13} /> {copied ? '已复制' : '复制'}
               </Button>
             </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-[11px] text-muted-foreground">
-              <KeyRound size={11} className="mr-1 inline" />服务状态
-            </Label>
-            <div className="flex h-8 items-center justify-between rounded-md border bg-muted/30 px-3">
+          </FormField>
+          <FormField label={<span className="flex items-center gap-1"><KeyRound className="size-3.5" aria-hidden />服务状态</span>}>
+            <div className="flex h-8 items-center justify-between rounded-lg bg-components-input-bg-normal px-3">
               <div className="flex items-center">
                 <span
                   className={cn(
                     'mr-2 h-1.5 w-1.5 rounded-full',
-                    proxyRunning ? 'bg-success animate-pulse' : 'bg-muted-foreground',
+                    proxyRunning ? 'bg-success animate-pulse' : 'bg-text-quaternary',
                   )}
                 />
-                <span className="text-xs">{proxyRunning ? '运行中' : '已暂停'}</span>
+                <span className="system-xs-regular text-text-secondary">{proxyRunning ? '运行中' : '已暂停'}</span>
               </div>
-              <span className="font-mono text-[11px] text-muted-foreground">
+              <span className="font-mono system-xs-regular text-text-tertiary">
                 :{proxyPort}
               </span>
             </div>
-          </div>
+          </FormField>
         </div>
 
-        <div className="flex items-start gap-3 rounded-lg border bg-muted/30 px-3.5 py-3">
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-success/10 text-success">
-            <KeyRound size={14} />
+        <div className="flex items-start gap-3 rounded-lg border border-module-border bg-workflow-block-parma-bg px-3.5 py-3">
+          <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-success/10 text-text-success">
+            <KeyRound size={14} aria-hidden />
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <p className="text-xs font-medium text-foreground">本地服务无需 API Key</p>
-              <span className="inline-flex items-center gap-1 text-[10px] text-success">
-                <Check size={11} /> 已就绪
+              <p className="system-xs-medium text-text-primary">本地服务无需 API Key</p>
+              <span className="inline-flex items-center gap-1 system-2xs-medium text-text-success">
+                <Check size={11} aria-hidden /> 已就绪
               </span>
             </div>
-            <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
-              本地代理不校验 API Key。所有模型请求都会进入 default 默认逻辑模型；请在「模型管理」中为各上游提供商配置 API Key（无需鉴权的上游可以留空）。
+            <p className="mt-1 system-xs-regular text-text-tertiary">
+              本地代理不校验 API Key。请求按模型名路由到对应逻辑模型，未命中回落到默认逻辑模型；请在「模型管理」中为各上游提供商配置 API Key（无需鉴权的上游可以留空）。
             </p>
           </div>
         </div>
