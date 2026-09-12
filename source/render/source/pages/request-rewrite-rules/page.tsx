@@ -91,7 +91,7 @@ export function RequestRewriteRulesPage() {
     editRule(next)
   }
 
-  const saveRule = () => { void (async () => { const result = draft.id.startsWith('rule-') && draft.updatedAt === '尚未保存' ? await requestRewriteRuleApi.create(toApiRule(draft)) : await requestRewriteRuleApi.update(draft.id, toApiRule(draft)); if (!result.success) { toast.error(result.errorMessage); return }; const next = toUiRule(result.data); setRules(current => current.some(rule => rule.id === next.id) ? current.map(rule => rule.id === next.id ? next : rule) : [next, ...current]); setDraft(next); setEditingRuleId(next.id); setEditorOpen(false); toast.success('请求修改已保存') })() }
+  const saveRule = () => { void (async () => { const result = draft.id.startsWith('rule-') && draft.updatedAt === '尚未保存' ? await requestRewriteRuleApi.create(toApiRule(draft)) : await requestRewriteRuleApi.update(draft.id, toApiRule(draft)); if (!result.success) { toast.error(result.errorMessage); return }; const next = toUiRule(result.data); setRules(current => current.some(rule => rule.id === next.id) ? current.map(rule => rule.id === next.id ? next : rule) : [next, ...current]); setDraft(next); setEditingRuleId(next.id); setEditorOpen(false); toast.success('请求重写已保存') })() }
 
   const duplicateRule = (source: RequestRewriteRule = draft) => {
     const copy: RequestRewriteRule = {
@@ -107,7 +107,7 @@ export function RequestRewriteRulesPage() {
     editRule(copy)
   }
 
-  const deleteRule = (target: RequestRewriteRule) => { void (async () => { const result = await requestRewriteRuleApi.remove(target.id); if (!result.success) { toast.error(result.errorMessage); return }; setRules(current => current.filter(rule => rule.id !== target.id)); setDeleteTarget(null); setEditorOpen(false); toast.success('请求修改已删除，模型绑定已同步移除') })() }
+  const deleteRule = (target: RequestRewriteRule) => { void (async () => { const result = await requestRewriteRuleApi.remove(target.id); if (!result.success) { toast.error(result.errorMessage); return }; setRules(current => current.filter(rule => rule.id !== target.id)); setDeleteTarget(null); setEditorOpen(false); toast.success('请求重写已删除，模型绑定已同步移除') })() }
 
   return (
     <PageLayout>
@@ -121,10 +121,10 @@ export function RequestRewriteRulesPage() {
         )}
       />
       <PageContent>
-        {loading && <div className="text-xs text-muted-foreground">正在加载 请求修改…</div>}
-        <div className="flex items-center gap-2 rounded-lg bg-info/8 px-3 py-2 text-[11px] text-muted-foreground">
+        {loading && <div className="system-xs-regular text-text-tertiary">正在加载请求重写规则…</div>}
+        <div className="flex items-center gap-2 rounded-lg border border-info/20 bg-info/8 px-3 py-2 system-xs-regular text-text-tertiary">
           <ShieldCheck className="size-3.5 shrink-0 text-info" />
-          全局请求修改会自动应用到所有匹配模型；普通请求修改需要在模型编辑窗口中绑定后才会生效。
+          全局请求重写会自动应用到所有匹配模型；普通请求重写需要在模型编辑窗口中绑定后才会生效。
         </div>
         <RuleStats rules={rules} />
         <RulesTable

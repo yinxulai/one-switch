@@ -1,115 +1,13 @@
 # 本地代理服务
 
-## 代理管线架构
-
-代理采用**协议适配器 + 共享骨架**的结构：协议差异进适配器，流程共性进骨架。
-
-> 本文描述行为契约（识别、路由、切换、流式边界），这些契约不随实现重构而变。
-> 承载这些行为的模块结构、扩展接口与迁移顺序见 [proxy-engine.md](./proxy-engine.md)。
-
-### 设计动机
-
-协议差异（model 改写位置、usage 结构、认证头格式、流式结束标记等）如果以 if/else 形式散落在传输层，会随协议数量组合爆炸（协议 × 阶段），且"透传"与"转换"两种模式又叠加在协议维度上。因此每个协议独立实现为适配器，骨架只保留与协议无关的流程。
-
-### 管线流程
-
-```mermaid
-flowchart TD
-    A[proxy/server.ts 监听] --> B[协议识别]
-    B --> C[构建 RequestContext<br/>requestId / protocol / 客户端请求快照]
-    C --> D[router.ts 候选解析<br/>原生协议优先 + 可转换候选]
-    D --> E[手动切换起点 + 健康过滤]
-    E --> F{尝试循环 handler.ts 编排}
-    F --> G[ProtocolAdapter.buildUpstreamRequest<br/>model 改写 / usage 注入 / 认证头]
-    G --> H[transport.ts upstream I/O<br/>连接 / 转发字节 / 空闲超时 / 中止]
-    H --> I[ProtocolAdapter.createResponsePipeline<br/>透传或转换 / usage 提取]
-    I -->|retry| J[health.ts 失败计数 / 冷却] --> F
-    I -->|success / terminal| K[收尾：日志定稿 + 清理]
-```
-
-### 分层职责
-
-| 层 | 文件 | 职责 | 明确不做 |
-| --- | --- | --- | --- |
-| 入口 | `server.ts` | 监听、`/v1/models`、协议识别入口 | 不含业务逻辑 |
-| 上下文 | `request-context.ts` | 一次请求的全部状态（requestId、protocol、快照、尝试记录） | — |
-| 路由 | `router.ts` | 候选解析、手动切换起点、健康过滤 | 不做 I/O |
-| 编排 | `handler.ts` | 尝试循环、结果分类后的分支决策、收尾（瘦身后约百行） | 不含协议细节、日志细节 |
-| 传输 | `transport.ts` | 纯 HTTP I/O：连接、逐块转发、空闲超时、客户端中止检测，通过事件回调（onHeaders/onChunk/onEnd/onError）向外汇报 | 不含日志、usage、转换逻辑 |
-| 协议 | `protocols/*.ts` | 每协议一个适配器（见下） | — |
-| 观测 | `hooks/*.ts` | 日志写入、usage 提取、正文采集，订阅管线事件 | 不改传输行为 |
-
-### ProtocolAdapter 接口契约
-
-每个协议实现一个适配器：
-
-```typescript
-interface ProtocolAdapter {
-  /** 请求方向：model 改写（body 或 URL）、usage 注入参数、认证头格式 */
-  buildUpstreamRequest(input: ClientRequestSnapshot, target: ProviderModelTarget): BuiltRequest
-
-  /** 响应方向：透传或转换管线、该协议自身的 usage 提取 */
-  createResponsePipeline(ctx: ResponseContext): ResponsePipeline
-
-  /** 可选：该协议特有的可重试错误判断（如 Anthropic overloaded_error） */
-  classifyError?(statusCode: number, body: unknown): 'retry' | 'terminal'
-}
-```
-
-- 透传模式：适配器直接转发字节；
-- 转换模式：当客户端协议与 upstream 端点协议不同时，由 `protocols/conversions/` 中按 `(from, to)` 注册的转换器接管请求与响应（含流式 SSE）；
-- usage 提取归属各适配器：每个协议自己知道 usage 字段结构，不再用统一字段名猜测。
-
-### 目录结构
-
-```text
-proxy/
-├── server.ts                 # 监听 + /v1/models
-├── handler.ts                # 编排骨架（协议无关）
-├── request-context.ts        # RequestContext
-├── router.ts                 # 候选解析 + 手动切换 + 健康过滤
-├── transport.ts              # 纯上游 I/O + 事件发射
-├── response.ts               # 通用状态分类
-├── health.ts
-├── auth.ts
-├── headers.ts
-├── protocols/
-│   ├── types.ts              # ProtocolAdapter 接口
-│   ├── openai-completions.ts
-│   ├── openai-responses.ts
-│   ├── anthropic-messages.ts
-│   ├── gemini.ts
-│   └── conversions/          # 跨协议转换器，按 (from, to) 注册
-└── hooks/
-    ├── request-logger.ts     # 唯一日志写入点（request_logs / request_attempts）
-    ├── usage-tracker.ts      # token / usage 提取
-    └── content-capture.ts    # request_contents / attempt_contents 正文采集
-```
-
-### 观测订阅原则
-
-日志、usage、正文采集都是管线的订阅者，监听传输层事件：
-
-- 新增观测能力 = 新增一个订阅者，不修改传输代码；
-- 日志写入收敛到 `hooks/request-logger.ts` 单点，消除散落在编排各分支中的手写写入；
-- 正文采集（MVP 待办）接入时只需实现 `content-capture.ts`。
-
-### 实施说明
-
-重构直接按目标结构落地，不保留旧结构兼容：
-
-1. 新建 `transport.ts`，上游 HTTP 逻辑（连接、转发、空闲超时、中止）全部事件化；
-2. 新建 `protocols/types.ts` 接口，请求改写、协议转换、usage 提取按协议归位到各适配器，`request.ts` / `conversion.ts` / `conversion-response.ts` 中的逻辑拆入后删除原文件；
-3. 新建 `request-context.ts` 与 `hooks/request-logger.ts`，日志写入收敛单点；
-4. `handler.ts` 重写为纯编排；
-5. 每步完成后运行 `pnpm test:server` 与 `pnpm typecheck`。
+> 本文只描述代理的**行为契约**：协议识别、候选过滤与排序、自动切换、手动切换、错误分类、流式边界、空闲超时与透传规则。
+> 这些契约不随实现重构而变。承载这些行为的模块结构、分层职责、扩展接口与「协议 × 传输」双轴见 [proxy-engine.md](./proxy-engine.md)；出站网络访问见 [outbound-proxy.md](./outbound-proxy.md)；路由落点怎么算出来见 [route-design.md](./route-design.md) §2.10。
 
 ## 服务基本信息
 
 - 默认监听 `127.0.0.1` 的可配置端口，不暴露到局域网
 - 客户端只需配置一个统一 Base URL（如 `http://127.0.0.1:port`），无需按协议区分
 - 支持普通 HTTP 请求和 SSE 流式响应透传
-- 支持 Responses API 的 WebSocket 传输（`/v1/responses` 的 `Upgrade: websocket` 握手），WS→WS 透传中继、上游不支持时回 426 由客户端降级 HTTP，详见 [websocket-transport.md](./websocket-transport.md)
 - 不强制接管系统代理；推荐用户在 AI 工具中配置本地 Base URL
 - 可选的应用级上游出站代理用于 One Switch 访问模型供应商，覆盖真实模型请求、连接测试和模型列表获取；协议、绕过规则和安全边界详见 [outbound-proxy.md](./outbound-proxy.md)
 
@@ -117,14 +15,13 @@ proxy/
 
 代理根据请求 path 自动匹配协议类型：
 
-| 协议 | 匹配路径 |
+| 协议 | 匹配方法 + 路径 |
 |------|----------|
-| OpenAI | `/v1/chat/completions`、`/v1/completions`、`/v1/embeddings` |
-| OpenAI Responses | `/v1/responses`（HTTP POST + SSE；带 `Upgrade: websocket` 握手时走 [WebSocket 传输](./websocket-transport.md)） |
-| Anthropic | `/v1/messages` |
-| Gemini | `/v1beta/models/*` |
-| Custom | 用户自定义路径匹配规则 |
+| `openai-completions` | POST `/v1/chat/completions`、`/chat/completions`、`/v1/completions`、`/completions`、`/v1/embeddings`、`/embeddings` |
+| `openai-responses` | POST `/v1/responses`、`/responses`（传输为 HTTP） |
+| `anthropic-messages` | POST `/v1/messages`、`/messages` |
 
+- 当前实现只有以上三种协议，路径表以 `source/server/proxy/protocols/*/descriptor.ts` 为准；Gemini、Custom 等其它协议不在能力范围内
 - 若 path 无法匹配任何已知协议，返回 404 并提示未识别的 API 路径
 - `/v1/models` 是代理自身提供的本地服务接口，不透传到上游
 
@@ -179,8 +76,8 @@ v0.3 MVP 只有兜底逻辑模型 `default`。ProviderModel 通过 `scheduling_p
 ### 过滤规则
 
 - 协议不匹配的 ProviderModel 跳过（例如 OpenAI 协议的请求不会尝试只有 Anthropic 端点的 ProviderModel）
-- 被标记为冷却、禁用或达到手动额度阈值的 Provider 或 ProviderModel 跳过
-- 如果过滤后候选为空，返回“当前协议下无可用 ProviderModel”的错误响应
+- 被标记为冷却或禁用的 Provider 或 ProviderModel 跳过
+- 如果过滤后候选为空，返回“当前协议下无可用 ProviderModel”的错误响应（枚举与过滤规则以 `source/server/proxy/planners/` 为准）
 
 ### 自动切换规则
 
@@ -228,6 +125,5 @@ v0.3 MVP 只有兜底逻辑模型 `default`。ProviderModel 通过 `scheduling_p
 - 保留客户端的原始方法和端到端请求头；移除 `connection`、`transfer-encoding` 等逐跳 header
 - 移除客户端认证信息，注入 Provider 配置的认证头；`content-length` 按最终请求体重新计算
 - OpenAI / Anthropic 使用有效 ProviderModel 端点绑定 URL，并将请求体 `model` 改写为 ProviderModel 的 `modelName`
-- Gemini 保留原生请求体，通过 URL 替换模型 ID，并按客户端请求选择 `generateContent` 或 `streamGenerateContent`
-- Gemini 会保留端点 URL 的查询参数，同时合并客户端的 `alt=sse` 等查询参数
 - 响应状态码、端到端响应头和响应体逐块返回；逐跳响应 header 不向客户端转发
+- 请求正文的处理顺序（协议转换 → 请求重写）见 [protocol-conversion.md](./protocol-conversion.md) 与 [request-rewrite-rules.md](./request-rewrite-rules.md)

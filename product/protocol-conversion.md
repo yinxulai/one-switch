@@ -23,19 +23,23 @@
 - 转换对由**端点原生协议**决定：开启开关后，端点自动获得「其他两种协议 → 本协议」的转换能力
 - 每个转换对由独立的转换器模块实现，可单独标记支持度（完整 / 部分 / 不支持）
 
-### MVP 转换矩阵
+### 转换矩阵
+
+矩阵的唯一权威是 `source/server/proxy/protocols/shared/conversion-registry.ts`。当前注册的方向恰好是最常用的三个：
 
 | 客户端协议 | Provider openai-completions | Provider openai-responses | Provider anthropic-messages |
 |-----------|------------------------|----------------------|------------------------|
-| openai-completions | 直连 | 转换（P2） | 转换（P1） |
-| openai-responses | 转换（P1） | 直连 | 转换（P2） |
-| anthropic-messages | 转换（P1） | 转换（P2） | 直连 |
+| openai-completions | 直连 | 未实现 | 已实现 |
+| openai-responses | 已实现 | 直连 | 未实现 |
+| anthropic-messages | 已实现 | 未实现 | 直连 |
 
-P1 优先实现三个最高频方向：
+已实现的三个方向：
 
 1. `anthropic-messages → openai-completions`：让 Claude 系工具用 OpenAI 兼容渠道
 2. `openai-responses → openai-completions`：让 Responses API 客户端用 Chat Completions 渠道
 3. `openai-completions → anthropic-messages`：让 OpenAI 系工具用 Anthropic 渠道
+
+其余三个方向的组合在注册表里不存在，会被当作「该协议下无可用端点」拒绝，不会静默降级。新增一个方向 = 在注册表的请求表与响应表里各加一行，不动流程代码。
 
 ## 请求处理流程
 
@@ -226,7 +230,9 @@ interface ProtocolConverter {
 
 缓存字段是否生效仍取决于具体 API、端点和模型版本。转换器不伪造 cache key，不把 Anthropic `5m` / `1h` TTL 猜测为 OpenAI TTL，也不把 Google OpenAI-compatible 端点当作原生 Gemini CachedContent API。观测层兼容 OpenAI read/write details、Anthropic read/write 与 TTL 明细，以及 Gemini `cachedContentTokenCount` / `total_cached_tokens`。
 
-## 验收标准
+## 验收清单
+
+以下条目需要在真实供应商上人工逐条回归；未完成前不计入发布验收。
 
 - [ ] ProviderModel 端点绑定启用对应转换后，`anthropic-messages` 客户端请求能经 `openai-completions` 端点成功返回，非流式与流式均正常
 - [ ] 候选模型中同时存在原生候选与转换候选时，原生候选优先；原生全部失败后自动落到转换候选

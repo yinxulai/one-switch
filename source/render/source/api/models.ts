@@ -23,6 +23,7 @@ export const logicalModelApi = {
   get: (id: string) => request<LogicalModel>('/logical-model/get', { id }),
   create: (data: CreateLogicalModelInput) => request<LogicalModel>('/logical-model/create', data),
   update: (id: string, updates: Partial<LogicalModel>) => request<LogicalModel>('/logical-model/update', { id, ...updates }),
+  reorder: (ids: string[]) => request<LogicalModel[]>('/logical-model/reorder', { ids }),
   remove: (id: string) => request<{ id: string }>('/logical-model/delete', { id }),
 }
 

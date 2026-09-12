@@ -1,5 +1,4 @@
 import { cn } from '@/lib/utils'
-import { Label } from '@/components/ui/label'
 import { ProviderIcon } from './provider-icon'
 import { PROVIDER_PRESETS, type ProviderPreset } from '../lib/provider-presets'
 
@@ -12,8 +11,8 @@ export function ProviderPresetPicker(props: ProviderPresetPickerProps) {
   const { providerName, onApplyPreset } = props
 
   return (
-    <div className="space-y-2">
-      <Label className="text-xs text-muted-foreground">快速选择</Label>
+    <div className="grid gap-1.5">
+      <span className="system-xs-regular text-text-tertiary">快速选择</span>
       <div className="flex flex-wrap gap-2">
         {PROVIDER_PRESETS.map(preset => (
           <button
@@ -21,9 +20,9 @@ export function ProviderPresetPicker(props: ProviderPresetPickerProps) {
             type="button"
             onClick={() => onApplyPreset(preset)}
             className={cn(
-              'flex items-center gap-1.5 rounded-md bg-muted/50 px-2 py-1 text-xs font-medium transition-colors',
-              'hover:bg-muted',
-              providerName === preset.name && 'bg-primary/10 text-primary',
+              'flex items-center gap-1.5 rounded-lg border border-module-border bg-workflow-block-parma-bg px-2 py-1 transition-colors',
+              'system-xs-medium text-text-secondary hover:bg-state-base-hover-alt hover:text-text-primary',
+              providerName === preset.name && 'bg-accent text-text-primary',
             )}
           >
             <span style={{ color: preset.color }}>

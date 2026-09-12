@@ -1,7 +1,6 @@
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Label } from '@/components/ui/label'
-import { Separator } from '@/components/ui/separator'
+import { FORM_DIALOG_BODY_CLASSNAME, FormGroup } from '@/components/form-kit'
 import { ProviderEndpointCard } from './provider-endpoint-card'
 import { ProviderFields } from './provider-fields'
 import type { ProviderEndpointEntry } from '../hooks/types'
@@ -54,8 +53,7 @@ export function ProviderDialog(props: ProviderDialogProps) {
           <DialogDescription>API Key 可选；本地或测试集群等无需鉴权的上游可以留空。</DialogDescription>
         </DialogHeader>
 
-        <div className="max-h-[65vh] space-y-4 overflow-y-auto px-1 py-2">
-
+        <div className={FORM_DIALOG_BODY_CLASSNAME}>
           <ProviderFields
             editingProviderId={editingProviderId}
             providerName={providerName}
@@ -66,17 +64,11 @@ export function ProviderDialog(props: ProviderDialogProps) {
             setTimeout={setTimeout}
           />
 
-          <Separator />
-
           {/* 协议默认地址 */}
-          <div className="space-y-3">
-            <div>
-              <Label className="text-sm">支持的协议默认接口地址</Label>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">
-                开启某个协议并填入默认地址；添加模型选择该协议时如不覆盖则沿用此地址。
-              </p>
-            </div>
-
+          <FormGroup
+            title="支持的协议默认接口地址"
+            description="开启某个协议并填入默认地址；添加模型选择该协议时如不覆盖则沿用此地址。"
+          >
             {endpointEntries.map((entry, index) => (
               <ProviderEndpointCard
                 key={entry.protocol}
@@ -85,7 +77,7 @@ export function ProviderDialog(props: ProviderDialogProps) {
                 updateEndpointEntry={updateEndpointEntry}
               />
             ))}
-          </div>
+          </FormGroup>
         </div>
 
         <DialogFooter>

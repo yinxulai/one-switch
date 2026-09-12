@@ -13,7 +13,7 @@
 
 ## 模块划分
 
-Server 分为四块：
+Server 分为五块：
 
 | 模块 | 职责 | 包含内容 |
 | --- | --- | --- |
@@ -32,17 +32,26 @@ source/server/
 ├── index.ts
 ├── runtime/server-runtime.ts
 ├── management/
-│   ├── server.ts / router.ts / request-body.ts / response.ts / error-handler.ts
-│   ├── providers.ts / models.ts / provider-models.ts / settings.ts
-│   ├── relations.ts / config/ / request-logs.ts / logs.ts / analytics.ts
-│   ├── runtime-control.ts / model-test.ts / provider-models-fetch.ts
-│   └── auth/ / request-guards.ts / environment-guard.ts
-├── proxy/
-│   ├── server.ts / request-entry.ts / attempt-executor.ts / attempt-runner.ts
-│   ├── request-context.ts / request.ts / routing.ts / router.ts / manual-routing.ts
-│   ├── protocols/{types.ts,registry.ts}
-│   ├── conversion.ts / conversion-response.ts / response-pipeline.ts
-│   └── transport.ts / headers.ts / auth.ts / health.ts / logging.ts / hooks.ts
+│   ├── server.ts / router.ts
+│   ├── core/{request-body,response,error-handler,request-guards,environment-guard}.ts
+│   ├── routes/                         # 管理 API，按域分组后由 index.ts 合并注册
+│   │   ├── catalog/                    # Provider、ProviderModel、模型
+│   │   ├── relations/                  # 绑定关系、请求重写规则
+│   │   ├── operations/                 # 设置、代理生命周期、开发种子
+│   │   ├── observability/              # 运行日志、请求日志、统计
+│   │   ├── router/                     # 路由工作台图与试跑
+│   │   └── diagnostics/                # 模型测试、协议发现、出站代理测试
+│   └── provider-transfer/              # 供应商包导入导出
+├── proxy/                              # 分层代理链路，分层契约见 proxy-engine.md
+│   ├── contracts/                      # 层间接口与类型
+│   ├── kernel/                         # 与协议无关的搬运内核
+│   ├── request/ response/ upstream/    # 请求解析、响应产出、上游交互
+│   ├── routing/ planners/ execution/   # 路由决策、尝试规划、尝试执行
+│   ├── protocols/ adapters/ local/ transports/ # 协议描述、转换适配、本地端点、传输
+│   ├── modifiers/ observers/           # 修改器链与观察者
+│   ├── request-rewrite/ capabilities/  # 请求重写、能力探测
+│   ├── observability/                  # 日志、用量与观测
+│   └── runtime/                        # 代理服务装配与生命周期
 ├── database/                         # SQLite + Drizzle 持久化层
 │   ├── index.ts / schema.ts
 │   ├── provider-store.ts / model-store.ts / logical-model-store.ts
@@ -52,7 +61,7 @@ source/server/
 └── security/                          # Host validation 等安全适配
 ```
 
-当前不存在 `proxy/handler.ts`、`source/server/api/` 或 `infrastructure/database/`。`request-entry.ts` 是代理请求入口，`database/` 是明确的持久化层；不新增仅为目录对称服务的空文件。
+当前不存在 `proxy/handler.ts`、`source/server/api/` 或 `infrastructure/database/`。`proxy/` 的分层目录与依赖方向由 `scripts/check-proxy-layers.mjs` 在 `pnpm lint` 中强制断言，新增层级或跨层引用会直接失败。
 
 ## 依赖方向
 
@@ -84,30 +93,30 @@ flowchart TD
 ```text
 POST /api/provider/create
   -> management/router.ts
-  -> management/providers.ts
+  -> management/routes/catalog/providers.ts
   -> infrastructure/secrets/secret-store.ts
   -> database/provider-store.ts
   -> HTTP response
 ```
 
-密钥写入与 Provider 保存的补偿逻辑属于 `management/providers.ts`，不应留在通用 HTTP router 中。
+密钥写入与 Provider 保存的补偿逻辑属于 `management/routes/catalog/providers.ts`，不应留在通用 HTTP router 中。
 
 ### 转发模型请求
 
 ```text
 Client request
-  -> proxy/server.ts
-  -> proxy/request-entry.ts
-  -> proxy/request-context.ts / request.ts
-  -> proxy/router.ts + routing.ts + health.ts
-  -> proxy/attempt-executor.ts / attempt-runner.ts
-  -> proxy/protocols/registry.ts
-  -> proxy/transport.ts / response-pipeline.ts
-  -> proxy/logging.ts + database/request-log-store.ts
+  -> proxy/runtime/server.ts
+  -> proxy/request/                     # 入口匹配、请求解析
+  -> proxy/routing/ + planners/         # 路由决策、尝试规划
+  -> proxy/execution/                   # 候选尝试编排与重试
+  -> proxy/protocols/ + adapters/       # 协议描述与转换适配
+  -> proxy/transports/http.ts           # 上游请求与响应帧
+  -> proxy/response/                    # 帧到客户端响应的产出
+  -> proxy/observability/ + database/request-log-store.ts
   -> Client response
 ```
 
-`request-entry.ts` 负责入口解析，`attempt-executor.ts` 负责编排候选尝试；协议注册、协议转换、传输、响应管线和观测分别由对应模块负责。当前协议范围以 `source/common/schemas.ts` 为准，不包含 Gemini。
+`proxy/request/` 负责入口解析，`proxy/execution/` 负责编排候选尝试；协议注册、协议转换、传输、响应管线和观测分别由对应模块负责。当前协议范围以 `source/common/protocols.ts` 为准，不包含 Gemini。
 
 ## 生命周期
 
@@ -133,10 +142,10 @@ stateDiagram-v2
 
 1. [已完成] `runtime/server-runtime.ts` 持有管理服务、代理服务和数据库生命周期。
 2. [已完成] 管理 API 按 Provider、LogicalModel、ProviderModel、关系、配置、日志、分析和运行时控制分域，统一由 `management/router.ts` 注册。
-3. [已完成] 代理入口、请求上下文、路由、尝试执行、协议适配器注册表、协议转换、传输、响应管线、健康和观测已拆为实际模块。
+3. [已完成] 代理入口解析、路由决策、尝试规划与执行、协议描述与适配、传输、响应产出、修改器、请求重写和观测已拆为 `proxy/` 下的独立分层目录，分层契约见 [proxy-engine.md](./proxy-engine.md)。
 4. [已完成] SQLite 代码保留在 `database/`，并按 Provider、Model、LogicalModel、Settings、Health、Request Log、Analytics 拆分 store；不使用 `infrastructure/database/store.ts`。
 5. [已完成] Render 端通过 `api/*.ts`、`features/*`、页面 hooks 和 `infrastructure/polling-manager.ts` 分域；不保留单体 API 或 app-service 兼容出口。
 6. [已完成] v0.3 不保留兼容 facade、re-export、旧 API 别名、旧领域名称或双读双写。
-7. [已完成（源码/构建验证）] `typecheck`、`lint`、`test:server` 通过，共 239 tests；Vite bundling 通过。`electron-builder` 在 Windows 当前用户缺少符号链接权限时失败，因此 UI 回归与发布包验证仍待人工完成。
+7. [已完成（源码/构建验证）] `typecheck`、`lint`、`test` 全部通过；Vite bundling 通过。`electron-builder` 在 Windows 当前用户缺少符号链接权限时失败，因此 UI 回归与发布包验证仍待人工完成。
 
 验证命令以根目录 `package.json` 的 scripts 为准；文档更新不代替最终验证执行。

@@ -35,14 +35,14 @@ export function FailureReasons(props: FailureReasonsProps) {
       />
       <CardContent className="pt-0">
         {reasons.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-            <div className="text-2xl text-success">✓</div>
-            <div className="mt-1 text-xs">当前时间范围内暂无失败请求</div>
+          <div className="flex flex-col items-center justify-center py-8 text-text-tertiary">
+            <div className="text-2xl text-text-success">✓</div>
+            <div className="mt-1 system-xs-regular">当前时间范围内暂无失败请求</div>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="grid gap-3">
             {/* 横向堆叠条 */}
-            <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-muted">
+            <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-inset">
               {reasons.map((r, idx) => (
                 <div
                   key={r.reason}
@@ -53,17 +53,17 @@ export function FailureReasons(props: FailureReasonsProps) {
               ))}
             </div>
             {/* 错误列表 */}
-            <div className="space-y-2">
+            <div className="grid gap-2">
               {reasons.map((r, idx) => (
-                <div key={r.reason} className="flex items-center gap-2.5 text-xs">
+                <div key={r.reason} className="flex items-center gap-2.5 system-xs-regular">
                   <span className={cn('h-2.5 w-2.5 shrink-0 rounded-sm', ERROR_COLORS[idx % ERROR_COLORS.length])} />
-                  <span className="min-w-0 flex-1 truncate text-foreground/80" title={r.reason}>
+                  <span className="min-w-0 flex-1 truncate text-text-secondary" title={r.reason}>
                     {r.reason}
                   </span>
-                  <span className="shrink-0 font-mono text-muted-foreground tabular-nums">
+                  <span className="shrink-0 font-mono text-text-tertiary tabular-nums">
                     {r.count.toLocaleString()}
                   </span>
-                  <span className="w-10 shrink-0 text-right font-mono text-muted-foreground tabular-nums">
+                  <span className="w-10 shrink-0 text-right font-mono text-text-tertiary tabular-nums">
                     {r.percent}%
                   </span>
                 </div>

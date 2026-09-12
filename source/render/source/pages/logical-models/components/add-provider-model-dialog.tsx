@@ -85,9 +85,9 @@ export function AddProviderModelDialog(props: AddProviderModelDialogProps) {
           <DialogTitle>添加模型到逻辑模型</DialogTitle>
           <DialogDescription>添加模型会为当前逻辑模型创建一条调度配置；未显式添加的模型不会参与请求。</DialogDescription>
         </DialogHeader>
-        {loading ? <p className="text-sm text-muted-foreground">正在加载可添加模型…</p> : models.length === 0 ? <p className="text-sm text-muted-foreground">没有可添加的供应商模型，请先在模型管理中创建模型。</p> : (
+        {loading ? <p className="system-sm-regular text-text-tertiary">正在加载可添加模型…</p> : models.length === 0 ? <p className="system-sm-regular text-text-tertiary">没有可添加的供应商模型，请先在模型管理中创建模型。</p> : (
           <div className="flex min-h-0 flex-col gap-2">
-            <Command shouldFilter={false} className="min-h-0 rounded-lg bg-muted/20 p-0">
+            <Command shouldFilter={false} className="min-h-0 rounded-lg border border-module-border bg-workflow-block-parma-bg p-0">
               <CommandInput className="px-2" placeholder="搜索模型或供应商…" value={search} onValueChange={setSearch} />
               <CommandList className="max-h-64 px-1 pb-1">
                 <CommandEmpty>没有匹配的模型。</CommandEmpty>
@@ -103,11 +103,11 @@ export function AddProviderModelDialog(props: AddProviderModelDialogProps) {
                 ))}
               </CommandList>
             </Command>
-            <div className="flex min-h-8 flex-wrap items-center gap-1.5 rounded-md bg-muted/30 px-2 py-1.5">
-              {selectedModels.length === 0 ? <span className="text-xs text-muted-foreground">请选择一个或多个模型</span> : selectedModels.map(model => (
-                <button key={model.id} type="button" className="inline-flex max-w-full items-center gap-1 rounded-md bg-background px-2 py-1 text-xs" onClick={() => setSelectedIds(current => current.filter(id => id !== model.id))}>
+            <div className="flex min-h-8 flex-wrap items-center gap-1.5 rounded-lg border border-module-border bg-inset px-2 py-1.5">
+              {selectedModels.length === 0 ? <span className="system-xs-regular text-text-tertiary">请选择一个或多个模型</span> : selectedModels.map(model => (
+                <button key={model.id} type="button" className="inline-flex max-w-full items-center gap-1 rounded-lg bg-card px-2 py-1 system-xs-regular text-text-primary" onClick={() => setSelectedIds(current => current.filter(id => id !== model.id))}>
                   <span className="max-w-48 truncate">{model.modelName}</span>
-                  <X className="size-3.5 shrink-0 text-muted-foreground" />
+                  <X className="size-3.5 shrink-0 text-text-quaternary" />
                 </button>
               ))}
             </div>

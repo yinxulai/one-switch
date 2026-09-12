@@ -33,9 +33,9 @@ export function LogicalModelTestControls(props: LogicalModelTestControlsProps) {
   if (props.protocols.length === 0) return null
 
   return (
-    <div className="flex items-center overflow-hidden rounded-md bg-card">
+    <div className="flex items-center gap-2">
       <Select value={props.selectedProtocol} onValueChange={value => props.onProtocolChange(value as Protocol | 'all')}>
-        <SelectTrigger className="h-8 w-36 rounded-none border-0 border-r bg-card text-[11px] focus:outline-none">
+        <SelectTrigger aria-label="选择探测协议" className="w-36">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -48,7 +48,7 @@ export function LogicalModelTestControls(props: LogicalModelTestControlsProps) {
       <Button
         variant="outline"
         size="sm"
-        className="h-8 rounded-none px-3 text-[11px]"
+        className="h-8 px-3 system-xs-medium"
         onClick={props.onRun}
         disabled={props.running || props.disabled}
       >
@@ -64,25 +64,25 @@ export function LogicalModelTestSummary(props: LogicalModelTestSummaryProps) {
   const failureCount = props.results.length - successCount
 
   return (
-    <div className="mb-3 grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-4 rounded-lg bg-muted/20 px-3 py-2.5 text-[11px]">
+    <div className="mb-3 grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-4 rounded-lg border border-module-border bg-inset px-3 py-2.5 system-2xs-regular">
       <div className="min-w-0">
-        <div className="flex items-center gap-1.5 font-medium">
-          <Activity size={12} className="text-primary" />
+        <div className="flex items-center gap-1.5 system-xs-medium text-text-primary">
+          <Activity size={12} className="text-primary" aria-hidden />
           逻辑模型连通性报告
         </div>
-        <div className="mt-0.5 truncate text-muted-foreground">
+        <div className="mt-0.5 truncate text-text-tertiary">
           已探测 {props.protocolCount} 个协议、{props.results.length} 个可用供应商模型
         </div>
       </div>
       <div className="text-center">
-        <div className="font-mono text-sm font-medium text-emerald-600 dark:text-emerald-400">{successCount}</div>
-        <div className="text-[9px] uppercase tracking-wide text-muted-foreground">成功</div>
+        <div className="font-mono system-md-medium text-text-success">{successCount}</div>
+        <div className="system-2xs-medium-uppercase text-text-tertiary">成功</div>
       </div>
       <div className="text-center">
-        <div className="font-mono text-sm font-medium text-red-600 dark:text-red-400">{failureCount}</div>
-        <div className="text-[9px] uppercase tracking-wide text-muted-foreground">失败</div>
+        <div className="font-mono system-md-medium text-text-destructive">{failureCount}</div>
+        <div className="system-2xs-medium-uppercase text-text-tertiary">失败</div>
       </div>
-      <button className="text-muted-foreground hover:text-foreground" onClick={props.onClose}>关闭</button>
+      <button className="text-text-tertiary transition-colors hover:text-text-primary" onClick={props.onClose}>关闭</button>
     </div>
   )
 }

@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils'
+import { FormField } from '@/components/form-kit'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { ProtocolUrlHint } from './protocol-url-hint'
 import { PROTOCOL_PLACEHOLDERS, PROTOCOL_OPTIONS } from '../lib/protocols'
@@ -17,13 +17,11 @@ export function ProviderEndpointCard(props: ProviderEndpointCardProps) {
   const label = PROTOCOL_OPTIONS.find(option => option.value === entry.protocol)?.label
 
   return (
-    <div
-      className={cn('space-y-3 rounded-md bg-muted/30 p-3 transition-colors', !entry.enabled && 'opacity-60')}
-    >
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium">{label}</span>
+    <div className={cn('grid gap-3 rounded-lg border border-module-border bg-workflow-block-parma-bg p-3 transition-opacity', !entry.enabled && 'opacity-60')}>
+      <div className="flex items-center justify-between gap-3">
+        <span className="system-sm-medium text-text-primary">{label}</span>
         <div className="flex items-center gap-2">
-          <span className="text-[11px] text-muted-foreground">{entry.enabled ? '已配置' : '未配置'}</span>
+          <span className="system-xs-regular text-text-tertiary">{entry.enabled ? '已配置' : '未配置'}</span>
           <Switch
             checked={entry.enabled}
             onCheckedChange={checked => updateEndpointEntry(index, { enabled: checked })}
@@ -32,18 +30,17 @@ export function ProviderEndpointCard(props: ProviderEndpointCardProps) {
       </div>
 
       {entry.enabled && (
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <Label htmlFor={`provider-endpoint-url-${index}`}>完整接口地址</Label>
+        <div className="grid gap-3">
+          <FormField label="完整接口地址" htmlFor={`provider-endpoint-url-${index}`}>
             <Input
               id={`provider-endpoint-url-${index}`}
               type="url"
-              className="font-mono text-xs"
+              className="font-mono"
               value={entry.url}
               onChange={event => updateEndpointEntry(index, { url: event.target.value })}
               placeholder={PROTOCOL_PLACEHOLDERS[entry.protocol]}
             />
-          </div>
+          </FormField>
           <ProtocolUrlHint protocol={entry.protocol} />
         </div>
       )}

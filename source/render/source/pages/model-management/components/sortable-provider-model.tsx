@@ -23,7 +23,7 @@ export function SortableProviderModel(props: SortableProviderModelProps) {
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn(
-        'relative overflow-hidden rounded-md bg-card',
+        'relative overflow-hidden rounded-md border border-module-border bg-card',
         isDragging && 'z-10 overflow-visible ring-1 ring-primary/45 bg-primary/3',
       )}
     >

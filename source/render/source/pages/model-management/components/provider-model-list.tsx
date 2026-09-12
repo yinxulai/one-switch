@@ -11,6 +11,7 @@ import { restrictToParentElement, restrictToVerticalAxis } from '@dnd-kit/modifi
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { useEffect, useMemo, useState } from 'react'
 import { Ban, Plus, Server, Trash2 } from 'lucide-react'
+import { InlineEmptyState } from '@/components/inline-empty-state'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ProviderModelRow } from './provider-model-row'
@@ -37,9 +38,15 @@ export function ProviderModelList(props: ProviderModelListProps) {
   const [selectedModelIds, setSelectedModelIds] = useState<string[]>([])
   const [modelSearch, setModelSearch] = useState('')
 
+  // 模型列表变化后清掉已经不存在的选中项。
+  // `filter` 永远返回新数组：即使一条都没被剔掉，写入的也是一个新引用，照样触发一次重渲染。
+  // 父级只要重建一次 `models`（对象引用不稳定时很常见）就会白跑一轮，所以先比长度再决定要不要写。
   useEffect(() => {
     const modelIdSet = new Set(models.map(model => model.id))
-    setSelectedModelIds(current => current.filter(id => modelIdSet.has(id)))
+    setSelectedModelIds(current => {
+      const next = current.filter(id => modelIdSet.has(id))
+      return next.length === current.length ? current : next
+    })
   }, [models])
 
   const selectedCount = selectedModelIds.length
@@ -66,19 +73,19 @@ export function ProviderModelList(props: ProviderModelListProps) {
 
   return (
     <>
-      <div className="border-t border-border pt-3">
+      <div className="pt-3">
         <div className="mb-2 flex items-center justify-between">
           <div className="min-w-0 flex-1 pr-2">
             <Input
-              className="h-7 text-xs"
               placeholder="搜索模型 ID..."
               value={modelSearch}
               onChange={event => setModelSearch(event.target.value)}
+              aria-label="搜索模型 ID"
             />
           </div>
           {selectedCount > 0 ? (
             <div className="flex items-center gap-1.5">
-              <span className="text-[11px] text-muted-foreground">已选择 {selectedCount} 项</span>
+              <span className="system-2xs-regular text-text-tertiary">已选择 {selectedCount} 项</span>
               <Button variant="outline" size="sm" onClick={() => void disableSelected()}>
                 <Ban size={13} /> 禁用
               </Button>
@@ -101,7 +108,7 @@ export function ProviderModelList(props: ProviderModelListProps) {
           onDragEnd={event => void onDragEnd(event)}
         >
           <SortableContext items={visibleModels.map(model => model.id)} strategy={verticalListSortingStrategy}>
-            <div className="overflow-hidden rounded-lg border bg-muted/35 divide-y divide-border/60">
+            <div className="overflow-hidden rounded-lg border border-module-border bg-workflow-block-parma-bg divide-y divide-border/50">
               {visibleModels.map(model => (
                 <ProviderModelRow
                   key={model.id}
@@ -118,19 +125,18 @@ export function ProviderModelList(props: ProviderModelListProps) {
                 />
               ))}
               {visibleModels.length === 0 && (
-                <div className="px-3 py-6 text-center text-xs text-muted-foreground">
-                  没有匹配的模型
-                </div>
+                <InlineEmptyState title="没有匹配的模型" className="px-3 py-6" />
               )}
             </div>
           </SortableContext>
         </DndContext>
       ) : (
-        <div className="flex min-h-36 flex-col items-center justify-center rounded-lg border border-dashed bg-muted/30 text-center">
-          <Server size={20} className="mb-2 text-muted-foreground/40" />
-          <p className="text-xs font-medium">还没有供应商模型</p>
-          <p className="mt-1 text-[11px] text-muted-foreground">添加后即可通过本地代理调用</p>
-        </div>
+        <InlineEmptyState
+          icon={Server}
+          title="还没有供应商模型"
+          description="添加后即可通过本地代理调用"
+          className="min-h-36 justify-center rounded-lg border border-module-border bg-inset"
+        />
       )}
     </>
   )

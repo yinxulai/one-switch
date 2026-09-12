@@ -9,12 +9,13 @@ import {
 } from '@dnd-kit/core'
 import { restrictToParentElement, restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import { ListTree, RefreshCw, Target } from 'lucide-react'
+import { ListTree, GripVertical, RefreshCw, Target } from 'lucide-react'
 import { useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { cn } from '@/lib/utils'
 import { SortableProviderModel } from './sortable-provider-model'
 import { ProviderModelRow } from './provider-model-row'
 import { providerModelMetricKey, type ProviderModelMetrics } from '../lib/model-metrics'
@@ -42,6 +43,8 @@ interface LogicalModelCardProps {
   onNavigateToProviderAnalytics?: (providerId: string) => void
   onAddModel?: () => void
   onRemoveModel?: (model: ProviderModelRoute) => void
+  dragHandleProps?: Record<string, unknown>
+  dragging?: boolean
 }
 
 export function LogicalModelCard(props: LogicalModelCardProps) {
@@ -63,6 +66,8 @@ export function LogicalModelCard(props: LogicalModelCardProps) {
     onNavigateToProviderAnalytics,
     onAddModel,
     onRemoveModel,
+    dragHandleProps,
+    dragging,
   } = props
 
   const sensors = useSensors(
@@ -79,22 +84,33 @@ export function LogicalModelCard(props: LogicalModelCardProps) {
   const coolingCount = rows.filter(row => row.cooling).length
 
   const renderHeader = () => (
-    <CardHeader className="group/header relative flex-row items-center justify-between gap-4 border-b border-border/60 pb-4">
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <CardTitle>{logicalModelName} 逻辑模型</CardTitle>
+    <CardHeader className="group/header relative flex-row items-center justify-between gap-4 pb-4">
+      <div className="flex min-w-0 items-center gap-1.5">
+        <button
+          type="button"
+          className="flex h-7 w-5 shrink-0 cursor-grab touch-none select-none items-center justify-center rounded text-text-quaternary transition-colors hover:text-text-primary focus-visible:bg-accent focus-visible:text-text-primary focus-visible:outline-none active:cursor-grabbing"
+          aria-label={`拖动“${logicalModelName}”逻辑模型排序`}
+          title="拖动排序"
+          {...dragHandleProps}
+        >
+          <GripVertical size={15} />
+        </button>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <CardTitle>{logicalModelName} 逻辑模型</CardTitle>
+          </div>
+          <CardDescription className="mt-1">
+            {models.length ? `${models.length} 个模型 · ${enabledCount} 个已启用` : '添加模型后配置优先级和故障转移'}
+            {coolingCount > 0 && <span className="text-text-warning"> · {coolingCount} 个冷却中</span>}
+          </CardDescription>
         </div>
-        <CardDescription className="mt-1">
-          {models.length ? `${models.length} 个模型 · ${enabledCount} 个已启用` : '添加模型后配置优先级和故障转移'}
-          {coolingCount > 0 && <span className="text-amber-600 dark:text-amber-500"> · {coolingCount} 个冷却中</span>}
-        </CardDescription>
       </div>
       <div className="flex items-center gap-2">
-        {onAddModel && <Button variant="outline" size="sm" onClick={onAddModel}>添加模型</Button>}
+        {onAddModel && <Button variant="outline" onClick={onAddModel}>添加模型</Button>}
         <Tabs value={mode} onValueChange={value => onModeChange(value as 'auto' | 'manual')}>
-          <TabsList className="h-7">
-            <TabsTrigger value="auto" disabled={switchingMode} className="h-6 px-2.5 text-[11px]"><RefreshCw size={12} className={switchingMode ? 'animate-spin' : undefined} /> 自动转移</TabsTrigger>
-            <TabsTrigger value="manual" disabled={switchingMode} className="h-6 px-2.5 text-[11px]"><Target size={12} /> 手动指定</TabsTrigger>
+          <TabsList>
+            <TabsTrigger value="auto" disabled={switchingMode} className="px-2.5 system-xs-medium"><RefreshCw size={12} className={switchingMode ? 'animate-spin' : undefined} /> 自动转移</TabsTrigger>
+            <TabsTrigger value="manual" disabled={switchingMode} className="px-2.5 system-xs-medium"><Target size={12} /> 手动指定</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
@@ -155,7 +171,7 @@ export function LogicalModelCard(props: LogicalModelCardProps) {
   }
 
   return (
-    <Card className="group overflow-hidden border-border/60">
+    <Card className={cn('group overflow-hidden', dragging && 'bg-accent')}>
       {renderHeader()}
       <CardContent className="p-0">{renderContent()}</CardContent>
     </Card>

@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { FormGroup, FormHint } from '@/components/form-kit'
 import type { ProviderBundle } from '@common/provider-bundle'
 
 interface ProviderImportDialogProps {
@@ -25,27 +26,27 @@ export function ProviderImportDialog(props: ProviderImportDialogProps) {
           <DialogDescription className="truncate">来源文件：{fileName}</DialogDescription>
         </DialogHeader>
 
-        <ul className="max-h-56 space-y-1.5 overflow-y-auto pr-1">
-          {bundle.providers.map(provider => (
-            <li key={provider.name} className="flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5">
-              <span className="min-w-0 truncate text-xs font-medium">{provider.name}</span>
-              <span className="shrink-0 text-[11px] text-muted-foreground">
-                {provider.models.length} 个模型 · {existingNames.has(provider.name) ? '覆盖同名供应商' : '新建供应商'}
-              </span>
-            </li>
-          ))}
-        </ul>
+        <FormGroup className="py-1">
+          <ul className="max-h-56 space-y-1.5 overflow-y-auto pr-1">
+            {bundle.providers.map(provider => (
+              <li key={provider.name} className="flex items-center justify-between gap-2 rounded-lg border border-module-border bg-workflow-block-parma-bg px-2.5 py-1.5">
+                <span className="min-w-0 truncate system-xs-medium text-text-primary">{provider.name}</span>
+                <span className="shrink-0 system-2xs-regular text-text-tertiary">
+                  {provider.models.length} 个模型 · {existingNames.has(provider.name) ? '覆盖同名供应商' : '新建供应商'}
+                </span>
+              </li>
+            ))}
+          </ul>
 
-        <p className="text-xs leading-5 text-muted-foreground">
-          {overrideCount > 0
-            ? `其中 ${overrideCount} 个供应商与本地同名，将被整体覆盖：端点、自定义设置和模型都以包内容为准，包里没有的模型会被删除。`
-            : '本地没有同名供应商，将全部新建。'}
-          {keyCount > 0 ? `包内含 ${keyCount} 个明文 API Key，导入后会写入本地密钥库。` : '包内不含 API Key，同名供应商会沿用本地已有密钥。'}
-        </p>
+          <FormHint>
+            {overrideCount > 0
+              ? `其中 ${overrideCount} 个供应商与本地同名，将被整体覆盖：端点、自定义设置和模型都以包内容为准，包里没有的模型会被删除。`
+              : '本地没有同名供应商，将全部新建。'}
+            {keyCount > 0 ? `包内含 ${keyCount} 个明文 API Key，导入后会写入本地密钥库。` : '包内不含 API Key，同名供应商会沿用本地已有密钥。'}
+          </FormHint>
 
-        <p className="text-xs leading-5 text-muted-foreground">
-          新建的模型会挂到 default 逻辑模型；已有模型的调度位置不变。
-        </p>
+          <FormHint>新建的模型会挂到 default 逻辑模型；已有模型的调度位置不变。</FormHint>
+        </FormGroup>
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>

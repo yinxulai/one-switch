@@ -18,7 +18,7 @@ export function CardSectionHeader(props: CardSectionHeaderProps) {
     <CardHeader
       className={cn(
         compact ? 'pb-1.5' : 'pb-3',
-        bordered && 'border-b border-border/60 px-4 py-4',
+        bordered && 'border-b border-border/50 px-4 py-4',
         actions && 'flex flex-row items-start justify-between gap-3',
         className,
       )}

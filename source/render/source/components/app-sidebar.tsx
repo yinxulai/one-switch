@@ -63,14 +63,14 @@ export function AppSidebar(props: AppSidebarProps) {
         <img src="icon.svg" alt="" className="size-6 shrink-0 transition-[width,height] duration-200 ease-out group-hover/sidebar:size-7 motion-reduce:transition-none" />
         <div className="min-w-0 whitespace-nowrap opacity-0 transition-opacity duration-150 group-hover/sidebar:opacity-100 group-hover/sidebar:delay-75 motion-reduce:transition-none">
           <h1 className="truncate text-sm font-medium leading-tight tracking-tight">One Switch</h1>
-          <p className="font-mono text-[10px] uppercase tracking-[1.2px] text-muted-foreground">local ai gateway</p>
+          <p className="font-mono system-2xs-medium-uppercase tracking-[1.2px] text-sidebar-foreground/70">local ai gateway</p>
         </div>
       </div>
 
       <nav className="min-h-0 flex-1 space-y-5 overflow-y-auto p-1.5">
         {navSections.map(section => (
           <section key={section.label}>
-            <h2 className="mb-1 flex h-2 items-center justify-start px-2 text-[10px] font-medium uppercase tracking-wider text-sidebar-foreground/50 transition-[height] duration-150 group-hover/sidebar:h-5 motion-reduce:transition-none">
+            <h2 className="mb-1 flex h-2 items-center justify-start px-2 system-2xs-medium-uppercase tracking-wider text-sidebar-foreground/70 transition-[height] duration-150 group-hover/sidebar:h-5 motion-reduce:transition-none">
               <span className="px-1 opacity-0 transition-opacity duration-150 group-hover/sidebar:opacity-100 group-hover/sidebar:delay-75 motion-reduce:transition-none">{section.label}</span>
             </h2>
             <div className="space-y-0.5">
@@ -83,7 +83,7 @@ export function AppSidebar(props: AppSidebarProps) {
                     onClick={() => props.onNavigate(item.key)}
                     aria-current={active ? 'page' : undefined}
                     className={cn(
-                      'flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-xs font-medium transition-colors',
+                      'flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 system-xs-medium transition-colors',
                       active
                         ? 'bg-sidebar-accent text-sidebar-accent-foreground'
                         : 'text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground',
@@ -107,9 +107,9 @@ export function AppSidebar(props: AppSidebarProps) {
         >
           <span className="whitespace-nowrap opacity-0 transition-opacity duration-150 group-hover/sidebar:opacity-100 group-hover/sidebar:delay-75 motion-reduce:transition-none">{props.theme === 'dark' ? '浅色模式' : '深色模式'}</span>
         </AnimatedThemeToggler>
-        <div className="flex h-7 items-center gap-2.5 px-2.5 text-[11px] text-muted-foreground">
+        <div className="flex h-7 items-center gap-2.5 px-2.5 system-2xs-regular text-sidebar-foreground/80">
           <span className="flex size-3.5 shrink-0 items-center justify-center" aria-hidden="true">
-            <span className={cn('size-1.5 rounded-full', props.proxyRunning ? 'animate-pulse bg-success motion-reduce:animate-none' : 'bg-muted-foreground/50')} />
+            <span className={cn('size-1.5 rounded-full', props.proxyRunning ? 'animate-pulse bg-success motion-reduce:animate-none' : 'bg-sidebar-foreground/40')} />
           </span>
           <span className="truncate whitespace-nowrap opacity-0 transition-opacity duration-150 group-hover/sidebar:opacity-100 group-hover/sidebar:delay-75 motion-reduce:transition-none">{props.proxyRunning ? `服务运行中 · ${props.proxyPort ?? 0}` : '服务已停止'}</span>
         </div>

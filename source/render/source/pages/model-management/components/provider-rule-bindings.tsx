@@ -41,7 +41,7 @@ export function ProviderRuleBindings(props: ProviderRuleBindingsProps) {
             : '未知错误'
         setLoadError(message)
         setLoading(false)
-        toast.error(`请求修改加载失败：${message}`)
+        toast.error(`请求重写加载失败：${message}`)
         return
       }
       const all = allResponse.data
@@ -55,7 +55,7 @@ export function ProviderRuleBindings(props: ProviderRuleBindingsProps) {
       const message = error instanceof Error ? error.message : '未知错误'
       setLoadError(message)
       setLoading(false)
-      toast.error(`请求修改加载失败：${message}`)
+      toast.error(`请求重写加载失败：${message}`)
     })
     return () => { cancelled = true }
   }, [providerModelId, toast])
@@ -76,15 +76,15 @@ export function ProviderRuleBindings(props: ProviderRuleBindingsProps) {
   }
 
   return (
-    <section className={embedded ? 'space-y-3 pt-1' : 'mt-5 border-t border-border pt-4'}>
+    <section className={embedded ? 'grid gap-3 pt-1' : 'mt-5 grid gap-3 pt-4'}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <h3 className="text-xs font-medium">请求修改</h3>
+            <h3 className="system-sm-medium text-text-primary">请求重写</h3>
             <Badge variant="muted" className="font-normal">{rules.length} 条（含全局）</Badge>
           </div>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">
-            全局请求修改会自动生效且不可编辑；普通请求修改可在此绑定并调整顺序。
+          <p className="mt-0.5 system-xs-regular text-text-tertiary">
+            全局请求重写会自动生效且不可编辑；普通请求重写可在此绑定并调整顺序。
           </p>
         </div>
         <Button type="button" variant="outline" size="sm" onClick={() => setAddDialogOpen(true)} disabled={loading || Boolean(loadError) || availableRules.length === 0}>
@@ -99,21 +99,21 @@ export function ProviderRuleBindings(props: ProviderRuleBindingsProps) {
             <DialogDescription>选择需要绑定到当前模型的普通规则，可一次添加多条。</DialogDescription>
           </DialogHeader>
           <div className="relative">
-            <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
-            <Input value={ruleSearch} onChange={event => setRuleSearch(event.target.value)} placeholder="搜索规则名称或描述" className="pl-8" />
+            <Search className="absolute top-2.5 left-3 size-3.5 text-text-tertiary" aria-hidden />
+            <Input value={ruleSearch} onChange={event => setRuleSearch(event.target.value)} placeholder="搜索规则名称或描述" className="pl-9" />
           </div>
           <div className="max-h-64 space-y-1 overflow-y-auto">
             {filteredRules.length > 0 ? filteredRules.map(rule => {
               const checked = selectedRuleIds.includes(rule.id)
-              return <label key={rule.id} className="flex cursor-pointer items-start gap-3 rounded-lg bg-muted/25 px-3 py-2.5 hover:bg-muted/45">
+              return <label key={rule.id} className="flex cursor-pointer items-start gap-3 rounded-lg border border-module-border bg-workflow-block-parma-bg px-3 py-2.5 hover:bg-state-base-hover-alt">
                 <Checkbox checked={checked} onCheckedChange={value => setSelectedRuleIds(ids => value ? [...ids, rule.id] : ids.filter(id => id !== rule.id))} />
-                <span className="min-w-0 flex-1"><span className="block truncate text-xs font-medium">{rule.name}</span><span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{rule.description || '无描述'}</span></span>
+                <span className="min-w-0 flex-1"><span className="block truncate system-xs-medium text-text-primary">{rule.name}</span><span className="mt-0.5 block truncate system-2xs-regular text-text-tertiary">{rule.description || '无描述'}</span></span>
                 <span className="flex shrink-0 gap-1">{[...new Set(rule.actions.map(action => action.stage))].map(stage => <Badge key={stage} variant={stage === 'request' ? 'secondary' : 'warning'} className="font-normal">{stage === 'request' ? '请求' : '响应'}</Badge>)}</span>
               </label>
-            }) : <p className="py-8 text-center text-xs text-muted-foreground">没有匹配的可添加规则</p>}
+            }) : <p className="py-8 text-center system-xs-regular text-text-tertiary">没有匹配的可添加规则</p>}
           </div>
           <DialogFooter>
-            <span className="mr-auto text-xs text-muted-foreground">已选择 {selectedRuleIds.length} 条</span>
+            <span className="mr-auto system-xs-regular text-text-tertiary">已选择 {selectedRuleIds.length} 条</span>
             <Button type="button" variant="outline" onClick={() => setAddDialogOpen(false)}>取消</Button>
             <Button type="button" onClick={addRules} disabled={selectedRuleIds.length === 0}>添加所选规则</Button>
           </DialogFooter>
@@ -121,15 +121,15 @@ export function ProviderRuleBindings(props: ProviderRuleBindingsProps) {
       </Dialog>
 
       {rules.length > 0 ? (
-        <div className="mt-3 overflow-hidden rounded-lg bg-muted/35">
+        <div className="overflow-hidden rounded-lg border border-module-border bg-workflow-block-parma-bg">
           {rules.map((rule, index) => (
-            <div key={rule.id} className="flex items-center gap-2 px-3 py-2.5 not-last:border-b not-last:border-border/60">
-              <button type="button" aria-label={`调整 ${rule.name} 顺序`} className="cursor-grab text-muted-foreground/50">
+            <div key={rule.id} className="flex items-center gap-2 px-3 py-2.5 not-last:border-b not-last:border-border/40">
+              <button type="button" aria-label={`调整 ${rule.name} 顺序`} className="cursor-grab text-text-quaternary">
                 <GripVertical className="size-3.5" />
               </button>
-              <span className="flex size-5 items-center justify-center rounded-sm bg-background text-[10px] text-muted-foreground">{index + 1}</span>
-              <ScrollText className="size-3.5 text-muted-foreground" />
-              <span className="min-w-0 flex-1 truncate text-xs font-medium">{rule.name}</span>
+              <span className="flex size-5 items-center justify-center rounded-md bg-card system-2xs-medium text-text-tertiary">{index + 1}</span>
+              <ScrollText className="size-3.5 text-text-tertiary" aria-hidden />
+              <span className="min-w-0 flex-1 truncate system-xs-medium text-text-primary">{rule.name}</span>
               {rule.stages.map(stage => <Badge key={stage} variant={stage === 'request' ? 'secondary' : 'warning'} className="font-normal">{stage === 'request' ? '请求' : '响应'}</Badge>)}
               {rule.global ? <Badge variant="muted" className="font-normal">全局{!rule.enabled && ' · 停用'}</Badge> : <>
                 <Switch
@@ -137,7 +137,7 @@ export function ProviderRuleBindings(props: ProviderRuleBindingsProps) {
                   onCheckedChange={enabled => persist(rules.map(item => item.id === rule.id ? { ...item, enabled } : item))}
                   aria-label={`${rule.name}绑定状态`}
                 />
-                <Button type="button" variant="ghost" size="icon-sm" onClick={() => persist(rules.filter(item => item.id !== rule.id))} aria-label={`移除 ${rule.name}`} className="text-muted-foreground hover:text-destructive">
+                <Button type="button" variant="ghost" size="icon-sm" onClick={() => persist(rules.filter(item => item.id !== rule.id))} aria-label={`移除 ${rule.name}`} className="text-text-tertiary hover:text-text-destructive">
                   <Trash2 />
                 </Button>
               </>}
@@ -145,10 +145,10 @@ export function ProviderRuleBindings(props: ProviderRuleBindingsProps) {
           ))}
         </div>
       ) : (
-        <div className="mt-3 rounded-lg bg-muted/25 px-4 py-6 text-center">
-          <p className="text-xs font-medium">未添加普通规则</p>
-          <p className="mt-1 text-[10px] text-muted-foreground">
-            {loadError ? '规则加载失败，请稍后重试。' : availableRules.length === 0 && !loading ? '请先在“请求修改”页面创建并保存普通规则。' : '当前模型会自动应用已启用的全局请求修改。'}
+        <div className="rounded-lg border border-module-border bg-workflow-block-parma-bg px-4 py-6 text-center">
+          <p className="system-xs-medium text-text-primary">未添加普通规则</p>
+          <p className="mt-1 system-2xs-regular text-text-tertiary">
+            {loadError ? '规则加载失败，请稍后重试。' : availableRules.length === 0 && !loading ? '请先在“请求重写”页面创建并保存普通规则。' : '当前模型会自动应用已启用的全局请求重写。'}
           </p>
         </div>
       )}

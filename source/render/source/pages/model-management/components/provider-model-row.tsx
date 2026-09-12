@@ -43,11 +43,11 @@ export function ProviderModelRow(props: ProviderModelRowProps) {
   return (
     <SortableProviderModel id={model.id}>
       {(handleProps, dragging) => (
-        <div className={'px-3 py-2.5 ' + (dragging ? 'bg-muted/60' : '')}>
+        <div className={'px-3 py-2.5 ' + (dragging ? 'bg-state-base-hover' : '')}>
           <div className="flex items-center gap-2">
           <button
             aria-label={`拖动 ${model.modelName}`}
-            className="cursor-grab touch-none text-muted-foreground/50"
+            className="cursor-grab touch-none text-text-quaternary transition-colors hover:text-text-primary"
             {...handleProps}
           >
             <GripVertical size={14} />
@@ -59,23 +59,23 @@ export function ProviderModelRow(props: ProviderModelRowProps) {
           />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
-              <span className="truncate text-xs font-medium">{model.modelName}</span>
+              <span className="truncate system-xs-medium text-text-primary">{model.modelName}</span>
             </div>
-            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 system-2xs-regular text-text-tertiary">
               <ProtocolIcons endpoints={model.endpoints} />
               {modelHealth?.consecutiveFailures ? (
-                <Badge variant="destructive" className="px-1.5 py-0 text-[10px] font-normal">连续失败 {modelHealth.consecutiveFailures} 次</Badge>
+                <Badge variant="destructive" className="px-1.5 py-0 system-2xs-medium">连续失败 {modelHealth.consecutiveFailures} 次</Badge>
               ) : modelHealth?.lastSuccessTime ? (
-                <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-500">
-                  <span className="size-1.5 rounded-full bg-emerald-500" />
+                <span className="inline-flex items-center gap-1 text-text-success">
+                  <span className="size-1.5 rounded-full bg-success" />
                   最近成功
                 </span>
               ) : (
-                <span className="text-muted-foreground/70">暂无请求</span>
+                <span className="text-text-quaternary">暂无请求</span>
               )}
               {ruleNames.length > 0 && <>
-                <span className="text-muted-foreground/70">·</span>
-                {ruleNames.map(name => <Badge key={name} variant="muted" className="max-w-40 truncate px-1.5 py-0 text-[10px] font-normal">{name}</Badge>)}
+                <span className="text-text-quaternary">·</span>
+                {ruleNames.map(name => <Badge key={name} variant="muted" className="max-w-40 truncate px-1.5 py-0 system-2xs-medium">{name}</Badge>)}
               </>}
             </div>
           </div>
@@ -95,7 +95,7 @@ export function ProviderModelRow(props: ProviderModelRowProps) {
           <Button
             variant="ghost"
             size="icon-sm"
-            className="text-destructive"
+            className="text-text-tertiary hover:text-text-destructive"
             title="删除模型"
             onClick={() => onRemoveModel(model)}
           >

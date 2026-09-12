@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils'
+import { InlineEmptyState } from '@/components/inline-empty-state'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -38,22 +39,22 @@ export function FetchedModelPicker(props: FetchedModelPickerProps) {
   if (fetchedModels.length === 0) return null
 
   return (
-    <div className="mt-2 space-y-2 rounded-md border">
+    <div className="mt-2 grid gap-2 rounded-lg border border-module-border bg-workflow-block-parma-bg p-1.5">
       <Input
-        className="h-8 border-0 border-b rounded-none focus-visible:ring-0 focus-visible:ring-offset-0"
+        className="bg-card/70"
         value={modelSearch}
         onChange={event => setModelSearch(event.target.value)}
         placeholder={`搜索 ${fetchedModels.length} 个模型…`}
       />
       {multiSelect && filteredModels.length > 0 && (
-        <div className="flex items-center justify-between px-2 pt-1">
-          <p className="text-[11px] text-muted-foreground">当前筛选 {filteredModels.length} 个模型</p>
+        <div className="flex items-center justify-between px-1.5">
+          <p className="system-2xs-regular text-text-tertiary">当前筛选 {filteredModels.length} 个模型</p>
           <div className="flex items-center gap-1">
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              className="h-6 px-2 text-[11px]"
+              className="h-6 px-2 system-2xs-medium"
               onClick={() => onSelectAllFiltered(filteredModels.map(model => model.id))}
             >
               全选
@@ -62,7 +63,7 @@ export function FetchedModelPicker(props: FetchedModelPickerProps) {
               type="button"
               variant="ghost"
               size="sm"
-              className="h-6 px-2 text-[11px]"
+              className="h-6 px-2 system-2xs-medium"
               onClick={() => onInvertFiltered(filteredModels.map(model => model.id))}
             >
               反选
@@ -71,7 +72,7 @@ export function FetchedModelPicker(props: FetchedModelPickerProps) {
               type="button"
               variant="ghost"
               size="sm"
-              className="h-6 px-2 text-[11px]"
+              className="h-6 px-2 system-2xs-medium"
               onClick={onClearSelection}
             >
               清空
@@ -79,17 +80,17 @@ export function FetchedModelPicker(props: FetchedModelPickerProps) {
           </div>
         </div>
       )}
-      <div className="max-h-48 overflow-y-auto p-1">
+      <div className="max-h-48 overflow-y-auto">
         {filteredModels.length === 0 && (
-          <p className="px-2 py-3 text-center text-xs text-muted-foreground">没有匹配的模型</p>
+          <InlineEmptyState title="没有匹配的模型" className="px-2 py-3" />
         )}
         {filteredModels.map(model => (
           <button
             key={model.id}
             type="button"
             className={cn(
-              'flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent',
-              (multiSelect ? selectedModelIds.includes(model.id) : model.id === modelId) && 'bg-accent',
+              'flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left system-xs-regular text-text-secondary hover:bg-state-base-hover-alt',
+              (multiSelect ? selectedModelIds.includes(model.id) : model.id === modelId) && 'bg-accent text-text-primary',
             )}
             onClick={() => {
               if (multiSelect) {
@@ -112,7 +113,7 @@ export function FetchedModelPicker(props: FetchedModelPickerProps) {
               <span className="truncate font-mono">{model.id}</span>
             </div>
             {model.ownedBy && (
-              <span className="shrink-0 text-[10px] text-muted-foreground">{model.ownedBy}</span>
+              <span className="shrink-0 system-2xs-regular text-text-quaternary">{model.ownedBy}</span>
             )}
           </button>
         ))}

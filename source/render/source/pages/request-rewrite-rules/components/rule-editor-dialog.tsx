@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { FlaskConical, ListFilter, LoaderCircle, PencilLine, Plus, Save, Trash2 } from 'lucide-react'
 import { requestRewriteRuleApi } from '@/api/models'
+import { FormField } from '@/components/form-kit'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/components/ui/toast'
 import {
@@ -103,60 +105,66 @@ export function RuleEditorDialog(props: RuleEditorDialogProps) {
         onPointerDownOutside={event => event.preventDefault()}
       >
         <SheetHeader className="shrink-0 px-4 py-3.5 pr-12">
-          <SheetTitle className="text-sm">{props.rule.updatedAt === '尚未保存' ? '新建请求重写规则' : '编辑请求重写规则'}</SheetTitle>
-          <SheetDescription className="text-xs">配置匹配条件、重写动作，并用样例验证结果</SheetDescription>
+          <SheetTitle className="system-md-semibold">{props.rule.updatedAt === '尚未保存' ? '新建请求重写规则' : '编辑请求重写规则'}</SheetTitle>
+          <SheetDescription className="system-xs-regular text-text-tertiary">配置匹配条件、重写动作，并用样例验证结果</SheetDescription>
         </SheetHeader>
 
-        <nav aria-label="表单分区" className="flex shrink-0 items-center gap-1 overflow-x-auto border-y border-border bg-muted/30 px-4 py-2">
-          <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 text-xs" onClick={() => document.getElementById('rule-overview')?.scrollIntoView({ behavior: 'smooth' })}><PencilLine />概览</Button>
-          <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 text-xs" onClick={() => document.getElementById('rule-match')?.scrollIntoView({ behavior: 'smooth' })}><ListFilter />匹配</Button>
-          <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 text-xs" onClick={() => document.getElementById('rule-actions')?.scrollIntoView({ behavior: 'smooth' })}>动作 <span className="rounded bg-background px-1.5 py-0.5 text-[10px] dark:bg-muted">{props.rule.actions.length}</span></Button>
-          <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 text-xs" onClick={() => document.getElementById('rule-tests')?.scrollIntoView({ behavior: 'smooth' })}><FlaskConical />测试 <span className="rounded bg-background px-1.5 py-0.5 text-[10px] dark:bg-muted">{props.rule.testCases.length}</span></Button>
+        <nav aria-label="表单分区" className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-border/50 px-4 py-2">
+          <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 system-xs-medium" onClick={() => document.getElementById('rule-overview')?.scrollIntoView({ behavior: 'smooth' })}><PencilLine />概览</Button>
+          <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 system-xs-medium" onClick={() => document.getElementById('rule-match')?.scrollIntoView({ behavior: 'smooth' })}><ListFilter />匹配</Button>
+          <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 system-xs-medium" onClick={() => document.getElementById('rule-actions')?.scrollIntoView({ behavior: 'smooth' })}>动作 <span className="rounded-md bg-inset px-1.5 py-0.5 font-mono system-2xs-medium">{props.rule.actions.length}</span></Button>
+          <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 system-xs-medium" onClick={() => document.getElementById('rule-tests')?.scrollIntoView({ behavior: 'smooth' })}><FlaskConical />测试 <span className="rounded-md bg-inset px-1.5 py-0.5 font-mono system-2xs-medium">{props.rule.testCases.length}</span></Button>
         </nav>
 
-        <div className="min-h-0 flex-1 overflow-y-auto bg-muted/20">
+        <div className="min-h-0 flex-1 overflow-y-auto bg-background">
           <RuleEditor rule={props.rule} onChange={props.onChange} />
-          <section id="rule-tests" className="mx-4 mb-4 scroll-mt-4 space-y-3 rounded-lg border border-border bg-card p-4">
+          <section id="rule-tests" className="mx-4 mb-4 grid scroll-mt-4 gap-3 rounded-lg border border-module-border bg-card p-4">
             <div className="flex items-end justify-between gap-3">
               <div>
-                <h3 className="text-sm font-semibold">测试</h3>
-                <p className="mt-0.5 text-[11px] text-muted-foreground">使用当前草稿验证动作是否按预期生效。</p>
+                <h3 className="system-sm-medium text-text-primary">测试</h3>
+                <p className="mt-0.5 system-xs-regular text-text-tertiary">使用当前草稿验证动作是否按预期生效。</p>
               </div>
-              <Button type="button" variant="secondary" size="sm" className="h-8 shrink-0 px-2.5 text-[11px]" onClick={addTestCase}><Plus /> 添加测试</Button>
+              <Button type="button" variant="secondary" size="sm" className="h-8 shrink-0 px-2.5 system-xs-medium" onClick={addTestCase}><Plus /> 添加测试</Button>
             </div>
-            <div className="space-y-2.5">
+            <div className="grid gap-2.5">
               {props.rule.testCases.length > 0 ? (
-                <div className="space-y-2.5">
+                <div className="grid gap-2.5">
                   {props.rule.testCases.map((testCase, index) => {
                       const result = testResults[testCase.id]
                       const isTesting = testingId === testCase.id
                       return (
-                        <article key={testCase.id} className="space-y-3 rounded-md border border-border bg-muted/40 p-3 dark:bg-inset">
-                          <div className="flex items-center gap-2 pb-3">
-                            <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-muted text-[10px] font-semibold text-muted-foreground">{index + 1}</span>
-                            <input aria-label={`测试用例 ${index + 1} 名称`} className="h-7 min-w-0 flex-1 bg-transparent text-xs font-medium outline-none placeholder:text-muted-foreground" value={testCase.name} onChange={event => updateTestCase(testCase.id, { name: event.target.value })} />
-                            <Button type="button" size="sm" className="h-7 text-[11px]" onClick={() => runTest(testCase)} disabled={isTesting}>{isTesting && <LoaderCircle className="animate-spin" />}运行测试</Button>
-                            <Button type="button" variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-destructive" aria-label={`删除测试用例 ${index + 1}`} onClick={() => setDeleteTestCaseId(testCase.id)}><Trash2 /></Button>
+                        <article key={testCase.id} className="grid gap-3 rounded-lg border border-module-border p-3">
+                          <div className="flex items-center gap-2 pb-1">
+                            <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-inset system-2xs-medium text-text-tertiary">{index + 1}</span>
+                            <Input aria-label={`测试用例 ${index + 1} 名称`} className="min-w-0 flex-1" value={testCase.name} onChange={event => updateTestCase(testCase.id, { name: event.target.value })} />
+                            <Button type="button" size="sm" className="h-8 shrink-0 system-xs-medium" onClick={() => runTest(testCase)} disabled={isTesting}>{isTesting && <LoaderCircle className="animate-spin" />}运行测试</Button>
+                            <Button type="button" variant="ghost" size="icon-sm" className="text-text-tertiary hover:text-text-destructive" aria-label={`删除测试用例 ${index + 1}`} onClick={() => setDeleteTestCaseId(testCase.id)}><Trash2 /></Button>
                           </div>
-                          <div className="space-y-1.5">
-                            <Label htmlFor={`${testCase.id}-stage`} className="text-[11px]">测试阶段</Label>
-                            <select id={`${testCase.id}-stage`} className="h-7 w-full rounded-md border-0 bg-background px-2 text-xs ring-1 ring-foreground/10" value={testCase.stage} onChange={event => { const stage = event.target.value as RuleTestCase['stage']; const input = defaultTestInput(stage); updateTestCase(testCase.id, { stage, ...input }) }}><option value="request">请求</option><option value="response">响应</option></select>
-                          </div>
+                          <FormField label="测试阶段" htmlFor={`${testCase.id}-stage`}>
+                            <Select value={testCase.stage} onValueChange={value => { const stage = value as RuleTestCase['stage']; const input = defaultTestInput(stage); updateTestCase(testCase.id, { stage, ...input }) }}>
+                              <SelectTrigger id={`${testCase.id}-stage`} className="w-full"><SelectValue /></SelectTrigger>
+                              <SelectContent><SelectItem value="request">请求</SelectItem><SelectItem value="response">响应</SelectItem></SelectContent>
+                            </Select>
+                          </FormField>
                           <div className="grid gap-3 sm:grid-cols-2">
-                            <div className="space-y-1.5"><Label htmlFor={`${testCase.id}-body`} className="text-[11px]">{testCase.stage === 'response' ? '响应 Body' : '请求 Body'}（JSON）</Label><Textarea id={`${testCase.id}-body`} value={testCase.body} onChange={event => updateTestCase(testCase.id, { body: event.target.value })} className="min-h-32 font-mono text-xs" /></div>
-                            <div className="space-y-1.5"><Label htmlFor={`${testCase.id}-headers`} className="text-[11px]">{testCase.stage === 'response' ? '响应 Headers' : '请求 Headers'}（JSON）</Label><Textarea id={`${testCase.id}-headers`} value={testCase.headers} onChange={event => updateTestCase(testCase.id, { headers: event.target.value })} className="min-h-32 font-mono text-xs" /></div>
+                            <FormField label={`${testCase.stage === 'response' ? '响应 Body' : '请求 Body'}（JSON）`} htmlFor={`${testCase.id}-body`}>
+                              <Textarea id={`${testCase.id}-body`} value={testCase.body} onChange={event => updateTestCase(testCase.id, { body: event.target.value })} className="min-h-32 font-mono" />
+                            </FormField>
+                            <FormField label={`${testCase.stage === 'response' ? '响应 Headers' : '请求 Headers'}（JSON）`} htmlFor={`${testCase.id}-headers`}>
+                              <Textarea id={`${testCase.id}-headers`} value={testCase.headers} onChange={event => updateTestCase(testCase.id, { headers: event.target.value })} className="min-h-32 font-mono" />
+                            </FormField>
                           </div>
                           {result && (
-                            <div className="space-y-2 rounded-md bg-muted/45 p-2.5 text-[11px]">
-                              <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground"><span>已应用：{result.appliedRuleIds.length ? '当前规则' : '无'}</span><span>已跳过：{result.skippedRuleIds.length ? '当前规则' : '无'}</span></div>
-                              <div className="grid gap-2 sm:grid-cols-2"><pre className="max-h-36 overflow-auto rounded bg-background p-2 font-mono">{JSON.stringify(result.headers, null, 2)}</pre><pre className="max-h-36 overflow-auto rounded bg-background p-2 font-mono">{result.body}</pre></div>
+                            <div className="grid gap-2 rounded-lg border border-module-border bg-inset p-2.5 system-2xs-regular">
+                              <div className="flex flex-wrap gap-x-4 gap-y-1 text-text-tertiary"><span>已应用：{result.appliedRuleIds.length ? '当前规则' : '无'}</span><span>已跳过：{result.skippedRuleIds.length ? '当前规则' : '无'}</span></div>
+                              <div className="grid gap-2 sm:grid-cols-2"><pre className="max-h-36 overflow-auto rounded-md bg-card p-2 font-mono">{JSON.stringify(result.headers, null, 2)}</pre><pre className="max-h-36 overflow-auto rounded-md bg-card p-2 font-mono">{result.body}</pre></div>
                             </div>
                           )}
                         </article>
                       )
                     })}
                 </div>
-              ) : <div className="rounded-md border border-dashed border-border bg-muted/40 px-4 py-8 text-center dark:bg-inset"><p className="text-xs font-medium">还没有测试用例</p><p className="mt-1 text-[11px] text-muted-foreground">测试不会保存请求记录，可在保存前反复运行。</p></div>}
+              ) : <div className="rounded-lg border border-dashed border-module-border px-4 py-8 text-center"><p className="system-xs-medium text-text-primary">还没有测试用例</p><p className="mt-1 system-xs-regular text-text-tertiary">测试不会保存请求记录，可在保存前反复运行。</p></div>}
             </div>
           </section>
         </div>
@@ -174,8 +182,8 @@ export function RuleEditorDialog(props: RuleEditorDialogProps) {
           onOpenChange={open => !open && setDeleteTestCaseId(undefined)}
         />
 
-        <SheetFooter className="mt-auto flex shrink-0 flex-row items-center justify-end gap-2 border-t border-border bg-muted/50 px-4 py-3">
-          {props.dirty ? <span className="mr-auto hidden text-xs text-warning sm:inline">有尚未保存的更改</span> : <span className="mr-auto hidden text-xs text-muted-foreground sm:inline">没有待保存的更改</span>}
+        <SheetFooter className="mt-auto flex shrink-0 flex-row items-center justify-end gap-2 border-t border-border/50 bg-card px-4 py-3">
+          {props.dirty ? <span className="mr-auto hidden system-xs-medium text-text-warning sm:inline">有尚未保存的更改</span> : <span className="mr-auto hidden system-xs-regular text-text-tertiary sm:inline">没有待保存的更改</span>}
           <SheetClose asChild>
             <Button type="button" variant="ghost" size="sm" className="max-sm:mr-auto">取消</Button>
           </SheetClose>

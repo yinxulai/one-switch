@@ -21,7 +21,7 @@ interface TablePagerProps {
 }
 
 export function TableFrame(props: TableFrameProps) {
-  return <div className={cn('overflow-hidden rounded-lg bg-card', props.className)}>{props.children}</div>
+  return <div className={cn('overflow-hidden rounded-lg border border-module-border bg-card', props.className)}>{props.children}</div>
 }
 
 export function TableViewport(props: TableFrameProps) {
@@ -36,7 +36,7 @@ export function TableHeaderSurface(props: TableFrameProps) {
 export function TablePager(props: TablePagerProps) {
   return (
     <div className="flex items-center justify-end gap-2">
-      <span className="system-xs-regular text-muted-foreground">第 {props.page} / {props.totalPages} 页</span>
+      <span className="system-xs-regular text-text-tertiary">第 {props.page} / {props.totalPages} 页</span>
       <Button variant="outline" size="icon-sm" aria-label="上一页" disabled={props.disabled === true || props.page <= 1} onClick={() => props.onPageChange(props.page - 1)}>
         <ChevronLeft size={14} />
       </Button>

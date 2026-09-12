@@ -5,7 +5,7 @@ import { relayAttempt, relayConnected } from './relay'
 /**
  * 这个文件是内核**双向搬运**唯一的练习者。
  *
- * WS 传输已经从这个仓库里拿掉了（见 `product/websocket-transport.md`），因此 `relayConnected`
+ * 双向传输入口尚未实现（WS 相关的入口与传输实现已从这个仓库里移除），因此 `relayConnected`
  * 目前没有任何调用方。它被留下来是因为它是「一种连接带写入侧」这条扩展缝的实现——不含任何
  * WebSocket 细节，却承担着三条容易写错的收尾不变式：任何一侧结束就对端一起结束、下游不要了
  * 就必须断开没走完的上游、上游只断一次。删掉它，将来加双向传输时这些不变式就得重新推一遍。

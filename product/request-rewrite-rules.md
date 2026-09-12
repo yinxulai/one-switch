@@ -175,48 +175,15 @@ thinking/reasoning 不是三个协议中完全同构的字段。当前实现尚�
 
 后续若支持流式修改，应按协议事件设计有限动作，例如修改单个 SSE 事件字段，而不是把流当作普通完整 JSON 文档。
 
-## 7. 数据模型草案
+## 7. 数据模型
 
-### 7.1 `request_rewrite_rules`
+两张表的字段、主键与索引定义在 [data-model.md](./data-model.md) §3.13，这里只写字段之外必须知道的约定。
 
-规则本体使用一张配置实体表：
+- `match`、`actions` 和 `testCases` 是真正适合 JSON 的内容，由 Zod 校验；名称、启用状态、阶段、时间等查询字段一律不放入 JSON。`scope` 取 `global` 或 `model`，决定是否自动应用以及模型窗口是否可编辑。`source` 取 `user`、`builtin` 或 `imported`。
+- 绑定表主键为 `(providerModelId, requestRewriteRuleId)`；同一 ProviderModel 下同一个 `priority` 只能有一条生效绑定（部分唯一索引，软删除行不占位）。绑定表不保存规则副本——请求执行时读取规则快照，历史 attempt 只记录规则 ID 列表。
+- 首期不新增端点级绑定表。若后续确认同一 ProviderModel 的不同协议必须有不同规则链，再扩展为 `provider_model_endpoint_request_rewrite_rules`，并同时定义模型级默认规则与端点级覆盖关系，不能直接叠加两套隐式规则。
 
-| 字段 | 说明 |
-| --- | --- |
-| `id` | 主键 |
-| `name` | 规则名称 |
-| `description` | 规则描述 |
-| `enabled` | 全局启用状态 |
-| `scope` | `global` 或 `model`，决定是否自动应用及模型窗口是否可编辑 |
-| `match` | 受限匹配条件 JSON |
-| `actions` | 有序动作 JSON；每个动作通过 `stage` 指定 `request` 或 `response` |
-| `schemaVersion` | 当前实现保留的规则 schema 版本 |
-| `source` | `user`、`builtin` 或 `imported` |
-| `testCases` | 规则编辑器内的测试用例 |
-| `createdTime` | Unix 毫秒 |
-| `updatedTime` | Unix 毫秒 |
-| `deletedTime` | 软删除时间，可空 |
-
-`match`、`actions` 和 `testCases` 是真正适合 JSON 的协议扩展内容，并由 Zod 校验；名称、启用状态、阶段、时间等查询字段不放入 JSON。
-
-### 7.2 `provider_model_request_rewrite_rules`
-
-规则与 ProviderModel 的多对多绑定表：
-
-| 字段 | 说明 |
-| --- | --- |
-| `providerModelId` | FK → `provider_models.id` |
-| `ruleId` | FK → `request_rewrite_rules.id` |
-| `priority` | 该模型上的执行顺序 |
-| `enabled` | 该模型上的绑定状态 |
-| `createdTime` | Unix 毫秒 |
-| `updatedTime` | Unix 毫秒 |
-
-主键或唯一约束为 `(providerModelId, requestRewriteRuleId)`。绑定表不保存规则副本；请求执行时读取规则快照，历史 attempt 仅记录规则 ID 列表。
-
-首期不新增端点级绑定表。若后续确认同一 ProviderModel 的不同协议必须有不同规则链，再扩展为 `provider_model_endpoint_request_rewrite_rules`，同时定义模型级默认规则与端点级覆盖关系，不能直接叠加两套隐式规则。
-
-### 7.3 观测数据
+### 7.1 观测数据
 
 当前实现不新增完整规则执行正文表。请求详情 UI 按阶段展示已有的采集内容。规则按 ProviderModel 匹配，归属单位是「尝试」，因此命中的规则 ID 写入 `request_attempts.requestRewriteRuleIds`（请求阶段）和 `request_attempts.responseRewriteRuleIds`（响应阶段），客户端视角的 `request_contents` 不保存规则 ID。
 
@@ -229,7 +196,7 @@ thinking/reasoning 不是三个协议中完全同构的字段。当前实现尚�
 
 不得保存 Authorization、API Key、完整原始 Body 或未脱敏 Header。
 
-## 8. 管理 API 草案
+## 8. 管理 API
 
 管理服务已存在请求重写规则路由，沿用当前本地 HTTP 管理 API 和统一响应结构：
 
@@ -314,51 +281,27 @@ thinking/reasoning 不是三个协议中完全同构的字段。当前实现尚�
 - JSON Path、Body 大小、动作数量和替换次数设置上限，避免资源消耗攻击；
 - 规则变更应记录操作日志或至少记录更新时间，便于定位请求行为变化。
 
-## 12. 分阶段实施建议（未来）
+## 12. 分阶段实施状态
 
-### Phase A：请求侧基础规则
+| 阶段 | 状态 | 说明 |
+| --- | --- | --- |
+| A：请求侧基础规则 | 已实现 | 实体、Schema、Store、管理 API、规则管理页、ProviderModel 绑定与排序、Header 动作、非流式 JSON path 动作、attempt 隔离与失败阻断 |
+| B：协议字段预设 | 部分实现 | `thinking/reasoning` 预设见 §5.4；三种协议的字段矩阵与 Responses/Anthropic 人工验收仍未完成 |
+| C：非流式响应规则 | 部分实现 | 非流式响应 JSON 修改与响应阶段动作已生效，流式响应按 §6 跳过；请求日志中的规则执行摘要与响应字段修改安全审计未做 |
+| D：流式事件级规则 | 未实施 | 仅允许有明确协议语义的 SSE 事件级动作，不支持任意文本替换；在独立设计评审通过前不实施 |
 
-- 数据库实体、Schema、Store、管理 API；
-- 独立规则管理页；
-- ProviderModel 绑定与排序；
-- Header set/append/remove；
-- 非流式 JSON path set/delete/replace；
-- `User-Agent` 场景；
-- attempt 隔离、失败阻断和测试。
+## 13. 尚未形成结论的问题
 
-这些内容已基本实现。
+以下问题要么当前用了保守默认值，要么尚未覆盖；左列是需要决策的点，右列是当前行为：
 
-### Phase B：协议字段预设
+| 问题 | 当前行为 |
+| --- | --- |
+| 响应规则遇到流式请求时是跳过还是阻断 | 跳过响应阶段动作并继续请求（§6），不阻断 |
+| `thinking/reasoning` 首期覆盖哪些供应商和字段 | 见 §5.4 的当前实现 |
+| 匹配条件是否需要支持请求 Header 匹配 | 不支持，只按客户端协议与上游协议匹配（§5.1） |
+| 是否在正文详情中保存修改前后摘要 | 不保存，只记录命中的规则 ID |
+| 规则绑定是否长期保持 ProviderModel 级别 | 保持模型级，不做端点级覆盖 |
+| 规则导入导出中的稳定 ID 冲突合并策略 | 规则不参与供应商包导入导出（§10） |
+| 是否需要独立的规则 dry-run 页面 | 通过 `/api/request-rewrite-rule/test` 与请求日志验证 |
 
-- 建立三种协议的 thinking/reasoning 字段矩阵；
-- 实现请求侧协议预设；
-- 明确转换前后字段可见性；
-- 补充 OpenAI Responses 和 Anthropic Messages 验收。
-
-### Phase C：非流式响应规则
-
-- 非流式响应 JSON 修改；
-- 响应阶段协议匹配；
-- 请求日志中的规则执行摘要；
-- 响应字段修改安全审计。
-
-### Phase D：流式事件级规则（待重新评审）
-
-- 仅允许有明确协议语义的 SSE 事件级动作；
-- 不支持任意完整文本替换；
-- 明确中途错误、客户端断开和 Provider 切换边界；
-- 在独立设计评审通过前不实施。
-
-## 13. 待讨论问题
-
-以下问题在实施前必须形成结论：
-
-1. 响应规则遇到流式请求时，是跳过并记录，还是直接阻断请求？
-2. `thinking/reasoning` 首期需要覆盖哪些具体供应商和字段？
-3. 匹配条件是否需要支持请求 Header 匹配，还是首期只按协议匹配？
-4. 规则修改后的响应是否需要在请求正文详情中保存修改前后摘要？
-5. 规则绑定是否长期保持 ProviderModel 级别，还是需要端点/协议级覆盖？
-6. 是否需要规则导入导出中的稳定 ID 冲突合并策略？
-7. 是否需要独立的规则 dry-run 页面，还是先通过请求日志验证？
-
-> 上述问题中仍未明确的部分，当前实现要么采用了保守默认值，要么尚未覆盖。
+> 上表中「当前行为」一列就是保守默认值；需要改变行为时先形成结论，再改实现。

@@ -68,13 +68,13 @@ function TrendTooltip(props: TrendTooltipProps) {
   if (!point) return null
 
   return (
-    <div className="rounded-lg bg-muted px-3 py-2 text-xs">
-      <div className="font-medium">{formatTooltipLabel(label, range)}</div>
+    <div className="rounded-lg border-[0.5px] border-components-panel-border bg-components-panel-bg-blur px-3 py-2 system-xs-regular backdrop-blur-[5px]">
+      <div className="system-xs-medium text-text-primary">{formatTooltipLabel(label, range)}</div>
       <div className="mt-1.5 grid gap-1">
         {USAGE_ITEMS.map(([key, label]) => (
           <div key={key} className="flex items-center justify-between gap-6">
-            <span className="text-muted-foreground">{label}</span>
-            <span className="font-mono font-medium tabular-nums">{formatTokens(point[key])}</span>
+            <span className="text-text-tertiary">{label}</span>
+            <span className="font-mono system-xs-medium tabular-nums text-text-primary">{formatTokens(point[key])}</span>
           </div>
         ))}
       </div>
@@ -96,7 +96,7 @@ export function TrendChart(props: TrendChartProps) {
       <CardSectionHeader title="用量分布" description={formatTrendDescription(range)} compact />
       <CardContent className={contentClassName}>
         {trend.length === 0 ? (
-          <div className={`${stretchToRow ? 'flex-1 ' : ''}flex min-h-44 items-center justify-center text-xs text-muted-foreground`}>
+          <div className={`${stretchToRow ? 'flex-1 ' : ''}flex min-h-44 items-center justify-center system-xs-regular text-text-tertiary`}>
             暂无使用量数据，产生代理请求后将显示趋势
           </div>
         ) : (

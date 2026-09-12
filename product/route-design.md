@@ -1,5 +1,8 @@
 # 路由工作台设计文档
 
+> **本文负责产品语义**：路由要表达什么、`route` 输出契约、路径取值与类型/操作符、默认策略与预设、节点目录、代理如何接上图。
+> **引擎实现**（图模型、边与端口、控制流、循环、能力注入、校验、持久化）在 [workflow-engine.md](./workflow-engine.md)；**画布交互**在 [route-workbench.md](./route-workbench.md)。
+
 ## 1. 背景与目标
 
 One Switch 既是本地代理，也是一套请求路由与模型选择系统。为了让路由逻辑从“隐式条件分支”升级为“可视化、可调试、可复用”的执行图，设计了“路由工作台”：以节点图的方式描述一条请求如何被识别、过滤、判定，并最终落到某个逻辑模型。
@@ -81,7 +84,9 @@ Input -> ModelSelect -> Output
 - 操作符、候选值、输入控件应随字段类型自动切换；
 - 操作符必须同时给出中文名称与一句话语义说明（`equals` 这类标识符只作为次要信息），因为用户读到的说明就是他对判定行为的唯一预期；
 - 配置保存前必须做类型校验与可执行性校验；
-- schema 变化后需要给出迁移提示，避免静默失效。
+- schema 变化后需要给出迁移提示，避免静默失效；
+- 字段路径选择器支持层级浏览、搜索与最近使用，候选表（`field-hints.ts`）与运行时取值（`engine.ts`）共用同一套路径语法；
+- 保存前给出静态校验结果，并用示例输入模拟执行一次。
 
 ### 2.6 输出契约：`route` 命名空间
 
@@ -91,7 +96,7 @@ Input -> ModelSelect -> Output
 interface RouteDecision {
   traceId: string                      // 本次运行的追踪 id
   protocol: WorkflowProtocol           // 识别到的请求协议，未识别为 unknown
-  transport: WorkflowTransport         // http | http-sse
+  transport: WorkflowTransport         // http | http-sse | websocket
   modelIds: string[]                   // 最终落点逻辑模型（决策结果）
   fallback: boolean                    // 是否走了兜底策略
   requestedModel: string               // request.body.model
@@ -215,7 +220,7 @@ Input ─▶ Condition（route.requestedModel in logicalModels[*].id）
 
 #### 2.9.1 操作符清单（中文名 / 语义）
 
-面板与节点卡片展示的是下表的中文名，标识符只作为次要信息（`CONDITION_OPERATOR_META`，`source/render/source/pages/router/types.ts`）。说明文字与引擎判定一一对应：用户读到什么，运行时就得怎么判：
+面板与节点卡片展示的是下表的中文名，标识符只作为次要信息（`CONDITION_OPERATOR_META`，`source/common/router/types.ts`）。说明文字与引擎判定一一对应：用户读到什么，运行时就得怎么判：
 
 | 标识符 | 中文名 | 语义 | 备注 |
 | --- | --- | --- | --- |
@@ -243,11 +248,11 @@ Input ─▶ Condition（route.requestedModel in logicalModels[*].id）
 
 ### 2.10 运行时接入：代理执行的就是这张图
 
-图不只是一份画布数据，它就是代理的策略本体。HTTP 与 WS 两条入口的链路完全一致：
+图不只是一份画布数据，它就是代理的策略本体。代理入口的链路就是这一条：
 
 ```text
 客户端请求
-  └─▶ 入口（HTTP / WS 各一个）
+  └─▶ 入口
         ├─ 认路径：matchProtocolEndpoint(method, path, transport) 定出协议与传输
         ├─ 跑图：resolveRoute() 取当前生效的图 + 逻辑模型列表 → runWorkflow()
         │      └─▶ RouteDecision.modelIds（落点逻辑模型，按优先级排序）
@@ -258,7 +263,7 @@ Input ─▶ Condition（route.requestedModel in logicalModels[*].id）
 要点：
 
 - **落点是列表，不是单个**：出口节点写下的 `route.modelIds` 按优先级排列，规划器从前往后找第一个「已启用且健康、协议匹配」的候选；一个落点全不可用时自动尝试下一个，全部不可用才拒绝请求；
-- **拒绝时按入口给信号**：HTTP 回 503 `NO_AVAILABLE_PROVIDER`（选不出落点时是 503 `NO_MODEL_CONFIGURED`）；WS 回 426 `NO_WEBSOCKET_UPSTREAM`，让客户端按 Codex 的约定降级回 HTTP + SSE；
+- **拒绝时按入口给信号**：入口回 503 `NO_AVAILABLE_PROVIDER`；选不出落点时回 503 `NO_MODEL_CONFIGURED`，让客户端能区分「没有可用供应商」与「一版图都没保存、或图选不出落点」；
 - **手动指定的供应商模型优先**：落点逻辑模型上有人工切换时，该落点的候选直接换成手动指定的 ProviderModel；它不可用时返回 409 `MANUAL_MODEL_UNAVAILABLE`——手动是不愿被绕过的人为选择，静默换一个上游比报错更糟；
 - **图存服务端一份**：`workflows` 表 `type = 'router'`，每次保存生成一个递增版本（最多保留 30 版），代理读的永远是「最新保存的那一版」；一版都没保存过时用 `createDefaultPolicyGraph()` 现场生成内建默认策略来跑，于是「开箱可用」与「用户保存的图」走同一段执行路径，不存在第二套写死的规则；
 - **画布不做本地缓存**：页头「保存」= 发布新版本，代理立即按它路由；从「历史版本」载入某一版只是拿到编辑起点，不保存就不影响线上行为；
@@ -278,133 +283,31 @@ Input ─▶ Condition（route.requestedModel in logicalModels[*].id）
 
 ---
 
-## 3. 核心抽象：Node 与 Execution Model
+## 3. 图模型与执行模型
 
-### 3.1 节点结构
+节点/边结构、端口语义、控制流、循环与步骤预算都是**引擎契约**，只在 [workflow-engine.md](./workflow-engine.md) 维护。本文不复制其中的类型定义与执行细节，读产品文档时只需要知道三条：
 
-每个节点都遵循统一抽象：
+- **节点配置不携带连接信息**：不存在 `next` / `bodyNext` / `elseNext`，控制流全部由 `WorkflowGraph.edges[].sourcePort` 表达；
+- **端口名就是语义**：`out`（单出口）、`body`（循环体入口）、`else`（条件未命中）、条件分支的 `case-*`，以及协议分支端口（来自 `WORKFLOW_PROTOCOLS`）；
+- **节点类型清单是代码**：`source/common/router/types.ts` 的 `WorkflowNodeKind` 是唯一来源，渲染侧 `source/render/source/pages/router/node-meta.ts` 为每种 kind 提供显示名与图标，执行器按 `kind` 分发。
 
-```ts
-interface WorkflowNodeBase {
-  id: string
-  kind: WorkflowNodeKind
-  name: string
-  enabled: boolean
-  description: string
-  position: { x: number; y: number }
-}
-```
+## 4. 节点目录
 
-每种节点都可以额外携带自己的配置字段。这样 UI 可以按 kind 渲染不同配置面板，而执行器可以通过 kind 分发逻辑。
+路由工作台只保留“路由决策”相关节点；修改请求内容的逻辑属于独立的重写层（见 [request-rewrite-rules.md](./request-rewrite-rules.md)）与协议转换层，不进入路由图执行路径。
 
-### 3.2 运行时行为
+节点类型清单以 `source/common/router/types.ts` 的 `WorkflowNodeKind` 为准，共 9 种：
 
-路由执行器从输入节点开始，按边关系遍历节点，直到：
-
-- 到达输出节点；
-- 当前节点没有后继；
-- 发生错误；
-- 进入最大步数保护。
-
-执行时会维护：
-
-- 当前 payload
-- 当前落点（`route.modelIds`）
-- trace 列表
-- stopReason
-
-这样执行结果既可以用于 UI 测试，也适合真实生产环境调试。
-
-### 3.3 节点输入输出接口设计
-
-路由图里不应把“一个节点只允许一个输入、一个输出”当作硬约束。真实路由场景常常是多对多：
-
-- 一个节点可能同时读取多个来源字段；
-- 一个条件节点可能向多个分支输出；
-- 一个聚合节点可能接收多个输入并合并后发出单一输出；
-- 一个节点可能在不同条件下发出不同输出端口。
-
-但在本设计里，所有路由节点都围绕同一个核心：选择目标逻辑模型。因而端口的语义不是“改写请求”，而是“决定落点”。
-
-因此，建议为每个节点设计统一的端口协议：
-
-```ts
-interface NodePort<T = unknown> {
-  id: string
-  name: string
-  kind: 'payload' | 'context' | 'model' | 'signal' | 'branch'
-  schema: T
-  cardinality: 'single' | 'multi'
-  required: boolean
-  description: string
-}
-
-interface NodeIOContract<TIn = unknown, TOut = unknown> {
-  inputs: NodePort<TIn>[]
-  outputs: NodePort<TOut>[]
-}
-```
-
-多数路由节点应当遵循“强类型输入 + 明确输出”的保证，例如：
-
-```ts
-type RouteContext = {
-  request: Record<string, unknown>
-  metadata: Record<string, unknown>
-  traceId: string
-}
-
-interface InputNodeContract extends NodeIOContract<
-  { request: unknown; metadata?: Record<string, unknown> },
-  { payload: unknown; context: RouteContext }
-> {}
-
-interface ConditionNodeContract extends NodeIOContract<
-  { payload: unknown; context: RouteContext },
-  { true: { payload: unknown; context: RouteContext }; false: { payload: unknown; context: RouteContext } }
-> {}
-
-interface ModelSelectNodeContract extends NodeIOContract<
-  { payload: unknown; context: RouteContext },
-  { modelIds: string[] }
-> {}
-
-interface OutputNodeContract extends NodeIOContract<
-  { payload: unknown; context: RouteContext; modelIds: string[] },
-  { modelIds: string[]; routeDecision: { matched: boolean; modelIds: string[] } }
-> {}
-```
-
-这意味着：多端口不等于“泛类型无约束”。真正的业务节点仍然应该具备明确的输入与输出契约，只是允许同一节点同时承载多个有定义的输入/输出口，并且输出的是“选择结果”，而不是“改写请求内容”。
-
-并且，边的语义也从“单一 next”扩展为端口级连接：
-
-```ts
-interface EdgeConnection {
-  fromNodeId: string
-  fromPortId: string
-  toNodeId: string
-  toPortId: string
-  condition?: string
-  weight?: number
-}
-```
-
-这样可以支持以下几种真实模式：
-
-- 1:N：一个输入数据分发到多个后续节点；
-- N:1：多个输入统一合并后再处理；
-- N:M：多个字段写入多个输出端口，并根据条件选择分支。
-
-在图执行时，节点只需读取定义好的输入端口，按端口输出结果，而不是强行依赖 `next` 和 `nextTrue` 的单路径假设。这样更符合真实系统行为，也更适合后续扩展为可视化调试面板。
-
-> 设计原则：节点所见的接口是“端口”，而不是“单一指针”。端口允许同一节点在不同上下文下发出多个结果，扩展性比单 `next` 更强。
-
----
-
-## 4. 核心节点设计
-
-路由工作台最终应只保留“路由决策”相关节点，其他修改请求内容的逻辑属于独立 rewrite layer，不进入路由图核心执行路径。
+| kind | 面板名称 | 一句话定位 | 详述位置 |
+| --- | --- | --- | --- |
+| `input` | 输入请求 | 路由起点，提供统一上下文 | §4.1 |
+| `condition` | 条件 | IF / ELSE 多分支判定 | §4.2 |
+| `model-select` | 逻辑模型选择 | 决定请求落到哪个逻辑模型 | §4.3 |
+| `output` | 输出 | 路由终点，交出最终落点 | §4.4 |
+| `script` | JS 脚本 | 用一段 JS 把结论算出来写回 payload | §4.5 |
+| `prompt` | LLM | 用指定逻辑模型执行提示词并写回 | §4.6 |
+| `control-input` | 控制输入 | 注入开关 / 下拉控制值，不改图即可调参 | `ControlInputNode`（`source/common/router/types.ts`） |
+| `protocol-discovery` | 协议发现 | 识别请求协议，按协议端口分流 | `ProtocolDiscoveryNode`（同上） |
+| `iteration` | 遍历迭代 | 遍历数组 / 对象，逐项跑循环体 | [workflow-engine.md](./workflow-engine.md) |
 
 ### 4.1 Input
 
@@ -414,9 +317,8 @@ interface EdgeConnection {
 - 产生统一上下文。
 
 输入：
-- `request`
-- `headers`
-- `metadata`
+- `request`（含 `method` / `path` / `headers` / `body`）
+- `metadata`（调用方所有，引擎只读）
 
 输出：
 - `payload`
@@ -433,7 +335,7 @@ interface EdgeConnection {
 
 ---
 
-### 4.3 Condition
+### 4.2 Condition
 
 核心作用：
 - 进行布尔判断；
@@ -489,7 +391,7 @@ interface EdgeConnection {
 
 ---
 
-### 4.5 Output
+### 4.4 Output
 
 核心作用：
 - 是路由终点；
@@ -515,7 +417,7 @@ interface EdgeConnection {
 
 ---
 
-### 4.6 脚本节点（Script）
+### 4.5 脚本节点（Script）
 
 核心作用：
 - 作为**逃生舱**：当「条件 + 变量取值」表达不出某个判断时，让用户用一小段 JS 把结论算出来写回 payload；
@@ -542,7 +444,7 @@ interface EdgeConnection {
 
 ---
 
-### 4.7 LLM 节点（Prompt）
+### 4.6 LLM 节点（Prompt）
 
 核心作用：
 - 用**指定逻辑模型**执行一段提示词，把模型回复写回 payload；
@@ -569,99 +471,11 @@ interface EdgeConnection {
 
 ---
 
-## 5. 节点输入输出接口规范
+## 5. 结论
 
-路由节点需要“强类型 + 多端口”，但不等于“无类型”；其核心语义是：通过请求选择最终逻辑模型，而不是改写请求内容。
+- 路由编排回答的是「这次请求去哪个逻辑模型」，不负责改写请求内容；改写属于重写层（[request-rewrite-rules.md](./request-rewrite-rules.md)）与协议转换层（[protocol-conversion.md](./protocol-conversion.md)），不进入路由图；
+- 判定靠 `condition` + 路径取值，落点靠 `model-select`，需要算力时用 `script` / `prompt`，需要遍历时用 `iteration` —— 引擎不内置任何专用语义；
+- 「模型直达」也只是基础节点的一种拼法（§2.7），逻辑模型增减时规则自动生效；
+- 图就是策略本体：代理执行的就是画布上保存的那张图（§2.10），不存在第二套写死的规则。
 
-```ts
-interface NodePort<T = unknown> {
-  id: string
-  name: string
-  kind: 'payload' | 'context' | 'model' | 'signal' | 'branch'
-  schema: T
-  cardinality: 'single' | 'multi'
-  required: boolean
-  description: string
-}
-
-interface NodeIOContract<TIn = unknown, TOut = unknown> {
-  inputs: NodePort<TIn>[]
-  outputs: NodePort<TOut>[]
-}
-```
-
-### 5.1 路由节点的典型契约
-
-```ts
-type RouteContext = {
-  request: Record<string, unknown>
-  metadata: Record<string, unknown>
-  traceId: string
-}
-
-interface InputNodeContract extends NodeIOContract<
-  { request: unknown; metadata?: Record<string, unknown> },
-  { payload: unknown; context: RouteContext }
-> {}
-
-interface ConditionNodeContract extends NodeIOContract<
-  { payload: unknown; context: RouteContext },
-  { true: { payload: unknown }; false: { payload: unknown } }
-> {}
-
-interface ModelSelectNodeContract extends NodeIOContract<
-  { payload: unknown; context: RouteContext },
-  { modelIds: string[] }
-> {}
-
-interface OutputNodeContract extends NodeIOContract<
-  { payload: unknown; context: RouteContext; modelIds: string[] },
-  { modelIds: string[]; routeDecision: { matched: boolean; modelIds: string[] } }
-> {}
-```
-
-### 5.2 关键约束
-
-- 输入端口可以多个，但每个端口都有定义的 schema；
-- 输出端口可以多个，但通常是强类型分支；
-- 不允许“任意节点随意写改请求内容”；
-- 真正属于路由编排的节点，应该只负责判断和选择。
-
-### 5.3 所有可配置节点的类型感知约束
-
-- 任意可配置节点都应从上游输出端口读取 schema，并实时生成字段可选列表；
-- 未绑定 schema 的输入端口，只允许使用基础表达式模式，并在 UI 标记为“弱类型”；
-- 保存配置时必须进行类型校验，避免 `number` 字段使用 `contains` 等无效操作；
-- 配置面板应提供“字段来源”提示（来自哪个上游节点与端口）；
-- 节点 trace 需要记录“关键输入 + 关键参数 + 结果”，以便回放时定位判定原因；
-- schema 变更后，受影响节点必须显示兼容性告警，并提供一键修复建议。
-
-### 5.4 节点配置体验的统一能力
-
-- 字段路径选择器：支持层级浏览、搜索、最近使用；
-- 类型驱动控件：string/number/boolean/enum 使用不同控件；
-- 模板系统：常见规则可一键插入（协议识别、租户路由、模型降级）；
-- 预执行验证：保存前给出静态校验结果与示例输入的模拟执行结果；
-- 错误就地反馈：在节点卡片与配置项位置同时显示错误原因。
-
----
-
-## 6. 最终结论
-
-路由编排的核心节点应当只包含：
-
-1. Input
-2. Condition（可选）
-3. ModelSelect
-4. Output
-
-它们构成了“路由”的最小完整闭环：
-
-- 接收请求；
-- （可选）判断分支；
-- 选定目标逻辑模型；
-- 输出最终决策。
-
-这与“请求内容改写”是分离的。后者属于规则层、转换层或重写管线，不属于路由编排核心实现。
-
-> 结论：整个流程可以理解为：根据请求，选择最终的逻辑模型，而不是改造请求内容。
+> 一句话：根据请求选择最终的逻辑模型，而不是改造请求内容。

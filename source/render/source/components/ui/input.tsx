@@ -2,13 +2,23 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
+/**
+ * 输入框外观对齐 router 节点面板（Dify `packages/dify-ui/src/input/index.tsx`）：
+ * 透明描边 → 悬停/聚焦才显形，底色走 `components-input-*` token，排版用 13px。
+ */
 function Input({ className, type, ...props }: React.ComponentProps<"input">) {
   return (
     <input
       type={type}
       data-slot="input"
       className={cn(
-        "h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40",
+        "flex h-8 w-full min-w-0 rounded-lg border border-transparent bg-components-input-bg-normal px-3 py-1.5 text-[13px] leading-4 text-components-input-text-filled transition-colors outline-none",
+        "placeholder:text-components-input-text-placeholder",
+        "hover:border-components-input-border-hover hover:bg-components-input-bg-hover",
+        "focus:border-components-input-border-active focus:bg-components-input-bg-active",
+        "disabled:pointer-events-none disabled:cursor-not-allowed disabled:border-transparent disabled:bg-components-input-bg-disabled disabled:text-components-input-text-filled-disabled",
+        "aria-invalid:border-destructive aria-invalid:focus:ring-2 aria-invalid:focus:ring-destructive/20",
+        "file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-[13px] file:font-medium file:text-text-primary",
         className
       )}
       {...props}
