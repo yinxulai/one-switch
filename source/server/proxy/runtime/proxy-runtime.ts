@@ -1,8 +1,6 @@
 import type { Server } from 'node:http'
 import http from 'node:http'
-import type { Socket } from 'node:net'
 import { handleProxyRequest } from '@server/proxy/request/request-entry'
-import { handleWebSocketRequest } from '@server/proxy/request/websocket-entry'
 import { matchLocalEndpoint } from '@server/proxy/local/registry'
 import { getErrorResponseMessage, isErrorCode, normalizeError } from '@server/errors'
 
@@ -144,26 +142,38 @@ export class ProxyRuntime {
         writeJsonError(res, normalized.statusCode, normalized.code, getErrorResponseMessage(normalized, '代理处理失败'))
       }
     })
-    server.on('upgrade', (req, socket, head) => {
-      // `upgrade` 的类型签名是通用 `Duplex`，但运行时交出来的是网络 socket（`UpgradeEvent` 文档语义），
-      // WS 服务端需要读写 socket 属性，因此在这里就这一次转型。
-      handleWebSocketUpgrade(req, socket as Socket, head)
-    })
+    server.on('upgrade', (_req, socket) => socket.end(UNSUPPORTED_TRANSPORT_RESPONSE))
     return server
   }
 }
 
 /**
- * 升级事件必须有人接管：没有监听器时 Node 会直接销毁 socket，客户端只会看到「连接失败」而拿不到
- * 任何可解释的响应。异常也要在这里收住——`upgrade` 事件没有响应对象可以写错误，只能断开。
+ * 未实现的传输必须显式拒绝，而不是假装没这回事。
+ *
+ * `TransportKind` 里保留着 `'websocket'`（见 `contracts/transport.ts`），说明这套架构承认这种
+ * 载体；但这一版没有任何 WS 实现。两端都不能走：不注册 `upgrade` 监听器的话，Node 会直接把
+ * socket 销毁，客户端只看到「连接莫名断开」，而这从代理一侧完全查不出来；反过来真去接 WS，就得
+ * 手写 RFC 6455 的分帧与握手——那是真正的过度实现。
+ *
+ * 因此这里只做一件事：回一个带可读原因的响应，然后关闭。**不含任何 WebSocket 协议细节**，
+ * 所以将来实现 WS 时，这个处理函数是被替换掉的第一个东西，而不是被扩写的第一个东西。
  */
-function handleWebSocketUpgrade(req: http.IncomingMessage, socket: Socket, head: Buffer): void {
-  void handleWebSocketRequest(req, socket, head).catch(error => {
-    const normalized = normalizeError(error)
-    console.error(`[proxy-ws] upgrade boundary failed: ${req.method ?? 'UNKNOWN'} ${req.url ?? '/'} code=${normalized.code} message=${normalized.message}`)
-    socket.destroy(normalized)
+const UNSUPPORTED_TRANSPORT_RESPONSE = (() => {
+  const body = JSON.stringify({
+    error: {
+      code: 'TRANSPORT_NOT_IMPLEMENTED',
+      message: '这个代理不支持 WebSocket 传输，请改用 HTTP 端点',
+    },
   })
-}
+  return [
+    'HTTP/1.1 501 Not Implemented',
+    'Content-Type: application/json; charset=utf-8',
+    `Content-Length: ${Buffer.byteLength(body)}`,
+    'Connection: close',
+    '',
+    body,
+  ].join('\r\n')
+})()
 
 function listen(server: Server, endpoint: ProxyEndpoint): Promise<void> {
   return new Promise((resolve, reject) => {

@@ -4,6 +4,7 @@ import { listProviderEndpoints, listProviders } from '@server/database/provider-
 import { listProviderModels } from '@server/database/model-store'
 import { generateId } from '@common/utils'
 import { findConvertibleEndpoint, findEndpoint } from '../../../proxy/routing/router'
+import { buildUpstreamTarget } from '../../../proxy/planners/target-planner'
 import { executeProxyRequest } from '../../../proxy/execution/attempt-executor'
 import { createRequestContext } from '../../../proxy/request/request-context'
 import { BufferedProxyResponse } from '../../../proxy/response/proxy-response'
@@ -94,7 +95,9 @@ async function handleTestModels(req: IncomingMessage, res: ServerResponse, body:
     const startedAt = Date.now()
     try {
       const testBody = buildTestBody(protocol, model.modelName)
-      const target = {
+      // 诊断要测的是「用户当下保存的那一份」：端点 URL 为空时借用供应商级配置，
+      // 与真实请求的区别只在这里，因此直接复用规划器的目标映射，不自己拼字段。
+      const candidate = {
         model: {
           ...model,
           endpoints: model.endpoints.map(candidate => ({
@@ -104,6 +107,20 @@ async function handleTestModels(req: IncomingMessage, res: ServerResponse, body:
         },
         provider,
       }
+      const target = buildUpstreamTarget(candidate, protocol, 'http')
+      if (!target) {
+        results.push({
+          modelId: model.id,
+          modelName: model.modelName,
+          providerId: provider.id,
+          providerName: provider.name,
+          success: false,
+          durationMilliseconds: Date.now() - startedAt,
+          errorMessage: `模型 ${model.modelName} 不支持协议 ${protocol}`,
+        })
+        continue
+      }
+
       const response = new BufferedProxyResponse()
       await executeProxyRequest({
         context: createRequestContext({

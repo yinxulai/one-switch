@@ -3,7 +3,7 @@ import { Sparkles, TextCursorInput } from 'lucide-react'
 import { NodeHandle } from '../components/node-handle'
 import { NodeBody, NodeRow, NodeRowList } from '../components/node-sections'
 import type { RouteNodeProps } from '../node-data'
-import type { PromptNode } from '../types'
+import type { PromptNode } from '@common/router/types'
 
 /**
  * LLM 节点视图。

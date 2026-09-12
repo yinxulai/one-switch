@@ -13,6 +13,7 @@
     "release:win": "node scripts/build.mjs --win --arm64 --x64",
     "release:linux": "node scripts/build.mjs --linux --arm64 --x64",
     "lint": "node scripts/lint.mjs",
+    "lint:layers": "node scripts/check-proxy-layers.mjs",
     "db": "node scripts/db.mjs",
     "db:generate": "node scripts/db.mjs generate",
     "db:migrate": "node scripts/db.mjs migrate",

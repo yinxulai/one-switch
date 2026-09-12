@@ -10,7 +10,6 @@ import {
 } from '@server/database/request-log-store'
 import { serializeCapturedHeaders } from '@server/proxy/response/headers'
 import { NOOP_PROXY_OBSERVATION_HOOKS } from '@server/proxy/observability/hooks'
-import { isStreamingRequest } from '@server/proxy/request/request'
 import type { RequestContentOutcome, RequestLogger, RequestLoggingInput } from '@server/proxy/observability/logging-types'
 
 /**
@@ -36,8 +35,8 @@ export async function initializeRequestLogger(input: RequestLoggingInput): Promi
       id: input.requestId,
       logicalModelId: input.logicalModelId,
       clientProtocol: input.clientProtocol,
-      // 客户端是否要求流式是一句话就能定下的事实，而它的写入点只此一处。
-      streaming: isStreamingRequest(input.requestBody),
+      // 客户端要求的交付方式由入口按接口声明解析，这里只把轴上的取值投影成布尔列。
+      streaming: input.delivery === 'stream',
       status: 'pending',
       totalDurationMilliseconds: 0,
       attributes: input.attributes,

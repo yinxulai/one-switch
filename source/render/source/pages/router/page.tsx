@@ -47,27 +47,17 @@ import { VersionMenu } from './components/version-menu'
 import { WorkflowConnectionLine } from './components/workflow-connection-line'
 import { WorkflowNodePanel } from './components/workflow-node-panel'
 import { resolveInputHints } from './field-hints'
-import {
-  appendVersion,
-  createVersion,
-  isSameGraph,
-  nextSequence,
-  readVersions,
-  writeVersions,
-  type RouterGraphVersion,
-} from './graph-versions'
+import { buildFlowEdges, layoutRouterNodes, type WorkflowFlowEdge } from './flow-projection'
+import { toRouterGraphVersion, toRouterGraphVersions, type RouterGraphVersion } from './graph-versions'
 import {
   ROUTER_POLICY_PRESETS,
-  buildFlowEdges,
   createDefaultGraph,
   createNodeByKind,
-  layoutRouterNodes,
-  routerStorageKey,
+  isSameGraph,
   samplePayload,
   withFixedNodeCopy,
   type RouterPolicyPreset,
-  type WorkflowFlowEdge,
-} from './graph-model'
+} from '@common/router/presets'
 import {
   appendNode,
   cloneNode,
@@ -82,12 +72,10 @@ import {
   isProtectedNode,
   kindAccent,
   toCanvasNodeType,
-  type AppendableKind,
 } from './node-meta'
 import type { NodeInsertRequest, NodeRunStatus, RouteFlowNode } from './node-data'
 import { edgeTypes, nodeTypes } from './node-registry'
-import { WorkflowGraphSchema } from './schemas'
-import type { NodePosition, WorkflowGraph, WorkflowNodeKind, WorkflowNodeModel, WorkflowRunResult } from './types'
+import type { AppendableKind, NodePosition, WorkflowGraph, WorkflowNodeKind, WorkflowNodeModel, WorkflowRunResult } from '@common/router/types'
 
 /** 画布下方的图例：只展示主干语义，控制输入与输出不重复色。 */
 const legendKinds: WorkflowNodeKind[] = ['input', 'protocol-discovery', 'condition', 'iteration', 'script', 'prompt', 'model-select', 'output']
@@ -107,25 +95,9 @@ function formatNodeOutputValue(value: unknown): string {
   return JSON.stringify(value)
 }
 
-/** 读取本地缓存的图；缓存不合法时回落到空白起始图（不是默认策略预设）。 */
-function loadInitialGraph(): WorkflowGraph {
-  try {
-    const cached = localStorage.getItem(routerStorageKey)
-    if (cached) {
-      const parsed = WorkflowGraphSchema.safeParse(JSON.parse(cached) as unknown)
-      if (parsed.success) {
-        const graph = parsed.data as WorkflowGraph
-        const hasInput = graph.nodes.some(node => node.kind === 'input')
-        const hasOutput = graph.nodes.some(node => node.kind === 'output')
-        if (hasInput && hasOutput) {
-          return { ...graph, nodes: withFixedNodeCopy(layoutRouterNodes(graph.nodes)) }
-        }
-      }
-    }
-  } catch {
-    // 忽略损坏的缓存
-  }
-  return createDefaultGraph()
+/** 服务端返回的图直接铺到画布上：补齐固定节点文案，并按分层算法重排坐标。 */
+function toCanvasGraph(graph: WorkflowGraph): WorkflowGraph {
+  return { ...graph, nodes: withFixedNodeCopy(layoutRouterNodes(graph.nodes)) }
 }
 
 /** 插入节点的落点：在两端点之间取中点，否则排在来源节点右侧。 */
@@ -157,7 +129,7 @@ function WorkflowStudioCanvas() {
     [logicalModels],
   )
 
-  const [graph, setGraph] = useState<WorkflowGraph>(loadInitialGraph)
+  const [graph, setGraph] = useState<WorkflowGraph>(createDefaultGraph)
   const graphRef = useRef(graph)
   graphRef.current = graph
 
@@ -170,9 +142,34 @@ function WorkflowStudioCanvas() {
   const [payloadText, setPayloadText] = useState(() => JSON.stringify(samplePayload, null, 2))
   const [payloadError, setPayloadError] = useState('')
   const [runResult, setRunResult] = useState<WorkflowRunResult | null>(null)
-  const [versions, setVersions] = useState<RouterGraphVersion[]>(readVersions)
-  const versionsRef = useRef(versions)
-  versionsRef.current = versions
+  const [versions, setVersions] = useState<RouterGraphVersion[]>([])
+
+  /**
+   * 首屏从服务端拉一次「当前生效的图」与版本列表。
+   *
+   * 图只有服务端一份：画布打开时看到的，就是代理此刻正在执行的那张；
+   * 一版都没保存过时服务端会给出内建默认策略，而不是让画布自己造一张空图。
+   */
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const [snapshot, summaries] = await Promise.all([
+          unwrap(routerApi.getGraph()),
+          unwrap(routerApi.getGraphVersions()),
+        ])
+        if (cancelled) return
+        if (snapshot) setGraph(toCanvasGraph(snapshot.graph))
+        setVersions(toRouterGraphVersions(summaries))
+      } catch (error) {
+        if (cancelled) return
+        toast.error(error instanceof Error ? error.message : '读取路由图失败')
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [toast])
 
   /**
    * 测试输入框的行数随内容增长（上限 28 行），剩下的交给抽屉整体滚动。
@@ -516,60 +513,55 @@ function WorkflowStudioCanvas() {
   }, [graph, runtimeLogicalModels, payloadText])
 
   /**
-   * 保存 = 生成一个新版本。
-   * 工作副本仍然写入 `routerStorageKey`（刷新后据此恢复画布），
-   * 同时在版本列表里追加一条快照，供「历史版本」下拉回滚。
-   * 内容与最新版本一致时不再重复生成，避免连点保存堆出一串重复版本。
+   * 保存 = 发布一个新版本。
+   * 服务端把这一版落库并让它立刻对代理生效（没保存过时代理跑的是内建默认策略）；
+   * 内容与最新版本一致时不会重复生成，避免连点保存堆出一串重复版本。
    */
-  const saveWorkflow = useCallback(() => {
+  const saveWorkflow = useCallback(async () => {
     try {
-      const current = graphRef.current
-      const existing = versionsRef.current
-      const latest = existing[0]
-      if (latest && isSameGraph(latest.graph, current)) {
-        toast.info(`当前内容与最新版本 v${latest.sequence} 一致，未生成新版本`)
+      const result = await unwrap(routerApi.saveGraph(graphRef.current))
+      if (!result.created) {
+        toast.info(`当前内容与最新版本 v${result.version} 一致，未生成新版本`)
         return
       }
-
-      const version = createVersion(current, nextSequence(existing))
-      const next = appendVersion(existing, version)
-      writeVersions(next)
-      setVersions(next)
-      localStorage.setItem(routerStorageKey, JSON.stringify(current))
-      toast.success(`已保存为新版本 v${version.sequence}`)
-    } catch {
-      toast.error('保存失败，请稍后重试')
+      setVersions(current => [toRouterGraphVersion(result), ...current])
+      toast.success(`已保存为新版本 v${result.version}，代理立即按它路由`)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '保存失败，请稍后重试')
     }
-  }, [toast])
-
-  /** 回到历史某个版本：画布与工作副本一起切过去，运行结果作废。 */
-  const restoreVersion = useCallback((version: RouterGraphVersion) => {
-    setGraph(version.graph)
-    setSelectedNodeId(null)
-    setRunResult(null)
-    try {
-      localStorage.setItem(routerStorageKey, JSON.stringify(version.graph))
-    } catch {
-      // 工作副本写入失败不影响画布切版
-    }
-    toast.success(`已回到版本 v${version.sequence}，未保存的改动已被替换`)
   }, [toast])
 
   /**
-   * 套用内置策略：整张画布换成预设内容并立即写入工作副本。
+   * 把历史某一版载入画布。
+   *
+   * 载入只是「拿到编辑起点」：代理仍然跑着当前生效的那一版，直到这里再点一次「保存」。
+   * 因此不会像从前那样改了本地副本就等于改了线上行为。
+   */
+  const restoreVersion = useCallback(async (version: RouterGraphVersion) => {
+    try {
+      const snapshot = await unwrap(routerApi.getGraphVersion(version.sequence))
+      if (!snapshot) {
+        toast.error(`版本 v${version.sequence} 已不存在`)
+        return
+      }
+      setGraph(toCanvasGraph(snapshot.graph))
+      setSelectedNodeId(null)
+      setRunResult(null)
+      toast.success(`已载入版本 v${version.sequence}，保存后生效`)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '载入版本失败')
+    }
+  }, [toast])
+
+  /**
+   * 套用内置策略：整张画布换成预设内容。
    * 预设里没有用户的改动，所以不需要额外确认，但会清掉选中态与上次运行结果。
    */
   const applyPolicy = useCallback((preset: RouterPolicyPreset) => {
-    const next = preset.createGraph(runtimeLogicalModels)
-    setGraph(next)
+    setGraph(preset.createGraph(runtimeLogicalModels))
     setSelectedNodeId(null)
     setRunResult(null)
-    try {
-      localStorage.setItem(routerStorageKey, JSON.stringify(next))
-    } catch {
-      // 工作副本写入失败不影响画布切版
-    }
-    toast.success(`已套用策略：${preset.name}`)
+    toast.success(`已套用策略：${preset.name}，保存后生效`)
   }, [runtimeLogicalModels, toast])
 
   /** 当前画布与哪个预设一致（不一致时为 null）。 */

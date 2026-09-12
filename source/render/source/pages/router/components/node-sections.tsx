@@ -3,7 +3,7 @@ import { CircleAlert, CircleCheckBig, LoaderCircle, TriangleAlert } from 'lucide
 
 import { cn } from '@/lib/utils'
 import type { NodeRunStatus } from '../node-data'
-import type { WorkflowNodeModel } from '../types'
+import type { WorkflowNodeModel } from '@common/router/types'
 
 type NodeHeaderMetaProps = {
   status: NodeRunStatus

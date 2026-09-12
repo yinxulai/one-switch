@@ -1,7 +1,7 @@
 import { NodeHandle } from '../components/node-handle'
 import { NodeBody, NodeBranchRow, NodeConditionChip } from '../components/node-sections'
 import type { RouteNodeProps } from '../node-data'
-import { conditionOperatorMeta, type ConditionNode } from '../types'
+import { conditionOperatorMeta, type ConditionNode } from '@common/router/types'
 
 /**
  * 条件节点视图。

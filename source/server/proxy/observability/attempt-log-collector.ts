@@ -3,8 +3,21 @@ import {
   createRequestAttempt,
   recordAttemptUsage,
 } from '@server/database/request-log-store'
-import type { AttemptFinalizationInput, AttemptLogger, AttemptLoggingInput, UpstreamContentInput } from '@server/proxy/observability/logging-types'
+import type { AttemptFinalizationInput, AttemptLogSnapshot, AttemptLogger, AttemptLoggingInput, UpstreamContentInput } from '@server/proxy/observability/logging-types'
+import type { UpstreamTarget } from '@server/proxy/contracts'
 import { redactHeaders, serializeCapturedHeaders } from '@server/proxy/response/headers'
+
+/** 从规划结果里挑出要落库的上游事实。字段名不一样（`protocol` / `upstreamProtocol`）是故意的：显式投影而不是整体透传。 */
+function toAttemptSnapshot(target: UpstreamTarget): AttemptLogSnapshot {
+  return {
+    providerId: target.providerId,
+    providerModelId: target.providerModelId,
+    providerName: target.providerName,
+    providerModelName: target.providerModelName,
+    upstreamProtocol: target.protocol,
+    url: target.url,
+  }
+}
 
 /**
  * 尝试级日志器。
@@ -46,7 +59,7 @@ export function createAttemptLogger(input: AttemptLoggingInput): AttemptLogger {
       const usage = finalization.usage
       const attempt = await createRequestAttempt({
         requestId: input.requestId,
-        ...input.snapshot,
+        ...toAttemptSnapshot(input.target),
         attemptIndex: input.attemptIndex,
         status: finalization.status,
         httpStatus: finalization.httpStatus,
@@ -55,7 +68,7 @@ export function createAttemptLogger(input: AttemptLoggingInput): AttemptLogger {
         errorCode: finalization.errorCode ?? null,
         errorMessage: finalization.errorMessage ?? null,
         upstreamRequestId: finalization.upstreamRequestId ?? null,
-        upstreamProtocol: input.snapshot.upstreamProtocol,
+        upstreamProtocol: input.target.protocol,
         durationMilliseconds: Date.now() - input.startedAt,
         ttftMilliseconds: finalization.ttftMilliseconds ?? null,
         requestRewriteRuleIds: input.requestRewriteRuleIds ?? [],

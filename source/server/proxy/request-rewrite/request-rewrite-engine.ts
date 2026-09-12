@@ -10,7 +10,14 @@ export interface RequestRewriteContext {
   stage: 'request' | 'response'
   clientProtocol: Protocol
   upstreamProtocol: Protocol
-  streaming?: boolean
+  /**
+   * 正文是否以**分块**形式交付（手里只有片段，没有完整正文）。只有响应阶段的改写会用到。
+   *
+   * 注意它不是「客户端要不要增量」（那是 `DeliveryMode`），而是出口的**合成**事实
+   * （`isStreamingDelivery(delivery, headers)`）：调用方得传合成结果，不能直接把
+   * 客户端意图丢进来，否则「客户端要增量但上游回了整包 JSON」会被误当成分块而跳过改写。
+   */
+  incrementalDelivery?: boolean
 }
 
 export interface RequestRewriteResult {
@@ -37,7 +44,7 @@ export function applyRequestRewriteRules(body: Buffer, headers: Record<string, s
     if (!rule.enabled || rule.deletedTime !== null) { skippedRuleIds.push(rule.id); continue }
     const actions = rule.actions.filter(action => action.stage === context.stage)
     if (actions.length === 0 || !matches(rule, context)) { skippedRuleIds.push(rule.id); continue }
-    if (context.stage === 'response' && context.streaming) { skippedRuleIds.push(rule.id); continue }
+    if (context.stage === 'response' && context.incrementalDelivery) { skippedRuleIds.push(rule.id); continue }
     if (actions.length > MAX_ACTIONS) throw new RequestRewriteError('规则动作数量超过限制', rule.id)
     for (const action of actions) {
       if (action.type.startsWith('header-')) applyHeader(currentHeaders, action as Extract<RequestRewriteRuleAction, { type: `header-${string}` }>, rule.id)

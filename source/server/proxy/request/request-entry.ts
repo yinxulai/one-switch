@@ -1,6 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Protocol, RequestAttribute } from '@common/schemas'
-import { listLogicalModels } from '@server/database/logical-model-store'
 import { getSettings } from '@server/database/settings-store'
 import { generateId } from '@common/utils'
 import type { DeliveryMode } from '../contracts'
@@ -11,8 +10,8 @@ import { NodeProxyResponse } from '../response/proxy-response'
 import { createRequestContext } from './request-context'
 import { proxyTargetPlanner } from '../planners/target-planner'
 import { matchProtocolEndpoint } from '../protocols/registry'
-import { getManualModel } from '../routing/manual-routing'
-import { resolveLogicalModel } from '../routing/logical-model-resolver'
+import { NO_LANDING_DETAIL, planLandingTargets } from '../routing/landing-planner'
+import { parseRouteBody, resolveRoute, toRouteHeaders } from '../routing/route-resolver'
 import { collectRequestAttributes, extractClientRequestId } from '@server/proxy/observability/request-attribute-collector'
 
 /**
@@ -33,7 +32,12 @@ interface ExchangeIdentity {
 
 /** 入口阶段已解析出的事实；尚未解析到时为 `null`。 */
 interface ExchangeResolution {
-  /** 已解析出的逻辑模型；尚未进入逻辑模型解析时为 `null`。 */
+  /**
+   * 这次请求路由到的逻辑模型；还没跑到路由求解时为 `null`。
+   *
+   * 图可以给出多个落点候选（先 A 再 B），此处记的是首选那个，即使它一个可用供应商都没有：
+   * 日志要回答的是「这次请求本来该走谁」，而「没走成」由状态字段表达，不该让落点也变成空白。
+   */
   logicalModelId: string | null
   /** 已识别出的客户端协议；连 API 路径都无法识别时为 `null`。 */
   clientProtocol: Protocol | null
@@ -68,9 +72,9 @@ interface RequestBodyReadResult {
 /**
  * 处理一次 HTTP 代理请求。
  *
- * 逻辑模型不靠调用方指定：一律由请求自己带的模型名解析出来（见下面的 `resolveLogicalModel`）。
- * 早先这里有个 `logicalModelId` 入参，但它在函数内部一解析完就被覆盖掉，
- * 留着只会让人误以为可以在外部指定逻辑模型，已经删掉。
+ * 走哪个逻辑模型不由调用方指定、也不写死在代码里：由当前生效的**工作流图**算出来。
+ * 图读到的就是这次请求本身（路径 / 方法 / 头 / 体），产出一串按优先级排的落点逻辑模型，
+ * 入口拿着这串落点去问规划器谁能用。策略是图，规则就只存在于图里。
  */
 export async function handleProxyRequest(req: IncomingMessage, res: ServerResponse, hooks: ProxyObservationHooks = NOOP_PROXY_OBSERVATION_HOOKS): Promise<void> {
   const startedAt = Date.now()
@@ -116,18 +120,40 @@ export async function handleProxyRequest(req: IncomingMessage, res: ServerRespon
     return
   }
 
-  // 请求模型 → 逻辑模型：命中就直连，没命中回落到内建默认逻辑模型。
-  // 解析规则收敛在 `resolveLogicalModel` 里，WebSocket 入口用的是同一个函数。
+  // 路由决策：把这次请求交给当前生效的工作流图，拿回一串按优先级排的落点逻辑模型。
+  // 图是异步的（脚本节点会跳进沙箱、提示词节点会去调模型），因此落点在这一步之后才有。
   const requestedModel = modelResult.model.trim()
-  const resolution = resolveLogicalModel(await listLogicalModels(), requestedModel)
-  if (!resolution) {
-    console.error(`[proxy] no enabled logical model requestId=${requestId} requestedModel=${requestedModel}`)
-    await reject({ statusCode: 503, errorCode: 'NO_MODEL_CONFIGURED', errorMessage: '还没有配置已启用的 default 逻辑模型' }, { logicalModelId: null, clientProtocol: protocol, requestBody, delivery })
+  const route = await resolveRoute({
+    request: { path: requestUrl.pathname, method, headers: toRouteHeaders(req.headers), body: parseRouteBody(requestBody) },
+    clientProtocol: protocol,
+    // 传输在这里一次定下：流式响应的 HTTP 请求走 `http-sse`，其余是普通 `http`。
+    transport: delivery === 'stream' ? 'http-sse' : 'http',
+    traceId: requestId,
+  })
+  if (route.logicalModelIds.length === 0) {
+    console.error(`[proxy] no landing logical model requestId=${requestId} requestedModel=${requestedModel} graphVersion=${route.graphVersion} stopReason=${route.stopReason}`)
+    await reject({ statusCode: 503, errorCode: 'NO_MODEL_CONFIGURED', errorMessage: NO_LANDING_DETAIL }, { logicalModelId: null, clientProtocol: protocol, requestBody, delivery })
     return
   }
-  const logicalModelId = resolution.logicalModel.id
-  console.debug(`[proxy] logical model resolved requestId=${requestId} requestedModel=${requestedModel} logicalModelId=${logicalModelId} fallback=${!resolution.matched}`)
+  console.debug(`[proxy] route resolved requestId=${requestId} requestedModel=${requestedModel} graphVersion=${route.graphVersion} stopReason=${route.stopReason} landingModels=${route.logicalModelIds.join(',')}`)
 
+  // 落点 → 候选：落点列表按优先级排，第一个有可用候选的落点胜出。
+  const plan = await planLandingTargets({ logicalModelIds: route.logicalModelIds, clientProtocol: protocol, transport: 'http' })
+  console.debug(`[proxy] routing planned requestId=${requestId} landingModels=${route.logicalModelIds.join(',')} logicalModelId=${plan.logicalModelId ?? 'none'} protocol=${protocol} planner=${proxyTargetPlanner.id} manualModelId=${plan.manualModelId ?? 'none'} reason=${plan.logicalModelId === null ? plan.reason : 'none'} targets=${plan.targets.length} targetOrder=${plan.targets.map(target => target.providerModelId).join(',') || 'none'}`)
+  if (plan.logicalModelId === null) {
+    // 落点一个都没成，但图确实选过落点：日志照记首选落点，否则「路由到了谁」会被记成空白。
+    const landing = route.logicalModelIds[0]
+    if (plan.reason === 'manual-model-unavailable') {
+      console.warn(`[proxy] manual provider model unavailable requestId=${requestId} protocol=${protocol} detail=${plan.detail}`)
+      await reject({ statusCode: 409, errorCode: 'MANUAL_MODEL_UNAVAILABLE', errorMessage: plan.detail }, { logicalModelId: landing, clientProtocol: protocol, requestBody, delivery })
+      return
+    }
+    console.warn(`[proxy] 没有可用的上游供应商: ${method} ${path} (protocol=${protocol}, landingModels=${route.logicalModelIds.join('、')}, graphVersion=${route.graphVersion}, requestId=${requestId}, reason=${plan.reason}, detail=${plan.detail})`)
+    await reject({ statusCode: 503, errorCode: 'NO_AVAILABLE_PROVIDER', errorMessage: `没有可用的上游 Provider：${plan.detail}` }, { logicalModelId: landing, clientProtocol: protocol, requestBody, delivery })
+    return
+  }
+
+  const logicalModelId = plan.logicalModelId
   const controller = new AbortController()
   req.once('aborted', () => controller.abort())
   res.once('close', () => {
@@ -147,21 +173,6 @@ export async function handleProxyRequest(req: IncomingMessage, res: ServerRespon
     delivery,
     signal: controller.signal,
   })
-
-  const manualModelId = getManualModel(logicalModelId)
-  const plan = await proxyTargetPlanner.plan({ logicalModelId, clientProtocol: protocol, manualModelId, transport: 'http' })
-  console.debug(`[proxy] routing planned requestId=${requestId} logicalModelId=${logicalModelId} protocol=${protocol} planner=${proxyTargetPlanner.id} manualModelId=${manualModelId ?? 'none'} reason=${plan.reason} targets=${plan.targets.length} targetOrder=${plan.targets.map(target => target.providerModelId).join(',') || 'none'}`)
-  if (plan.reason === 'manual-model-unavailable') {
-    console.warn(`[proxy] manual provider model unavailable requestId=${requestId} logicalModelId=${logicalModelId} protocol=${protocol} detail=${plan.detail ?? 'none'}`)
-    await reject({ statusCode: 409, errorCode: 'MANUAL_MODEL_UNAVAILABLE', errorMessage: plan.detail ?? '手动指定的 ProviderModel 当前不可用于该协议' }, { logicalModelId, clientProtocol: protocol, requestBody, delivery })
-    return
-  }
-  if (plan.targets.length === 0) {
-    const detail = plan.detail ?? '该逻辑模型没有已启用且健康的供应商模型'
-    console.warn(`[proxy] 没有可用的上游供应商: ${req.method} ${req.url} (protocol=${protocol}, logicalModel=${resolution.logicalModel.name} [${logicalModelId}], requestId=${requestId}, reason=${plan.reason}, detail=${detail})`)
-    await reject({ statusCode: 503, errorCode: 'NO_AVAILABLE_PROVIDER', errorMessage: `没有可用的上游 Provider：${detail}` }, { logicalModelId, clientProtocol: protocol, requestBody, delivery })
-    return
-  }
 
   console.debug(`[proxy] execution started requestId=${requestId} logicalModelId=${logicalModelId} targets=${plan.targets.length}`)
   await executeProxyRequest({ context, targets: plan.targets, response: new NodeProxyResponse(res), hooks })

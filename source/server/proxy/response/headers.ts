@@ -1,6 +1,5 @@
 import type { IncomingHttpHeaders, OutgoingHttpHeaders } from 'node:http'
-
-export type HeaderMap = Record<string, string | string[] | undefined>
+import type { HeaderMap } from '@server/proxy/contracts/headers'
 
 const HOP_BY_HOP_HEADERS = new Set([
   'connection',

@@ -28,8 +28,8 @@ CREATE TABLE `attempt_usages` (
 CREATE TABLE `logical_models` (
 	`id` text PRIMARY KEY,
 	`name` text NOT NULL UNIQUE,
-	`description` text DEFAULT '' NOT NULL,
 	`enabled` integer DEFAULT true NOT NULL,
+	`description` text DEFAULT '' NOT NULL,
 	`createdTime` integer NOT NULL,
 	`updatedTime` integer NOT NULL,
 	`deletedTime` integer

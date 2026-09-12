@@ -24,9 +24,9 @@ export function NodePanelHint(props: NodePanelHintProps) {
   return (
     <div
       className={cn(
-        'rounded-lg px-2.5 py-2 system-xs-regular',
+        'rounded-lg border border-module-border px-2.5 py-2 system-xs-regular',
         tone === 'warning'
-          ? 'bg-state-warning-hover text-text-warning'
+          ? 'border-transparent bg-state-warning-hover text-text-warning'
           : 'bg-workflow-block-parma-bg text-text-tertiary',
       )}
     >
@@ -43,7 +43,7 @@ type NodePanelCardProps = {
 /** 面板里的分组卡片。 */
 export function NodePanelCard(props: NodePanelCardProps) {
   const { children, className } = props
-  return <div className={cn('grid gap-2.5 rounded-lg bg-workflow-block-parma-bg p-2.5', className)}>{children}</div>
+  return <div className={cn('grid gap-2.5 rounded-lg border border-module-border bg-workflow-block-parma-bg p-2.5', className)}>{children}</div>
 }
 
 type NodePanelFieldProps = {
@@ -76,7 +76,7 @@ export function NodePanelSwitchRow(props: NodePanelSwitchRowProps) {
   const { label, checked, onCheckedChange } = props
 
   return (
-    <div className="flex items-center justify-between rounded-lg bg-workflow-block-parma-bg px-2.5 py-2">
+    <div className="flex items-center justify-between rounded-lg border border-module-border bg-workflow-block-parma-bg px-2.5 py-2">
       <span className="system-xs-regular text-text-secondary">{label}</span>
       <Switch checked={checked} onCheckedChange={onCheckedChange} />
     </div>

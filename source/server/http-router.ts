@@ -1,7 +1,10 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { EventEmitter } from 'node:events'
 
-type HttpMethod = 'DELETE' | 'GET' | 'PATCH' | 'POST' | 'PUT'
+export type HttpMethod = 'DELETE' | 'GET' | 'PATCH' | 'POST' | 'PUT'
+
+/** 全部受支持的方法。声明「方法无关」的入口时按这个列表展开。 */
+export const HTTP_METHODS: readonly HttpMethod[] = ['DELETE', 'GET', 'PATCH', 'POST', 'PUT']
 
 interface HttpRoute<THandler> {
   method: HttpMethod
@@ -108,7 +111,7 @@ function createTestRequest(path: string): HttpTestRequest {
   return request
 }
 
-function normalizePathname(pathname: string): string {
+export function normalizePathname(pathname: string): string {
   const path = pathname.split('?', 1)[0]
   if (path.length <= 1) return path || '/'
   return `/${path.replace(/^\/+|\/+$/g, '')}`

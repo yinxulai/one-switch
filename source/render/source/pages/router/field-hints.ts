@@ -1,4 +1,6 @@
 import {
+  ALL_WORKFLOW_PROTOCOLS,
+  ALL_WORKFLOW_TRANSPORTS,
   DEFAULT_OPERATOR_SET,
   PATH_WILDCARD_SUFFIX,
   type ConfigHints,
@@ -6,17 +8,7 @@ import {
   type SchemaValueType,
   type WorkflowGraph,
   type WorkflowProtocol,
-  type WorkflowTransport,
-} from './types'
-
-export const WORKFLOW_PROTOCOLS: WorkflowProtocol[] = [
-  'openai-completions',
-  'openai-responses',
-  'anthropic-messages',
-  'unknown',
-]
-
-export const WORKFLOW_TRANSPORTS: WorkflowTransport[] = ['http', 'http-sse']
+} from '@common/router/types'
 
 export interface WorkflowConnection {
   sourceNodeId: string
@@ -238,7 +230,7 @@ export function resolveInputHints(graph: WorkflowGraph, targetNodeId: string, sa
         .filter(connection => connection.sourceNodeId === model.id)
         .map(connection => connection.sourcePort)
       const reachableProtocols = reachablePorts
-        .filter((protocol): protocol is WorkflowProtocol => WORKFLOW_PROTOCOLS.includes(protocol as WorkflowProtocol))
+        .filter((protocol): protocol is WorkflowProtocol => ALL_WORKFLOW_PROTOCOLS.includes(protocol as WorkflowProtocol))
       const protocolEnumOptions = [...new Set(reachableProtocols)]
 
       addUniqueField(fields, {
@@ -253,7 +245,7 @@ export function resolveInputHints(graph: WorkflowGraph, targetNodeId: string, sa
         valueType: 'enum',
         sourceNodeId: model.id,
         sourcePort: 'transport',
-        enumOptions: [...WORKFLOW_TRANSPORTS],
+        enumOptions: [...ALL_WORKFLOW_TRANSPORTS],
       })
       continue
     }

@@ -4,8 +4,8 @@ import {
   CONDITION_OPERATOR_META,
   DEFAULT_OPERATOR_SET,
   conditionOperatorMeta,
-} from './types'
-import type { ConditionOperator } from './types'
+} from '@common/router/types'
+import type { ConditionOperator } from '@common/router/types'
 
 /**
  * 操作符的中文名与说明是用户唯一能读到的语义来源，所以这里锁三件事：

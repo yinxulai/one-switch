@@ -1,11 +1,7 @@
 import type { Node, NodeProps } from '@xyflow/react'
 
-import type { AppendableKind, CanvasNodeType } from './node-meta'
-import type {
-  RuntimeLogicalModel,
-  SchemaFieldDescriptor,
-  WorkflowNodeModel,
-} from './types'
+import type { AppendableKind, RuntimeLogicalModel, SchemaFieldDescriptor, WorkflowNodeModel } from '@common/router/types'
+import type { CanvasNodeType } from './node-meta'
 
 /** 单次测试运行后，节点在画布上的状态标记。 */
 export type NodeRunStatus = 'idle' | 'running' | 'succeeded' | 'failed'

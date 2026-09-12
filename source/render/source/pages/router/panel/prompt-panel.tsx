@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import type { NodePanelProps } from '../node-data'
-import { PROMPT_TIMEOUT_LIMIT, type PromptNode } from '../types'
+import { PROMPT_TIMEOUT_LIMIT, type PromptNode } from '@common/router/types'
 import {
   NodePanelField,
   NodePanelHint,

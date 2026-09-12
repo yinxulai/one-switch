@@ -61,6 +61,8 @@ One Switch 既是本地代理，也是一套请求路由与模型选择系统。
 
 `request` 只保留归一化之后的最小形状：`method` / `path` / `headers` / `body`。`headers` 是**扁平的字符串字典**（`Record<string, string>`）——代理入口已经把同名头按 `,` 合并，路由侧不需要多值头，因此也不再为它展开字段路径。
 
+上下文里还可以带上调用方已经确定的两件事：`protocol`（`openai-completions` / `openai-responses` / `anthropic-messages`）与 `transport`（`http` / `http-sse` / `websocket`）。入口在认路径时就已经知道它们，所以引擎优先采信声明值，只有缺省时才按路径与请求头做启发式识别——避免同一次运行里两套依据各算一遍。
+
 后续节点统一对该对象读取或写入，而不是去猜测 API 差异。
 
 ### 2.4 最小默认路径
@@ -105,11 +107,11 @@ interface RouteDecision {
 - **过程性数据**只进 trace，不进 payload —— 例如协议归一化后的请求体（`{protocol, transport, model, messages}`）与每个节点的判定明细，避免 payload 里出现只有调试才看的字段；
 - **引擎不预计算业务判定**：像「请求模型是否命中逻辑模型列表」这种结论由条件节点在图上现场算出，引擎只提供原始字段（`requestedModel` / `logicalModels`）；
 - **运行结果按节点组织**：`runWorkflow` 返回的 `nodeOutputs` 是 `Record<节点 id, NodeOutput[]>`，每个节点可以登记多条输出（控制项、条件分支、落点…），渲染时再查节点名称作为分组标题，因此「谁产出了什么」看得见；
-- 旧版本图（没有 `route`）在运行时会被补齐，调用方无需迁移；重命名前的 payload 键（`queues`、`route.queueIds`）读取时兼容一次后丢弃。
+- **旧图在解析时迁移一次**：`queue-select` → `model-select`、`queueIds` / `fallbackQueueIds` → `modelIds` / `fallbackModelIds`、`mode: 'follow-request-model'` → `source: 'variable'` + `variablePath`；而运行时要看的只有 `request` 与 `logicalModels` 两项，不存在别的输入键。
 
 ### 2.7 默认策略：模型直达
 
-系统内建一条默认策略，任何时刻都可通过页头的「策略」下拉一键选回：
+系统内建一条默认策略，任何时刻都可通过页头的「策略」下拉一键选回；一版图都没保存过时，代理跑的就是它：
 
 > 请求里的 `model` 命中我们的逻辑模型 id 时，请求该逻辑模型；否则请求默认逻辑模型（`default`）。
 
@@ -144,7 +146,7 @@ Input ─▶ Condition（route.requestedModel in logicalModels[*].id）
 
 旧图里用过的 `mode: 'follow-request-model'` 会在读取时迁移为「`source: 'variable'` + `variablePath: 'route.requestedModel'`」，行为不变；旧的 `queue-select` 节点同样会在解析时迁移成 `model-select`。
 
-预设策略放在 `graph-model.ts` 的 `ROUTER_POLICY_PRESETS` 中，第一个即默认策略。四个预设都只由基础节点拼成（没有专用节点），UI 侧由 `components/policy-menu.tsx` 呈现：
+预设策略放在 `@common/router/presets.ts` 的 `ROUTER_POLICY_PRESETS` 中，第一个即默认策略。四个预设都只由基础节点拼成（没有专用节点），UI 侧由 `components/policy-menu.tsx` 呈现：
 
 | 预设 id | 名称 | 拼法 |
 | --- | --- | --- |
@@ -238,6 +240,41 @@ Input ─▶ Condition（route.requestedModel in logicalModels[*].id）
 | `exists` | 存在 | 取值不是 `undefined` / `null` | 不需要比较值 |
 
 末尾五个「一元判定」（`isTrue` / `isFalse` / `empty` / `notEmpty` / `exists`）不展示比较值输入框；`FIELD_OPERAND_OPERATORS` 里的操作符额外提供「比较值来源 = 固定值 / 字段取值」的切换。新增操作符时，这张表、`ALL_CONDITION_OPERATORS` 与 `schemas.ts` 的 zod enum 三处必须同步，`operator-meta.test.ts` 负责拦住漂移。
+
+### 2.10 运行时接入：代理执行的就是这张图
+
+图不只是一份画布数据，它就是代理的策略本体。HTTP 与 WS 两条入口的链路完全一致：
+
+```text
+客户端请求
+  └─▶ 入口（HTTP / WS 各一个）
+        ├─ 认路径：matchProtocolEndpoint(method, path, transport) 定出协议与传输
+        ├─ 跑图：resolveRoute() 取当前生效的图 + 逻辑模型列表 → runWorkflow()
+        │      └─▶ RouteDecision.modelIds（落点逻辑模型，按优先级排序）
+        ├─ 落点 → 候选：planLandingTargets() 逐个落点问规划器要 UpstreamTarget
+        └─ 执行：第一个落点有可用候选就交给它，否则换下一个落点
+```
+
+要点：
+
+- **落点是列表，不是单个**：出口节点写下的 `route.modelIds` 按优先级排列，规划器从前往后找第一个「已启用且健康、协议匹配」的候选；一个落点全不可用时自动尝试下一个，全部不可用才拒绝请求；
+- **拒绝时按入口给信号**：HTTP 回 503 `NO_AVAILABLE_PROVIDER`（选不出落点时是 503 `NO_MODEL_CONFIGURED`）；WS 回 426 `NO_WEBSOCKET_UPSTREAM`，让客户端按 Codex 的约定降级回 HTTP + SSE；
+- **手动指定的供应商模型优先**：落点逻辑模型上有人工切换时，该落点的候选直接换成手动指定的 ProviderModel；它不可用时返回 409 `MANUAL_MODEL_UNAVAILABLE`——手动是不愿被绕过的人为选择，静默换一个上游比报错更糟；
+- **图存服务端一份**：`workflows` 表 `type = 'router'`，每次保存生成一个递增版本（最多保留 30 版），代理读的永远是「最新保存的那一版」；一版都没保存过时用 `createDefaultPolicyGraph()` 现场生成内建默认策略来跑，于是「开箱可用」与「用户保存的图」走同一段执行路径，不存在第二套写死的规则；
+- **画布不做本地缓存**：页头「保存」= 发布新版本，代理立即按它路由；从「历史版本」载入某一版只是拿到编辑起点，不保存就不影响线上行为；
+- **脚本与提示词节点在主进程执行**：试跑接口与代理入口共用同一份能力集合（`createRouteCapabilities()`：脚本走 `node:vm` 沙箱、提示词走真实上游调用），因此画布上的试跑结果与线上行为一致。
+
+相关实现位置：图存储 `source/server/database/router-graph-store.ts`；路由求解 `source/server/proxy/routing/route-resolver.ts`；落点→候选 `source/server/proxy/routing/landing-planner.ts`；能力集合 `source/server/proxy/capabilities/route-capabilities.ts`。
+
+管理端接口（都挂在管理服务的 `/api/router` 下，图与试跑各一组）：
+
+| 接口 | 用途 |
+| --- | --- |
+| `POST /router/graph` | 读当前生效的图（一版都没保存过时返回内建默认策略） |
+| `POST /router/graph/versions` | 版本摘要列表 |
+| `POST /router/graph/version` | 读指定版本 |
+| `POST /router/graph/save` | 保存为新版本（内容与最新版一致时不新建） |
+| `POST /router/run` | 用给定图试跑一次 |
 
 ---
 

@@ -160,13 +160,15 @@ interface PromptNode extends WorkflowNodeBase {
 
 ## 持久化
 
-Router localStorage 使用带版本的图文档，这是唯一的持久化格式：
+图存在服务端的 `workflows` 表里（`type = 'router'`，`definition` 是图文档的 JSON 字符串），这是唯一的持久化格式：
 
 ```ts
 { version: 1, nodes: WorkflowNodeModel[], edges: WorkflowEdge[] }
 ```
 
-读取时执行 JSON 解析、Zod `safeParse` 和图校验。任何旧格式（裸节点数组、节点内嵌连接字段）都不再被读取或迁移。
+每次保存生成一个递增版本（最多保留 30 版），代理读的永远是「最新保存的那一版」；一版都没保存过时用内建默认策略现场生成。读写入口都在 `source/server/database/router-graph-store.ts`，画布不保留本地副本。
+
+读取时执行 JSON 解析、Zod `safeParse` 和图校验。任何旧格式（裸节点数组、节点内嵌连接字段）都不再被读取；节点级的旧字段（`queue-select` / `queueIds` / `follow-request-model`）在解析时迁移一次。
 
 ## 后续演进
 

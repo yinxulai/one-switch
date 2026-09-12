@@ -9,7 +9,7 @@ import {
 import { Plus } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
-import type { WorkflowFlowEdge } from '../graph-model'
+import type { WorkflowFlowEdge } from '../flow-projection'
 import { EDGE_STROKE_HANDLE, EDGE_STROKE_NORMAL, edgeRunStatusStroke } from '../node-meta'
 import { EdgeLinearGradient } from './edge-linear-gradient'
 import { NodeSelector } from './node-selector'

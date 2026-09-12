@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 
-import { ROUTER_POLICY_PRESETS, type RouterPolicyPreset } from '../graph-model'
+import { ROUTER_POLICY_PRESETS, type RouterPolicyPreset } from '@common/router/presets'
 import { PANEL_POPUP_SURFACE_CLASSNAME } from '../panel/panel-fields'
 import { DifyButton } from './dify-button'
 

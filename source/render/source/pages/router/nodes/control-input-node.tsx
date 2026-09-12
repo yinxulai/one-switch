@@ -2,7 +2,7 @@ import { cn } from '@/lib/utils'
 import { NodeHandle } from '../components/node-handle'
 import { NodeBody, NodeRow, NodeRowList } from '../components/node-sections'
 import type { RouteNodeProps } from '../node-data'
-import type { ControlInputNode } from '../types'
+import type { ControlInputNode } from '@common/router/types'
 
 /**
  * 控制输入节点视图。

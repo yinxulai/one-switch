@@ -1,6 +1,6 @@
 import { NodeBody, NodeRowList } from '../components/node-sections'
 import type { RouteNodeProps } from '../node-data'
-import type { OutputNode } from '../types'
+import type { OutputNode } from '@common/router/types'
 
 /** 出口节点视图：只展示输出策略，没有 source 端口。 */
 export function OutputNodeView(props: RouteNodeProps) {
