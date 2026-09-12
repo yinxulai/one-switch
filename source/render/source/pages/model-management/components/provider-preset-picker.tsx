@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/i18n/provider'
 import { ProviderIcon } from './provider-icon'
 import { PROVIDER_PRESETS, type ProviderPreset } from '../lib/provider-presets'
 
@@ -9,10 +10,11 @@ interface ProviderPresetPickerProps {
 
 export function ProviderPresetPicker(props: ProviderPresetPickerProps) {
   const { providerName, onApplyPreset } = props
+  const t = useTranslation()
 
   return (
     <div className="grid gap-1.5">
-      <span className="system-xs-regular text-text-tertiary">快速选择</span>
+      <span className="system-xs-regular text-text-tertiary">{t('providers.dialog.quickSelect')}</span>
       <div className="flex flex-wrap gap-2">
         {PROVIDER_PRESETS.map(preset => (
           <button

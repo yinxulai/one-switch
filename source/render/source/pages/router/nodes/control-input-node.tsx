@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/i18n/provider'
 import { NodeHandle } from '../components/node-handle'
 import { NodeBody, NodeRow, NodeRowList } from '../components/node-sections'
 import type { RouteNodeProps } from '../node-data'
@@ -14,6 +15,7 @@ export function ControlInputNodeView(props: RouteNodeProps) {
   const { id, data } = props
   const model = data.model as ControlInputNode
   const controls = model.controls
+  const t = useTranslation()
 
   return (
     <>
@@ -21,7 +23,7 @@ export function ControlInputNodeView(props: RouteNodeProps) {
         {controls.length === 0
           ? (
             <div className="flex h-6 items-center rounded-md bg-workflow-block-parma-bg px-1 system-xs-regular text-text-tertiary">
-              尚未添加控制项
+              {t('router.controlInput.empty')}
             </div>
           )
           : (

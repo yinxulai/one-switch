@@ -18,6 +18,7 @@ import {
   listRequestContents,
   listRequestLogs,
   listAttemptsByRequest,
+  pruneRequestContentsBefore,
   pruneRequestLogsBefore,
   recordAttemptUsage,
   updateAttemptContent,
@@ -204,5 +205,67 @@ describe('request log store persistence', () => {
     expect(await getDb().$client.prepare('SELECT COUNT(*) AS count FROM attempt_contents WHERE attemptId = ?').get(pruneAttempt.id)).toEqual({ count: 0 })
     expect(await getDb().$client.prepare('SELECT COUNT(*) AS count FROM attempt_usages WHERE attemptId = ?').get(pruneAttempt.id)).toEqual({ count: 0 })
     expect(await getDb().$client.prepare('SELECT COUNT(*) AS count FROM request_usages WHERE requestId = ?').get(log.id)).toEqual({ count: 0 })
+  })
+
+  it('只清理正文时保留请求、尝试与用量', async () => {
+    const log = await createLog('req_content_prunable')
+    const provider = await createProvider({ name: 'Content Provider', apiKeyReference: 'content-key', timeoutMilliseconds: 1000 })
+    const attempt = await createAttemptOrThrow({
+      requestId: log.id,
+      providerId: provider.id,
+      providerModelId: 'model_content',
+      providerName: provider.name,
+      providerModelName: 'content-model',
+      upstreamProtocol: 'openai-completions',
+      upstreamRequestId: null,
+      url: 'https://example.com/v1/chat/completions',
+      attemptIndex: 0,
+      status: 'success',
+      httpStatus: 200,
+      retryable: false,
+      upstreamTransport: 'http-stream',
+      durationMilliseconds: 5,
+      ttftMilliseconds: 2,
+    })
+    await recordAttemptUsage({ attemptId: attempt.id, servesRequest: true, ...EMPTY_USAGE, inputTokens: 5, outputTokens: 6 })
+    await createRequestContent({
+      requestId: log.id,
+      captureStatus: 'captured',
+      requestMethod: 'POST',
+      requestPath: '/v1/chat/completions',
+      requestHeaders: null,
+      requestBody: '{"big":"request"}',
+      responseStatus: 200,
+      responseHeaders: null,
+      responseBody: '{"big":"response"}',
+    })
+    await createAttemptContent({
+      attemptId: attempt.id,
+      captureStatus: 'captured',
+      requestHeaders: null,
+      requestBody: '{"big":"upstream-request"}',
+      responseStatus: 200,
+      responseHeaders: null,
+      responseBody: '{"big":"upstream-response"}',
+    })
+    // 两条正文各自记录写入时刻，清理只按这个时刻判断，因此分别挪到 10 天前。
+    const staleTime = Date.now() - 10 * 24 * 60 * 60 * 1000
+    getDb().$client.prepare('UPDATE request_contents SET createdTime = ? WHERE requestId = ?').run(staleTime, log.id)
+    getDb().$client.prepare('UPDATE attempt_contents SET createdTime = ? WHERE attemptId = ?').run(staleTime, attempt.id)
+
+    expect(await pruneRequestContentsBefore(7)).toBe(2)
+
+    // 正文没了……
+    expect(await listRequestContents(log.id)).toEqual([])
+    expect(await listAttemptContents(log.id)).toEqual([])
+    // ……但请求、尝试与两边的用量都还在，列表与指标照常能显示。
+    expect(await getRequestLog(log.id)).toMatchObject({ id: log.id, status: 'success', ttftMilliseconds: 2 })
+    expect(await listAttemptsByRequest(log.id)).toHaveLength(1)
+    expect(await getAttemptUsage(attempt.id)).toMatchObject({ inputTokens: 5, outputTokens: 6, totalTokens: 11 })
+    expect(await getRequestUsage(log.id)).toMatchObject({ inputTokens: 5, outputTokens: 6 })
+    expect(await countRequestLogs({})).toBe(1)
+
+    // 保留期 0 表示永久保留：不删任何东西。
+    expect(await pruneRequestContentsBefore(0)).toBe(0)
   })
 })

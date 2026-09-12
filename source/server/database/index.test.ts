@@ -168,7 +168,7 @@ describe('unsupported database detection', () => {
     const directory = createTemporaryDirectory()
     createUnsupportedDatabase(directory, ['20250101000000_legacy_baseline', '20250202000000_legacy_followup'])
 
-    await expect(initDatabase(directory, TEST_DATABASE_FILE_NAME)).rejects.toThrow(/不受当前版本支持[\s\S]*删除该文件/)
+    await expect(initDatabase(directory, TEST_DATABASE_FILE_NAME)).rejects.toThrow(/Unsupported database file[\s\S]*delete it/)
     expect(() => getDb()).toThrow('Database not initialized')
 
     // 拒绝就是拒绝：旧库必须原样留在磁盘上，等用户自己备份或删除。
@@ -182,7 +182,7 @@ describe('unsupported database detection', () => {
     const directory = createTemporaryDirectory()
     createUnsupportedDatabase(directory, [])
 
-    await expect(initDatabase(directory, TEST_DATABASE_FILE_NAME)).rejects.toThrow('不受当前版本支持')
+    await expect(initDatabase(directory, TEST_DATABASE_FILE_NAME)).rejects.toThrow('Unsupported database file')
     expect(() => getDb()).toThrow('Database not initialized')
   })
 

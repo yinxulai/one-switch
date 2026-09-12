@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { ChevronRight } from 'lucide-react'
 import { DotPattern } from '@/components/ui/dot-pattern'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/i18n/provider'
 
 interface PageLayoutProps {
   children: ReactNode
@@ -53,6 +54,7 @@ export function PageLayout(props: PageLayoutProps) {
 
 export function PageHeader(props: PageHeaderProps) {
   const { title, description, actions, breadcrumbs, className } = props
+  const t = useTranslation()
   return (
     <header
       className={cn(
@@ -62,7 +64,7 @@ export function PageHeader(props: PageHeaderProps) {
     >
       <div className="min-w-0">
         {breadcrumbs && breadcrumbs.length > 0 && (
-          <nav aria-label="面包屑" className="mb-2 flex items-center gap-1 system-xs-regular text-text-tertiary">
+          <nav aria-label={t('nav.breadcrumb')} className="mb-2 flex items-center gap-1 system-xs-regular text-text-tertiary">
             {breadcrumbs.map((breadcrumb, index) => (
               <span key={`${breadcrumb.label}-${index}`} className="flex items-center gap-1">
                 {index > 0 && <ChevronRight className="size-3" aria-hidden="true" />}

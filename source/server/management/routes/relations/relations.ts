@@ -41,7 +41,7 @@ function list<T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, query: (input: T) 
 function get<T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, query: (input: T) => Promise<unknown>, label: string): ManagementHandler {
   return async (_req, res, body) => {
     const result = await query(schema.parse(body))
-    if (result === undefined) return sendError(res, 'NOT_FOUND', `${label} 不存在`, 404)
+    if (result === undefined) return sendError(res, 'NOT_FOUND', `${label} not found`, 404, { resource: label })
     sendSuccess(res, result)
   }
 }

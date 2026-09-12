@@ -4,12 +4,14 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { PageContent, PageHeader, PageLayout } from '@/components/layout'
 import { TablePager } from '@/components/table-primitives'
+import { useTranslation } from '@/i18n/provider'
 import { RequestLogsFilters } from './components/request-logs-filters'
 import { RequestLogsTable } from './components/request-logs-table'
 import { PAGE_SIZE } from './queries'
 import { useRequestLogsService } from './service'
 
 export function RequestLogsPage() {
+  const t = useTranslation()
   const { logs, total, providers, providerModelOptions, loading, refreshing, error, filtered, details, detailLoadingIds, detailErrors, getModelName, loadDetail, refresh, setFilter, filter, expandedId, goToPage, page } = useRequestLogsService()
 
   const providerOptions = useMemo(() => {
@@ -32,12 +34,12 @@ export function RequestLogsPage() {
   return (
     <PageLayout>
       <PageHeader
-        title="请求记录"
-        description="最近的代理请求，以及每次请求实际使用的供应商模型与失败切换情况"
+        title={t('requestLogs.title')}
+        description={t('requestLogs.description')}
         actions={
           <Button variant="outline" onClick={() => void refresh()} disabled={refreshing}>
             <RefreshCw size={14} className={cn(refreshing && 'animate-spin')} />
-            刷新
+            {t('common.action.refresh')}
           </Button>
         }
       />

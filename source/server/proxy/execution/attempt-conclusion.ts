@@ -128,7 +128,7 @@ export async function concludeUndeliverableAttempt(input: AttemptConclusionInput
     upstreamTransport: input.upstreamTransport,
     servesRequest: false,
     errorCode: `Status_${input.statusCode}`,
-    errorMessage: `上游返回 ${input.statusCode}`,
+    errorMessage: `Upstream responded with ${input.statusCode}`,
     upstreamRequestId,
     upstreamContent: upstreamContent('captured', input.statusCode, input.observer, upstreamBody),
   })
@@ -163,7 +163,7 @@ export async function concludeDeliveredAttempt(input: AttemptConclusionInput): P
     // 响应已经写出客户端，因此它就是服务这个请求的那次尝试。
     servesRequest: true,
     errorCode: successful ? undefined : `Status_${input.statusCode}`,
-    errorMessage: successful ? undefined : `上游返回 ${input.statusCode}`,
+    errorMessage: successful ? undefined : `Upstream responded with ${input.statusCode}`,
     upstreamRequestId,
     usage: input.observer.usage(),
     upstreamContent: upstreamContent('captured', input.statusCode, input.observer, upstreamBody),

@@ -2,13 +2,16 @@ import { CheckCircle2, XCircle } from 'lucide-react'
 import type { RequestLogEntry } from '@common/schemas'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
-import { PROTOCOL_LABEL, STATUS_LABEL, formatTime, formatDuration } from '../lib/format'
+import { useLocale, useTranslation } from '@/i18n/provider'
+import { PROTOCOL_LABEL, formatDuration, formatStatus, formatTime } from '../lib/format'
 
 interface RequestRowProps {
   log: RequestLogEntry
 }
 
 export function RequestRow(props: RequestRowProps) {
+  const t = useTranslation()
+  const locale = useLocale()
   const { log } = props
 
   const succeeded = log.status === 'success'
@@ -32,10 +35,10 @@ export function RequestRow(props: RequestRowProps) {
             {lastAttempt?.providerModelName ?? '—'}
           </span>
           <Badge variant={succeeded ? 'success' : 'destructive'}>
-            {STATUS_LABEL[log.status] ?? log.status}
+            {formatStatus(t, log.status)}
           </Badge>
           <span className="text-text-tertiary">
-            {log.clientProtocol === null ? '未识别' : PROTOCOL_LABEL[log.clientProtocol] ?? log.clientProtocol}
+            {log.clientProtocol === null ? t('requestLogs.detail.unrecognizedProtocol') : PROTOCOL_LABEL[log.clientProtocol] ?? log.clientProtocol}
             {upstreamProtocol && upstreamProtocol !== log.clientProtocol && (
               <>
                 {' '}
@@ -46,7 +49,7 @@ export function RequestRow(props: RequestRowProps) {
               </>
             )}
           </span>
-          <span className="text-text-quaternary">{formatTime(log.createdTime)}</span>
+          <span className="text-text-quaternary">{formatTime(locale, log.createdTime)}</span>
         </div>
         {log.attempts.length > 1 && (
           <div className="flex flex-wrap gap-1.5">
@@ -61,7 +64,7 @@ export function RequestRow(props: RequestRowProps) {
                 )}
                 title={attempt.errorMessage ?? undefined}
               >
-                尝试{i + 1}: {attempt.providerName}/{attempt.providerModelName} ·{' '}
+                {t('requestLogs.attempt.label', { index: i + 1 })}: {attempt.providerName}/{attempt.providerModelName} ·{' '}
                 {formatDuration(attempt.durationMilliseconds)}
               </span>
             ))}
@@ -69,7 +72,7 @@ export function RequestRow(props: RequestRowProps) {
         )}
         {log.attempts.length === 1 && (
           <div className="system-xs-regular text-text-tertiary">
-            耗时 {formatDuration(log.totalDurationMilliseconds)}
+            {t('requestLogs.table.duration')} {formatDuration(log.totalDurationMilliseconds)}
             {log.totalTokens != null ? ` · ${log.totalTokens} tokens` : ''}
           </div>
         )}

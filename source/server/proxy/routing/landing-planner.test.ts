@@ -58,7 +58,7 @@ describe('planLandingTargets', () => {
   })
 
   it('walks the landings in priority order and stops at the first one with candidates', async () => {
-    mocks.plans.set('first', { targets: [], reason: 'no-available-provider', detail: '第一个落点没有可用供应商' })
+    mocks.plans.set('first', { targets: [], reason: 'no-available-provider', detail: 'The first landing has no available provider' })
     mocks.plans.set('second', { targets: [target('model_b')], reason: 'none' })
 
     const plan = await planLandingTargets({ logicalModelIds: ['first', 'second', 'third'], clientProtocol: 'openai-completions' })
@@ -80,7 +80,7 @@ describe('planLandingTargets', () => {
   })
 
   it('lists every landing reason when none of them can be used', async () => {
-    mocks.plans.set('first', { targets: [], reason: 'no-available-provider', detail: '没有已启用且健康的供应商模型' })
+    mocks.plans.set('first', { targets: [], reason: 'no-available-provider', detail: 'No enabled and healthy provider model' })
     mocks.plans.set('second', { targets: [], reason: 'no-available-provider' })
 
     const plan = await planLandingTargets({ logicalModelIds: ['first', 'second'], clientProtocol: 'openai-completions' })
@@ -88,13 +88,13 @@ describe('planLandingTargets', () => {
     const miss = expectMiss(plan)
     expect(miss.reason).toBe('no-available-provider')
     // 规划器没给 detail 的落点要用兜底说明，错误信息里不能出现空白。
-    expect(miss.detail).toBe('落点逻辑模型都不可用（first: 没有已启用且健康的供应商模型；second: 该逻辑模型没有已启用且健康的供应商模型）')
+    expect(miss.detail).toBe('No landing logical model is usable (first: No enabled and healthy provider model; second: This logical model has no enabled and healthy provider model)')
     expect(mocks.planned).toEqual(['first', 'second'])
   })
 
   it('reports the manual locking as the reason when any landing failed because of it', async () => {
     mocks.manualModels.set('first', 'model_manual')
-    mocks.plans.set('first', { targets: [], reason: 'manual-model-unavailable', detail: '手动指定的 ProviderModel 当前不可用于该协议' })
+    mocks.plans.set('first', { targets: [], reason: 'manual-model-unavailable', detail: 'The manually selected ProviderModel is not available for this protocol' })
     mocks.plans.set('second', { targets: [], reason: 'no-available-provider' })
 
     const plan = await planLandingTargets({ logicalModelIds: ['first', 'second'], clientProtocol: 'openai-completions' })

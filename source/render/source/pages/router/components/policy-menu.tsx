@@ -9,9 +9,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/i18n/provider'
 
 import { ROUTER_POLICY_PRESETS, type RouterPolicyPreset } from '@common/router/presets'
 import { PANEL_POPUP_SURFACE_CLASSNAME } from '../panel/panel-fields'
+import { policyPresetTextKeys } from '../policy-preset-text'
 import { DifyButton } from './dify-button'
 
 type PolicyMenuProps = {
@@ -27,13 +29,15 @@ type PolicyMenuProps = {
  */
 export function PolicyMenu(props: PolicyMenuProps) {
   const { activePolicyId, onApply } = props
+  const t = useTranslation()
+  const activePresetId = activePolicyId ? policyPresetTextKeys(activePolicyId) : undefined
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <DifyButton size="medium" aria-label="路由策略">
+        <DifyButton size="medium" aria-label={t('router.policy.aria')}>
           <Sparkles className="size-3.5" aria-hidden />
-          {ROUTER_POLICY_PRESETS.find(preset => preset.id === activePolicyId)?.name ?? '选择策略'}
+          {activePresetId ? t(activePresetId.name) : t('router.policy.fallbackName')}
           <ChevronDown className="size-3.5" aria-hidden />
         </DifyButton>
       </DropdownMenuTrigger>
@@ -45,31 +49,34 @@ export function PolicyMenu(props: PolicyMenuProps) {
       >
         <DropdownMenuLabel className="flex items-center gap-1.5 px-2 py-1.5 system-xs-medium text-text-tertiary">
           <Sparkles className="size-3.5" aria-hidden />
-          路由策略
-          <span className="ml-auto system-2xs-regular text-text-quaternary">选择即替换当前画布</span>
+          {t('router.policy.title')}
+          <span className="ml-auto system-2xs-regular text-text-quaternary">{t('router.policy.subtitle')}</span>
         </DropdownMenuLabel>
         <DropdownMenuSeparator className="bg-components-panel-border" />
 
-        {ROUTER_POLICY_PRESETS.map(preset => (
-          <DropdownMenuItem
-            key={preset.id}
-            onSelect={() => onApply(preset)}
-            className="flex h-auto flex-col items-stretch gap-0.5 rounded-lg px-2 py-1.5 focus:bg-state-base-hover"
-          >
-            <span className="flex items-center gap-2">
-              <span className="system-xs-medium text-text-primary">{preset.name}</span>
-              {preset.isDefault && (
-                <span className="rounded-md bg-workflow-block-parma-bg px-1 py-0.5 system-2xs-regular text-text-tertiary">
-                  内置默认
-                </span>
-              )}
-              {preset.id === activePolicyId && (
-                <span className="ml-auto system-2xs-regular text-text-accent">当前</span>
-              )}
-            </span>
-            <span className="system-2xs-regular text-text-tertiary">{preset.description}</span>
-          </DropdownMenuItem>
-        ))}
+        {ROUTER_POLICY_PRESETS.map(preset => {
+          const textKeys = policyPresetTextKeys(preset.id)
+          return (
+            <DropdownMenuItem
+              key={preset.id}
+              onSelect={() => onApply(preset)}
+              className="flex h-auto flex-col items-stretch gap-0.5 rounded-lg px-2 py-1.5 focus:bg-state-base-hover"
+            >
+              <span className="flex items-center gap-2">
+                <span className="system-xs-medium text-text-primary">{textKeys ? t(textKeys.name) : preset.id}</span>
+                {preset.isDefault && (
+                  <span className="rounded-md bg-workflow-block-parma-bg px-1 py-0.5 system-2xs-regular text-text-tertiary">
+                    {t('router.policy.builtInDefault')}
+                  </span>
+                )}
+                {preset.id === activePolicyId && (
+                  <span className="ml-auto system-2xs-regular text-text-accent">{t('router.policy.current')}</span>
+                )}
+              </span>
+              <span className="system-2xs-regular text-text-tertiary">{textKeys ? t(textKeys.description) : ''}</span>
+            </DropdownMenuItem>
+          )
+        })}
       </DropdownMenuContent>
     </DropdownMenu>
   )

@@ -60,7 +60,7 @@ async function resolveProxyUrl(mode: OutboundProxyMode, customUrl: string, targe
     return resolveChromiumProxyRule(rule, targetUrl)
   } catch (error) {
     if (error instanceof AppError) throw error
-    throw new AppError('SYSTEM_PROXY_RESOLUTION_FAILED', 502, '无法解析系统代理设置', { cause: error })
+      throw new AppError('SYSTEM_PROXY_RESOLUTION_FAILED', 502, 'Could not resolve the system proxy settings', { cause: error })
   }
 }
 

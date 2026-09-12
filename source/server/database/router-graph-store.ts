@@ -105,7 +105,7 @@ export async function saveRouterGraphVersion(graph: WorkflowGraph, name: string 
   const record = await createWorkflow({
     type: ROUTER_GRAPH_TYPE,
     version,
-    name: name?.trim() || `版本 ${version}`,
+    name: name?.trim() || `Version ${version}`,
     definition: graph,
   })
   await pruneRouterGraphVersions()

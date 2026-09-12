@@ -13,6 +13,8 @@ import {
 
 import type { NodeRunStatus } from './node-data'
 import type { AppendableKind, IterationCollectMode, WorkflowNodeKind, WorkflowNodeModel } from '@common/router/types'
+import type { AppTranslator } from '@/i18n/provider'
+import type { UiCatalogKey } from '@common/i18n/catalogs'
 
 /** React Flow 中注册的节点类型名。 */
 export type CanvasNodeType =
@@ -52,10 +54,10 @@ export const NODE_KIND_ORDER: WorkflowNodeKind[] = [
 export type NodeKindIcon = ComponentType<{ className?: string }>
 
 export interface NodeKindMeta {
-  /** 节点类型名称 */
-  label: string
-  /** 一句话说明，用于选择器与节点面板 */
-  hint: string
+  /** 节点类型名称目录键 */
+  labelKey: UiCatalogKey
+  /** 一句话说明的目录键，用于选择器与节点面板 */
+  hintKey: UiCatalogKey
   icon: NodeKindIcon
   /** 图标色块底色（对齐 Dify `block-icon.tsx` 的 util-colors-*-500 纯色块，前景固定白色） */
   tone: string
@@ -65,64 +67,64 @@ export interface NodeKindMeta {
 
 export const NODE_KIND_META: Record<WorkflowNodeKind, NodeKindMeta> = {
   input: {
-    label: '输入请求',
-    hint: '接收原始请求并开始路由',
+    labelKey: 'router.node.input.label',
+    hintKey: 'router.node.input.hint',
     icon: CirclePlay,
     tone: 'bg-util-colors-blue-brand-blue-brand-500',
     accent: 'bg-util-colors-blue-brand-blue-brand-500',
   },
   'control-input': {
-    label: '控制输入',
-    hint: '注入开关或下拉控制值',
+    labelKey: 'router.node.control-input.label',
+    hintKey: 'router.node.control-input.hint',
     icon: ArrowRightLeft,
     tone: 'bg-util-colors-blue-blue-500',
     accent: 'bg-util-colors-blue-blue-500',
   },
   'protocol-discovery': {
-    label: '协议发现',
-    hint: '识别协议并输出分支',
+    labelKey: 'router.node.protocol-discovery.label',
+    hintKey: 'router.node.protocol-discovery.hint',
     icon: GitBranch,
     tone: 'bg-util-colors-green-green-500',
     accent: 'bg-util-colors-green-green-500',
   },
   condition: {
-    label: '条件',
-    hint: 'IF / ELSE 多分支',
+    labelKey: 'router.node.condition.label',
+    hintKey: 'router.node.condition.hint',
     icon: Waypoints,
     tone: 'bg-util-colors-cyan-cyan-500',
     accent: 'bg-util-colors-cyan-cyan-500',
   },
   'model-select': {
-    label: '逻辑模型选择',
-    hint: '决定请求落到哪个逻辑模型',
+    labelKey: 'router.node.model-select.label',
+    hintKey: 'router.node.model-select.hint',
     icon: ArrowRightLeft,
     tone: 'bg-util-colors-indigo-indigo-500',
     accent: 'bg-util-colors-indigo-indigo-500',
   },
   iteration: {
-    label: '遍历迭代',
-    hint: '遍历数组 / 对象，逐项跑循环体',
+    labelKey: 'router.node.iteration.label',
+    hintKey: 'router.node.iteration.hint',
     icon: Repeat2,
     tone: 'bg-util-colors-violet-violet-500',
     accent: 'bg-util-colors-violet-violet-500',
   },
   script: {
-    label: 'JS 脚本',
-    hint: '沙箱里跑一段 JS，把结果写回 payload',
+    labelKey: 'router.node.script.label',
+    hintKey: 'router.node.script.hint',
     icon: SquareCode,
     tone: 'bg-util-colors-yellow-yellow-500',
     accent: 'bg-util-colors-yellow-yellow-500',
   },
   prompt: {
-    label: 'LLM 节点',
-    hint: '用指定逻辑模型执行提示词',
+    labelKey: 'router.node.prompt.label',
+    hintKey: 'router.node.prompt.hint',
     icon: Sparkles,
     tone: 'bg-util-colors-pink-pink-500',
     accent: 'bg-util-colors-pink-pink-500',
   },
   output: {
-    label: '路由结果出口',
-    hint: '输出可用逻辑模型，交由代理执行',
+    labelKey: 'router.node.output.label',
+    hintKey: 'router.node.output.hint',
     icon: ArrowRight,
     tone: 'bg-util-colors-warning-warning-500',
     accent: 'bg-util-colors-warning-warning-500',
@@ -131,20 +133,20 @@ export const NODE_KIND_META: Record<WorkflowNodeKind, NodeKindMeta> = {
 
 export const FALLBACK_NODE_ICON = Braces
 
-/** 迭代节点的结果收集模式文案（节点视图、面板、Trace 共用）。 */
-export const ITERATION_COLLECT_MODE_LABELS: Record<IterationCollectMode, string> = {
-  first: '取首个命中',
-  last: '取最后一个命中',
-  list: '汇总为列表',
-  count: '只统计轮数',
+/** 迭代节点的结果收集模式文案键（节点视图、面板、Trace 共用）。 */
+export const ITERATION_COLLECT_MODE_LABELS: Record<IterationCollectMode, UiCatalogKey> = {
+  first: 'router.iterationMode.first',
+  last: 'router.iterationMode.last',
+  list: 'router.iterationMode.list',
+  count: 'router.iterationMode.count',
 }
 
-/** 迭代节点的结果收集模式说明，用于面板里的候选项补充解释。 */
-export const ITERATION_COLLECT_MODE_HINTS: Record<IterationCollectMode, string> = {
-  first: '命中即停止遍历，结果写命中的那一个值',
-  last: '遍历到底，结果写最后一个命中的值',
-  list: '遍历到底，结果写所有命中值组成的数组',
-  count: '不收集值，结果写实际执行的轮数',
+/** 迭代节点的结果收集模式说明键，用于面板里的候选项补充解释。 */
+export const ITERATION_COLLECT_MODE_HINTS: Record<IterationCollectMode, UiCatalogKey> = {
+  first: 'router.iterationModeHint.first',
+  last: 'router.iterationModeHint.last',
+  list: 'router.iterationModeHint.list',
+  count: 'router.iterationModeHint.count',
 }
 
 export function toCanvasNodeType(kind: WorkflowNodeKind): CanvasNodeType {
@@ -153,8 +155,9 @@ export function toCanvasNodeType(kind: WorkflowNodeKind): CanvasNodeType {
   return kind
 }
 
-export function kindLabel(kind: WorkflowNodeKind): string {
-  return NODE_KIND_META[kind]?.label ?? '节点'
+export function kindLabel(t: AppTranslator, kind: WorkflowNodeKind): string {
+  const key = NODE_KIND_META[kind]?.labelKey
+  return key ? t(key) : t('router.summary.unknownKind')
 }
 
 export function kindIcon(kind: WorkflowNodeKind): NodeKindIcon {
@@ -169,45 +172,45 @@ export function kindAccent(kind: WorkflowNodeKind): string {
   return NODE_KIND_META[kind]?.accent ?? 'bg-primary'
 }
 
-export function nodeSummary(model: WorkflowNodeModel): string {
-  if (model.kind === 'input') return NODE_KIND_META.input.hint
-  if (model.kind === 'control-input') return `${model.controls.filter(control => control.enabled).length} 个控制项`
-  if (model.kind === 'protocol-discovery') return NODE_KIND_META['protocol-discovery'].hint
-  if (model.kind === 'condition') return `${model.cases.length} 个分支 + ELSE`
+export function nodeSummary(t: AppTranslator, model: WorkflowNodeModel): string {
+  if (model.kind === 'input') return t(NODE_KIND_META.input.hintKey)
+  if (model.kind === 'control-input') return t('router.summary.controls', { count: model.controls.filter(control => control.enabled).length })
+  if (model.kind === 'protocol-discovery') return t(NODE_KIND_META['protocol-discovery'].hintKey)
+  if (model.kind === 'condition') return t('router.summary.cases', { count: model.cases.length })
   if (model.kind === 'model-select') {
     if (model.source === 'variable') {
       const variablePath = model.variablePath.trim()
-      return variablePath ? `取值字段 ${variablePath}` : '未选择取值字段'
+      return variablePath ? t('router.summary.variablePath', { path: variablePath }) : t('router.summary.variablePathEmpty')
     }
-    return `${model.modelIds.length} 个逻辑模型`
+    return t('router.summary.models', { count: model.modelIds.length })
   }
   if (model.kind === 'iteration') {
     const sourcePath = model.sourcePath.trim()
-    if (!sourcePath) return '未配置遍历来源'
-    return `遍历 ${sourcePath} · 上限 ${model.maxIterations} 轮`
+    if (!sourcePath) return t('router.summary.iterationSourceEmpty')
+    return t('router.summary.iterationSource', { path: sourcePath, count: model.maxIterations })
   }
   if (model.kind === 'script') {
     const resultPath = model.resultPath.trim()
-    return resultPath ? `结果写入 ${resultPath}` : '未配置结果写回路径'
+    return resultPath ? t('router.summary.resultPath', { path: resultPath }) : t('router.summary.resultPathEmpty')
   }
   if (model.kind === 'prompt') {
     const logicalModelId = model.logicalModelId.trim()
-    return logicalModelId ? `逻辑模型 ${logicalModelId}` : '未选择逻辑模型'
+    return logicalModelId ? t('router.summary.logicalModel', { id: logicalModelId }) : t('router.summary.logicalModelEmpty')
   }
-  return NODE_KIND_META.output.hint
+  return t(NODE_KIND_META.output.hintKey)
 }
 
-export function nodePanelHint(model: WorkflowNodeModel): string {
-  if (model.kind === 'input') return '输入节点无配置项，仅作为路由入口。'
-  if (model.kind === 'output') return '输出节点无核心配置项，固定作为路由出口。Trace 与摘要仅影响调试可见性。'
-  if (model.kind === 'control-input') return '控制输入节点会把开关、下拉等值写入 route.controls，供条件节点和其他逻辑引用。'
-  if (model.kind === 'protocol-discovery') return '该节点无配置项，系统会自动分析请求并输出 openai-completions/openai-responses/anthropic-messages/unknown 分支。'
-  if (model.kind === 'condition') return '字段来源于上游 schema，每个分支可包含多个条件，按 AND / OR 组合判定；首个命中的分支生效，否则走 ELSE。'
-  if (model.kind === 'model-select') return '取值来源决定落点：固定选择直接用勾选的逻辑模型；变量取值则把指定字段当作逻辑模型 id（字符串或字符串数组），取不到时用兜底逻辑模型。'
-  if (model.kind === 'iteration') return '遍历来源支持通配投影（如 logicalModels[*].id）；数组按元素、对象按键值对遍历，每轮把当前项写入 route.iteration 后从 body 端口进入循环体，循环体末端连回本节点即视为本轮结束。'
-  if (model.kind === 'script') return '脚本在服务端沙箱里执行：可用 payload（payload 深拷贝）、get(路径)（支持 a[*].b 通配投影）与 console，用 return 交回结果并写入结果路径。没有 require / import / 网络 / 文件系统，超时会被中断。'
-  if (model.kind === 'prompt') return 'LLM 节点用指定逻辑模型执行提示词，走的是和真实请求同一条上游通路（含密钥、协议转换与故障转移）。提示词模板支持 ${路径} 取值，回复写入结果路径供下游条件判断。'
-  return '该节点不会直接返回模型响应，而是返回一个可用逻辑模型交由代理执行。'
+export function nodePanelHint(t: AppTranslator, model: WorkflowNodeModel): string {
+  if (model.kind === 'input') return t('router.panelHint.input')
+  if (model.kind === 'output') return t('router.panelHint.output')
+  if (model.kind === 'control-input') return t('router.panelHint.controlInput')
+  if (model.kind === 'protocol-discovery') return t('router.panelHint.protocolDiscovery')
+  if (model.kind === 'condition') return t('router.panelHint.condition')
+  if (model.kind === 'model-select') return t('router.panelHint.modelSelect')
+  if (model.kind === 'iteration') return t('router.panelHint.iteration')
+  if (model.kind === 'script') return t('router.panelHint.script')
+  if (model.kind === 'prompt') return t('router.panelHint.prompt')
+  return t('router.panelHint.fallback')
 }
 
 /** 输入 / 输出节点为固定节点：名称与描述不可修改，也不可删除。 */

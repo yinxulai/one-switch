@@ -1,6 +1,7 @@
 import { KeyRound } from 'lucide-react'
 import { FormField } from '@/components/form-kit'
 import { Input } from '@/components/ui/input'
+import { useTranslation } from '@/i18n/provider'
 
 interface ProviderFieldsProps {
   editingProviderId: string | null
@@ -14,22 +15,23 @@ interface ProviderFieldsProps {
 
 export function ProviderFields(props: ProviderFieldsProps) {
   const { editingProviderId, providerName, apiKey, timeout, setProviderName, setApiKey, setTimeout } = props
+  const t = useTranslation()
 
   return (
     <div className="grid gap-4">
-      <FormField label="供应商名称" htmlFor="provider-name">
+      <FormField label={t('providers.fields.name')} htmlFor="provider-name">
         <Input
           id="provider-name"
           value={providerName}
           onChange={event => setProviderName(event.target.value)}
-          placeholder="例如：OpenAI / DeepSeek"
+          placeholder={t('providers.fields.namePlaceholder')}
         />
       </FormField>
 
       <FormField
-        label="API Key（可选）"
+        label={t('providers.fields.apiKey')}
         htmlFor="provider-key"
-        hint="仅保存在本机；无需鉴权的上游可以留空。"
+        hint={t('providers.fields.apiKeyHint')}
       >
         <div className="relative">
           <KeyRound aria-hidden className="absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-text-tertiary" />
@@ -39,15 +41,15 @@ export function ProviderFields(props: ProviderFieldsProps) {
             className="pl-9"
             value={apiKey}
             onChange={event => setApiKey(event.target.value)}
-            placeholder={editingProviderId ? '留空表示不修改' : '可选，例如 sk-...'}
+            placeholder={editingProviderId ? t('providers.fields.apiKeyPlaceholderEdit') : t('providers.fields.apiKeyPlaceholderNew')}
           />
         </div>
       </FormField>
 
       <FormField
-        label="请求超时（毫秒）"
+        label={t('providers.fields.timeout')}
         htmlFor="provider-timeout"
-        hint="超时后自动切换下一个候选模型，默认 30 秒（30000 毫秒）。"
+        hint={t('providers.fields.timeoutHint')}
       >
         <Input
           id="provider-timeout"
@@ -55,7 +57,7 @@ export function ProviderFields(props: ProviderFieldsProps) {
           min={1}
           value={timeout}
           onChange={event => setTimeout(event.target.value)}
-          placeholder="例如：30000"
+          placeholder={t('providers.fields.timeoutPlaceholder')}
         />
       </FormField>
     </div>

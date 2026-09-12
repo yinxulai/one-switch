@@ -31,10 +31,10 @@ import { isWebSocketEndpoint, resolveUpstreamUrl } from '@server/proxy/routing/u
 export const proxyTargetPlanner: AttemptPlanner = { id: 'proxy-target', plan: planProxyTargets }
 
 /** 手动锁定的模型用不了时的说明：手动与自动的区别只在这句话里，因此只有一个来源。 */
-const MANUAL_UNAVAILABLE_DETAIL = '手动指定的 ProviderModel 当前不可用于该协议'
+const MANUAL_UNAVAILABLE_DETAIL = 'The manually selected ProviderModel is not available for this protocol'
 
 /** 一个候选都没有且不是手动锁定时：既没有绑定模型、又都不可用。 */
-const NO_MODEL_DETAIL = '该逻辑模型没有已启用且健康的供应商模型'
+const NO_MODEL_DETAIL = 'This logical model has no enabled and healthy provider model'
 
 export async function planProxyTargets(input: PlannerInput): Promise<PlanResult> {
   const { logicalModelId, clientProtocol: protocol, manualModelId } = input
@@ -129,10 +129,13 @@ function resolveEndpointId(model: ProviderModelRoute, endpointProtocol: Protocol
   return `${model.id}:${endpointProtocol}`
 }
 
-/** 为什么一个候选都用不上。这段文字同时是日志与用户看到的错误信息，只说事实、不猜原因。 */
+/**
+ * 为什么一个候选都用不上。这段文字同时是日志与用户看到的错误信息（英文原文），
+ * 只说事实、不猜原因；界面按 `errorCode` 自己本地化，不把这句英文当模板用。
+ */
 function describeCandidates(availableModels: ModelWithProvider[], protocol: Protocol): string {
   const discovered = availableModels.map(candidate => `${candidate.provider.name}/${candidate.model.modelName}`).join(', ')
-  const suffix = discovered ? `，已发现: ${discovered}` : ''
+  const suffix = discovered ? `, discovered: ${discovered}` : ''
 
   // 「没开协议转换」和「开了但端点不是 HTTP 形态」必须分开说：合成一句「未开启协议转换」在后一种
   // 情况下就是假话，会让人去改一个本来就是打开的开关。
@@ -142,9 +145,9 @@ function describeCandidates(availableModels: ModelWithProvider[], protocol: Prot
       && isWebSocketEndpoint(endpoint.endpointUrl))
     .map(endpoint => endpoint.protocol)))]
   if (crossShapeProtocols.length > 0) {
-    return `可用供应商模型未原生配置 ${protocol} 协议，可转换的端点是 websocket 形态，跨形态转换不在支持范围内（可转换协议: ${crossShapeProtocols.join(', ')}）${suffix}`
+    return `Available provider models do not natively configure the ${protocol} protocol, the convertible endpoints are WebSocket and cross-shape conversion is out of scope (convertible protocols: ${crossShapeProtocols.join(', ')})${suffix}`
   }
 
   const configuredProtocols = [...new Set(availableModels.flatMap(candidate => candidate.model.endpoints.map(endpoint => endpoint.protocol)))]
-  return `可用供应商模型未配置 ${protocol} 协议且未开启协议转换（当前配置协议: ${configuredProtocols.join(', ') || '无'}）${suffix}`
+  return `Available provider models have no ${protocol} protocol configured and protocol conversion is disabled (configured protocols: ${configuredProtocols.join(', ') || 'none'})${suffix}`
 }

@@ -3,6 +3,7 @@ import { InlineEmptyState } from '@/components/inline-empty-state'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
+import { useTranslation } from '@/i18n/provider'
 import type { FetchedProviderModel } from '@/api/providers'
 
 interface FetchedModelPickerProps {
@@ -36,6 +37,8 @@ export function FetchedModelPicker(props: FetchedModelPickerProps) {
     filteredModels,
   } = props
 
+  const t = useTranslation()
+
   if (fetchedModels.length === 0) return null
 
   return (
@@ -44,11 +47,11 @@ export function FetchedModelPicker(props: FetchedModelPickerProps) {
         className="bg-card/70"
         value={modelSearch}
         onChange={event => setModelSearch(event.target.value)}
-        placeholder={`搜索 ${fetchedModels.length} 个模型…`}
+        placeholder={t('models.picker.searchPlaceholder', { count: fetchedModels.length })}
       />
       {multiSelect && filteredModels.length > 0 && (
         <div className="flex items-center justify-between px-1.5">
-          <p className="system-2xs-regular text-text-tertiary">当前筛选 {filteredModels.length} 个模型</p>
+          <p className="system-2xs-regular text-text-tertiary">{t('models.picker.filteredCount', { count: filteredModels.length })}</p>
           <div className="flex items-center gap-1">
             <Button
               type="button"
@@ -57,7 +60,7 @@ export function FetchedModelPicker(props: FetchedModelPickerProps) {
               className="h-6 px-2 system-2xs-medium"
               onClick={() => onSelectAllFiltered(filteredModels.map(model => model.id))}
             >
-              全选
+              {t('common.action.selectAll')}
             </Button>
             <Button
               type="button"
@@ -66,7 +69,7 @@ export function FetchedModelPicker(props: FetchedModelPickerProps) {
               className="h-6 px-2 system-2xs-medium"
               onClick={() => onInvertFiltered(filteredModels.map(model => model.id))}
             >
-              反选
+              {t('models.picker.invert')}
             </Button>
             <Button
               type="button"
@@ -75,14 +78,14 @@ export function FetchedModelPicker(props: FetchedModelPickerProps) {
               className="h-6 px-2 system-2xs-medium"
               onClick={onClearSelection}
             >
-              清空
+              {t('common.action.clear')}
             </Button>
           </div>
         </div>
       )}
       <div className="max-h-48 overflow-y-auto">
         {filteredModels.length === 0 && (
-          <InlineEmptyState title="没有匹配的模型" className="px-2 py-3" />
+          <InlineEmptyState title={t('models.picker.empty')} className="px-2 py-3" />
         )}
         {filteredModels.map(model => (
           <button
@@ -107,7 +110,7 @@ export function FetchedModelPicker(props: FetchedModelPickerProps) {
                   checked={selectedModelIds.includes(model.id)}
                   onCheckedChange={value => toggleModelSelection(model.id, value === true)}
                   onClick={event => event.stopPropagation()}
-                  aria-label={`选择模型 ${model.id}`}
+                  aria-label={t('models.picker.selectAria', { name: model.id })}
                 />
               )}
               <span className="truncate font-mono">{model.id}</span>

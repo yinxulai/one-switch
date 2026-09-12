@@ -208,7 +208,8 @@ describe('request log management', () => {
     expect(responseData(res)).toEqual({
       success: false,
       errorCode: 'RESOURCE_NOT_FOUND',
-      errorMessage: '请求日志不存在 req_missing',
+      errorMessage: 'Request log not found: req_missing',
+      errorParams: { requestId: 'req_missing' },
     })
   })
 

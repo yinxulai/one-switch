@@ -139,7 +139,7 @@ export class ProxyRuntime {
           res.destroy(normalized)
           return
         }
-        writeJsonError(res, normalized.statusCode, normalized.code, getErrorResponseMessage(normalized, '代理处理失败'))
+        writeJsonError(res, normalized.statusCode, normalized.code, getErrorResponseMessage(normalized, 'Proxy request failed'))
       }
     })
     server.on('upgrade', (_req, socket) => socket.end(UNSUPPORTED_TRANSPORT_RESPONSE))
@@ -162,7 +162,7 @@ const UNSUPPORTED_TRANSPORT_RESPONSE = (() => {
   const body = JSON.stringify({
     error: {
       code: 'TRANSPORT_NOT_IMPLEMENTED',
-      message: '这个代理尚未实现 WebSocket 传输，请改用 HTTP 端点',
+      message: 'WebSocket transport is not implemented yet, use the HTTP endpoints instead',
     },
   })
   return [

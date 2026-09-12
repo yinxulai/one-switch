@@ -185,7 +185,7 @@ function executeScript(invocation: ScriptInvocation): ScriptInvocationResult {
       success: false,
       logs,
       error: message.includes('Script execution timed out')
-        ? `脚本执行超时（> ${invocation.timeoutMilliseconds} ms），已中断`
+        ? `Script execution timed out (> ${invocation.timeoutMilliseconds} ms), aborted`
         : message,
       durationMilliseconds: Date.now() - startedAt,
     }
@@ -206,7 +206,7 @@ async function executePrompt(invocation: PromptInvocation): Promise<PromptInvoca
     return {
       success: false,
       text: '',
-      error: plan.detail ?? `逻辑模型 ${invocation.logicalModelId} 没有支持 ${protocol} 的可用上游`,
+      error: plan.detail ?? `Logical model ${invocation.logicalModelId} has no upstream that supports ${protocol}`,
       durationMilliseconds: Date.now() - startedAt,
     }
   }
@@ -240,7 +240,7 @@ async function executePrompt(invocation: PromptInvocation): Promise<PromptInvoca
         success: false,
         text: '',
         target: targetLabel,
-        error: response.failureMessage ?? `上游返回 HTTP ${response.statusCode || 502}`,
+        error: response.failureMessage ?? `Upstream responded with HTTP ${response.statusCode || 502}`,
         durationMilliseconds,
       }
     }
@@ -251,7 +251,7 @@ async function executePrompt(invocation: PromptInvocation): Promise<PromptInvoca
         success: false,
         text: '',
         target: targetLabel,
-        error: '上游返回的不是 JSON 对象',
+        error: 'The upstream response is not a JSON object',
         durationMilliseconds,
       }
     }
@@ -268,7 +268,7 @@ async function executePrompt(invocation: PromptInvocation): Promise<PromptInvoca
       return {
         success: false,
         text: '',
-        error: `LLM 调用超时（> ${invocation.timeoutMilliseconds} ms），已中断`,
+        error: `LLM invocation timed out (> ${invocation.timeoutMilliseconds} ms), aborted`,
         durationMilliseconds: Date.now() - startedAt,
       }
     }

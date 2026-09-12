@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
+import { createAppTranslator } from '@common/i18n/catalogs'
 import { formatContent, isLocalFailureBody } from './format-content'
+
+const t = createAppTranslator('en')
 
 describe('formatContent', () => {
   it('restores line breaks in captured streaming chunks', () => {
@@ -8,7 +11,7 @@ describe('formatContent', () => {
       chunks: ['event: message\ndata: {"text":"hello"}\n\n', 'data: [DONE]\n\n'],
     })
 
-    expect(formatContent(value)).toEqual({
+    expect(formatContent(t, value)).toEqual({
       value: 'event: message\ndata: {"text":"hello"}\n\ndata: [DONE]\n\n',
       isJson: true,
     })
@@ -17,14 +20,14 @@ describe('formatContent', () => {
   it('keeps regular JSON formatted and does not alter escaped content', () => {
     const value = JSON.stringify({ message: 'literal \\n text' })
 
-    expect(formatContent(value)).toEqual({
+    expect(formatContent(t, value)).toEqual({
       value: '{\n  "message": "literal \\\\n text"\n}',
       isJson: true,
     })
   })
 
   it('returns non-JSON content unchanged', () => {
-    expect(formatContent('plain response')).toEqual({ value: 'plain response', isJson: false })
+    expect(formatContent(t, 'plain response')).toEqual({ value: 'plain response', isJson: false })
   })
 
   // 本地失败时上游一个字节都没回，正文里只有本地观察到的原因：它必须一眼可读，
@@ -32,7 +35,10 @@ describe('formatContent', () => {
   it('reads a local failure body as a failure reason', () => {
     const value = JSON.stringify({ localFailure: true, errorCode: 'UPSTREAM_ERROR', errorMessage: 'socket hang up' })
 
-    expect(formatContent(value)).toEqual({ value: '上游没有返回任何响应：socket hang up（UPSTREAM_ERROR）', isJson: false })
+    expect(formatContent(t, value)).toEqual({
+      value: 'The upstream returned no response: socket hang up (UPSTREAM_ERROR)',
+      isJson: false,
+    })
     expect(isLocalFailureBody(value)).toBe(true)
   })
 

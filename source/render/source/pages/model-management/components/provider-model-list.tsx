@@ -14,6 +14,7 @@ import { Ban, Plus, Server, Trash2 } from 'lucide-react'
 import { InlineEmptyState } from '@/components/inline-empty-state'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { useTranslation } from '@/i18n/provider'
 import { ProviderModelRow } from './provider-model-row'
 import type { Provider, ProviderModelRoute } from '@common/schemas'
 
@@ -31,6 +32,7 @@ interface ProviderModelListProps {
 
 export function ProviderModelList(props: ProviderModelListProps) {
   const { models, onAddModel, onEditModel, onToggleModelEnabled, onRemoveModel, onRemoveModels, onDisableModels, onDragEnd } = props
+  const t = useTranslation()
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -77,25 +79,25 @@ export function ProviderModelList(props: ProviderModelListProps) {
         <div className="mb-2 flex items-center justify-between">
           <div className="min-w-0 flex-1 pr-2">
             <Input
-              placeholder="搜索模型 ID..."
+              placeholder={t('models.list.searchPlaceholder')}
               value={modelSearch}
               onChange={event => setModelSearch(event.target.value)}
-              aria-label="搜索模型 ID"
+              aria-label={t('models.list.searchAria')}
             />
           </div>
           {selectedCount > 0 ? (
             <div className="flex items-center gap-1.5">
-              <span className="system-2xs-regular text-text-tertiary">已选择 {selectedCount} 项</span>
+              <span className="system-2xs-regular text-text-tertiary">{t('models.list.selectedCount', { count: selectedCount })}</span>
               <Button variant="outline" size="sm" onClick={() => void disableSelected()}>
-                <Ban size={13} /> 禁用
+                <Ban size={13} /> {t('models.list.disable')}
               </Button>
               <Button variant="destructive" size="sm" onClick={() => void removeSelected()}>
-                <Trash2 size={13} /> 删除
+                <Trash2 size={13} /> {t('common.action.delete')}
               </Button>
             </div>
           ) : (
             <Button variant="outline" onClick={onAddModel}>
-              <Plus size={13} /> 添加模型
+              <Plus size={13} /> {t('models.dialog.submit')}
             </Button>
           )}
         </div>
@@ -125,7 +127,7 @@ export function ProviderModelList(props: ProviderModelListProps) {
                 />
               ))}
               {visibleModels.length === 0 && (
-                <InlineEmptyState title="没有匹配的模型" className="px-3 py-6" />
+                <InlineEmptyState title={t('models.picker.empty')} className="px-3 py-6" />
               )}
             </div>
           </SortableContext>
@@ -133,8 +135,8 @@ export function ProviderModelList(props: ProviderModelListProps) {
       ) : (
         <InlineEmptyState
           icon={Server}
-          title="还没有供应商模型"
-          description="添加后即可通过本地代理调用"
+          title={t('models.list.emptyTitle')}
+          description={t('models.list.emptyDescription')}
           className="min-h-36 justify-center rounded-lg border border-module-border bg-inset"
         />
       )}

@@ -81,7 +81,7 @@ function buildCoreNetworkClient(resolve: ConnectorResolver): CoreNetworkClient {
               const text = chunk.toString('utf8')
               bufferedBytes += Buffer.byteLength(text, 'utf8')
               if (bufferedBytes > maxResponseBytes) {
-                response.destroy(new AppError('UPSTREAM_UNAVAILABLE', 502, `响应体超过限制（${maxResponseBytes} bytes）`))
+                response.destroy(new AppError('UPSTREAM_UNAVAILABLE', 502, `Response body exceeded the ${maxResponseBytes} bytes limit`, { details: { maxBytes: maxResponseBytes } }))
                 return
               }
               responseBody += text

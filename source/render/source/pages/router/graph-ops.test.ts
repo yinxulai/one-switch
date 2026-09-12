@@ -337,7 +337,7 @@ describe('图谱校验（回归）', () => {
       expect({ id: preset.id, issues: WorkflowGraphSchema.safeParse(graph).error?.issues }).toEqual({ id: preset.id, issues: undefined })
       // 工厂必须每次返回全新对象，否则套用预设会污染上一个图。
       expect(preset.createGraph(presetLogicalModels)).not.toBe(preset.createGraph(presetLogicalModels))
-      expect(findPolicyPreset(preset.id)?.name).toBe(preset.name)
+      expect(findPolicyPreset(preset.id)?.id).toBe(preset.id)
     }
     expect(findPolicyPreset('not-a-preset')).toBeUndefined()
   })

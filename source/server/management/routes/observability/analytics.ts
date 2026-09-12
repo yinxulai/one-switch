@@ -102,7 +102,7 @@ async function handleProviderAnalyticsDetail(_req: IncomingMessage, res: ServerR
   const sinceMs = resolveSinceMs(range)
   const provider = await getProviderStat(providerId, sinceMs)
   if (!provider) {
-    sendError(res, 'RESOURCE_NOT_FOUND', `当前时间范围内没有供应商统计数据 ${providerId}`, 404)
+    sendError(res, 'RESOURCE_NOT_FOUND', `No provider statistics in the requested time range: ${providerId}`, 404, { providerId })
     return
   }
 

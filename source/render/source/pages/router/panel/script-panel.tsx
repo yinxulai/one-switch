@@ -9,6 +9,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { NodePanelProps } from '../node-data'
+import { useTranslation } from '@/i18n/provider'
 import { SCRIPT_TIMEOUT_LIMIT, type ScriptNode } from '@common/router/types'
 import { PanelCodeEditor } from './panel-code-editor'
 import {
@@ -30,6 +31,7 @@ export function ScriptPanel(props: NodePanelProps) {
   const code = node?.code ?? ''
   const resultPath = node?.resultPath ?? ''
   const timeoutMilliseconds = node?.timeoutMilliseconds ?? 2_000
+  const t = useTranslation()
 
   const patch = useCallback((patchValue: Partial<ScriptNode>) => {
     update(current => current.kind === 'script' ? { ...current, ...patchValue } : current)
@@ -51,46 +53,45 @@ export function ScriptPanel(props: NodePanelProps) {
   return (
     <div className="grid gap-2.5">
       <NodePanelHint>
-        沙箱里可用
+        {t('router.panel.scriptHint.sandbox')}
         {' '}
         <span className="font-mono">payload</span>
-        （本次运行数据的深拷贝）、
-        <span className="font-mono">get(路径)</span>
-        （支持
+        {t('router.panel.scriptHint.payloadSuffix')}
+        <span className="font-mono">{t('router.panel.scriptHint.getValueExample')}</span>
+        {t('router.panel.scriptHint.getSuffix')}
         <span className="font-mono">a[*].b</span>
-        通配投影）与
+        {t('router.panel.scriptHint.projectionSuffix')}
         <span className="font-mono">console</span>
-        。用
+        {t('router.panel.scriptHint.consoleSuffix')}
         {' '}
         <span className="font-mono">return</span>
         {' '}
-        交回结果，写入下方路径。代码框内输入
+        {t('router.panel.scriptHint.returnSuffix')}
         {' '}
         <span className="font-mono">{"get('"}</span>
         {' '}
-        或按
+        {t('router.panel.scriptHint.getCallSuffix')}
         {' '}
         <span className="font-mono">Ctrl/⌘ + Space</span>
         {' '}
-        唤出字段候选。
-        没有 require / import / 网络 / 文件系统，超时会中断。
+        {t('router.panel.scriptHint.shortcutSuffix')}
       </NodePanelHint>
 
-      <NodePanelField label="脚本">
+      <NodePanelField label={t('router.panel.script')}>
         <PanelCodeEditor
           language="javascript"
           fields={sourceFields}
           value={code}
           minHeight={160}
           maxHeight={360}
-          placeholder={'// 例：把可用逻辑模型过滤一遍\nconst models = get(\'logicalModels[*].id\') || []\nreturn models.filter(id => !id.startsWith(\'test-\'))'}
+          placeholder={t('router.panel.scriptPlaceholder')}
           onChange={handleCodeChange}
         />
       </NodePanelField>
 
-      {!code.trim() && <NodePanelHint tone="warning">脚本为空，运行时不会产出任何结果。</NodePanelHint>}
+      {!code.trim() && <NodePanelHint tone="warning">{t('router.panel.warnEmptyScript')}</NodePanelHint>}
 
-      <NodePanelField label="结果写回路径">
+      <NodePanelField label={t('router.panel.resultPath')}>
         <Input
           value={resultPath}
           placeholder="route.scriptResult"
@@ -98,7 +99,7 @@ export function ScriptPanel(props: NodePanelProps) {
         />
         {resultFields.length > 0 && (
           <Select value={resultPath || undefined} onValueChange={value => patch({ resultPath: value })}>
-            <SelectTrigger className="w-full"><SelectValue placeholder="从上游 schema 选择" /></SelectTrigger>
+            <SelectTrigger className="w-full"><SelectValue placeholder={t('router.panel.selectFromSchema')} /></SelectTrigger>
             <SelectContent className={PANEL_POPUP_SURFACE_CLASSNAME}>
               {resultFields.map(field => (
                 <SelectItem className={PANEL_POPUP_ITEM_CLASSNAME} key={field.path} value={field.path}>
@@ -110,9 +111,9 @@ export function ScriptPanel(props: NodePanelProps) {
         )}
       </NodePanelField>
 
-      {!resultPath.trim() && <NodePanelHint tone="warning">未配置结果写回路径，脚本结果会被丢弃。</NodePanelHint>}
+      {!resultPath.trim() && <NodePanelHint tone="warning">{t('router.panel.warnNoResultPath')}</NodePanelHint>}
 
-      <NodePanelField label="超时（毫秒）">
+      <NodePanelField label={t('router.panel.timeoutMilliseconds')}>
         <Input
           type="number"
           min={1}

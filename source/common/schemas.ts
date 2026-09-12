@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+import { LANGUAGE_PREFERENCES } from './i18n'
+
 // ========== 枚举 ==========
 
 export const ProtocolSchema = z.enum([
@@ -177,7 +179,7 @@ export type SchedulingPolicy = z.infer<typeof SchedulingPolicySchema>
 // ========== Logical Model ==========
 
 /** Logical model IDs are stable public model identifiers. */
-export const LogicalModelIdSchema = z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/, '逻辑模型 ID 必须以小写字母开头，只能包含小写字母、数字、下划线和连字符（最多 64 个字符）')
+export const LogicalModelIdSchema = z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/, 'logical model id must start with a lowercase letter and may only contain lowercase letters, digits, underscores and hyphens (max 64 characters)')
 
 /**
  * 内建默认逻辑模型的名字：启动时由 `ensureDefaultLogicalModel` 建出来（id 与 name 都取这个值）。
@@ -265,12 +267,45 @@ export type HealthSnapshot = z.infer<typeof HealthSnapshotSchema>
 export const OutboundProxyModeSchema = z.enum(['direct', 'system', 'custom'])
 export type OutboundProxyMode = z.infer<typeof OutboundProxyModeSchema>
 
+/**
+ * 界面语言：`system` 表示跟随操作系统。
+ *
+ * 取值来自 `@common/i18n` 的 `LANGUAGE_PREFERENCES`，不在这里另写一份枚举——
+ * 语言列表是 i18n 核心的概念，两处各写一份迟早会漂移。
+ */
+export const LanguagePreferenceSchema = z.enum(LANGUAGE_PREFERENCES)
+export type LanguagePreference = z.infer<typeof LanguagePreferenceSchema>
+
 export const SettingsSchema = z.object({
   id: z.literal('singleton'),
   listenHost: z.string().default('127.0.0.1'),
   listenPort: z.number().int().min(1).max(65535).default(9300),
-  logRetentionDays: z.number().int().positive().default(30),
+  /**
+   * 是否记录请求日志（请求身份、逐次尝试、用量与指标）。
+   *
+   * 关掉之后新请求只走代理链路、不落库；正文记录随之失效——没有请求行，正文行无处归属。
+   */
+  captureRequestLogs: z.boolean().default(true),
+  /**
+   * 请求日志的自动保留天数。`0` 表示永久保留（默认）。
+   *
+   * 只删除「请求」这一层：请求行、尝试行、用量行一起走，正文也一起走。
+   * 想看逐次尝试的用量与指标但不想留正文时，请用 {@link contentRetentionDays} 而不是这里。
+   */
+  requestLogRetentionDays: z.number().int().nonnegative().default(0),
+  /**
+   * 是否记录请求与响应正文（请求头/体、响应头/体，客户端与上游两个视角）。
+   *
+   * 正文是日志里唯一会随请求长度线性膨胀的部分，因此单独一个开关。
+   */
   captureRequestContent: z.boolean().default(true),
+  /**
+   * 请求与响应正文的自动保留天数。`0` 表示永久保留；默认 7 天。
+   *
+   * 正文体积远大于指标，过期的正文没有留存价值：过期只删正文行（含转换前后两个视角），
+   * 请求行、尝试行与用量/指标全部保留，历史统计不会因此失真。
+   */
+  contentRetentionDays: z.number().int().nonnegative().default(7),
   cooldownBaseSeconds: z.number().int().positive().default(30),
   cooldownMaxSeconds: z.number().int().positive().default(300),
   consecutiveFailureThreshold: z.number().int().positive().default(3),
@@ -279,6 +314,13 @@ export const SettingsSchema = z.object({
   outboundProxyUrl: z.string().default(''),
   outboundProxyBypass: z.string().default('localhost,127.0.0.1,::1'),
   autoLaunch: z.boolean().default(false),
+  /**
+   * 界面语言偏好。
+   *
+   * 放在服务端设置里而不是渲染进程的 `localStorage`：托盘菜单与原生对话框由主进程渲染，
+   * 主进程读不到渲染进程的存储（见 `product/i18n.md` §3）。
+   */
+  language: LanguagePreferenceSchema.default('system'),
   updatedTime: z.number().int(),
 })
 export type Settings = z.infer<typeof SettingsSchema>
@@ -467,14 +509,27 @@ export const ApiSuccessSchema = <T extends z.ZodTypeAny>(dataSchema: T) =>
 export const ApiErrorSchema = z.object({
   success: z.literal(false),
   errorCode: z.string(),
+  /** 诊断消息，固定英文。界面**不要**直接展示它，按 `errorCode` 本地化（见 `product/i18n.md` §5）。 */
   errorMessage: z.string(),
+  /**
+   * 消息里 `{name}` 占位符的取值。
+   *
+   * 服务端只说事实（「供应商不存在：prov_x」），不拼给人看的句子；界面按错误码取模板后再插值。
+   * 只在模板需要插值时出现，避免把上原文塞进响应体。
+   */
+  errorParams: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
 })
 
 export const ApiResponseSchema = <T extends z.ZodTypeAny>(dataSchema: T) =>
   z.union([ApiSuccessSchema(dataSchema), ApiErrorSchema])
 
 export type ApiSuccess<T> = { success: true; data: T }
-export type ApiError = { success: false; errorCode: string; errorMessage: string }
+export type ApiError = {
+  success: false
+  errorCode: string
+  errorMessage: string
+  errorParams?: Record<string, string | number>
+}
 export type ApiResponse<T> = ApiSuccess<T> | ApiError
 
 // ========== API 错误码（统一枚举） ==========
@@ -490,15 +545,26 @@ export const ApiErrorCodeSchema = z.enum([
   // 认证
   'UNAUTHORIZED',
   'FORBIDDEN',
+  'INVALID_JSON',
+  'METHOD_NOT_ALLOWED',
   // 资源
   'RESOURCE_NOT_FOUND',
   'DUPLICATE_RESOURCE',
+  'RESOURCE_CONFLICT',
+  // 存储
+  'DATABASE_UNAVAILABLE',
+  'SECRET_STORE_UNAVAILABLE',
   // 代理
   'UNKNOWN_API_PATH',
   'UPSTREAM_ERROR',
+  'UPSTREAM_STREAM_ERROR',
   'ALL_PROVIDERS_FAILED',
+  'NO_AVAILABLE_PROVIDER',
   'PROXY_NOT_RUNNING',
   'NO_MODEL_CONFIGURED',
+  'INVALID_MODEL',
+  'MANUAL_MODEL_UNAVAILABLE',
+  'REQUEST_REWRITE_RULE_FAILED',
   'PROXY_INTERNAL_ERROR',
   'SYSTEM_PROXY_RESOLUTION_FAILED',
   'OUTBOUND_PROXY_UNREACHABLE',
@@ -506,7 +572,10 @@ export const ApiErrorCodeSchema = z.enum([
   'OUTBOUND_PROXY_TUNNEL_REJECTED',
   'UPSTREAM_UNAVAILABLE',
   'UPSTREAM_TIMEOUT',
+  'UPSTREAM_AUTH_FAILED',
+  'UPSTREAM_MODELS_UNAVAILABLE',
   'CLIENT_REQUEST_ABORTED',
+  'TRANSPORT_NOT_IMPLEMENTED',
 ])
 export type ApiErrorCode = z.infer<typeof ApiErrorCodeSchema>
 
@@ -656,8 +725,18 @@ export const LatencyBucketSchema = z.object({
 })
 export type LatencyBucket = z.infer<typeof LatencyBucketSchema>
 
+/**
+ * 失败原因的分类码。
+ *
+ * 只作为**机器码**存在：服务端只负责把上游错误归到某几个桶里，桶名本身不携带语言，
+ * 界面按当前语言把码翻成人看的标签。早期这里直接存中文标签，等于把界面语言烧进了数据库口径。
+ */
+export const FAILURE_REASON_CATEGORIES = ['TIMEOUT', 'RATE_LIMITED', 'SERVER_ERROR', 'AUTH_FAILED', 'OTHER'] as const
+export const FailureReasonCategorySchema = z.enum(FAILURE_REASON_CATEGORIES)
+export type FailureReasonCategory = z.infer<typeof FailureReasonCategorySchema>
+
 export const FailureReasonStatSchema = z.object({
-  reason: z.string(),
+  reason: FailureReasonCategorySchema,
   count: z.number().int().nonnegative(),
   percent: z.number().int().min(0).max(100),
 })

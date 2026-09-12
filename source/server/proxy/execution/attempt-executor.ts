@@ -49,6 +49,7 @@ export async function executeProxyRequest(options: ProxyExecutionOptions): Promi
     attributes: context.attributes,
     requestBody,
     transport: context.transport,
+    captureRequestLogs: settings.captureRequestLogs,
     captureRequestContent: settings.captureRequestContent,
     hooks,
   })
@@ -162,7 +163,7 @@ async function attemptRequest(context: RequestContext, response: ProxyResponse, 
       context: { exchange, attempt, direction: 'request', clientProtocol: protocol, upstreamProtocol: endpointProtocol, upstreamHead: null },
       modifiers: requestModifiers,
     })
-    if (!requestPipe.payload) throw new Error(`请求在转发前被修改器丢弃: ${target.providerModelName}`)
+    if (!requestPipe.payload) throw new Error(`The request was dropped by a request modifier before forwarding: ${target.providerModelName}`)
     const prepared = requestPipe.payload
 
     console.debug(`[proxy] attempt prepared requestId=${requestId} attempt=${attemptIndex} providerId=${target.providerId} providerModelId=${target.providerModelId} clientProtocol=${protocol} upstreamProtocol=${endpointProtocol} conversion=${adapter.kind === 'conversion'} requestBytes=${requestBody.length} upstreamRequestBytes=${prepared.body.length} timeout=${target.timeoutMilliseconds}ms`)

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RequestLogEntryAttempt } from '@common/schemas'
+import { createAppTranslator } from '@common/i18n/catalogs'
 import {
   distinctAttemptErrorCode,
   distinctAttemptErrorMessage,
@@ -7,6 +8,8 @@ import {
   formatTTFT,
   formatTPS,
 } from './format'
+
+const t = createAppTranslator('en')
 
 function attemptOf(overrides: Partial<RequestLogEntryAttempt>): RequestLogEntryAttempt {
   return {
@@ -50,10 +53,10 @@ describe('request log metrics formatting', () => {
 
 describe('attempt outcome de-duplication', () => {
   it('reports the HTTP status as the outcome, and only says so once', () => {
-    expect(formatAttemptOutcome(attemptOf({ httpStatus: 401 }))).toBe('HTTP 401')
-    expect(formatAttemptOutcome(attemptOf({ httpStatus: 200 }))).toBe('HTTP 200')
+    expect(formatAttemptOutcome(t, attemptOf({ httpStatus: 401 }))).toBe('HTTP 401')
+    expect(formatAttemptOutcome(t, attemptOf({ httpStatus: 200 }))).toBe('HTTP 200')
     // 上游一个字节都没回时没有状态码可报，这才需要另找一句话。
-    expect(formatAttemptOutcome(attemptOf({ httpStatus: null, errorCode: 'UPSTREAM_TIMEOUT' }))).toBe('未收到响应')
+    expect(formatAttemptOutcome(t, attemptOf({ httpStatus: null, errorCode: 'UPSTREAM_TIMEOUT' }))).toBe('No response received')
   })
 
   it('drops error codes that merely mirror the HTTP status', () => {
@@ -64,11 +67,10 @@ describe('attempt outcome de-duplication', () => {
   })
 
   it('drops error messages that merely restate the HTTP status', () => {
-    expect(distinctAttemptErrorMessage(attemptOf({ httpStatus: 401, errorMessage: '上游返回 401' }))).toBeNull()
-    expect(distinctAttemptErrorMessage(attemptOf({ httpStatus: 401, errorMessage: '上游返回 401 ' }))).toBeNull()
+    // 上游非 2xx 时落库的错误信息只是状态码的副本，判据取错误码而不是文案本身。
+    expect(distinctAttemptErrorMessage(attemptOf({ httpStatus: 401, errorCode: 'Status_401', errorMessage: 'Upstream responded with 401' }))).toBeNull()
     expect(distinctAttemptErrorMessage(attemptOf({ httpStatus: 401, errorMessage: 'invalid api key' }))).toBe('invalid api key')
-    // 没有状态码时同一句话反而带着「上游没回」之外的信息，不该被丢掉。
-    expect(distinctAttemptErrorMessage(attemptOf({ httpStatus: null, errorMessage: '上游返回 401' }))).toBe('上游返回 401')
+    expect(distinctAttemptErrorMessage(attemptOf({ httpStatus: null, errorCode: 'UPSTREAM_TIMEOUT', errorMessage: 'socket hang up' }))).toBe('socket hang up')
     expect(distinctAttemptErrorMessage(attemptOf({ errorMessage: null }))).toBeNull()
   })
 })

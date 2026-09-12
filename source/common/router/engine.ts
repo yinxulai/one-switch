@@ -29,6 +29,13 @@ import {
   type WorkflowTrace,
 } from './types'
 
+/**
+ * trace 的 `message` / `reason` / 节点输出名是**运行记录**而不是界面文案：
+ * 它们会写进 `route` 决策命名空间并随请求落库，语言切换后历史记录不会（也不该）跟着变。
+ * 因此这里保留中文源码字面量、不进 UI 目录——与预设图数据同属「生成内容」。
+ * 界面侧只对节点名称这类用户数据做原样展示。
+ */
+
 export interface WorkflowRunOptions {
   /**
    * 需要外部资源（沙箱 / 网络）的节点由调用方注入实现。

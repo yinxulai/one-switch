@@ -246,7 +246,7 @@ describe('双向中继', () => {
     const inbound = createInbound([END])
     const { started, upstream } = relay({ frames: [HEAD], inbound })
 
-    await expect(started).rejects.toThrow(/写入侧/)
+    await expect(started).rejects.toThrow(/write side/)
 
     // 抛出也要把上游收干净。
     expect(upstream.abortedCount()).toBe(1)

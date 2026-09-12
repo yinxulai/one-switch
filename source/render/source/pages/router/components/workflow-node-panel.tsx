@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/i18n/provider'
 import { PANEL_COMPONENT_MAP } from '../panel'
 import { NodePanelHint } from '../panel/panel-fields'
 import { isProtectedNode, nodePanelHint } from '../node-meta'
@@ -112,13 +113,14 @@ export function WorkflowNodePanel(props: WorkflowNodePanelProps) {
   const Body = PANEL_COMPONENT_MAP[model.kind]
   const protectedNode = isProtectedNode(model)
   const update: NodePanelUpdate = updater => updateNode(model.id, updater)
+  const t = useTranslation()
 
   return (
     <aside className="fixed inset-y-0 right-0 z-40 flex outline-hidden">
       <div
         role="separator"
         aria-orientation="vertical"
-        aria-label="调整面板宽度"
+        aria-label={t('router.nodePanel.resizeAria')}
         onPointerDown={handleResizeStart}
         className="group/resize flex w-2 shrink-0 cursor-col-resize items-center justify-center"
       >
@@ -154,7 +156,7 @@ export function WorkflowNodePanel(props: WorkflowNodePanelProps) {
 
           <button
             type="button"
-            aria-label="关闭面板"
+            aria-label={t('router.nodePanel.closeAria')}
             className="flex size-6 shrink-0 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-state-base-hover hover:text-text-secondary"
             onClick={onClose}
           >
@@ -169,7 +171,7 @@ export function WorkflowNodePanel(props: WorkflowNodePanelProps) {
               <Textarea
                 value={model.description}
                 onChange={event => updateNode(model.id, current => ({ ...current, description: event.target.value }))}
-                placeholder="节点描述"
+                placeholder={t('router.nodePanel.descriptionPlaceholder')}
                 className="min-h-14 text-xs"
               />
             )}
@@ -177,7 +179,7 @@ export function WorkflowNodePanel(props: WorkflowNodePanelProps) {
 
         <div className="min-h-0 flex-1 overflow-y-auto px-3 pt-2 pb-3">
           <div className="grid gap-3">
-            <NodePanelHint>{nodePanelHint(model)}</NodePanelHint>
+            <NodePanelHint>{nodePanelHint(t, model)}</NodePanelHint>
 
             <Body
               model={model}
@@ -196,7 +198,7 @@ export function WorkflowNodePanel(props: WorkflowNodePanelProps) {
               size="medium"
               onClick={() => onDelete(model.id)}
             >
-              <Trash2 className="size-3.5" aria-hidden /> 删除节点
+              <Trash2 className="size-3.5" aria-hidden /> {t('router.nodeAction.delete')}
             </DifyButton>
           </div>
         )}

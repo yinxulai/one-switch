@@ -250,6 +250,20 @@ export async function pruneRequestLogsBefore(retentionDays: number): Promise<num
   return pruneRequestLogsInternal(retentionDays)
 }
 
+/**
+ * 只清理过期的正文记录，保留请求、尝试与用量。
+ *
+ * 正文是日志里唯一随请求长度线性膨胀的部分。删掉它之后「这次请求用了多少 token、
+ * 走了谁、快不快」全都在，只是看不到原文：历史统计与指标不会因为清理正文而失真。
+ */
+export async function pruneRequestContents(retentionDays: number): Promise<void> {
+  pruneRequestContentsInternal(retentionDays)
+}
+
+export async function pruneRequestContentsBefore(retentionDays: number): Promise<number> {
+  return pruneRequestContentsInternal(retentionDays)
+}
+
 type CreateRequestAttemptInput = Omit<RequestAttempt, 'id' | 'createdTime' | 'errorCode' | 'errorMessage' | 'requestRewriteRuleIds' | 'responseRewriteRuleIds' | 'ttftMilliseconds'> & Partial<Pick<RequestAttempt, 'errorCode' | 'errorMessage' | 'requestRewriteRuleIds' | 'responseRewriteRuleIds' | 'ttftMilliseconds'>>
 
 /**
@@ -383,6 +397,23 @@ function pruneRequestLogsInternal(retentionDays: number): number {
     transaction.delete(requestAttempts).where(sql`${requestAttempts.requestId} IN ${staleRequests}`).run()
     transaction.delete(requestLogs).where(sql`${requestLogs.id} IN ${staleRequests}`).run()
     return staleCount
+  })
+}
+
+/**
+ * 正文清理的内部实现，返回删除的正文行数（客户端视角 + 上游视角）。
+ *
+ * 按正文自己的 `createdTime` 判断，而不是顺着请求行找：请求行的保留窗口与正文的
+ * 保留窗口是两件独立的事，正文的过期不该被请求行的存活时间牵连。
+ */
+function pruneRequestContentsInternal(retentionDays: number): number {
+  if (!Number.isInteger(retentionDays) || retentionDays < 1) return 0
+  const cutoffTime = Date.now() - retentionDays * 24 * 60 * 60 * 1000
+  return getDb().transaction(transaction => {
+    const clientRows = transaction.delete(requestContents).where(lt(requestContents.createdTime, cutoffTime)).run()
+    const upstreamRows = transaction.delete(attemptContents).where(lt(attemptContents.createdTime, cutoffTime)).run()
+    // `changes` 的类型是 `number | bigint`（驱动差异），比较前统一收成 number。
+    return Number(clientRows.changes) + Number(upstreamRows.changes)
   })
 }
 

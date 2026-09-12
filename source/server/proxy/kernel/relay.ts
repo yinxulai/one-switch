@@ -136,7 +136,7 @@ async function runRelay(input: RelayConnectedInput): Promise<RelayAttemptResult>
       result = await upstreamToClient
     } else {
       const outbound = connection.outbound
-      if (!outbound) throw new Error(`双向交换的上游连接缺少写入侧: url=${input.target.url}`)
+      if (!outbound) throw new Error(`The upstream connection for the bidirectional exchange has no write side: url=${input.target.url}`)
       // 反方向不挂观察者：观察者契约里的 `onUpstreamChunk` / `onDownstreamChunk` 说的是响应方向，
       // 套到上行帧上会产出「上游发来了一个字」这种假事实。
       const clientToUpstream = pipeFrames({

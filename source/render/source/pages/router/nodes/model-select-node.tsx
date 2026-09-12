@@ -2,6 +2,7 @@ import { Braces, Layers } from 'lucide-react'
 
 import { NodeHandle } from '../components/node-handle'
 import { NodeBody, NodeRow, NodeRowList } from '../components/node-sections'
+import { useTranslation } from '@/i18n/provider'
 import type { RouteNodeProps } from '../node-data'
 import type { ModelSelectNode } from '@common/router/types'
 
@@ -12,14 +13,15 @@ export function ModelSelectNodeView(props: RouteNodeProps) {
   const fromVariable = model.source === 'variable'
   const variablePath = model.variablePath.trim()
   const visibleModelIds = fromVariable ? model.fallbackModelIds : model.modelIds
+  const t = useTranslation()
 
   return (
     <>
       <NodeBody className="mb-1 gap-1 py-1">
         {fromVariable && (
           <NodeRow
-            name={variablePath || '未选择取值字段'}
-            meta="变量"
+            name={variablePath || t('router.summary.variablePathEmpty')}
+            meta={t('router.nodeView.variableMeta')}
             icon={<Braces className="size-3.5 shrink-0 text-text-accent" aria-hidden />}
           />
         )}
@@ -27,7 +29,7 @@ export function ModelSelectNodeView(props: RouteNodeProps) {
         {visibleModelIds.length === 0
           ? (
             <div className="flex h-6 items-center rounded-md bg-workflow-block-parma-bg px-1 system-xs-regular text-text-tertiary">
-              {fromVariable ? '无兜底逻辑模型' : '尚未选择逻辑模型'}
+              {fromVariable ? t('router.nodeView.fallbackEmpty') : t('router.nodeView.modelEmpty')}
             </div>
           )
           : (
@@ -36,7 +38,7 @@ export function ModelSelectNodeView(props: RouteNodeProps) {
                 <NodeRow
                   key={modelId}
                   name={modelId}
-                  meta={fromVariable ? '兜底' : undefined}
+                  meta={fromVariable ? t('router.nodeView.fallbackMeta') : undefined}
                   icon={<Layers className="size-3.5 shrink-0 text-text-accent" aria-hidden />}
                 />
               ))}

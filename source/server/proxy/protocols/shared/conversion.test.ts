@@ -94,7 +94,7 @@ describe('convertRequestBody', () => {
   it('rejects unsupported directions', () => {
     expect(() =>
       convertRequestBody('openai-responses', 'anthropic-messages', Buffer.from('{}'), 'm'),
-    ).toThrow(/不支持的协议转换方向/)
+    ).toThrow(/Unsupported protocol conversion direction/)
   })
 
   it('rejects native passthrough requests in conversion module', () => {
@@ -105,7 +105,7 @@ describe('convertRequestBody', () => {
         request('openai-completions', { model: 'client-model', messages: [{ role: 'user', content: 'hi' }], extra: true }),
         'upstream-model',
       ),
-    ).toThrow(/同协议请求不应进入转换路径/)
+    ).toThrow(/Same-protocol requests must not enter the conversion path/)
   })
 
   it('converts anthropic image blocks to openai image_url parts', () => {
@@ -429,13 +429,13 @@ describe('convertResponseBody', () => {
 
   it('rejects native passthrough responses in conversion module', () => {
     const body = Buffer.from('{"a":1}')
-    expect(() => convertResponseBody('openai-completions', 'openai-completions', body)).toThrow(/同协议响应不应进入转换路径/)
+    expect(() => convertResponseBody('openai-completions', 'openai-completions', body)).toThrow(/Same-protocol responses must not enter the conversion path/)
   })
 
   it('rejects unsupported directions', () => {
     expect(() =>
       convertResponseBody('anthropic-messages', 'openai-responses', Buffer.from('{}')),
-    ).toThrow(/不支持的响应转换方向/)
+    ).toThrow(/Unsupported response conversion direction/)
   })
 })
 
@@ -532,7 +532,7 @@ describe('SSE conversion', () => {
     })
   })
   it('rejects native passthrough streams in conversion module', () => {
-    expect(() => createSseConverter('openai-completions', 'openai-completions')).toThrow(/同协议流式响应不应进入转换路径/)
+    expect(() => createSseConverter('openai-completions', 'openai-completions')).toThrow(/Same-protocol streaming responses must not enter the conversion path/)
   })
 
   it('buffers partial chunks split across pushes', () => {

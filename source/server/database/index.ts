@@ -153,15 +153,15 @@ function assertDatabaseIsSupported(client: DatabaseSync, migrationsFolder: strin
     `[database] unsupported database file=${databasePath} tables=${tables.length} applied=${appliedNames.length} unsupported=${unsupportedNames.length}`,
   )
   throw new Error(
-    `数据库文件不受当前版本支持：${databasePath}\n` +
-      'One Switch 处于 preview 阶段，数据库结构由首发基线直接创建，不提供旧数据库升级。\n' +
-      '请先自行备份，然后删除该文件（连同同目录的 -wal / -shm 文件）后重新启动，应用会自动重新初始化。',
+    `Unsupported database file: ${databasePath}\n` +
+      'One Switch is in preview: the schema is created directly from the initial baseline and no upgrade path for older databases is provided.\n' +
+      'Back up the file yourself, then delete it (together with the -wal / -shm files next to it) and restart the app to reinitialize from scratch.',
   )
 }
 
 function listMigrationNames(migrationsFolder: string): string[] {
   if (!fs.existsSync(migrationsFolder)) {
-    throw new Error(`数据库初始化失败：缺少 migration 目录 ${migrationsFolder}`)
+    throw new Error(`Database initialization failed: missing migrations folder ${migrationsFolder}`)
   }
   return fs
     .readdirSync(migrationsFolder, { withFileTypes: true })

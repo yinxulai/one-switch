@@ -4,6 +4,7 @@ import { providerApi } from '@/api/providers'
 import { providerModelApi } from '@/api/models'
 import { unwrap } from '@/api/unwrap'
 import { useToast } from '@/components/ui/toast'
+import { useTranslation } from '@/i18n/provider'
 import type { FetchedProviderModel } from '@/api/providers'
 import type { ProviderModelRoute } from '@common/schemas'
 import { PROTOCOL_OPTIONS } from '../lib/protocols'
@@ -18,6 +19,7 @@ interface UseModelDialogOptions {
 export function useModelDialog(options: UseModelDialogOptions) {
   const { selectedProvider, models, reload } = options
   const toast = useToast()
+  const t = useTranslation()
   const [modelDialogOpen, setModelDialogOpen] = useState(false)
   const [editingModel, setEditingModel] = useState<ProviderModelRoute | null>(null)
   const [modelId, setModelId] = useState('')
@@ -66,10 +68,10 @@ export function useModelDialog(options: UseModelDialogOptions) {
         if (!result.success) continue
         for (const model of result.data.models) if (!merged.has(model.id)) merged.set(model.id, model)
       }
-      if (merged.size === 0) { toast.error('上游未返回可用模型，请检查地址和 API Key'); return }
+      if (merged.size === 0) { toast.error(t('models.toast.fetchEmpty')); return }
       setFetchedModels([...merged.values()].sort((a, b) => a.id.localeCompare(b.id)))
     } finally { setFetchingModels(false) }
-  }, [protocolEntries, selectedProvider, toast])
+  }, [protocolEntries, selectedProvider, toast, t])
 
   const updateProtocolEntry = useCallback((index: number, patch: Partial<ProtocolEndpointEntry>) => {
     setProtocolEntries(current => current.map((entry, i) => i === index ? { ...entry, ...patch } : entry))
@@ -106,12 +108,12 @@ export function useModelDialog(options: UseModelDialogOptions) {
   }, [])
 
   const saveMutation = useMutation({ mutationFn: async () => {
-    if (!selectedProvider) throw new Error('请先选择一个供应商')
+    if (!selectedProvider) throw new Error(t('models.error.providerRequired'))
     const enabledEntries = protocolEntries.filter(entry => entry.enabled)
-    if (enabledEntries.length === 0) throw new Error('请填写模型并启用至少一个协议')
+    if (enabledEntries.length === 0) throw new Error(t('models.error.modelRequired'))
     const endpoints = enabledEntries.map(entry => ({ protocol: entry.protocol, endpointUrl: entry.overrideUrl ? entry.endpointUrl.trim() : '', customAuthHeader: null, protocolConversionEnabled: entry.protocolConversionEnabled }))
     if (editingModel) {
-      if (!modelId.trim()) throw new Error('请填写模型并启用至少一个协议')
+      if (!modelId.trim()) throw new Error(t('models.error.modelRequired'))
       await unwrap(providerModelApi.update(editingModel.id, { logicalModelId: 'default', modelName: modelId.trim(), endpoints }))
       return { createdCount: 0, skippedCount: 0, updated: true }
     }
@@ -121,7 +123,7 @@ export function useModelDialog(options: UseModelDialogOptions) {
       .map(id => id.trim())
       .filter(Boolean)
 
-    if (targets.length === 0) throw new Error('请填写模型并启用至少一个协议')
+    if (targets.length === 0) throw new Error(t('models.error.modelRequired'))
 
     let nextPriority = models.length ? Math.max(...models.map(model => model.priority)) + 1 : 1
     let createdCount = 0
@@ -138,16 +140,16 @@ export function useModelDialog(options: UseModelDialogOptions) {
       createdCount += 1
     }
 
-    if (createdCount === 0) throw new Error('所选模型已存在，无需重复添加')
+    if (createdCount === 0) throw new Error(t('models.error.duplicate'))
     return { createdCount, skippedCount, updated: false }
   }, onSuccess: async result => {
     setModelDialogOpen(false)
     if (result.updated) {
-      toast.success('模型已更新')
+      toast.success(t('models.toast.updated'))
     } else if (result.skippedCount > 0) {
-      toast.success(`已添加 ${result.createdCount} 个模型，跳过 ${result.skippedCount} 个已存在模型`)
+      toast.success(t('models.toast.addedSome', { created: result.createdCount, skipped: result.skippedCount }))
     } else {
-      toast.success(result.createdCount > 1 ? `已批量添加 ${result.createdCount} 个模型` : '模型已添加')
+      toast.success(result.createdCount > 1 ? t('models.toast.addedBulk', { count: result.createdCount }) : t('models.toast.added'))
     }
     await reload()
   }, onError: error => toast.error(error.message) })

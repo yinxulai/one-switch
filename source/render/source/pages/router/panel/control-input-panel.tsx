@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { useTranslation } from '@/i18n/provider'
 import { createControlItem } from '@common/router/presets'
 import { DifyButton } from '../components/dify-button'
 import type { NodePanelProps } from '../node-data'
@@ -26,6 +27,7 @@ import {
 export function ControlInputPanel(props: NodePanelProps) {
   const { model, update } = props
   const node = model as ControlInputNode
+  const t = useTranslation()
 
   const patchControl = (controlId: string, patch: Record<string, unknown>) => {
     update(current => current.kind === 'control-input'
@@ -39,14 +41,14 @@ export function ControlInputPanel(props: NodePanelProps) {
   return (
     <div className="grid gap-2.5">
       <NodePanelHint>
-        控制输入节点会把开关、下拉等值写入 route.controls，供条件节点和其他逻辑引用。
+        {t('router.panelHint.controlInput')}
       </NodePanelHint>
 
       <div className="grid gap-2.5">
         {node.controls.map((control, index) => (
           <NodePanelCard key={control.id}>
             <NodePanelGroupHeader
-              title={`控制项 ${index + 1}`}
+              title={t('router.panel.controlIndex', { index: index + 1 })}
               action={(
                 <DifyButton
                   variant="ghost-destructive"
@@ -54,21 +56,21 @@ export function ControlInputPanel(props: NodePanelProps) {
                     ? { ...current, controls: current.controls.filter(item => item.id !== control.id) }
                     : current)}
                 >
-                  删除
+                  {t('router.panel.delete')}
                 </DifyButton>
               )}
             />
 
-            <NodePanelField label="键名">
+            <NodePanelField label={t('router.panel.controlKey')}>
               <Input value={control.key} onChange={event => patchControl(control.id, { key: event.target.value })} />
             </NodePanelField>
 
-            <NodePanelField label="名称">
+            <NodePanelField label={t('router.panel.controlLabel')}>
               <Input value={control.label} onChange={event => patchControl(control.id, { label: event.target.value })} />
             </NodePanelField>
 
             <div className="grid grid-cols-2 gap-2">
-              <NodePanelField label="类型">
+              <NodePanelField label={t('router.panel.controlKind')}>
                 <Select
                   value={control.kind}
                   onValueChange={value => update(current => current.kind === 'control-input'
@@ -103,14 +105,14 @@ export function ControlInputPanel(props: NodePanelProps) {
                 >
                   <SelectTrigger className="w-full"><SelectValue placeholder="type" /></SelectTrigger>
                   <SelectContent className={PANEL_POPUP_SURFACE_CLASSNAME}>
-                    <SelectItem className={PANEL_POPUP_ITEM_CLASSNAME} value="switch">开关</SelectItem>
-                    <SelectItem className={PANEL_POPUP_ITEM_CLASSNAME} value="select">下拉</SelectItem>
+                    <SelectItem className={PANEL_POPUP_ITEM_CLASSNAME} value="switch">{t('router.panel.controlKindSwitch')}</SelectItem>
+                    <SelectItem className={PANEL_POPUP_ITEM_CLASSNAME} value="select">{t('router.panel.controlKindSelect')}</SelectItem>
                   </SelectContent>
                 </Select>
               </NodePanelField>
 
               <div className="flex items-end justify-between gap-2 rounded-lg border border-module-border bg-workflow-block-parma-bg px-2.5 py-2">
-                <span className="system-xs-regular text-text-secondary">启用</span>
+                <span className="system-xs-regular text-text-secondary">{t('router.panel.controlEnabled')}</span>
                 <Switch
                   checked={control.enabled}
                   onCheckedChange={checked => patchControl(control.id, { enabled: checked })}
@@ -120,7 +122,7 @@ export function ControlInputPanel(props: NodePanelProps) {
 
             {control.kind === 'switch' && (
               <div className="flex items-center justify-between rounded-lg border border-module-border bg-workflow-block-parma-bg px-2.5 py-2">
-                <span className="system-xs-regular text-text-secondary">默认开启</span>
+                <span className="system-xs-regular text-text-secondary">{t('router.panel.controlDefaultOn')}</span>
                 <Switch
                   checked={Boolean(control.defaultValue)}
                   onCheckedChange={checked => patchControl(control.id, { defaultValue: checked })}
@@ -130,7 +132,7 @@ export function ControlInputPanel(props: NodePanelProps) {
 
             {control.kind === 'select' && (
               <div className="grid gap-2.5">
-                <NodePanelField label="默认值">
+                <NodePanelField label={t('router.panel.controlDefaultValue')}>
                   <Select
                     value={typeof control.defaultValue === 'string'
                       ? control.defaultValue
@@ -146,7 +148,7 @@ export function ControlInputPanel(props: NodePanelProps) {
                   </Select>
                 </NodePanelField>
 
-                <NodePanelField label="下拉选项（每行一个）">
+                <NodePanelField label={t('router.panel.controlOptions')}>
                   <Textarea
                     value={(control.options ?? []).map(option => option.value).join('\n')}
                     onChange={(event) => {
@@ -171,7 +173,7 @@ export function ControlInputPanel(props: NodePanelProps) {
           ? { ...current, controls: [...current.controls, createControlItem('switch')] }
           : current)}
       >
-        <Plus className="size-3.5" aria-hidden /> 添加控制项
+        <Plus className="size-3.5" aria-hidden /> {t('router.panel.addControl')}
       </DifyButton>
     </div>
   )

@@ -1,5 +1,6 @@
 import { PageContent, PageHeader, PageLayout } from '@/components/layout'
 import { ProxyToggleButton } from '@/components/proxy-toggle-button'
+import { useTranslation } from '@/i18n/provider'
 import { ClientSetupCard } from './components/client-setup-card'
 import { QuickStartCard } from './components/quick-start-card'
 import { ServiceEndpointCard } from './components/service-endpoint-card'
@@ -15,12 +16,13 @@ export function AccessConfigPage(props: AccessConfigPageProps) {
   const { onNavigateToModels, onNavigateToSettings } = props
   const config = useAccessConfig()
   const { copiedKey, copy } = useCopyToClipboard()
+  const t = useTranslation()
 
   return (
     <PageLayout>
       <PageHeader
-        title="接入配置"
-        description="把本地代理地址填进任意 AI 客户端，即可用统一入口调用全部上游模型"
+        title={t('access.title')}
+        description={t('access.description')}
         actions={<ProxyToggleButton running={config.running} onToggle={config.toggleProxy} />}
       />
 

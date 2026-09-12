@@ -71,7 +71,7 @@ export class HttpRouter<THandler> {
 
   async invoke(path: string, response: ServerResponse, body: unknown = {}, request: IncomingMessage = createTestRequest(path)): Promise<void> {
     const route = this.match(request.method ?? 'POST', path)
-    if (!route) throw new Error(`测试路由不存在: ${request.method ?? 'POST'} ${path}`)
+    if (!route) throw new Error(`Test route not found: ${request.method ?? 'POST'} ${path}`)
     await (route.handler as (...args: unknown[]) => unknown)(request, response, body)
   }
 

@@ -2,6 +2,7 @@ import { Sparkles, TextCursorInput } from 'lucide-react'
 
 import { NodeHandle } from '../components/node-handle'
 import { NodeBody, NodeRow, NodeRowList } from '../components/node-sections'
+import { useTranslation } from '@/i18n/provider'
 import type { RouteNodeProps } from '../node-data'
 import type { PromptNode } from '@common/router/types'
 
@@ -19,19 +20,20 @@ export function PromptNodeView(props: RouteNodeProps) {
     .split('\n')
     .map(line => line.trim())
     .filter(Boolean)[0] ?? ''
+  const t = useTranslation()
 
   return (
     <>
       <NodeBody className="mb-1 gap-1 py-1">
         <NodeRowList>
           <NodeRow
-            name={logicalModelId || '未选择逻辑模型'}
-            meta="逻辑模型"
+            name={logicalModelId || t('router.summary.logicalModelEmpty')}
+            meta={t('router.nodeView.logicalModelMeta')}
             icon={<Sparkles className="size-3.5 shrink-0 text-text-accent" aria-hidden />}
           />
           <NodeRow
-            name={promptLine || '提示词为空'}
-            meta={model.resultPath.trim() || '未配置写回路径'}
+            name={promptLine || t('router.nodeView.promptEmpty')}
+            meta={model.resultPath.trim() || t('router.nodeView.writeBackPathEmpty')}
             icon={<TextCursorInput className="size-3.5 shrink-0 text-text-accent" aria-hidden />}
           />
         </NodeRowList>

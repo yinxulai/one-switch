@@ -189,7 +189,7 @@ describe('provider bundle export', () => {
   it('fails instead of silently exporting a subset when a provider id is unknown', async () => {
     await seedProvider()
 
-    await expectAppError(() => exportProviderBundle({ providerIds: ['prov_missing'] }), 'RESOURCE_NOT_FOUND', '供应商不存在：prov_missing')
+    await expectAppError(() => exportProviderBundle({ providerIds: ['prov_missing'] }), 'RESOURCE_NOT_FOUND', 'Provider not found: prov_missing')
   })
 })
 
@@ -299,7 +299,7 @@ describe('provider bundle import', () => {
     await expectAppError(
       () => providerRoutes.invoke('/api/provider/import', mockResponse(), { foo: 1 }),
       'VALIDATION_ERROR',
-      '这不是一个可识别的供应商导出文件',
+      'Not a recognizable provider export file',
     )
   })
 
@@ -307,7 +307,7 @@ describe('provider bundle import', () => {
     await expectAppError(
       () => importProviderBundle({ bundle: { ...bundleWith([minimalProvider('OpenAI 中转')]), version: 2 } }),
       'VALIDATION_ERROR',
-      '这不是一个可识别的供应商导出文件',
+      'Not a recognizable provider export file',
     )
   })
 
@@ -315,15 +315,15 @@ describe('provider bundle import', () => {
     await expectAppError(
       () => importProviderBundle({ bundle: bundleWith([]) }),
       'VALIDATION_ERROR',
-      '这不是一个可识别的供应商导出文件',
+      'Not a recognizable provider export file',
     )
   })
 
   it('rejects duplicate provider names inside one bundle', async () => {
     await expectAppError(
       () => importProviderBundle({ bundle: bundleWith([minimalProvider('OpenAI 中转'), minimalProvider('OpenAI 中转')]) }),
-      'VALIDATION_ERROR',
-      '导出文件内存在重复供应商：OpenAI 中转',
+      'DUPLICATE_RESOURCE',
+      'Duplicate provider in the export file: OpenAI 中转',
     )
   })
 })

@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ProtocolIcons } from '@/components/protocol-icons'
 import { Switch } from '@/components/ui/switch'
+import { useTranslation, type AppTranslator } from '@/i18n/provider'
 import { cn } from '@/lib/utils'
 import type { ProviderModelMetrics } from '../lib/model-metrics'
 
@@ -43,13 +44,13 @@ export interface ProviderModelHealthDisplay {
   lastSuccessTime: number | null
 }
 
-function formatRelativeTime(timestamp: number | null | undefined): string {
+function formatRelativeTime(t: AppTranslator, timestamp: number | null | undefined): string {
   if (!timestamp) return '—'
   const difference = Date.now() - timestamp
-  if (difference < 60_000) return `${Math.floor(difference / 1000)} 秒前`
-  if (difference < 3_600_000) return `${Math.floor(difference / 60_000)} 分钟前`
-  if (difference < 86_400_000) return `${Math.floor(difference / 3_600_000)} 小时前`
-  return `${Math.floor(difference / 86_400_000)} 天前`
+  if (difference < 60_000) return t('logicalModels.row.secondsAgo', { count: Math.floor(difference / 1000) })
+  if (difference < 3_600_000) return t('logicalModels.row.minutesAgo', { count: Math.floor(difference / 60_000) })
+  if (difference < 86_400_000) return t('logicalModels.row.hoursAgo', { count: Math.floor(difference / 3_600_000) })
+  return t('logicalModels.row.daysAgo', { count: Math.floor(difference / 86_400_000) })
 }
 
 function formatAverageTps(tps: number | null | undefined): string {
@@ -97,6 +98,7 @@ export function resolveProviderModelHealthDisplay(props: Pick<ProviderModelRowPr
 }
 
 function ModelHealth(props: Pick<ProviderModelRowProps, 'providerHealth' | 'providerModelHealth'>) {
+  const t = useTranslation()
   const healthDisplay = resolveProviderModelHealthDisplay(props)
   const failures = healthDisplay.consecutiveFailures
   const lastSuccessTime = healthDisplay.lastSuccessTime
@@ -106,7 +108,7 @@ function ModelHealth(props: Pick<ProviderModelRowProps, 'providerHealth' | 'prov
     return (
       <span className="inline-flex items-center gap-1 text-text-warning">
         <AlertTriangle size={11} aria-hidden />
-        {isProviderFallback ? '供应商连续失败' : '连续失败'} {failures} 次
+        {isProviderFallback ? t('logicalModels.row.providerFailures', { count: failures }) : t('logicalModels.row.modelFailures', { count: failures })}
       </span>
     )
   }
@@ -114,20 +116,21 @@ function ModelHealth(props: Pick<ProviderModelRowProps, 'providerHealth' | 'prov
     return (
       <span className="inline-flex items-center gap-1 text-text-success">
         <CheckCircle2 size={11} aria-hidden />
-        {isProviderFallback ? '供应商最后成功' : '最后成功'} {formatRelativeTime(lastSuccessTime)}
+        {isProviderFallback ? t('logicalModels.row.providerLastSuccess', { time: formatRelativeTime(t, lastSuccessTime) }) : t('logicalModels.row.modelLastSuccess', { time: formatRelativeTime(t, lastSuccessTime) })}
       </span>
     )
   }
   return (
     <span className="inline-flex items-center gap-1">
       <Clock size={11} aria-hidden />
-      暂无请求记录
+      {t('logicalModels.row.noRequests')}
     </span>
   )
 }
 
 export function ProviderModelRow(props: ProviderModelRowProps) {
   const { model } = props
+  const t = useTranslation()
 
   return (
     <div
@@ -143,7 +146,7 @@ export function ProviderModelRow(props: ProviderModelRowProps) {
         <div
           className="flex min-h-9 w-full cursor-grab touch-none select-none items-center gap-2 rounded-md px-1.5 text-text-quaternary active:cursor-grabbing"
           {...(props.mode === 'auto' ? props.dragHandleProps : {})}
-          aria-label={props.mode === 'auto' ? `拖动 ${model.modelName}` : undefined}
+          aria-label={props.mode === 'auto' ? t('logicalModels.row.dragAria', { model: model.modelName }) : undefined}
         >
           {props.mode === 'manual' ? (
             props.selected ? <CircleDot size={16} className="text-primary" /> : <Circle size={16} className="text-text-quaternary" />
@@ -159,8 +162,8 @@ export function ProviderModelRow(props: ProviderModelRowProps) {
               <button
                 type="button"
                 className="group/provider inline-flex min-w-0 items-center gap-0.5 rounded-sm text-left text-text-primary outline-none transition-colors hover:text-primary focus-visible:bg-accent focus-visible:text-primary"
-                title={`查看 ${props.provider.name} 数据分析`}
-                aria-label={`查看 ${props.provider.name} 数据分析`}
+                title={t('logicalModels.row.viewAnalytics', { provider: props.provider.name })}
+                aria-label={t('logicalModels.row.viewAnalytics', { provider: props.provider.name })}
                 onClick={event => {
                   event.stopPropagation()
                   props.onNavigateToProviderAnalytics?.(model.providerId)
@@ -173,7 +176,7 @@ export function ProviderModelRow(props: ProviderModelRowProps) {
               </button>
             ) : (
               <>
-                <div className="min-w-0 truncate text-text-primary">{props.provider?.name ?? '未知供应商'}</div>
+                <div className="min-w-0 truncate text-text-primary">{props.provider?.name ?? t('logicalModels.row.unknownProvider')}</div>
                 <span className="shrink-0 text-text-quaternary" aria-hidden="true">·</span>
                 <div className="min-w-0 truncate font-mono text-text-primary">{model.modelName}</div>
               </>
@@ -189,10 +192,10 @@ export function ProviderModelRow(props: ProviderModelRowProps) {
         </div>
       </div>
       <div className="relative flex min-w-20 items-center justify-end">
-        <Badge variant={props.cooling ? 'destructive' : model.enabled ? 'success' : 'muted'}>{props.cooling ? '冷却中' : model.enabled ? (props.selected ? '当前指定' : '待命') : '已禁用'}</Badge>
+        <Badge variant={props.cooling ? 'destructive' : model.enabled ? 'success' : 'muted'}>{props.cooling ? t('logicalModels.row.cooling') : model.enabled ? (props.selected ? t('logicalModels.row.selected') : t('logicalModels.row.standby')) : t('common.state.disabled')}</Badge>
         <div className="absolute top-1/2 right-0 flex -translate-y-1/2 translate-x-3 items-center gap-1 rounded-md border-[0.5px] border-components-panel-border bg-components-panel-bg-blur px-1.5 py-0.5 backdrop-blur-[5px] opacity-0 transition-all group-hover/row:translate-x-0 group-hover/row:opacity-100 focus-within:translate-x-0 focus-within:opacity-100">
-          <Switch checked={model.enabled} onCheckedChange={props.onToggleEnabled} onClick={event => event.stopPropagation()} aria-label={`${model.modelName} 启用状态`} />
-          <Button variant="ghost" size="icon-sm" onClick={event => { event.stopPropagation(); props.onRemove() }} aria-label={`从逻辑模型移除 ${model.modelName}`} title="从逻辑模型移除"><Trash2 size={16} /></Button>
+          <Switch checked={model.enabled} onCheckedChange={props.onToggleEnabled} onClick={event => event.stopPropagation()} aria-label={t('logicalModels.row.enabledState', { model: model.modelName })} />
+          <Button variant="ghost" size="icon-sm" onClick={event => { event.stopPropagation(); props.onRemove() }} aria-label={t('logicalModels.row.removeAria', { model: model.modelName })} title={t('logicalModels.row.removeTitle')}><Trash2 size={16} /></Button>
         </div>
       </div>
     </div>

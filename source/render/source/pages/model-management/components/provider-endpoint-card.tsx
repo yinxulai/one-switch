@@ -2,6 +2,7 @@ import { cn } from '@/lib/utils'
 import { FormField } from '@/components/form-kit'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import { useTranslation } from '@/i18n/provider'
 import { ProtocolUrlHint } from './protocol-url-hint'
 import { PROTOCOL_PLACEHOLDERS, PROTOCOL_OPTIONS } from '../lib/protocols'
 import type { ProviderEndpointEntry } from '../hooks/types'
@@ -14,6 +15,7 @@ interface ProviderEndpointCardProps {
 
 export function ProviderEndpointCard(props: ProviderEndpointCardProps) {
   const { entry, index, updateEndpointEntry } = props
+  const t = useTranslation()
   const label = PROTOCOL_OPTIONS.find(option => option.value === entry.protocol)?.label
 
   return (
@@ -21,7 +23,7 @@ export function ProviderEndpointCard(props: ProviderEndpointCardProps) {
       <div className="flex items-center justify-between gap-3">
         <span className="system-sm-medium text-text-primary">{label}</span>
         <div className="flex items-center gap-2">
-          <span className="system-xs-regular text-text-tertiary">{entry.enabled ? '已配置' : '未配置'}</span>
+          <span className="system-xs-regular text-text-tertiary">{entry.enabled ? t('providers.endpoint.configured') : t('providers.endpoint.notConfigured')}</span>
           <Switch
             checked={entry.enabled}
             onCheckedChange={checked => updateEndpointEntry(index, { enabled: checked })}
@@ -31,7 +33,7 @@ export function ProviderEndpointCard(props: ProviderEndpointCardProps) {
 
       {entry.enabled && (
         <div className="grid gap-3">
-          <FormField label="完整接口地址" htmlFor={`provider-endpoint-url-${index}`}>
+          <FormField label={t('providers.endpoint.urlLabel')} htmlFor={`provider-endpoint-url-${index}`}>
             <Input
               id={`provider-endpoint-url-${index}`}
               type="url"

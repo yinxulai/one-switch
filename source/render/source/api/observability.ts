@@ -4,6 +4,8 @@ import { request } from './client'
 export type ListLogsParams = { limit?: number; offset?: number; level?: LogEntry['level']; query?: string }
 export type ListRequestLogsParams = { limit?: number; offset?: number; providerId?: string; providerModelId?: string; logicalModelId?: string; protocol?: string; status?: 'pending' | 'success' | 'failed' | 'cancelled'; createdTimeFrom?: number; createdTimeTo?: number }
 
+export type PruneRequestLogsParams = { requestLogRetentionDays?: number; contentRetentionDays?: number }
+
 export const logsApi = {
   list: (params: ListLogsParams = {}) => request<{ logs: LogEntry[]; total: number }>('/logs/list', params),
   export: () => request<{ content: string }>('/logs/export'),
@@ -13,7 +15,7 @@ export const logsApi = {
 export const requestLogApi = {
   list: (params: ListRequestLogsParams = {}) => request<{ logs: RequestLogEntry[]; total: number }>('/request-log/list', params),
   detail: (id: string) => request<RequestLogDetail>('/request-log/detail', { id }),
-  prune: (retentionDays: number) => request<{ deleted: number }>('/request-log/prune', { retentionDays }),
+  prune: (params: PruneRequestLogsParams) => request<{ deletedLogs: number; deletedContents: number }>('/request-log/prune', params),
 }
 
 export const analyticsApi = {

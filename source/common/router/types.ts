@@ -1,4 +1,5 @@
 import type { Protocol, TransportKind } from '@common/schemas'
+import type { UiCatalogKey } from '@common/i18n/catalogs'
 
 export type WorkflowNodeKind =
   | 'input'
@@ -558,44 +559,44 @@ export const ALL_CONDITION_OPERATORS: ConditionOperator[] = [
 
 export interface ConditionOperatorMeta {
   /** 中文名称：下拉选项与节点卡片都展示它，`equals` 这类标识符只作为次要信息。 */
-  label: string
-  /** 一句话判定语义，写在选项的第二行。 */
-  description: string
+  labelKey: UiCatalogKey
+  /** 一句话判定语义的目录键，写在选项的第二行。 */
+  descriptionKey: UiCatalogKey
 }
 
 /**
- * 操作符的中文名称与语义说明。
+ * 操作符的名称与语义说明**目录键**。
  *
  * 说明文字必须与 `engine.ts` 的 `evaluateCondition` 保持一致：用户在这里读到什么，
  * 运行时就得怎么判定。这张表、`ALL_CONDITION_OPERATORS` 与 `schemas.ts` 的 zod enum
  * 三处必须同步，有单测兜住不漂移。
  */
 export const CONDITION_OPERATOR_META: Record<ConditionOperator, ConditionOperatorMeta> = {
-  equals: { label: '等于', description: '对象 / 数组先按结构化内容比较，再退化成字符串比较' },
-  notEquals: { label: '不等于', description: '与「等于」相反' },
-  contains: { label: '包含', description: '数组比元素、对象比键名，其余比子串' },
-  notContains: { label: '不包含', description: '与「包含」相反' },
-  startsWith: { label: '以…开头', description: '字符串取值以比较值开头' },
-  endsWith: { label: '以…结尾', description: '字符串取值以比较值结尾' },
-  in: { label: '属于', description: '取值是集合中的一员；集合可以来自另一个字段' },
-  notIn: { label: '不属于', description: '取值不在集合中' },
-  regex: { label: '匹配正则', description: '用正则表达式匹配字符串，正则非法时判为不命中' },
-  gt: { label: '大于', description: '数值比较：取值 > 比较值' },
-  gte: { label: '大于等于', description: '数值比较：取值 ≥ 比较值' },
-  lt: { label: '小于', description: '数值比较：取值 < 比较值' },
-  lte: { label: '小于等于', description: '数值比较：取值 ≤ 比较值' },
-  between: { label: '介于', description: '数值落在「下限 ≤ 取值 ≤ 上限」闭区间内' },
-  isTrue: { label: '为真', description: '取值严格等于 true' },
-  isFalse: { label: '为假', description: '取值严格等于 false' },
-  empty: { label: '为空', description: '对象看键数、数组看长度、字符串去空白后为空' },
-  notEmpty: { label: '不为空', description: '与「为空」相反' },
-  exists: { label: '存在', description: '取值不是 undefined / null' },
+  equals: { labelKey: 'router.operator.equals.label', descriptionKey: 'router.operator.equals.description' },
+  notEquals: { labelKey: 'router.operator.notEquals.label', descriptionKey: 'router.operator.notEquals.description' },
+  contains: { labelKey: 'router.operator.contains.label', descriptionKey: 'router.operator.contains.description' },
+  notContains: { labelKey: 'router.operator.notContains.label', descriptionKey: 'router.operator.notContains.description' },
+  startsWith: { labelKey: 'router.operator.startsWith.label', descriptionKey: 'router.operator.startsWith.description' },
+  endsWith: { labelKey: 'router.operator.endsWith.label', descriptionKey: 'router.operator.endsWith.description' },
+  in: { labelKey: 'router.operator.in.label', descriptionKey: 'router.operator.in.description' },
+  notIn: { labelKey: 'router.operator.notIn.label', descriptionKey: 'router.operator.notIn.description' },
+  regex: { labelKey: 'router.operator.regex.label', descriptionKey: 'router.operator.regex.description' },
+  gt: { labelKey: 'router.operator.gt.label', descriptionKey: 'router.operator.gt.description' },
+  gte: { labelKey: 'router.operator.gte.label', descriptionKey: 'router.operator.gte.description' },
+  lt: { labelKey: 'router.operator.lt.label', descriptionKey: 'router.operator.lt.description' },
+  lte: { labelKey: 'router.operator.lte.label', descriptionKey: 'router.operator.lte.description' },
+  between: { labelKey: 'router.operator.between.label', descriptionKey: 'router.operator.between.description' },
+  isTrue: { labelKey: 'router.operator.isTrue.label', descriptionKey: 'router.operator.isTrue.description' },
+  isFalse: { labelKey: 'router.operator.isFalse.label', descriptionKey: 'router.operator.isFalse.description' },
+  empty: { labelKey: 'router.operator.empty.label', descriptionKey: 'router.operator.empty.description' },
+  notEmpty: { labelKey: 'router.operator.notEmpty.label', descriptionKey: 'router.operator.notEmpty.description' },
+  exists: { labelKey: 'router.operator.exists.label', descriptionKey: 'router.operator.exists.description' },
 }
 
 /** 未知操作符（旧数据）的兜底文案：不隐藏字段，但明确标出无法识别。 */
-const UNKNOWN_OPERATOR_META: ConditionOperatorMeta = { label: '未知操作符', description: '当前版本不认识这个操作符，判定恒为不命中' }
+const UNKNOWN_OPERATOR_META: ConditionOperatorMeta = { labelKey: 'router.operator.unknown.label', descriptionKey: 'router.operator.unknown.description' }
 
-/** 取操作符的中文名与说明；未知标识符退化成兜底文案，避免旧数据把界面打崩。 */
+/** 取操作符的名称与说明目录键；未知标识符退化成兜底文案，避免旧数据把界面打崩。 */
 export function conditionOperatorMeta(operator: ConditionOperator): ConditionOperatorMeta {
   return CONDITION_OPERATOR_META[operator] ?? UNKNOWN_OPERATOR_META
 }

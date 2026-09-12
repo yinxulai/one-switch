@@ -88,13 +88,13 @@ function parseImportRequest(body: unknown): ProviderBundleImportRequest {
   if (parsed.success) return parsed.data
 
   const issues = parsed.error.errors.map(issue => `${issue.path.join('.') || 'bundle'} ${issue.message}`).join('；')
-  throw new AppError('VALIDATION_ERROR', 400, `这不是一个可识别的供应商导出文件：${issues}`)
+  throw new AppError('VALIDATION_ERROR', 400, `Not a recognizable provider export file: ${issues}`)
 }
 
 function assertUniqueProviderNames(providers: ProviderBundleProvider[]): void {
   const names = new Set<string>()
   for (const provider of providers) {
-    if (names.has(provider.name)) throw new AppError('VALIDATION_ERROR', 400, `导出文件内存在重复供应商：${provider.name}`)
+    if (names.has(provider.name)) throw new AppError('DUPLICATE_RESOURCE', 400, `Duplicate provider in the export file: ${provider.name}`, { details: { providerName: provider.name } })
     names.add(provider.name)
   }
 }

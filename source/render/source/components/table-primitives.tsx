@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/i18n/provider'
 
 export const tableHeaderClass = 'border-b border-border/50 bg-inset text-left system-2xs-medium text-text-tertiary'
 export const tableHeaderCellClass = 'px-3 py-2 font-medium'
@@ -34,13 +35,14 @@ export function TableHeaderSurface(props: TableFrameProps) {
 
 /** 表格分页条：请求记录、运行日志这类长列表共用同一套翻页控件与计数排版。 */
 export function TablePager(props: TablePagerProps) {
+  const t = useTranslation()
   return (
     <div className="flex items-center justify-end gap-2">
-      <span className="system-xs-regular text-text-tertiary">第 {props.page} / {props.totalPages} 页</span>
-      <Button variant="outline" size="icon-sm" aria-label="上一页" disabled={props.disabled === true || props.page <= 1} onClick={() => props.onPageChange(props.page - 1)}>
+      <span className="system-xs-regular text-text-tertiary">{t('common.pagination.page', { page: props.page, totalPages: props.totalPages })}</span>
+      <Button variant="outline" size="icon-sm" aria-label={t('common.pagination.previous')} disabled={props.disabled === true || props.page <= 1} onClick={() => props.onPageChange(props.page - 1)}>
         <ChevronLeft size={14} />
       </Button>
-      <Button variant="outline" size="icon-sm" aria-label="下一页" disabled={props.disabled === true || props.page >= props.totalPages} onClick={() => props.onPageChange(props.page + 1)}>
+      <Button variant="outline" size="icon-sm" aria-label={t('common.pagination.next')} disabled={props.disabled === true || props.page >= props.totalPages} onClick={() => props.onPageChange(props.page + 1)}>
         <ChevronRight size={14} />
       </Button>
     </div>

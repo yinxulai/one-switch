@@ -13,6 +13,8 @@ import {
 import { cn } from '@/lib/utils'
 import { AnimatedThemeToggler } from '@/components/ui/animated-theme-toggler'
 import { buttonVariants } from '@/components/ui/button'
+import { useTranslation } from '@/i18n/provider'
+import type { UiCatalogKey } from '@common/i18n/catalogs'
 
 export type PageKey = 'logicalModels' | 'providers' | 'access' | 'rules' | 'router' | 'overview' | 'requests' | 'settings' | 'logs'
 export type Theme = 'light' | 'dark'
@@ -20,9 +22,9 @@ export type ThemeMode = 'system' | Theme
 
 interface NavItem {
   key: PageKey
-  label: string
+  labelKey: UiCatalogKey
   icon: LucideIcon
-  section: string
+  sectionKey: UiCatalogKey
 }
 
 interface AppSidebarProps {
@@ -35,24 +37,25 @@ interface AppSidebarProps {
 }
 
 const baseNavItems: NavItem[] = [
-  { key: 'router', label: '智能路由', icon: GitBranch, section: '主要' },
-  { key: 'logicalModels', label: '逻辑模型', icon: ListOrdered, section: '主要' },
-  { key: 'providers', label: '模型管理', icon: Database, section: '主要' },
-  { key: 'overview', label: '统计分析', icon: ChartColumnIncreasing, section: '数据' },
-  { key: 'requests', label: '请求记录', icon: ClipboardList, section: '数据' },
-  { key: 'rules', label: '请求重写', icon: SlidersHorizontal, section: '高级' },
-  { key: 'access', label: '接入配置', icon: Plug, section: '系统' },
-  { key: 'logs', label: '运行日志', icon: ScrollText, section: '系统' },
-  { key: 'settings', label: '设置', icon: Cog, section: '系统' },
+  { key: 'router', labelKey: 'nav.page.router', icon: GitBranch, sectionKey: 'nav.section.primary' },
+  { key: 'logicalModels', labelKey: 'nav.page.logicalModels', icon: ListOrdered, sectionKey: 'nav.section.primary' },
+  { key: 'providers', labelKey: 'nav.page.providers', icon: Database, sectionKey: 'nav.section.primary' },
+  { key: 'overview', labelKey: 'nav.page.overview', icon: ChartColumnIncreasing, sectionKey: 'nav.section.data' },
+  { key: 'requests', labelKey: 'nav.page.requests', icon: ClipboardList, sectionKey: 'nav.section.data' },
+  { key: 'rules', labelKey: 'nav.page.rules', icon: SlidersHorizontal, sectionKey: 'nav.section.advanced' },
+  { key: 'access', labelKey: 'nav.page.access', icon: Plug, sectionKey: 'nav.section.system' },
+  { key: 'logs', labelKey: 'nav.page.logs', icon: ScrollText, sectionKey: 'nav.section.system' },
+  { key: 'settings', labelKey: 'nav.page.settings', icon: Cog, sectionKey: 'nav.section.system' },
 ]
 
 export function AppSidebar(props: AppSidebarProps) {
-  const navSections = baseNavItems.reduce<Array<{ label: string; items: NavItem[] }>>((sections, item) => {
+  const t = useTranslation()
+  const navSections = baseNavItems.reduce<Array<{ key: UiCatalogKey; items: NavItem[] }>>((sections, item) => {
     const currentSection = sections.at(-1)
-    if (currentSection?.label === item.section) {
+    if (currentSection?.key === item.sectionKey) {
       currentSection.items.push(item)
     } else {
-      sections.push({ label: item.section, items: [item] })
+      sections.push({ key: item.sectionKey, items: [item] })
     }
     return sections
   }, [])
@@ -62,16 +65,16 @@ export function AppSidebar(props: AppSidebarProps) {
       <div className="flex h-16 shrink-0 items-center gap-2.5 px-3">
         <img src="icon.svg" alt="" className="size-6 shrink-0 transition-[width,height] duration-200 ease-out group-hover/sidebar:size-7 motion-reduce:transition-none" />
         <div className="min-w-0 whitespace-nowrap opacity-0 transition-opacity duration-150 group-hover/sidebar:opacity-100 group-hover/sidebar:delay-75 motion-reduce:transition-none">
-          <h1 className="truncate text-sm font-medium leading-tight tracking-tight">One Switch</h1>
-          <p className="font-mono system-2xs-medium-uppercase tracking-[1.2px] text-sidebar-foreground/70">local ai gateway</p>
+          <h1 className="truncate text-sm font-medium leading-tight tracking-tight">{t('app.windowTitle')}</h1>
+          <p className="font-mono system-2xs-medium-uppercase tracking-[1.2px] text-sidebar-foreground/70">{t('app.tagline')}</p>
         </div>
       </div>
 
       <nav className="min-h-0 flex-1 space-y-5 overflow-y-auto p-1.5">
         {navSections.map(section => (
-          <section key={section.label}>
+          <section key={section.key}>
             <h2 className="mb-1 flex h-2 items-center justify-start px-2 system-2xs-medium-uppercase tracking-wider text-sidebar-foreground/70 transition-[height] duration-150 group-hover/sidebar:h-5 motion-reduce:transition-none">
-              <span className="px-1 opacity-0 transition-opacity duration-150 group-hover/sidebar:opacity-100 group-hover/sidebar:delay-75 motion-reduce:transition-none">{section.label}</span>
+              <span className="px-1 opacity-0 transition-opacity duration-150 group-hover/sidebar:opacity-100 group-hover/sidebar:delay-75 motion-reduce:transition-none">{t(section.key)}</span>
             </h2>
             <div className="space-y-0.5">
               {section.items.map(item => {
@@ -90,7 +93,7 @@ export function AppSidebar(props: AppSidebarProps) {
                     )}
                   >
                     <ItemIcon className="size-3.5 shrink-0" />
-                    <span className="truncate whitespace-nowrap opacity-0 transition-opacity duration-150 group-hover/sidebar:opacity-100 group-hover/sidebar:delay-75 motion-reduce:transition-none">{item.label}</span>
+                    <span className="truncate whitespace-nowrap opacity-0 transition-opacity duration-150 group-hover/sidebar:opacity-100 group-hover/sidebar:delay-75 motion-reduce:transition-none">{t(item.labelKey)}</span>
                   </button>
                 )
               })}
@@ -105,13 +108,13 @@ export function AppSidebar(props: AppSidebarProps) {
           onThemeChange={() => props.onToggleTheme()}
           className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'w-full justify-start gap-2.5 px-2.5')}
         >
-          <span className="whitespace-nowrap opacity-0 transition-opacity duration-150 group-hover/sidebar:opacity-100 group-hover/sidebar:delay-75 motion-reduce:transition-none">{props.theme === 'dark' ? '浅色模式' : '深色模式'}</span>
+          <span className="whitespace-nowrap opacity-0 transition-opacity duration-150 group-hover/sidebar:opacity-100 group-hover/sidebar:delay-75 motion-reduce:transition-none">{props.theme === 'dark' ? t('nav.theme.toLight') : t('nav.theme.toDark')}</span>
         </AnimatedThemeToggler>
         <div className="flex h-7 items-center gap-2.5 px-2.5 system-2xs-regular text-sidebar-foreground/80">
           <span className="flex size-3.5 shrink-0 items-center justify-center" aria-hidden="true">
             <span className={cn('size-1.5 rounded-full', props.proxyRunning ? 'animate-pulse bg-success motion-reduce:animate-none' : 'bg-sidebar-foreground/40')} />
           </span>
-          <span className="truncate whitespace-nowrap opacity-0 transition-opacity duration-150 group-hover/sidebar:opacity-100 group-hover/sidebar:delay-75 motion-reduce:transition-none">{props.proxyRunning ? `服务运行中 · ${props.proxyPort ?? 0}` : '服务已停止'}</span>
+          <span className="truncate whitespace-nowrap opacity-0 transition-opacity duration-150 group-hover/sidebar:opacity-100 group-hover/sidebar:delay-75 motion-reduce:transition-none">{props.proxyRunning ? t('nav.status.running', { port: props.proxyPort ?? 0 }) : t('nav.status.stopped')}</span>
         </div>
       </div>
     </div>

@@ -3,6 +3,7 @@ import { useMutation } from '@tanstack/react-query'
 import { providerTransferApi } from '@/api/providers'
 import { unwrap } from '@/api/unwrap'
 import { useToast } from '@/components/ui/toast'
+import { useTranslation } from '@/i18n/provider'
 import { ProviderBundleSchema } from '@common/provider-bundle'
 import type { ProviderBundle, ProviderBundleExportRequest } from '@common/provider-bundle'
 import type { ProviderExportScope } from './types'
@@ -25,6 +26,7 @@ interface ProviderTransferOptions {
 export function useProviderTransfer(options: ProviderTransferOptions) {
   const { reload } = options
   const toast = useToast()
+  const t = useTranslation()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [includeApiKeys, setIncludeApiKeys] = useState(true)
   const [exportScope, setExportScope] = useState<ProviderExportScope | null>(null)
@@ -49,41 +51,41 @@ export function useProviderTransfer(options: ProviderTransferOptions) {
       const data = await exportMutation.mutateAsync({ providerIds, includeApiKeys })
       const names = data.bundle.providers.map(provider => provider.name)
       downloadText(data.content, bundleFileName(names.length === 1 ? names[0] : null))
-      toast.success(names.length === 1 ? `已导出供应商“${names[0]}”` : `已导出 ${names.length} 个供应商`)
+      toast.success(names.length === 1 ? t('providers.transfer.exportedSingle', { name: names[0] }) : t('providers.transfer.exported', { count: names.length }))
       setExportScope(null)
     } catch (error) {
-      toast.error(`导出失败：${errorText(error)}`)
+      toast.error(t('providers.transfer.exportFailed', { message: errorText(error) }))
     }
-  }, [exportMutation, exportScope, includeApiKeys, toast])
+  }, [exportMutation, exportScope, includeApiKeys, toast, t])
 
   const prepareImport = useCallback(async (file: File) => {
     let parsed: unknown
     try {
       parsed = JSON.parse(await file.text())
     } catch {
-      toast.error('导入失败：文件内容不是合法的 JSON')
+      toast.error(t('providers.transfer.invalidJson'))
       return
     }
 
     const result = ProviderBundleSchema.safeParse(parsed)
     if (!result.success) {
-      toast.error('导入失败：这不是一个可识别的供应商导出文件')
+      toast.error(t('providers.transfer.unrecognized'))
       return
     }
     setPendingImport({ fileName: file.name, bundle: result.data })
-  }, [toast])
+  }, [toast, t])
 
   const confirmImport = useCallback(async () => {
     if (!pendingImport) return
     try {
       const data = await importMutation.mutateAsync(pendingImport.bundle)
-      toast.success(`已导入 ${data.imported.providers} 个供应商 / ${data.imported.models} 个供应商模型`)
+      toast.success(t('providers.transfer.imported', { providers: data.imported.providers, models: data.imported.models }))
       setPendingImport(null)
       await reload()
     } catch (error) {
-      toast.error(`导入失败：${errorText(error)}`)
+      toast.error(t('providers.transfer.importFailed', { message: errorText(error) }))
     }
-  }, [importMutation, pendingImport, reload, toast])
+  }, [importMutation, pendingImport, reload, toast, t])
 
   return {
     fileInputRef,

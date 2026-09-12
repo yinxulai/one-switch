@@ -1,5 +1,6 @@
 import { Pause } from 'lucide-react'
 import { InteractiveHoverButton } from '@/components/ui/interactive-hover-button'
+import { useTranslation } from '@/i18n/provider'
 
 interface ProxyToggleButtonProps {
   running: boolean
@@ -8,20 +9,21 @@ interface ProxyToggleButtonProps {
 
 export function ProxyToggleButton(props: ProxyToggleButtonProps) {
   const { running, onToggle } = props
+  const t = useTranslation()
 
   return (
     <InteractiveHoverButton
       hoverContent={running ? (
         <>
-          <span>暂停服务</span>
+          <span>{t('proxy.toggle.pause')}</span>
           <Pause className="size-3 fill-current" />
         </>
       ) : undefined}
-      aria-label={running ? '暂停服务' : '启动服务'}
-      title={running ? '暂停本地代理服务' : '启动本地代理服务'}
+      aria-label={running ? t('proxy.toggle.pause') : t('proxy.toggle.start')}
+      title={running ? t('proxy.toggle.pauseTitle') : t('proxy.toggle.startTitle')}
       onClick={() => void onToggle()}
     >
-      {running ? '运行中' : '启动服务'}
+      {running ? t('proxy.toggle.running') : t('proxy.toggle.start')}
     </InteractiveHoverButton>
   )
 }

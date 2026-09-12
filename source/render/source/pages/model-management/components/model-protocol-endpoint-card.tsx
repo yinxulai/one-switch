@@ -2,6 +2,7 @@ import { cn } from '@/lib/utils'
 import { FormField } from '@/components/form-kit'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import { useTranslation } from '@/i18n/provider'
 import { ProtocolConversionSettings } from './protocol-conversion-settings'
 import { ProtocolUrlHint } from './protocol-url-hint'
 import { PROTOCOL_PLACEHOLDERS, PROTOCOL_OPTIONS } from '../lib/protocols'
@@ -15,6 +16,7 @@ interface ModelProtocolEndpointCardProps {
 
 export function ModelProtocolEndpointCard(props: ModelProtocolEndpointCardProps) {
   const { entry, index, updateProtocolEntry } = props
+  const t = useTranslation()
   const label = PROTOCOL_OPTIONS.find(option => option.value === entry.protocol)?.label
 
   return (
@@ -22,7 +24,7 @@ export function ModelProtocolEndpointCard(props: ModelProtocolEndpointCardProps)
       <div className="flex items-center justify-between gap-3">
         <span className="system-sm-medium text-text-primary">{label}</span>
         <div className="flex items-center gap-2">
-          <span className="system-xs-regular text-text-tertiary">{entry.enabled ? '已启用' : '未启用'}</span>
+          <span className="system-xs-regular text-text-tertiary">{entry.enabled ? t('models.endpoint.enabled') : t('models.endpoint.disabled')}</span>
           <Switch
             checked={entry.enabled}
             onCheckedChange={checked => updateProtocolEntry(index, { enabled: checked })}
@@ -34,7 +36,7 @@ export function ModelProtocolEndpointCard(props: ModelProtocolEndpointCardProps)
         <div className="grid gap-3">
           <div className="flex items-center justify-between gap-3">
             <span className="system-xs-regular text-text-tertiary">
-              {entry.overrideUrl ? '使用自定义地址' : '使用供应商默认地址'}
+              {entry.overrideUrl ? t('models.endpoint.useCustomUrl') : t('models.endpoint.useProviderDefault')}
             </span>
             <Switch
               checked={entry.overrideUrl}
@@ -44,7 +46,7 @@ export function ModelProtocolEndpointCard(props: ModelProtocolEndpointCardProps)
 
           {entry.overrideUrl && (
             <>
-              <FormField label="完整接口地址" htmlFor={`model-endpoint-url-${index}`}>
+              <FormField label={t('providers.endpoint.urlLabel')} htmlFor={`model-endpoint-url-${index}`}>
                 <Input
                   id={`model-endpoint-url-${index}`}
                   type="url"

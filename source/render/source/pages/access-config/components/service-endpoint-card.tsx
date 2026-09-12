@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { SettingsCardHeader } from '@/components/settings-card-header'
+import { useTranslation, type AppTranslator } from '@/i18n/provider'
 import { cn } from '@/lib/utils'
 
 interface EndpointEntry {
@@ -30,33 +31,34 @@ interface ServiceEndpointCardProps {
   onNavigateToSettings?: () => void
 }
 
-function buildEntries(baseUrl: string): EndpointEntry[] {
+function buildEntries(t: AppTranslator, baseUrl: string): EndpointEntry[] {
   return [
     {
       key: 'openai',
-      title: 'OpenAI 兼容',
+      title: t('access.endpoint.openai.title'),
       protocols: 'Chat Completions · Responses',
-      hint: '两种 OpenAI 协议共用这个 Base URL',
+      hint: t('access.endpoint.openai.hint'),
       url: baseUrl ? `${baseUrl}/v1` : '',
     },
     {
       key: 'anthropic',
       title: 'Anthropic',
       protocols: 'Messages',
-      hint: 'Messages 协议使用独立路径',
+      hint: t('access.endpoint.anthropic.hint'),
       url: baseUrl ? `${baseUrl}/v1/messages` : '',
     },
   ]
 }
 
-function describeListening(host: string, port: number | null, wildcardHost: boolean): string {
-  if (!host || port === null) return '正在读取服务状态…'
-  if (wildcardHost) return `监听 ${host}:${port}（所有网卡），本机客户端请使用 127.0.0.1`
-  return `监听 ${host}:${port}，请求按模型名路由到对应逻辑模型，未命中回落到默认逻辑模型`
+function describeListening(t: AppTranslator, host: string, port: number | null, wildcardHost: boolean): string {
+  if (!host || port === null) return t('access.endpoint.reading')
+  if (wildcardHost) return t('access.endpoint.listeningWildcard', { host, port })
+  return t('access.endpoint.listening', { host, port })
 }
 
 function EndpointRow(props: EndpointRowProps) {
   const { entry, copied, onCopy } = props
+  const t = useTranslation()
   return (
     <div className="grid gap-2 py-3.5">
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
@@ -69,36 +71,37 @@ function EndpointRow(props: EndpointRowProps) {
         </div>
         <Button variant="outline" size="sm" className="shrink-0" disabled={!entry.url} onClick={() => onCopy(entry.key, entry.url)}>
           {copied ? <Check /> : <Copy />}
-          {copied ? '已复制' : '复制地址'}
+          {copied ? t('common.action.copied') : t('access.endpoint.copyUrl')}
         </Button>
       </div>
-      <span className="truncate font-mono system-sm-regular text-text-primary">{entry.url || '服务启动后显示'}</span>
+      <span className="truncate font-mono system-sm-regular text-text-primary">{entry.url || t('access.endpoint.urlPending')}</span>
     </div>
   )
 }
 
 export function ServiceEndpointCard(props: ServiceEndpointCardProps) {
   const { running, host, port, baseUrl, wildcardHost, copiedKey, onCopy, onNavigateToSettings } = props
+  const t = useTranslation()
   return (
     <Card>
       <SettingsCardHeader
         icon={<Server />}
-        title="本地代理服务"
-        description={describeListening(host, port, wildcardHost)}
+        title={t('access.endpoint.title')}
+        description={describeListening(t, host, port, wildcardHost)}
         actions={(
           <div className="flex shrink-0 items-center gap-2">
             {onNavigateToSettings && (
-              <Button variant="ghost" size="xs" onClick={onNavigateToSettings}>修改监听地址</Button>
+              <Button variant="ghost" size="xs" onClick={onNavigateToSettings}>{t('access.endpoint.changeHost')}</Button>
             )}
             <Badge variant={running ? 'success' : 'muted'}>
               <span className={cn('size-1.5 rounded-full', running ? 'bg-success-foreground motion-safe:animate-pulse' : 'bg-text-quaternary')} />
-              {running ? '服务运行中' : '服务已停止'}
+              {running ? t('access.endpoint.running') : t('access.endpoint.stopped')}
             </Badge>
           </div>
         )}
       />
       <CardContent className="divide-y divide-border/50">
-        {buildEntries(baseUrl).map(entry => (
+        {buildEntries(t, baseUrl).map(entry => (
           <EndpointRow key={entry.key} entry={entry} copied={copiedKey === entry.key} onCopy={onCopy} />
         ))}
       </CardContent>

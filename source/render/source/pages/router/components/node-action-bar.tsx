@@ -1,6 +1,7 @@
 import { Copy, Trash2 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/i18n/provider'
 
 type NodeActionBarProps = {
   /** 节点被选中时始终展示 */
@@ -18,6 +19,7 @@ type NodeActionBarProps = {
  */
 export function NodeActionBar(props: NodeActionBarProps) {
   const { selected, canDuplicate, canDelete, onDuplicate, onDelete } = props
+  const t = useTranslation()
   if (!canDuplicate && !canDelete) return null
 
   return (
@@ -33,7 +35,7 @@ export function NodeActionBar(props: NodeActionBarProps) {
         {canDuplicate && (
           <button
             type="button"
-            aria-label="复制节点"
+            aria-label={t('router.nodeAction.duplicate')}
             className="flex size-5 items-center justify-center rounded-md transition-colors hover:bg-state-base-hover hover:text-text-secondary"
             onMouseDown={event => event.stopPropagation()}
             onClick={(event) => {
@@ -47,7 +49,7 @@ export function NodeActionBar(props: NodeActionBarProps) {
         {canDelete && (
           <button
             type="button"
-            aria-label="删除节点"
+            aria-label={t('router.nodeAction.delete')}
             className="flex size-5 items-center justify-center rounded-md transition-colors hover:bg-state-destructive-hover hover:text-text-destructive"
             onMouseDown={event => event.stopPropagation()}
             onClick={(event) => {

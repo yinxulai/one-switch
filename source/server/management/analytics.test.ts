@@ -145,7 +145,7 @@ describe('analytics route', () => {
       expect.objectContaining({ providerModelName: 'provider-success' }),
       expect.objectContaining({ providerModelName: 'provider-failed' }),
     ]))
-    expect(payload.data.failureReasons).toEqual(expect.arrayContaining([expect.objectContaining({ reason: '限流 (429)' })]))
+    expect(payload.data.failureReasons).toEqual(expect.arrayContaining([expect.objectContaining({ reason: 'RATE_LIMITED' })]))
 
     const detailRes = mockResponse()
     await analyticsRoutes.invoke('/api/analytics/provider-detail', detailRes, { providerId: provider.id, range: '7d' })
@@ -166,7 +166,7 @@ describe('analytics route', () => {
     expect(detailPayload.data.tokenTrend.reduce((total, point) => total + point.inputTokens + point.outputTokens, 0)).toBe(160)
     // 首字分布只统计成功的尝试，与 avgLatencyMs / avgTtftMs 同一口径。
     expect(detailPayload.data.latencyDistribution).toEqual([expect.objectContaining({ count: 1, percent: 100 })])
-    expect(detailPayload.data.failureReasons).toEqual([expect.objectContaining({ reason: '限流 (429)', count: 1, percent: 100 })])
+    expect(detailPayload.data.failureReasons).toEqual([expect.objectContaining({ reason: 'RATE_LIMITED', count: 1, percent: 100 })])
     expect(detailPayload.data.models).toEqual(expect.arrayContaining([
       expect.objectContaining({ providerModelName: 'provider-success' }),
       expect.objectContaining({ providerModelName: 'provider-failed' }),

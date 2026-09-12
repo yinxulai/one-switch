@@ -9,6 +9,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/i18n/provider'
 
 import { formatVersionTime, type RouterGraphVersion } from '../graph-versions'
 import { PANEL_POPUP_SURFACE_CLASSNAME } from '../panel/panel-fields'
@@ -28,11 +29,12 @@ type VersionMenuProps = {
  */
 export function VersionMenu(props: VersionMenuProps) {
   const { versions, onRestore } = props
+  const t = useTranslation()
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <DifyButton size="medium" variant="primary" aria-label="历史版本" className="w-8 justify-center px-0">
+        <DifyButton size="medium" variant="primary" aria-label={t('router.version.aria')} className="w-8 justify-center px-0">
           <ChevronDown className="size-3.5" aria-hidden />
         </DifyButton>
       </DropdownMenuTrigger>
@@ -44,14 +46,14 @@ export function VersionMenu(props: VersionMenuProps) {
       >
         <DropdownMenuLabel className="flex items-center gap-1.5 px-2 py-1.5 system-xs-medium text-text-tertiary">
           <History className="size-3.5" aria-hidden />
-          历史版本
-          <span className="ml-auto system-2xs-regular text-text-quaternary">{`${versions.length} 个`}</span>
+          {t('router.version.title')}
+          <span className="ml-auto system-2xs-regular text-text-quaternary">{t('router.version.count', { count: versions.length })}</span>
         </DropdownMenuLabel>
         <DropdownMenuSeparator className="bg-components-panel-border" />
 
         {!versions.length && (
           <div className="px-2 py-3 system-xs-regular text-text-tertiary">
-            还没有历史版本，点击「保存」会生成第一个版本。
+            {t('router.version.empty')}
           </div>
         )}
 
@@ -68,7 +70,7 @@ export function VersionMenu(props: VersionMenuProps) {
               </span>
             </span>
             <span className="system-2xs-regular text-text-tertiary">
-              {`${version.nodeCount} 个节点 · 点击恢复此版本`}
+              {t('router.version.itemHint', { count: version.nodeCount })}
             </span>
           </DropdownMenuItem>
         ))}

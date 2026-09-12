@@ -1,5 +1,6 @@
 import { NodeHandle } from '../components/node-handle'
 import { NodeBody, NodeBranchRow, NodeConditionChip } from '../components/node-sections'
+import { useTranslation } from '@/i18n/provider'
 import type { RouteNodeProps } from '../node-data'
 import { conditionOperatorMeta, type ConditionNode } from '@common/router/types'
 
@@ -13,12 +14,13 @@ export function ConditionNodeView(props: RouteNodeProps) {
   const { id, data } = props
   const model = data.model as ConditionNode
   const cases = model.cases
+  const t = useTranslation()
 
   return (
     <NodeBody className="pb-1">
       {cases.length === 0 && (
         <div className="flex h-6 items-center space-x-1 rounded-md bg-workflow-block-parma-bg px-1 system-xs-regular text-text-secondary">
-          尚未配置分支，所有请求都会走 ELSE
+          {t('router.condition.emptyCases')}
         </div>
       )}
 
@@ -44,7 +46,7 @@ export function ConditionNodeView(props: RouteNodeProps) {
 
             <div className="space-y-0.5">
               {conditions.length === 0 && (
-                <NodeConditionChip className="h-6 space-x-1 px-1 system-xs-regular text-text-secondary">未配置条件</NodeConditionChip>
+                <NodeConditionChip className="h-6 space-x-1 px-1 system-xs-regular text-text-secondary">{t('router.condition.emptyConditions')}</NodeConditionChip>
               )}
 
               {conditions.map((condition, conditionIndex) => (
@@ -55,12 +57,12 @@ export function ConditionNodeView(props: RouteNodeProps) {
                     <span className="min-w-0 truncate px-1 system-xs-medium text-text-secondary">
                       {condition.fieldPath}
                     </span>
-                    {/* 卡片上展示中文名（比 `equals` 好读），原始标识符与语义说明作为悬浮提示。 */}
+                    {/* 卡片上展示目录里的名称（比 `equals` 好读），原始标识符与语义说明作为悬浮提示。 */}
                     <span
                       className="mx-1 shrink-0 cursor-help text-xs font-medium text-text-primary"
-                      title={`${condition.operator} · ${conditionOperatorMeta(condition.operator).description}`}
+                      title={`${condition.operator} · ${t(conditionOperatorMeta(condition.operator).descriptionKey)}`}
                     >
-                      {conditionOperatorMeta(condition.operator).label}
+                      {t(conditionOperatorMeta(condition.operator).labelKey)}
                     </span>
                     <span className="min-w-0 grow truncate px-1.5 text-xs/6 text-text-secondary">
                       {condition.valueSource === 'field'
