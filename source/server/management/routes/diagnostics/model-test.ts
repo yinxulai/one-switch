@@ -77,24 +77,19 @@ async function handleTestModels(req: IncomingMessage, res: ServerResponse, body:
 
   const results: ModelTestResult[] = []
 
-  if (testableModels.length === 0) {
-    sendSuccess(res, {
-      results: [],
-    })
-    return
-  }
-
   for (const model of testableModels) {
-    if (controller.signal.aborted) return
+    // 客户端断开时不再补后面的目标：上游请求已经随 `signal` 断掉，接着测只是白花钱。
+    if (controller.signal.aborted) break
     const provider = providerMap.get(model.providerId)
     if (!provider) continue
 
-    const endpoint = findEndpoint(model, protocol) || findConvertibleEndpoint(model, protocol)
+    const directEndpoint = findEndpoint(model, protocol)
+    const endpoint = directEndpoint || findConvertibleEndpoint(model, protocol)
     if (!endpoint) continue
 
     const startedAt = Date.now()
     try {
-      const testBody = buildTestBody(protocol, model.modelName)
+      const testBody = buildTestBody(protocol, model.modelName, !directEndpoint)
       // 诊断要测的是「用户当下保存的那一份」：端点 URL 为空时借用供应商级配置，
       // 与真实请求的区别只在这里，因此直接复用规划器的目标映射，不自己拼字段。
       const candidate = {
@@ -116,7 +111,7 @@ async function handleTestModels(req: IncomingMessage, res: ServerResponse, body:
           providerName: provider.name,
           success: false,
           durationMilliseconds: Date.now() - startedAt,
-          errorMessage: `模型 ${model.modelName} 不支持协议 ${protocol}`,
+          errorMessage: `No usable endpoint for protocol ${protocol}`,
         })
         continue
       }
@@ -140,6 +135,7 @@ async function handleTestModels(req: IncomingMessage, res: ServerResponse, body:
         response,
       })
       const success = response.statusCode >= 200 && response.statusCode < 400
+      const usage = readUsage(response.body)
 
       results.push({
         modelId: model.id,
@@ -150,9 +146,11 @@ async function handleTestModels(req: IncomingMessage, res: ServerResponse, body:
         statusCode: response.statusCode || undefined,
         durationMilliseconds: Date.now() - startedAt,
         errorMessage: success ? undefined : getDiagnosticError(response),
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
       })
     } catch (error) {
-      if (controller.signal.aborted) return
+      if (controller.signal.aborted) break
       results.push({
         modelId: model.id,
         modelName: model.modelName,
@@ -165,7 +163,36 @@ async function handleTestModels(req: IncomingMessage, res: ServerResponse, body:
     }
   }
 
-  if (!controller.signal.aborted) sendSuccess(res, { results })
+  req.removeListener('aborted', onClientAbort)
+  // 客户端断开后 socket 已经没了，再写回去只会多一次无意义的写失败；能写就写。
+  if (!res.writableEnded && !res.destroyed) sendSuccess(res, { results })
+}
+
+/**
+ * 从诊断响应里读出用量：三种协议的字段名不同，但都只给「输入 / 输出」两个数。
+ * 读不到就返回 `null`，界面用 `—` 占位——诊断面板宁可显示未知，也不编一个 0 出来。
+ *
+ * 导出仅供单测。
+ */
+export function readUsage(body: string): { inputTokens: number | null; outputTokens: number | null } {
+  const empty = { inputTokens: null, outputTokens: null }
+  try {
+    const usage = (JSON.parse(body) as { usage?: Record<string, unknown> }).usage
+    if (!usage) return empty
+    const pick = (...keys: string[]): number | null => {
+      for (const key of keys) {
+        const value = usage[key]
+        if (typeof value === 'number' && Number.isFinite(value)) return value
+      }
+      return null
+    }
+    return {
+      inputTokens: pick('prompt_tokens', 'input_tokens'),
+      outputTokens: pick('completion_tokens', 'output_tokens'),
+    }
+  } catch {
+    return empty
+  }
 }
 
 function getDiagnosticError(response: BufferedProxyResponse): string {
@@ -180,7 +207,8 @@ function getDiagnosticError(response: BufferedProxyResponse): string {
   return `HTTP ${response.statusCode || 502}`
 }
 
-function buildTestBody(protocol: Protocol, modelId: string): string {
+/** 导出仅供单测：诊断请求的默认正文是最容易被改错的一块。 */
+export function buildTestBody(protocol: Protocol, modelId: string, converted: boolean): string {
   switch (protocol) {
     case 'openai-completions':
       return JSON.stringify({
@@ -195,6 +223,11 @@ function buildTestBody(protocol: Protocol, modelId: string): string {
     case 'anthropic-messages':
       return JSON.stringify({
         model: modelId,
+        // `/v1/messages` 把 max_tokens 当必填，不给就是 400；而且不给的话
+        // 转换层会补一个 4096 的上限，一条「Hi」理论上有成本风险，所以这里自己压到最小。
+        // 走协议转换时不加：转换后的目标多是 OpenAI 形态，o 系模型只认 max_completion_tokens，
+        // 塞 max_tokens 反而会换来一个 400。
+        ...(converted ? {} : { max_tokens: 16 }),
         messages: [{ role: 'user', content: 'Hi' }],
       })
   }

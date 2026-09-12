@@ -6,6 +6,7 @@ import { TableStateRow } from '@/components/table-state'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useLocale, useTranslation } from '@/i18n/provider'
 import { cn } from '@/lib/utils'
 import { formatDuration, formatNumber, formatTime, formatTPS, formatTTFT } from '../lib/format'
 import { RequestLogDetailRow, RequestStatusBadge } from './request-log-detail-row'
@@ -62,24 +63,25 @@ export function CachedTokensCell(props: CachedTokensCellProps) {
 }
 
 function RequestLogsTableHeader() {
+  const t = useTranslation()
   return (
     <thead className={tableHeaderClass}>
       <tr className="h-8">
         <th className={cn(tableHeaderCellClass, 'w-8 py-1.5')} />
-        <th className={cn(tableHeaderCellClass, 'py-1.5')}>状态</th>
-        <th className={cn(tableHeaderCellClass, 'py-1.5')}>时间</th>
-        <th className={cn(tableHeaderCellClass, 'py-1.5')}>供应商模型</th>
+        <th className={cn(tableHeaderCellClass, 'py-1.5')}>{t('requestLogs.table.status')}</th>
+        <th className={cn(tableHeaderCellClass, 'py-1.5')}>{t('requestLogs.table.time')}</th>
+        <th className={cn(tableHeaderCellClass, 'py-1.5')}>{t('requestLogs.table.providerModel')}</th>
         <th className={cn(tableHeaderCellClass, 'py-1.5 text-center')}>
           <ArrowUpFromLine size={11} className="mr-0.5 inline" />
-          输入
+          {t('requestLogs.table.input')}
         </th>
         <th className={cn(tableHeaderCellClass, 'py-1.5 text-center')}>
           <Database size={11} className="mr-0.5 inline" />
-          缓存输入
+          {t('requestLogs.table.cachedInput')}
         </th>
         <th className={cn(tableHeaderCellClass, 'text-center')}>
           <ArrowDownToLine size={11} className="mr-0.5 inline" />
-          输出
+          {t('requestLogs.table.output')}
         </th>
         <th className={cn(tableHeaderCellClass, 'py-1.5 text-center')}>
           <Clock size={11} className="mr-0.5 inline" />
@@ -89,7 +91,7 @@ function RequestLogsTableHeader() {
           <Zap size={11} className="mr-0.5 inline" />
           TPS
         </th>
-        <th className={cn(tableHeaderCellClass, 'py-1.5 text-right')}>耗时</th>
+        <th className={cn(tableHeaderCellClass, 'py-1.5 text-right')}>{t('requestLogs.table.duration')}</th>
       </tr>
     </thead>
   )
@@ -133,6 +135,7 @@ function RequestLogsLoadingRows() {
 }
 
 function RequestLogTableRow(props: RequestLogTableRowProps) {
+  const locale = useLocale()
   const successfulAttempt = props.log.attempts.find(attempt => attempt.status === 'success')
   const tps = formatTPS(
     props.log.outputTokens,
@@ -155,7 +158,7 @@ function RequestLogTableRow(props: RequestLogTableRowProps) {
           <RequestStatusBadge status={props.log.status} />
         </td>
         <td className={cn(tableCellClass, 'whitespace-nowrap font-mono text-text-tertiary')}>
-          {formatTime(props.log.createdTime)}
+          {formatTime(locale, props.log.createdTime)}
         </td>
         <td className={cn(tableCellClass, 'max-w-40')}>
           {(() => {
@@ -210,23 +213,24 @@ function RequestLogTableRow(props: RequestLogTableRowProps) {
 }
 
 export function RequestLogsTable(props: RequestLogsTableProps) {
+  const t = useTranslation()
   let body
 
   if (props.loading) {
     body = <RequestLogsLoadingRows />
   } else if (props.error !== null && props.logs.length === 0) {
     body = (
-      <TableStateRow colSpan={10} icon={AlertTriangle} tone="destructive" title="请求记录读取失败" description={props.error} action={
+      <TableStateRow colSpan={10} icon={AlertTriangle} tone="destructive" title={t('requestLogs.table.error.title')} description={props.error} action={
         <Button variant="outline" className="mt-1" onClick={props.onRetry}>
           <RefreshCw size={14} />
-          重试
+          {t('common.action.retry')}
         </Button>
       } />
     )
   } else if (props.logs.length === 0) {
     body = props.filtered
-      ? <TableStateRow colSpan={10} icon={SearchX} title="没有匹配的请求记录" description="试着放宽筛选条件或把时间范围调大一些。" />
-      : <TableStateRow colSpan={10} icon={SearchX} title="还没有请求记录" description="代理收到请求后会在这里留下记录。" />
+      ? <TableStateRow colSpan={10} icon={SearchX} title={t('requestLogs.table.empty.title')} description={t('requestLogs.table.empty.description')} />
+      : <TableStateRow colSpan={10} icon={SearchX} title={t('requestLogs.table.emptyAll.title')} description={t('requestLogs.table.emptyAll.description')} />
   } else {
     body = props.logs.map(log => (
       <RequestLogTableRow

@@ -1,19 +1,29 @@
 import * as React from 'react'
 import { Braces, Check, ChevronRight, Copy, Route, ScrollText } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
-import type { RequestLogDetail, RequestLogEntry, RequestLogEntryAttempt, TransportKind } from '@common/schemas'
+import type {
+  ProxyServerStatus,
+  RequestContent,
+  RequestLogDetail,
+  RequestLogEntry,
+  RequestLogEntryAttempt,
+  TransportKind,
+} from '@common/schemas'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
+import { useProxyStatus } from '@/features/proxy/hooks'
+import { useLocale, useTranslation, type AppTranslator } from '@/i18n/provider'
 import { cn } from '@/lib/utils'
+import { buildCurl } from '../lib/build-curl'
 import {
   PROTOCOL_LABEL,
-  STATUS_LABEL,
   distinctAttemptErrorCode,
   distinctAttemptErrorMessage,
   formatAttemptOutcome,
   formatDuration,
   formatNumber,
+  formatStatus,
   formatTPS,
   formatTTFT,
   formatTime,
@@ -33,6 +43,13 @@ interface StatusBadgeProps {
 
 interface RequestLogIdLinkProps {
   requestId: string
+}
+
+interface CopyRequestButtonProps {
+  /** 客户端视角的正文记录；详情还没加载出来、或已被保留策略清掉时为 `null`。 */
+  contents: RequestContent | null
+  /** 代理监听的地址，用来把记录的路径拼成可直接执行的绝对 URL。 */
+  origin: string | null
 }
 
 interface ProviderRouteProps {
@@ -67,6 +84,19 @@ interface MetaFactProps {
 const RUNTIME_LOG_RETENTION_DAYS = 3
 const RUNTIME_LOG_RETENTION_MS = RUNTIME_LOG_RETENTION_DAYS * 24 * 60 * 60 * 1000
 
+/**
+ * 把代理监听的地址拼成客户端请求的绝对前缀。
+ *
+ * 通配地址不能直接连（`0.0.0.0` 只有 Linux 允许回连），统一收敛到回环地址；
+ * IPv6 要补上方括号，否则 `::1:9300` 会被当成主机名解析。
+ */
+function resolveOrigin(status: ProxyServerStatus | null): string | null {
+  if (!status) return null
+  const wildcard = status.host === '' || status.host === '0.0.0.0' || status.host === '::'
+  const host = wildcard ? '127.0.0.1' : status.host
+  return `http://${host.includes(':') ? `[${host}]` : host}:${status.port}`
+}
+
 const STATUS_BADGE: Record<string, string> = {
   pending: 'bg-info/10 text-info',
   success: 'bg-success/10 text-text-success',
@@ -75,9 +105,10 @@ const STATUS_BADGE: Record<string, string> = {
 }
 
 export function RequestStatusBadge(props: StatusBadgeProps) {
+  const t = useTranslation()
   return (
     <Badge variant="outline" className={cn('font-normal', STATUS_BADGE[props.status] ?? '')}>
-      {STATUS_LABEL[props.status] ?? props.status}
+      {formatStatus(t, props.status)}
     </Badge>
   )
 }
@@ -132,6 +163,7 @@ function MetricCard(props: MetricCardProps) {
  * 复制成功的反馈留在按钮本身，不再弹 toast 打断排障视线。
  */
 function CopyIconButton(props: CopyIconButtonProps) {
+  const t = useTranslation()
   const toast = useToast()
   const [copied, setCopied] = React.useState(false)
   const timerRef = React.useRef<number | null>(null)
@@ -143,8 +175,8 @@ function CopyIconButton(props: CopyIconButtonProps) {
   return (
     <button
       type="button"
-      aria-label={copied ? '已复制' : props.label}
-      title={copied ? '已复制' : props.label}
+      aria-label={copied ? t('common.action.copied') : props.label}
+      title={copied ? t('common.action.copied') : props.label}
       className={cn(
         'inline-flex size-4 shrink-0 items-center justify-center rounded-sm text-text-quaternary transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-state-accent-solid',
         copied && 'text-text-success',
@@ -157,7 +189,7 @@ function CopyIconButton(props: CopyIconButtonProps) {
           if (timerRef.current !== null) window.clearTimeout(timerRef.current)
           timerRef.current = window.setTimeout(() => setCopied(false), 1500)
         } catch (error) {
-          toast.error(error instanceof Error ? error.message : '复制失败')
+          toast.error(error instanceof Error ? error.message : t('common.action.copyFailed'))
         }
       }}
     >
@@ -168,6 +200,7 @@ function CopyIconButton(props: CopyIconButtonProps) {
 
 /** 摘要事实：标签 + 值成对，替代原来用 `·` 串起来的文本墙。 */
 function MetaFact(props: MetaFactProps) {
+  const t = useTranslation()
   return (
     <span className="inline-flex min-w-0 items-baseline gap-1">
       <span className="shrink-0 text-text-quaternary">{props.label}</span>
@@ -180,12 +213,13 @@ function MetaFact(props: MetaFactProps) {
       >
         {props.value}
       </span>
-      {props.copyValue && <CopyIconButton label={`复制${props.label}`} value={props.copyValue} />}
+      {props.copyValue && <CopyIconButton label={t('requestLogs.detail.copyLabel', { label: props.label })} value={props.copyValue} />}
     </span>
   )
 }
 
 function RequestLogIdLink(props: RequestLogIdLinkProps) {
+  const t = useTranslation()
   const navigate = useNavigate()
 
   // 「查看日志」原来是个无边框的小幽灵按钮，飘在大块留白里，与标题不成一体。
@@ -195,14 +229,69 @@ function RequestLogIdLink(props: RequestLogIdLinkProps) {
       variant="outline"
       size="sm"
       className="shrink-0"
-      title="在运行日志中按请求 ID 过滤"
+      title={t('requestLogs.detail.viewRuntimeLogsTitle')}
       onClick={event => {
         event.stopPropagation()
         void navigate({ to: '/logs', search: { q: props.requestId } })
       }}
     >
       <ScrollText size={13} aria-hidden />
-      运行日志
+      {t('requestLogs.detail.viewRuntimeLogs')}
+    </Button>
+  )
+}
+
+/**
+ * 「复制请求」：把客户端那次请求还原成一条可以直接粘进终端跑的 cURL。
+ *
+ * 正文可能有几百 KB 且包含任意字符，所以转义全部交给 `buildCurl`；
+ * 这里只负责把记录的路径接上代理地址，以及与「查看日志」保持同一行、同一尺寸。
+ * 没有正文记录时按钮照常占位（禁用 + 说明原因），避免详情卡头部随数据有无而跳动。
+ */
+function CopyRequestButton(props: CopyRequestButtonProps) {
+  const t = useTranslation()
+  const toast = useToast()
+  const [copied, setCopied] = React.useState(false)
+  const timerRef = React.useRef<number | null>(null)
+
+  React.useEffect(() => () => {
+    if (timerRef.current !== null) window.clearTimeout(timerRef.current)
+  }, [])
+
+  const content = props.contents
+  const curl = content && props.origin ? buildCurl({
+    url: `${props.origin}${content.requestPath}`,
+    method: content.requestMethod,
+    headers: content.requestHeaders,
+    body: content.requestBody,
+  }) : null
+
+  const label = copied ? t('common.action.copied') : t('requestLogs.detail.copyRequest')
+  const title = curl === null ? t('requestLogs.detail.copyRequestUnavailable') : t('requestLogs.detail.copyRequestTitle')
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      className={cn('shrink-0', copied && 'text-text-success')}
+      disabled={curl === null}
+      title={title}
+      aria-label={title}
+      onClick={async event => {
+        event.stopPropagation()
+        if (curl === null) return
+        try {
+          await navigator.clipboard.writeText(curl)
+          setCopied(true)
+          if (timerRef.current !== null) window.clearTimeout(timerRef.current)
+          timerRef.current = window.setTimeout(() => setCopied(false), 1500)
+        } catch (error) {
+          toast.error(error instanceof Error ? error.message : t('common.action.copyFailed'))
+        }
+      }}
+    >
+      {copied ? <Check size={13} aria-hidden /> : <Copy size={13} aria-hidden />}
+      {label}
     </Button>
   )
 }
@@ -223,6 +312,7 @@ interface AttemptRowProps {
  * 错误码若是状态码的副本则不再出现；共同错误信息由路由顶部统一说明。
  */
 function AttemptRow(props: AttemptRowProps) {
+  const t = useTranslation()
   const { attempt, summary } = props
   const ok = attempt.status === 'success'
   const upstreamLabel = attempt.upstreamProtocol === null
@@ -244,7 +334,7 @@ function AttemptRow(props: AttemptRowProps) {
     <div
       role="button"
       tabIndex={0}
-      aria-label={`查看第 ${props.index + 1} 次尝试详情`}
+      aria-label={t('requestLogs.attempt.viewDetail', { index: props.index + 1 })}
       className="group grid w-full cursor-pointer grid-cols-[18px_minmax(0,1fr)_auto_auto_12px] items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-state-base-hover focus-visible:bg-state-base-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-state-accent-solid"
       title={attempt.url}
       onClick={() => props.onSelect(attempt.id)}
@@ -267,9 +357,9 @@ function AttemptRow(props: AttemptRowProps) {
           <span className="shrink-0 system-xs-medium text-text-primary">{attempt.providerName}</span>
           <span aria-hidden className="shrink-0 text-text-quaternary">/</span>
           <span className="min-w-0 truncate font-mono system-xs-regular text-text-tertiary">{attempt.providerModelName}</span>
-          {converted && (
+          {converted && upstreamLabel && (
             <Badge variant="warning" className="shrink-0 font-normal">
-              转为 {upstreamLabel}
+              {t('requestLogs.attempt.converted', { protocol: upstreamLabel })}
             </Badge>
           )}
         </div>
@@ -283,16 +373,16 @@ function AttemptRow(props: AttemptRowProps) {
 
       <div className="flex shrink-0 items-center gap-1.5">
         <Badge variant={ok ? 'success' : 'destructive'} className="font-normal">
-          {formatAttemptOutcome(attempt)}
+          {formatAttemptOutcome(t, attempt)}
         </Badge>
-        {attempt.retryable && !ok && <Badge variant="warning" className="font-normal">可重试</Badge>}
-        {transportMismatch && <Badge variant="warning" className="font-normal">未按增量返回</Badge>}
+        {attempt.retryable && !ok && <Badge variant="warning" className="font-normal">{t('requestLogs.attempt.retryable')}</Badge>}
+        {transportMismatch && <Badge variant="warning" className="font-normal">{t('requestLogs.attempt.transportMismatch')}</Badge>}
       </div>
 
       <div className="shrink-0 text-right font-mono system-2xs-regular tabular-nums">
         <div className="text-text-secondary">{formatDuration(attempt.durationMilliseconds)}</div>
         {attempt.ttftMilliseconds !== null && (
-          <div className="text-text-quaternary">首字 {formatTTFT(attempt.ttftMilliseconds)}</div>
+          <div className="text-text-quaternary">{t('requestLogs.attempt.firstToken', { value: formatTTFT(attempt.ttftMilliseconds) })}</div>
         )}
       </div>
 
@@ -306,6 +396,7 @@ function AttemptRow(props: AttemptRowProps) {
 }
 
 function ProviderRoute(props: ProviderRouteProps) {
+  const t = useTranslation()
   const summary = React.useMemo(() => summarizeRoute(props.attempts), [props.attempts])
 
   return (
@@ -313,19 +404,19 @@ function ProviderRoute(props: ProviderRouteProps) {
       <div className="border-b border-border/50 px-3 py-2.5">
         <div className="flex items-center gap-1.5 system-sm-medium text-text-primary">
           <Route size={13} aria-hidden className="text-text-quaternary" />
-          Provider 路由
+          {t('requestLogs.route.title')}
         </div>
         {props.attempts.length > 0 && (
           <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 system-2xs-regular text-text-tertiary">
             {summary.successIndex === null ? (
-              <span>{summary.count} 次尝试全部失败</span>
+              <span>{t('requestLogs.route.allFailed', { count: summary.count })}</span>
             ) : (
               <>
-                <span>{summary.successIndex === 0 ? '首次尝试即成功' : `第 ${summary.successIndex + 1} 次尝试成功`}</span>
+                <span>{summary.successIndex === 0 ? t('requestLogs.route.firstSucceeded') : t('requestLogs.route.succeededAt', { index: summary.successIndex + 1 })}</span>
                 {summary.count > 1 && (
                   <>
                     <span aria-hidden className="text-text-quaternary">·</span>
-                    <span>共 {summary.count} 次尝试</span>
+                    <span>{t('requestLogs.route.totalAttempts', { count: summary.count })}</span>
                   </>
                 )}
               </>
@@ -352,7 +443,7 @@ function ProviderRoute(props: ProviderRouteProps) {
           />
         ))}
         {props.attempts.length === 0 && (
-          <div className="px-3 py-6 text-center system-xs-regular text-text-tertiary">没有生成 Provider attempt 记录</div>
+          <div className="px-3 py-6 text-center system-xs-regular text-text-tertiary">{t('requestLogs.route.noAttempts')}</div>
         )}
       </div>
     </section>
@@ -371,6 +462,7 @@ interface RawUsageProps {
  * 上下滚动时整页都在跳。
  */
 function RawUsage(props: RawUsageProps) {
+  const t = useTranslation()
   const rawUsage = props.usage ? JSON.stringify(props.usage, null, 2) : null
 
   return (
@@ -378,13 +470,13 @@ function RawUsage(props: RawUsageProps) {
       <div className="flex items-center justify-between gap-2 border-b border-border/50 px-3 py-2.5">
         <div className="flex items-center gap-1.5 system-sm-medium text-text-primary">
           <Braces size={13} aria-hidden className="text-text-quaternary" />
-          原始 Usage
+          {t('requestLogs.usage.title')}
         </div>
-        {rawUsage && <CopyIconButton label="复制原始 Usage JSON" value={rawUsage} />}
+        {rawUsage && <CopyIconButton label={t('requestLogs.usage.copy')} value={rawUsage} />}
       </div>
       {rawUsage
         ? <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-all bg-inset p-3 font-mono system-2xs-regular text-text-secondary">{rawUsage}</pre>
-        : <p className="px-3 py-3 system-xs-regular text-text-quaternary">本次请求没有记录到用量数据</p>}
+        : <p className="px-3 py-3 system-xs-regular text-text-quaternary">{t('requestLogs.usage.empty')}</p>}
     </section>
   )
 }
@@ -396,21 +488,24 @@ function RawUsage(props: RawUsageProps) {
  * 上下扫的时候数字会跑到别的列上，也没法一眼看出「哪一格是空的」——
  * 而「这里没有数」本身就是排障要知道的事。
  */
-function buildMetrics(log: RequestLogEntry | RequestLogDetail, tps: string): MetricCardProps[] {
+function buildMetrics(t: AppTranslator, log: RequestLogEntry | RequestLogDetail, tps: string): MetricCardProps[] {
   return [
-    { label: '总耗时', value: formatDuration(log.totalDurationMilliseconds) },
-    { label: '首字延迟', value: formatTTFT(log.ttftMilliseconds) },
-    { label: '输出速度', value: tps === '—' ? '—' : `${tps} t/s` },
-    { label: '总 Token', value: formatNumber(log.totalTokens) },
-    { label: '输入 Token', value: formatNumber(log.inputTokens) },
-    { label: '输出 Token', value: formatNumber(log.outputTokens) },
-    { label: '思考 Token', value: formatNumber(log.reasoningTokens) },
-    { label: '缓存读取', value: formatNumber(log.cachedInputTokens) },
-    { label: '缓存写入', value: formatNumber(log.cacheCreationInputTokens) },
+    { label: t('requestLogs.metric.totalDuration'), value: formatDuration(log.totalDurationMilliseconds) },
+    { label: t('requestLogs.metric.ttft'), value: formatTTFT(log.ttftMilliseconds) },
+    { label: t('requestLogs.metric.outputSpeed'), value: tps === '—' ? '—' : `${tps} t/s` },
+    { label: t('requestLogs.metric.totalTokens'), value: formatNumber(log.totalTokens) },
+    { label: t('requestLogs.metric.inputTokens'), value: formatNumber(log.inputTokens) },
+    { label: t('requestLogs.metric.outputTokens'), value: formatNumber(log.outputTokens) },
+    { label: t('requestLogs.metric.reasoningTokens'), value: formatNumber(log.reasoningTokens) },
+    { label: t('requestLogs.metric.cacheRead'), value: formatNumber(log.cachedInputTokens) },
+    { label: t('requestLogs.metric.cacheWrite'), value: formatNumber(log.cacheCreationInputTokens) },
   ]
 }
 
 export function RequestLogDetailRow(props: RequestLogDetailRowProps) {
+  const t = useTranslation()
+  const locale = useLocale()
+  const proxyStatus = useProxyStatus()
   const { log, modelName } = props
   const successfulAttempt = log.attempts.find(attempt => attempt.status === 'success')
   // 上游协议只是尝试级事实：失败转移的请求可能先后走过不同协议。
@@ -421,14 +516,18 @@ export function RequestLogDetailRow(props: RequestLogDetailRowProps) {
   const requestRewriteRules = 'requestRewriteRules' in log ? log.requestRewriteRules : null
   const [selectedAttemptId, setSelectedAttemptId] = React.useState<string | null>(null)
   const canOpenRuntimeLogs = Date.now() - log.createdTime <= RUNTIME_LOG_RETENTION_MS
+  // 客户端请求的绝对地址：代理监听地址 + 记录下来的路径。拿不到监听地址就不拼，宁可禁用。
+  const origin = resolveOrigin(proxyStatus)
 
-  const clientLabel = log.clientProtocol === null ? '未识别' : PROTOCOL_LABEL[log.clientProtocol] ?? log.clientProtocol
+  const clientLabel = log.clientProtocol === null
+    ? t('requestLogs.detail.unrecognizedProtocol')
+    : PROTOCOL_LABEL[log.clientProtocol] ?? log.clientProtocol
   // 没发生转换就不提「原生协议」——那是一句只说明「没别的事」的负向噪音。
   const converted = log.clientProtocol !== null && upstreamProtocol !== null && upstreamProtocol !== log.clientProtocol
   const protocolText = converted
     ? `${clientLabel} → ${PROTOCOL_LABEL[upstreamProtocol!] ?? upstreamProtocol}`
     : clientLabel
-  const metrics = buildMetrics(log, tps)
+  const metrics = buildMetrics(t, log, tps)
 
   return (
     <tr className="bg-inset">
@@ -437,28 +536,35 @@ export function RequestLogDetailRow(props: RequestLogDetailRowProps) {
           <div className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-border/50 pb-3">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <span className="system-sm-medium text-text-primary">请求执行详情</span>
+                <span className="system-sm-medium text-text-primary">{t('requestLogs.detail.title')}</span>
                 <RequestStatusBadge status={log.status} />
               </div>
               <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 system-2xs-regular">
                 {log.logicalModelId === null
-                  ? <MetaFact label="逻辑模型" value="未解析" />
+                  ? <MetaFact label={t('requestLogs.detail.logicalModel')} value={t('requestLogs.detail.unresolved')} />
                   : (
                     <>
-                      <MetaFact label="逻辑模型" value={modelName} />
+                      <MetaFact label={t('requestLogs.detail.logicalModel')} value={modelName} />
                       {modelName !== log.logicalModelId && (
-                        <MetaFact label="模型 ID" value={log.logicalModelId} mono />
+                        <MetaFact label={t('requestLogs.detail.modelId')} value={log.logicalModelId} mono />
                       )}
                     </>
                   )}
-                <MetaFact label={converted ? '协议转换' : '协议'} value={protocolText} tone={converted ? 'warning' : 'default'} />
+                <MetaFact
+                  label={t(converted ? 'requestLogs.detail.convertedProtocol' : 'requestLogs.detail.protocol')}
+                  value={protocolText}
+                  tone={converted ? 'warning' : 'default'}
+                />
                 {/* 传输形态是客户端跳声明的预期，与上游跳实际怎么回无关。 */}
-                <MetaFact label="传输形态" value={formatTransport(log.transport)} />
-                <MetaFact label="时间" value={formatTime(log.createdTime)} />
-                <MetaFact label="请求 ID" value={log.id} mono copyValue={log.id} />
+                <MetaFact label={t('requestLogs.detail.transport')} value={formatTransport(t, log.transport)} />
+                <MetaFact label={t('common.label.time')} value={formatTime(locale, log.createdTime)} />
+                <MetaFact label={t('requestLogs.detail.requestId')} value={log.id} mono copyValue={log.id} />
               </div>
             </div>
-            {canOpenRuntimeLogs && <RequestLogIdLink requestId={log.id} />}
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              {canOpenRuntimeLogs && <RequestLogIdLink requestId={log.id} />}
+              <CopyRequestButton contents={contents?.[0] ?? null} origin={origin} />
+            </div>
           </div>
 
           {/* auto-fill（而非 auto-fit）：只有一两个指标有值时也让格子保持统一宽度，不被拉满整行。 */}

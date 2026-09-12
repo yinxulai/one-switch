@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { FormField } from '@/components/form-kit'
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/components/ui/toast'
+import { useTranslation } from '@/i18n/provider'
 
 interface CreateLogicalModelDialogProps {
   open: boolean
@@ -17,6 +18,7 @@ interface CreateLogicalModelDialogProps {
 export function CreateLogicalModelDialog(props: CreateLogicalModelDialogProps) {
   const { open, onOpenChange, onCreated } = props
   const toast = useToast()
+  const t = useTranslation()
   const [id, setId] = useState('')
   const [idError, setIdError] = useState('')
   const [description, setDescription] = useState('')
@@ -33,7 +35,7 @@ export function CreateLogicalModelDialog(props: CreateLogicalModelDialogProps) {
     const validation = LogicalModelIdSchema.safeParse(trimmedId)
     if (!validation.success) {
       // 就地提示错误，避免只弹 toast 让用户找不到出错的字段。
-      const message = validation.error.issues[0]?.message ?? '请输入有效的逻辑模型 ID'
+      const message = validation.error.issues[0]?.message ?? t('logicalModels.create.idInvalid')
       setIdError(message)
       toast.error(message)
       return
@@ -42,7 +44,7 @@ export function CreateLogicalModelDialog(props: CreateLogicalModelDialogProps) {
     setSaving(true)
     try {
       await unwrap(logicalModelApi.create({ id: trimmedId, description: description.trim() }))
-      toast.success('逻辑模型已创建，请为逻辑模型添加模型')
+      toast.success(t('logicalModels.create.created'))
       setId('')
       setDescription('')
       onOpenChange(false)
@@ -58,38 +60,38 @@ export function CreateLogicalModelDialog(props: CreateLogicalModelDialogProps) {
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>创建逻辑模型</DialogTitle>
-          <DialogDescription>逻辑模型 ID 是稳定标识。创建后不会自动加入模型，请在逻辑模型卡片中显式添加模型并配置调度策略。</DialogDescription>
+          <DialogTitle>{t('logicalModels.create.title')}</DialogTitle>
+          <DialogDescription>{t('logicalModels.create.description')}</DialogDescription>
         </DialogHeader>
         <div className="grid gap-4">
           <FormField
-            label="逻辑模型 ID"
+            label={t('logicalModels.create.idLabel')}
             htmlFor="logical-model-id"
             error={idError}
             required
-            hint="以小写字母开头，只能包含小写字母、数字、下划线和连字符，最多 64 个字符。"
+            hint={t('logicalModels.create.idHint')}
           >
             <Input
               id="logical-model-id"
               value={id}
               aria-invalid={Boolean(idError)}
               onChange={event => { setId(event.target.value); if (idError) setIdError('') }}
-              placeholder="例如：production"
+              placeholder={t('logicalModels.create.idPlaceholder')}
               autoFocus
             />
           </FormField>
-          <FormField label="描述（可选）" htmlFor="logical-model-description">
+          <FormField label={t('logicalModels.create.descriptionLabel')} htmlFor="logical-model-description">
             <Input
               id="logical-model-description"
               value={description}
               onChange={event => setDescription(event.target.value)}
-              placeholder="说明这个逻辑模型的用途"
+              placeholder={t('logicalModels.create.descriptionPlaceholder')}
             />
           </FormField>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => handleOpenChange(false)}>取消</Button>
-          <Button disabled={saving} onClick={() => void createLogicalModel()}>{saving ? '创建中…' : '创建逻辑模型'}</Button>
+          <Button variant="outline" onClick={() => handleOpenChange(false)}>{t('common.action.cancel')}</Button>
+          <Button disabled={saving} onClick={() => void createLogicalModel()}>{saving ? t('logicalModels.create.submitting') : t('logicalModels.create.submit')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

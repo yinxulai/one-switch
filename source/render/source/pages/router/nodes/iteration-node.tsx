@@ -2,6 +2,7 @@ import { ListChecks, Repeat2 } from 'lucide-react'
 
 import { NodeHandle } from '../components/node-handle'
 import { NodeBody, NodeBranchRow, NodeRow, NodeRowList } from '../components/node-sections'
+import { useTranslation } from '@/i18n/provider'
 import { ITERATION_COLLECT_MODE_LABELS } from '../node-meta'
 import type { RouteNodeProps } from '../node-data'
 import type { IterationNode } from '@common/router/types'
@@ -18,23 +19,24 @@ export function IterationNodeView(props: RouteNodeProps) {
   const model = data.model as IterationNode
   const sourcePath = model.sourcePath.trim()
   const collectPath = model.collectPath.trim()
+  const t = useTranslation()
 
   return (
     <NodeBody className="pb-1">
       <NodeRowList className="pb-1">
         <NodeRow
-          name={sourcePath || '未配置遍历来源'}
-          meta="遍历"
+          name={sourcePath || t('router.summary.iterationSourceEmpty')}
+          meta={t('router.nodeView.iterationSourceMeta')}
           icon={<Repeat2 className="size-3.5 shrink-0 text-text-accent" aria-hidden />}
         />
         <NodeRow
-          name={collectPath || '未配置结果路径'}
-          meta={ITERATION_COLLECT_MODE_LABELS[model.collectMode]}
+          name={collectPath || t('router.nodeView.collectPathEmpty')}
+          meta={t(ITERATION_COLLECT_MODE_LABELS[model.collectMode])}
           icon={<ListChecks className="size-3.5 shrink-0 text-text-accent" aria-hidden />}
         />
       </NodeRowList>
 
-      <NodeBranchRow caption={`上限 ${model.maxIterations} 轮`} label="循环体">
+      <NodeBranchRow caption={t('router.nodeView.iterationLimit', { count: model.maxIterations })} label={t('router.nodeView.loopBody')}>
         <NodeHandle
           nodeId={id}
           data={data}
@@ -46,7 +48,7 @@ export function IterationNodeView(props: RouteNodeProps) {
         />
       </NodeBranchRow>
 
-      <NodeBranchRow label="完成">
+      <NodeBranchRow label={t('router.nodeView.done')}>
         <NodeHandle
           nodeId={id}
           data={data}

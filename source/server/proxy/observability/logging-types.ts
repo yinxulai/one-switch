@@ -22,6 +22,8 @@ export interface RequestLoggingInput {
    * 而「上游跳是不是同一个形态」是另一回事（落在尝试行的 `upstreamTransport`）。
    */
   transport: TransportKind
+  /** 是否记录请求日志。关掉时整条日志链路（请求行、尝试行、用量、正文）都不落库。 */
+  captureRequestLogs: boolean
   captureRequestContent: boolean
   hooks?: ProxyObservationHooks
 }

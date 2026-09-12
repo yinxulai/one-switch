@@ -2,6 +2,7 @@ import { BotMessageSquare, MessageSquareCode, Repeat, Sparkles } from 'lucide-re
 import type { Protocol, ProviderModelRouteEndpoint } from '@common/schemas'
 import { CONVERTIBLE_PROTOCOLS } from '@common/protocols'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { useTranslation } from '@/i18n/provider'
 
 const PROTOCOL_META: Record<Protocol, { label: string; icon: typeof MessageSquareCode }> = {
   'openai-completions': { label: 'OpenAI Completions', icon: MessageSquareCode },
@@ -15,6 +16,7 @@ interface ProtocolIconsProps {
 
 export function ProtocolIcons(props: ProtocolIconsProps) {
   const { endpoints } = props
+  const t = useTranslation()
 
   return (
     <TooltipProvider delayDuration={150}>
@@ -45,13 +47,13 @@ export function ProtocolIcons(props: ProtocolIconsProps) {
                   <TooltipTrigger asChild>
                     <span
                       className="inline-flex size-5 items-center justify-center rounded-md bg-warning/10 text-text-warning"
-                      aria-label={`${meta.label}（经协议转换支持）`}
+                      aria-label={t('protocol.conversion.aria', { protocol: meta.label })}
                     >
                       <ProtocolIcon size={9} aria-hidden className="m-0.5" />
                       <Repeat size={7} aria-hidden className="-ml-1.5 -mb-1.5" />
                     </span>
                   </TooltipTrigger>
-                  <TooltipContent>{meta.label} · 经协议转换支持（转换为 {PROTOCOL_META[endpoint.protocol].label}）</TooltipContent>
+                  <TooltipContent>{t('protocol.conversion.tooltip', { protocol: meta.label, target: PROTOCOL_META[endpoint.protocol].label })}</TooltipContent>
                 </Tooltip>
               )
             }))}

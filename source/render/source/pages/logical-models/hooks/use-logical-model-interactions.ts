@@ -3,10 +3,12 @@ import type { DragEndEvent } from '@dnd-kit/core'
 import { arrayMove } from '@dnd-kit/sortable'
 import { schedulingPolicyApi } from '@/api/models'
 import { useToast } from '@/components/ui/toast'
+import { useTranslation } from '@/i18n/provider'
 import type { ProviderModelRoute } from '@common/schemas'
 
 export function useLogicalModelInteractions(logicalModelId: string, models: ProviderModelRoute[], updateModels: (update: (models: ProviderModelRoute[]) => ProviderModelRoute[]) => void, loadModels: () => Promise<boolean>, proxyBaseUrl: string) {
   const toast = useToast()
+  const t = useTranslation()
   const [copied, setCopied] = useState(false)
   const copyTimerRef = useRef<number | null>(null)
 
@@ -36,10 +38,10 @@ export function useLogicalModelInteractions(logicalModelId: string, models: Prov
       priority: model.priority,
     })))
     if (results.some(result => !result.success)) {
-      toast.error('逻辑模型顺序保存失败，已恢复服务端数据')
+      toast.error(t('logicalModels.interactions.reorderFailed'))
       await loadModels()
     }
-  }, [loadModels, logicalModelId, models, toast, updateModels])
+  }, [loadModels, logicalModelId, models, t, toast, updateModels])
 
   return { copied, copyEndpoint, handleDragEnd }
 }

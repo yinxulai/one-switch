@@ -2,6 +2,7 @@ import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { RotateCcw, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/i18n/provider'
 
 /**
  * 渲染层的错误边界。
@@ -70,15 +71,22 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 }
 
+export interface DescribeErrorFallbacks {
+  /** 抛出物是 `null` / `undefined` 时的标题。 */
+  unknownTitle: string
+  /** 抛出物不是 `Error` 且无法序列化时的标题。 */
+  nonErrorTitle: string
+}
+
 /** 把任意抛出物压成一段可读文本，避免 `[object Object]` 或者整页只有 "Error"。 */
-export function describeError(error: unknown): { title: string; detail: string | null } {
+export function describeError(error: unknown, fallbacks: DescribeErrorFallbacks): { title: string; detail: string | null } {
   if (error instanceof Error) {
     return { title: error.message || error.name, detail: error.stack ?? null }
   }
   if (typeof error === 'string') return { title: error, detail: null }
-  if (error === null || error === undefined) return { title: '未知错误', detail: null }
+  if (error === null || error === undefined) return { title: fallbacks.unknownTitle, detail: null }
   try {
-    return { title: '非 Error 对象', detail: JSON.stringify(error, null, 2) }
+    return { title: fallbacks.nonErrorTitle, detail: JSON.stringify(error, null, 2) }
   } catch {
     return { title: String(error), detail: null }
   }
@@ -104,8 +112,11 @@ interface ErrorFallbackOptions {
  * （侧栏、路由 Outlet 都可能正是崩掉的那一块），所以这里只用最基础的标签和样式 token。
  */
 export function ErrorFallback(props: ErrorFallbackProps & ErrorFallbackOptions) {
-  const { error, reset, title = '界面出错了', description = '这个页面渲染时抛出了异常，已经被拦截下来，其它功能不受影响。', embedded = false, reloadable = !embedded } = props
-  const { title: message, detail } = describeError(error)
+  const t = useTranslation()
+  const { error, reset, title, description, embedded = false, reloadable = !embedded } = props
+  const heading = title ?? t('common.error.rootTitle')
+  const body = description ?? t('common.error.rootDescription')
+  const { title: message, detail } = describeError(error, { unknownTitle: t('common.label.unknownError'), nonErrorTitle: t('common.error.nonError') })
 
   return (
     <div className={cn('flex w-full justify-center p-6', embedded ? 'items-start' : 'min-h-screen items-center bg-background')}>
@@ -113,19 +124,19 @@ export function ErrorFallback(props: ErrorFallbackProps & ErrorFallbackOptions) 
         <div className="flex items-start gap-3">
           <TriangleAlert size={18} strokeWidth={1.5} aria-hidden className="mt-0.5 shrink-0 text-text-destructive" />
           <div className="min-w-0 flex-1">
-            <p className="system-md-semibold text-text-primary">{title}</p>
-            <p className="mt-1 system-xs-regular text-text-tertiary">{description}</p>
+            <p className="system-md-semibold text-text-primary">{heading}</p>
+            <p className="mt-1 system-xs-regular text-text-tertiary">{body}</p>
           </div>
         </div>
 
-        <p className="mt-4 system-xs-medium text-text-secondary">错误信息</p>
+        <p className="mt-4 system-xs-medium text-text-secondary">{t('common.error.messageLabel')}</p>
         <p className="mt-1 rounded-lg border border-module-border bg-inset p-3 system-xs-regular break-words text-text-secondary">
           {message}
         </p>
 
         {detail ? (
           <details className="mt-2">
-            <summary className="cursor-pointer system-xs-regular text-text-tertiary select-none">调用栈</summary>
+            <summary className="cursor-pointer system-xs-regular text-text-tertiary select-none">{t('common.error.stackLabel')}</summary>
             <pre className="mt-1 max-h-56 overflow-auto rounded-lg border border-module-border bg-inset p-3 system-2xs-regular whitespace-pre-wrap text-text-tertiary">
               {detail}
             </pre>
@@ -134,11 +145,11 @@ export function ErrorFallback(props: ErrorFallbackProps & ErrorFallbackOptions) 
 
         <div className="mt-4 flex items-center gap-2">
           <Button size="sm" onClick={reset}>
-            <RotateCcw size={13} /> 重试
+            <RotateCcw size={13} /> {t('common.action.retry')}
           </Button>
           {reloadable ? (
             <Button size="sm" variant="outline" onClick={() => window.location.reload()}>
-              重新加载应用
+              {t('common.action.reloadApp')}
             </Button>
           ) : null}
         </div>

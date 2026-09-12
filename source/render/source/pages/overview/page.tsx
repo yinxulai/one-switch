@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useTranslation } from '@/i18n/provider'
 import { cn } from '@/lib/utils'
 import { useOverviewService, useProviderAnalyticsDetail } from './service'
 import { StatsGrid } from './components/stats-grid'
@@ -26,6 +27,7 @@ interface OverviewPageProps {
 export function OverviewPage(props: OverviewPageProps) {
   const { data, loading, refreshing, error, refresh } = useOverviewService(props.range)
   const providerDetail = useProviderAnalyticsDetail(props.providerId ?? null, props.range)
+  const t = useTranslation()
   const selectedProviderName = providerDetail.data?.summary.providerName
     ?? data?.providerStats.find(provider => provider.providerId === props.providerId)?.providerName
 
@@ -100,9 +102,9 @@ export function OverviewPage(props: OverviewPageProps) {
           <EmptyState
             embedded
             icon={AlertTriangle}
-            title="供应商分析加载失败"
-            description="暂时无法读取该时间范围的统计数据，请稍后重试。"
-            action={<Button variant="outline" size="sm" onClick={() => void providerDetail.refresh()}>重新加载</Button>}
+            title={t('overview.providerError.title')}
+            description={t('overview.providerError.description')}
+            action={<Button variant="outline" size="sm" onClick={() => void providerDetail.refresh()}>{t('common.action.refresh')}</Button>}
           />
         </Card>
       )
@@ -119,9 +121,9 @@ export function OverviewPage(props: OverviewPageProps) {
           <EmptyState
             embedded
             icon={AlertTriangle}
-            title="统计数据加载失败"
-            description="暂时无法读取统计数据，请检查服务状态后重试。"
-            action={<Button variant="outline" size="sm" onClick={() => void refresh()}>重新加载</Button>}
+            title={t('overview.error.title')}
+            description={t('overview.error.description')}
+            action={<Button variant="outline" size="sm" onClick={() => void refresh()}>{t('common.action.refresh')}</Button>}
           />
         </Card>
       )
@@ -154,19 +156,19 @@ export function OverviewPage(props: OverviewPageProps) {
   return (
     <PageLayout>
       <PageHeader
-        title={props.providerId ? `${selectedProviderName ?? '供应商'} 数据分析` : '统计分析'}
-        description={props.providerId ? '供应商请求质量、用量和模型表现' : '请求量、成功率、延迟等核心指标统计'}
-        breadcrumbs={props.providerId ? [{ label: '统计分析', onClick: () => props.onSelectProvider() }, { label: selectedProviderName ?? '供应商分析' }] : undefined}
+        title={props.providerId ? t('overview.provider.title', { provider: selectedProviderName ?? t('overview.provider.unknown') }) : t('overview.title')}
+        description={props.providerId ? t('overview.provider.description') : t('overview.description')}
+        breadcrumbs={props.providerId ? [{ label: t('overview.provider.breadcrumb'), onClick: () => props.onSelectProvider() }, { label: selectedProviderName ?? t('overview.provider.unknown') }] : undefined}
         actions={(
           <div className="flex items-center gap-2">
             <Tabs value={props.range} onValueChange={value => props.onRangeChange(value as AnalyticsRange)}>
               <TabsList>
-                <TabsTrigger value="today" className="px-2.5 text-xs">今日</TabsTrigger>
-                <TabsTrigger value="7d" className="px-2.5 text-xs">近 7 天</TabsTrigger>
-                <TabsTrigger value="30d" className="px-2.5 text-xs">近 30 天</TabsTrigger>
+                <TabsTrigger value="today" className="px-2.5 text-xs">{t('overview.range.today')}</TabsTrigger>
+                <TabsTrigger value="7d" className="px-2.5 text-xs">{t('overview.range.7d')}</TabsTrigger>
+                <TabsTrigger value="30d" className="px-2.5 text-xs">{t('overview.range.30d')}</TabsTrigger>
               </TabsList>
             </Tabs>
-            <Button variant="outline" size="icon" title="刷新统计数据" aria-label="刷新统计数据" disabled={activeRefreshing} onClick={() => void refreshActiveView()}>
+            <Button variant="outline" size="icon" title={t('overview.refresh')} aria-label={t('overview.refresh')} disabled={activeRefreshing} onClick={() => void refreshActiveView()}>
               <RefreshCw size={14} className={cn(activeRefreshing && 'animate-spin')} />
             </Button>
           </div>

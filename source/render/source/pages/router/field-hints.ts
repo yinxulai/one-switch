@@ -9,6 +9,7 @@ import {
   type WorkflowGraph,
   type WorkflowProtocol,
 } from '@common/router/types'
+import type { AppTranslator } from '@/i18n/provider'
 
 export interface WorkflowConnection {
   sourceNodeId: string
@@ -54,7 +55,7 @@ const MAX_FLATTEN_DEPTH = 4
 /** 数组采样上限：只看前若干条推断元素结构。 */
 const MAX_ARRAY_SAMPLE = 20
 
-function flattenFields(source: unknown, prefix: string, sourceNodeId: string, sourcePort: string, depth = 0): SchemaFieldDescriptor[] {
+function flattenFields(t: AppTranslator, source: unknown, prefix: string, sourceNodeId: string, sourcePort: string, depth = 0): SchemaFieldDescriptor[] {
   if (!isPlainObject(source)) {
     return prefix
       ? [{ path: prefix, valueType: inferType(source), sourceNodeId, sourcePort }]
@@ -65,7 +66,7 @@ function flattenFields(source: unknown, prefix: string, sourceNodeId: string, so
   for (const [key, value] of Object.entries(source)) {
     const nextPath = prefix ? `${prefix}.${key}` : key
     if (Array.isArray(value)) {
-      fields.push(...flattenArrayFields(value, nextPath, sourceNodeId, sourcePort, depth))
+      fields.push(...flattenArrayFields(t, value, nextPath, sourceNodeId, sourcePort, depth))
       continue
     }
     if (isPlainObject(value) && !OPAQUE_PATHS.has(nextPath)) {
@@ -77,9 +78,9 @@ function flattenFields(source: unknown, prefix: string, sourceNodeId: string, so
         valueType: 'object',
         sourceNodeId,
         sourcePort,
-        note: '整体对象；要按具体属性比较请选下面的字段',
+        note: t('router.fieldNote.object'),
       })
-      fields.push(...flattenFields(value, nextPath, sourceNodeId, sourcePort, depth + 1))
+      fields.push(...flattenFields(t, value, nextPath, sourceNodeId, sourcePort, depth + 1))
       continue
     }
     fields.push({
@@ -99,7 +100,7 @@ function flattenFields(source: unknown, prefix: string, sourceNodeId: string, so
  * - 元素不是对象 / 采不到样本 → 只留一个 `array` 字段，
  *   交给 `contains`、`empty`、`notEmpty` 对整体判定。
  */
-function flattenArrayFields(items: unknown[], prefix: string, sourceNodeId: string, sourcePort: string, depth: number): SchemaFieldDescriptor[] {
+function flattenArrayFields(t: AppTranslator, items: unknown[], prefix: string, sourceNodeId: string, sourcePort: string, depth: number): SchemaFieldDescriptor[] {
   const arrayField: SchemaFieldDescriptor = { path: prefix, valueType: 'array', sourceNodeId, sourcePort }
   if (items.length === 0 || depth >= MAX_FLATTEN_DEPTH) return [arrayField]
 
@@ -115,16 +116,16 @@ function flattenArrayFields(items: unknown[], prefix: string, sourceNodeId: stri
 
   const wildcardPath = `${prefix}${PATH_WILDCARD_SUFFIX}`
   const fields: SchemaFieldDescriptor[] = [
-    { ...arrayField, note: '整体数组；要按元素比较请选下面的通配投影字段' },
+    { ...arrayField, note: t('router.fieldNote.array') },
   ]
   for (const [key, value] of Object.entries(merged)) {
     const nextPath = `${wildcardPath}.${key}`
     if (Array.isArray(value)) {
-      fields.push(...flattenArrayFields(value, nextPath, sourceNodeId, sourcePort, depth + 1))
+      fields.push(...flattenArrayFields(t, value, nextPath, sourceNodeId, sourcePort, depth + 1))
       continue
     }
     if (isPlainObject(value)) {
-      fields.push(...flattenFields(value, nextPath, sourceNodeId, sourcePort, depth + 1))
+      fields.push(...flattenFields(t, value, nextPath, sourceNodeId, sourcePort, depth + 1))
       continue
     }
     fields.push({ path: nextPath, valueType: inferType(value), sourceNodeId, sourcePort })
@@ -180,7 +181,7 @@ function addUniqueField(fields: SchemaFieldDescriptor[], field: SchemaFieldDescr
   }
 }
 
-export function resolveInputHints(graph: WorkflowGraph, targetNodeId: string, samplePayload: unknown): InputHintResult {
+export function resolveInputHints(t: AppTranslator, graph: WorkflowGraph, targetNodeId: string, samplePayload: unknown): InputHintResult {
   const models = graph.nodes
   const { connections, upstreamNodeIds } = collectUpstreamConnections(graph, targetNodeId)
   const modelsById = new Map(models.map(model => [model.id, model]))
@@ -190,13 +191,13 @@ export function resolveInputHints(graph: WorkflowGraph, targetNodeId: string, sa
     if (!upstreamNodeIds.has(model.id)) continue
 
     if (model.kind === 'input') {
-      for (const field of flattenFields(samplePayload, '', model.id, 'context')) addUniqueField(fields, field)
+      for (const field of flattenFields(t, samplePayload, '', model.id, 'context')) addUniqueField(fields, field)
       addUniqueField(fields, {
         path: 'logicalModels',
         valueType: 'array',
         sourceNodeId: model.id,
         sourcePort: 'context',
-        note: '可用逻辑模型列表；取 id 请用通配投影 logicalModels[*].id',
+        note: t('router.fieldNote.logicalModels'),
       })
       addUniqueField(fields, {
         path: 'route.requestedModel',
@@ -282,28 +283,28 @@ export function resolveInputHints(graph: WorkflowGraph, targetNodeId: string, sa
         valueType: itemType,
         sourceNodeId: model.id,
         sourcePort: 'body',
-        note: sourcePath ? `当前轮的元素（来自 ${sourcePath}）` : '当前轮的元素（尚未配置遍历来源）',
+        note: sourcePath ? t('router.fieldNote.iterationItemFrom', { path: sourcePath }) : t('router.fieldNote.iterationItemPending'),
       })
       addUniqueField(fields, {
         path: 'route.iteration.index',
         valueType: 'number',
         sourceNodeId: model.id,
         sourcePort: 'body',
-        note: '当前轮序号：数组是下标，对象是键在 Object.keys 里的位置',
+        note: t('router.fieldNote.iterationIndex'),
       })
       addUniqueField(fields, {
         path: 'route.iteration.key',
         valueType: 'string',
         sourceNodeId: model.id,
         sourcePort: 'body',
-        note: '当前轮的键名；数组模式是下标字符串',
+        note: t('router.fieldNote.iterationKey'),
       })
       addUniqueField(fields, {
         path: 'route.iteration.total',
         valueType: 'number',
         sourceNodeId: model.id,
         sourcePort: 'body',
-        note: '遍历来源的总条数',
+        note: t('router.fieldNote.iterationTotal'),
       })
 
       const resultPath = model.resultPath.trim()
@@ -313,7 +314,7 @@ export function resolveInputHints(graph: WorkflowGraph, targetNodeId: string, sa
           valueType: 'unknown',
           sourceNodeId: model.id,
           sourcePort: 'out',
-          note: '遍历完成后写回的汇总结果',
+          note: t('router.fieldNote.iterationResult'),
         })
       }
 
@@ -325,7 +326,7 @@ export function resolveInputHints(graph: WorkflowGraph, targetNodeId: string, sa
           valueType: collectField?.valueType ?? 'unknown',
           sourceNodeId: model.id,
           sourcePort: 'out',
-          note: '每轮结束后读取的结果路径（迭代节点判定本轮是否命中）',
+          note: t('router.fieldNote.iterationCollect'),
         })
       }
       continue
@@ -341,7 +342,7 @@ export function resolveInputHints(graph: WorkflowGraph, targetNodeId: string, sa
           valueType: 'unknown',
           sourceNodeId: model.id,
           sourcePort: 'out',
-          note: '脚本 return 的返回值（类型由脚本内容决定）',
+          note: t('router.fieldNote.scriptResult'),
         })
       }
       continue
@@ -355,7 +356,7 @@ export function resolveInputHints(graph: WorkflowGraph, targetNodeId: string, sa
           valueType: 'string',
           sourceNodeId: model.id,
           sourcePort: 'out',
-          note: '逻辑模型返回的文本回复',
+          note: t('router.fieldNote.promptResult'),
         })
       }
       continue

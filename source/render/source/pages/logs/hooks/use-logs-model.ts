@@ -3,12 +3,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { logsApi } from '@/api/observability'
 import { unwrap } from '@/api/unwrap'
 import { useToast } from '@/components/ui/toast'
+import { useTranslation } from '@/i18n/provider'
 import { useLogsUiStore } from '../store'
 
 export const LOGS_PAGE_SIZE = 100
 
 export function useLogsModel(initialSearchText?: string) {
   const toast = useToast()
+  const t = useTranslation()
   const client = useQueryClient()
   const live = useLogsUiStore(state => state.live)
   const setLive = useLogsUiStore(state => state.setLive)
@@ -43,7 +45,7 @@ export function useLogsModel(initialSearchText?: string) {
       setPage(1)
       client.invalidateQueries({ queryKey: ['runtime-logs'] })
       setClearDialogOpen(false)
-      toast.success('运行日志已清空')
+      toast.success(t('logs.toast.cleared'))
     },
   })
   const logs = query.data?.logs ?? []
@@ -60,9 +62,9 @@ export function useLogsModel(initialSearchText?: string) {
       const data = await exportMutation.mutateAsync()
       const blobUrl = URL.createObjectURL(new Blob([data.content], { type: 'text/plain;charset=utf-8' }))
       const anchor = document.createElement('a'); anchor.href = blobUrl; anchor.download = `one-switch-${new Date().toISOString().replaceAll(':', '-')}.log`; anchor.click(); URL.revokeObjectURL(blobUrl)
-      toast.success('运行日志已导出')
-    } catch (error) { toast.error(error instanceof Error ? error.message : '运行日志导出失败') }
-  }, [exportMutation, toast])
-  const clearLogs = useCallback(async () => { try { await clearMutation.mutateAsync() } catch (error) { toast.error(error instanceof Error ? error.message : '运行日志清空失败') } }, [clearMutation, toast])
+      toast.success(t('logs.toast.exported'))
+    } catch (error) { toast.error(error instanceof Error ? error.message : t('logs.toast.exportFailed')) }
+  }, [exportMutation, toast, t])
+  const clearLogs = useCallback(async () => { try { await clearMutation.mutateAsync() } catch (error) { toast.error(error instanceof Error ? error.message : t('logs.toast.clearFailed')) } }, [clearMutation, toast, t])
   return { logs, total, totalPages, page, goToPage, pageSize: LOGS_PAGE_SIZE, loading: query.isPending, refreshing: query.isFetching && !query.isPending, error, filtered, live, setLive, levelFilter, setLevelFilter, searchText, setSearchText, clearDialogOpen, setClearDialogOpen, refresh, exportLogs, clearLogs }
 }

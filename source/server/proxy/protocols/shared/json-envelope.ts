@@ -1,7 +1,7 @@
 import type { EnvelopeInput, EnvelopeWriteResult, ProtocolEnvelope, ProtocolModelReadResult, TransportKind } from '@server/proxy/contracts'
 
 /** 「请求体必须是 JSON 对象」是模型读写与默认值补齐共用的失败文案。 */
-export const JSON_BODY_REQUIRED_MESSAGE = '请求体必须是 JSON 对象'
+export const JSON_BODY_REQUIRED_MESSAGE = 'The request body must be a JSON object'
 
 /**
  * 解析请求体为 JSON 对象；空体、非法 JSON、非对象都返回 `null`。
@@ -24,8 +24,8 @@ export function readJsonModel(body: Buffer): ProtocolModelReadResult {
   const payload = parseJsonObject(body)
   if (payload === null) return { ok: false, reason: JSON_BODY_REQUIRED_MESSAGE }
   const model = payload.model
-  if (model === undefined) return { ok: false, reason: '缺少 model 字段' }
-  if (typeof model !== 'string' || model.trim().length === 0) return { ok: false, reason: 'model 必须为非空字符串' }
+  if (model === undefined) return { ok: false, reason: 'Missing the model field' }
+  if (typeof model !== 'string' || model.trim().length === 0) return { ok: false, reason: 'The model field must be a non-empty string' }
   return { ok: true, model }
 }
 

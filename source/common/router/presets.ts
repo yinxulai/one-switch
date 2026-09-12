@@ -440,10 +440,11 @@ export function createDefaultGraph(): WorkflowGraph {
   return { version: 1, nodes, edges }
 }
 
+/** 内置策略预设的标识符集合。展示文案不在这里，而在渲染层的 `pages/router/policy-preset-text.ts`。 */
+export type RouterPolicyPresetId = 'model-direct' | 'ua-source-routing' | 'llm-complexity-routing' | 'script-routing'
+
 export interface RouterPolicyPreset {
-  id: string
-  name: string
-  description: string
+  id: RouterPolicyPresetId
   /** 是否是系统内建的默认策略（列表第一项，可在任何时刻一键选回）。 */
   isDefault: boolean
   /** 生成预设图；落点逻辑模型由传入的当前逻辑模型列表定好，保证套用后即可运行。 */
@@ -782,33 +783,31 @@ return isComplex ? 'complex' : 'simple'`,
   return { version: 1, nodes, edges }
 }
 
-/** 策略预设：一键把画布换成某种内置规则，随时可切回默认策略。 */
+/**
+ * 策略预设：一键把画布换成某种内置规则，随时可切回默认策略。
+ *
+ * 注意：这里生成的**图内容**（节点名 / 描述 / 条件名 / 控制项标签 / 脚本与提示词样例）
+ * 会随保存落进数据库、并被服务端路由引擎直接执行，属于用户数据而非界面文案，
+ * 因此一律不参与界面本地化；只有策略本身的名称与说明（纯展示）放在渲染层目录里。
+ */
 export const ROUTER_POLICY_PRESETS: RouterPolicyPreset[] = [
   {
     id: 'model-direct',
-    name: '逻辑模型命中',
-    description: '请求模型命中逻辑模型列表就直连它，否则落到默认逻辑模型（条件判定 + 两次逻辑模型选择）。',
     isDefault: true,
     createGraph: createDefaultPolicyGraph,
   },
   {
     id: 'ua-source-routing',
-    name: 'UA 区分来源',
-    description: '遍历请求头识别客户端（Cursor / Claude CLI），分流到不同逻辑模型，认不出的来源回落默认。',
     isDefault: false,
     createGraph: createUserAgentGraph,
   },
   {
     id: 'llm-complexity-routing',
-    name: 'LLM 分析请求复杂度',
-    description: '让逻辑模型读一遍请求判断复杂度，复杂请求走高性能落点，其余走快而便宜的落点。',
     isDefault: false,
     createGraph: createLlmComplexityGraph,
   },
   {
     id: 'script-routing',
-    name: 'JS 脚本处理请求',
-    description: '用沙箱脚本按请求规模打分分档，再按分档分流到不同逻辑模型。',
     isDefault: false,
     createGraph: createScriptRoutingGraph,
   },

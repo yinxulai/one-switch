@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/i18n/provider'
 import type { RequestRewriteRule, RuleStatusFilter } from '../types'
 
 interface RuleLibraryProps {
@@ -18,12 +19,13 @@ interface RuleLibraryProps {
 }
 
 export function RuleLibrary(props: RuleLibraryProps) {
+  const t = useTranslation()
   return (
     <Card className="h-fit overflow-hidden">
         <CardHeader className="grid gap-3 pb-3">
         <div className="flex items-center justify-between gap-2">
-          <CardTitle>规则库</CardTitle>
-          <Badge variant="muted" className="font-normal">{props.rules.length} 条</Badge>
+          <CardTitle>{t('rules.library.title')}</CardTitle>
+          <Badge variant="muted" className="font-normal">{t('rules.library.count', { count: props.rules.length })}</Badge>
         </div>
         <div className="grid gap-2">
           <div className="relative">
@@ -31,22 +33,22 @@ export function RuleLibrary(props: RuleLibraryProps) {
             <Input
               value={props.search}
               onChange={event => props.onSearchChange(event.target.value)}
-              placeholder="搜索名称或动作"
+              placeholder={t('rules.library.searchPlaceholder')}
               className="pl-9"
-              aria-label="搜索请求重写规则"
+              aria-label={t('rules.library.searchAria')}
             />
           </div>
           <Select value={props.statusFilter} onValueChange={value => props.onStatusFilterChange(value as RuleStatusFilter)}>
-            <SelectTrigger aria-label="筛选规则状态" className="w-full">
+            <SelectTrigger aria-label={t('rules.filter.statusAria')} className="w-full">
               <span className="flex items-center gap-2">
                 <Filter className="size-3.5 text-text-tertiary" />
                 <SelectValue />
               </span>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">全部状态</SelectItem>
-              <SelectItem value="enabled">仅启用</SelectItem>
-              <SelectItem value="disabled">仅停用</SelectItem>
+              <SelectItem value="all">{t('rules.filter.statusAll')}</SelectItem>
+              <SelectItem value="enabled">{t('rules.filter.statusEnabled')}</SelectItem>
+              <SelectItem value="disabled">{t('rules.filter.statusDisabled')}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -56,6 +58,8 @@ export function RuleLibrary(props: RuleLibraryProps) {
           <div className="grid gap-0.5 px-2 pb-2">
             {props.rules.map(rule => {
               const active = props.selectedRuleId === rule.id
+              const hasRequest = rule.actions.some(action => action.stage === 'request')
+              const hasResponse = rule.actions.some(action => action.stage === 'response')
               return (
                 <button
                   key={rule.id}
@@ -70,21 +74,21 @@ export function RuleLibrary(props: RuleLibraryProps) {
                   <div className="flex items-start gap-2.5">
                     <span className={cn(
                       'mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-lg',
-                      rule.actions.some(action => action.stage === 'request') ? 'bg-info/15 text-info' : 'bg-warning/15 text-text-warning',
+                      hasRequest ? 'bg-info/15 text-info' : 'bg-warning/15 text-text-warning',
                     )}>
                       <SlidersHorizontal className="size-3.5" />
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-1.5">
                         <span className="truncate system-xs-medium">{rule.name}</span>
-                        {!rule.enabled && <Badge variant="muted" className="px-1.5 py-0 system-2xs-medium">停用</Badge>}
+                        {!rule.enabled && <Badge variant="muted" className="px-1.5 py-0 system-2xs-medium">{t('rules.status.disabled')}</Badge>}
                       </span>
                       <span className="mt-1 flex items-center gap-1.5 system-2xs-regular text-text-tertiary">
-                        <span>{rule.actions.some(action => action.stage === 'request') ? '请求' : ''}{rule.actions.some(action => action.stage === 'request') && rule.actions.some(action => action.stage === 'response') ? ' / ' : ''}{rule.actions.some(action => action.stage === 'response') ? '响应' : ''}</span>
+                        <span>{[hasRequest && t('rules.stage.request'), hasResponse && t('rules.stage.response')].filter(Boolean).join(' / ')}</span>
                         <span>·</span>
-                        <span>{rule.actions.length} 个动作</span>
+                        <span>{t('rules.library.actionCount', { count: rule.actions.length })}</span>
                         <span>·</span>
-                        <span>{rule.global ? '全局' : `${rule.boundProviders} 个供应商`}</span>
+                        <span>{rule.global ? t('rules.scope.global') : t('rules.boundProviders', { count: rule.boundProviders })}</span>
                       </span>
                     </span>
                   </div>
@@ -93,7 +97,7 @@ export function RuleLibrary(props: RuleLibraryProps) {
             })}
           </div>
         ) : (
-          <InlineEmptyState icon={SearchX} title="没有匹配的规则" description="试着放宽搜索词，或把状态筛选切回全部状态。" />
+          <InlineEmptyState icon={SearchX} title={t('rules.filter.empty.title')} description={t('rules.filter.empty.description')} />
         )}
       </CardContent>
     </Card>

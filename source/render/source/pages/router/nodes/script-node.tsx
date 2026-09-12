@@ -2,6 +2,7 @@ import { SquareCode, Timer } from 'lucide-react'
 
 import { NodeHandle } from '../components/node-handle'
 import { NodeBody, NodeRow, NodeRowList } from '../components/node-sections'
+import { useTranslation } from '@/i18n/provider'
 import type { RouteNodeProps } from '../node-data'
 import type { ScriptNode } from '@common/router/types'
 
@@ -16,18 +17,19 @@ export function ScriptNodeView(props: RouteNodeProps) {
   const model = data.model as ScriptNode
   const resultPath = model.resultPath.trim()
   const lineCount = model.code.split('\n').filter(line => line.trim()).length
+  const t = useTranslation()
 
   return (
     <>
       <NodeBody className="mb-1 gap-1 py-1">
         <NodeRowList>
           <NodeRow
-            name={resultPath || '未配置结果写回路径'}
-            meta="写回"
+            name={resultPath || t('router.summary.resultPathEmpty')}
+            meta={t('router.nodeView.writeBackMeta')}
             icon={<SquareCode className="size-3.5 shrink-0 text-text-accent" aria-hidden />}
           />
           <NodeRow
-            name={lineCount > 0 ? `脚本 ${lineCount} 行` : '脚本为空'}
+            name={lineCount > 0 ? t('router.nodeView.scriptLines', { count: lineCount }) : t('router.nodeView.scriptEmpty')}
             meta={`${model.timeoutMilliseconds} ms`}
             icon={<Timer className="size-3.5 shrink-0 text-text-accent" aria-hidden />}
           />

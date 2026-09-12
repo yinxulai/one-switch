@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider } from '@tanstack/react-router'
 import { router } from './routing'
 import { ErrorBoundary } from './components/error-boundary'
+import { I18nProvider } from './i18n/provider'
 import './index.css'
 
 const queryClient = new QueryClient({
@@ -31,7 +32,9 @@ ReactDOM.createRoot(document.getElementById('root')!, {
       }}
     >
       <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
+        <I18nProvider>
+          <RouterProvider router={router} />
+        </I18nProvider>
       </QueryClientProvider>
     </ErrorBoundary>
   </React.StrictMode>,

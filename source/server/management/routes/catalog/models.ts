@@ -30,7 +30,7 @@ async function handleGetLogicalModel(_req: IncomingMessage, res: ServerResponse,
   const { id } = GetLogicalModelSchema.parse(body)
   const model = await getLogicalModel(id)
   if (!model) {
-    sendError(res, 'NOT_FOUND', '逻辑模型不存在', 404)
+    sendError(res, 'NOT_FOUND', 'Logical model not found', 404)
     return
   }
   sendSuccess(res, model)

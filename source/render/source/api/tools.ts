@@ -1,4 +1,5 @@
 import type { Protocol } from '@common/schemas'
+import type { TranslateParams } from '@common/i18n'
 import { request } from './client'
 
 export interface ModelTestResult {
@@ -9,6 +10,7 @@ export interface ModelTestResult {
   success: boolean
   statusCode?: number
   errorMessage?: string
+  errorParams?: TranslateParams
   inputTokens?: number | null
   outputTokens?: number | null
   durationMilliseconds: number

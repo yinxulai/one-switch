@@ -8,6 +8,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { NodePanelProps } from '../node-data'
+import { useTranslation } from '@/i18n/provider'
+import type { UiCatalogKey } from '@common/i18n/catalogs'
 import type { ModelSelectSource, RuntimeLogicalModel } from '@common/router/types'
 import {
   NodePanelField,
@@ -21,20 +23,20 @@ type ModelField = 'modelIds' | 'fallbackModelIds'
 
 interface SourceOption {
   value: ModelSelectSource
-  label: string
-  description: string
+  labelKey: UiCatalogKey
+  descriptionKey: UiCatalogKey
 }
 
 const SOURCE_OPTIONS: SourceOption[] = [
   {
     value: 'fixed',
-    label: '固定选择',
-    description: '不关心请求内容，始终使用下方勾选的逻辑模型列表。',
+    labelKey: 'router.panel.sourceFixed.label',
+    descriptionKey: 'router.panel.sourceFixed.description',
   },
   {
     value: 'variable',
-    label: '变量取值',
-    description: '把上游字段的取值直接当作逻辑模型 id（字符串或字符串数组），取不到时回落到兜底列表。',
+    labelKey: 'router.panel.sourceVariable.label',
+    descriptionKey: 'router.panel.sourceVariable.description',
   },
 ]
 
@@ -45,10 +47,14 @@ export function ModelSelectPanel(props: NodePanelProps) {
   const variablePath = node?.variablePath ?? ''
   const modelIds = node?.modelIds ?? []
   const fallbackModelIds = node?.fallbackModelIds ?? []
+  const t = useTranslation()
 
   const activeDescription = useMemo(
-    () => SOURCE_OPTIONS.find(option => option.value === source)?.description ?? '',
-    [source],
+    () => {
+      const option = SOURCE_OPTIONS.find(item => item.value === source)
+      return option ? t(option.descriptionKey) : ''
+    },
+    [source, t],
   )
 
   /** 变量取值只能来自字符串 / 字符串数组字段：逻辑模型 id 的形态。 */
@@ -79,7 +85,7 @@ export function ModelSelectPanel(props: NodePanelProps) {
 
   return (
     <div className="grid gap-2.5">
-      <NodePanelField label="取值来源">
+      <NodePanelField label={t('router.panel.source')}>
         <Select
           value={source}
           onValueChange={value => update(current => current.kind === 'model-select'
@@ -90,7 +96,7 @@ export function ModelSelectPanel(props: NodePanelProps) {
           <SelectContent className={PANEL_POPUP_SURFACE_CLASSNAME}>
             {SOURCE_OPTIONS.map(option => (
               <SelectItem className={PANEL_POPUP_ITEM_CLASSNAME} key={option.value} value={option.value}>
-                {option.label}
+                {t(option.labelKey)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -100,7 +106,7 @@ export function ModelSelectPanel(props: NodePanelProps) {
       <NodePanelHint>{activeDescription}</NodePanelHint>
 
       {source === 'variable' && (
-        <NodePanelField label="取值字段（上游 schema）">
+        <NodePanelField label={t('router.panel.variablePath')}>
           <Select
             value={variablePath || undefined}
             onValueChange={value => update(current => current.kind === 'model-select'
@@ -122,29 +128,29 @@ export function ModelSelectPanel(props: NodePanelProps) {
 
       {source === 'variable' && variableFields.length === 0 && (
         <NodePanelHint tone="warning">
-          暂无可用字段，请先把会产生字符串字段的节点连接到当前节点上游。
+          {t('router.panel.variableNoFields')}
         </NodePanelHint>
       )}
 
       {source === 'fixed'
         ? (
           <ModelPicker
-            emptyHint="暂无可用逻辑模型，请先在逻辑模型页面创建。"
+            emptyHint={t('router.panel.noLogicalModels')}
             logicalModels={logicalModels}
             onToggle={toggleModel}
             selectedIds={modelIds}
             target="modelIds"
-            title="目标逻辑模型"
+            title={t('router.panel.targetModels')}
           />
         )
         : (
           <ModelPicker
-            emptyHint="没有勾选兜底逻辑模型时，取不到值就不产出落点。"
+            emptyHint={t('router.panel.fallbackEmpty')}
             logicalModels={logicalModels}
             onToggle={toggleModel}
             selectedIds={fallbackModelIds}
             target="fallbackModelIds"
-            title="兜底逻辑模型"
+            title={t('router.panel.fallbackModels')}
           />
         )}
     </div>

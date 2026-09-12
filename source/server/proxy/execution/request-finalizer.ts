@@ -111,7 +111,7 @@ export function createRequestFinalizer(options: RequestFinalizerOptions): Reques
             errorMessage: lastError.message,
           })
         } catch (logError) {
-          console.error(`[proxy] 写入取消请求尝试日志失败: ${(logError as Error).message}`)
+          console.error(`[proxy] failed to write the cancelled attempt log: ${(logError as Error).message}`)
         }
         await requestLogger.finalizeRequestLog('cancelled', startedAt)
         return false
@@ -152,7 +152,7 @@ export function createRequestFinalizer(options: RequestFinalizerOptions): Reques
           })
         }
       } catch (logError) {
-        console.error(`[proxy] 写入请求尝试日志失败: ${(logError as Error).message}`)
+        console.error(`[proxy] failed to write the request attempt log: ${(logError as Error).message}`)
       }
       const recordedOutcome = error instanceof RecordedAttemptError ? error.outcome : null
       let healthScope: HealthFailureScope = 'none'
@@ -188,7 +188,7 @@ export function createRequestFinalizer(options: RequestFinalizerOptions): Reques
         const responseBody = response.fail(
           502,
           'ALL_PROVIDERS_FAILED',
-          lastError?.message ?? '所有 Provider 都失败了',
+          lastError?.message ?? 'All providers failed',
         )
         await requestLogger.finalizeLocalErrorContent(502, response.headers(), responseBody)
       }

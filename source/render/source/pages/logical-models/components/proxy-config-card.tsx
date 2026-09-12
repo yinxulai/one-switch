@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { useTranslation } from '@/i18n/provider'
 import { cn } from '@/lib/utils'
 
 interface ProxyConfigCardProps {
@@ -29,6 +30,7 @@ const PROTOCOLS = [
 
 export function ProxyConfigCard(props: ProxyConfigCardProps) {
   const { proxyBaseUrl, proxyPort, proxyRunning, copied, onCopyEndpoint } = props
+  const t = useTranslation()
   const [selectedProtocol, setSelectedProtocol] = useState<string>('openai-completions')
 
   const protocolInfo = PROTOCOLS.find(p => p.key === selectedProtocol)
@@ -42,9 +44,9 @@ export function ProxyConfigCard(props: ProxyConfigCardProps) {
             <Server size={16} />
           </div>
           <div>
-            <CardTitle>服务接入配置</CardTitle>
+            <CardTitle>{t('logicalModels.proxy.title')}</CardTitle>
             <CardDescription className="mt-0.5">
-              本地代理服务，统一入口转发到各上游提供商
+              {t('logicalModels.proxy.description')}
             </CardDescription>
           </div>
         </div>
@@ -52,7 +54,7 @@ export function ProxyConfigCard(props: ProxyConfigCardProps) {
       <CardContent className="space-y-3 p-4 pt-0">
         <div className="grid gap-3 md:grid-cols-[minmax(0,2fr)_1fr]">
           <FormField
-            label={<span className="flex items-center gap-1"><Plug className="size-3.5" aria-hidden />接入地址</span>}
+            label={<span className="flex items-center gap-1"><Plug className="size-3.5" aria-hidden />{t('logicalModels.proxy.endpoint')}</span>}
             htmlFor="proxy-protocol"
           >
             <div className="flex gap-2">
@@ -75,11 +77,11 @@ export function ProxyConfigCard(props: ProxyConfigCardProps) {
                 disabled={!proxyRunning}
                 onClick={() => void onCopyEndpoint(fullUrl)}
               >
-                <Copy size={13} /> {copied ? '已复制' : '复制'}
+                <Copy size={13} /> {copied ? t('common.action.copied') : t('common.action.copy')}
               </Button>
             </div>
           </FormField>
-          <FormField label={<span className="flex items-center gap-1"><KeyRound className="size-3.5" aria-hidden />服务状态</span>}>
+          <FormField label={<span className="flex items-center gap-1"><KeyRound className="size-3.5" aria-hidden />{t('logicalModels.proxy.status')}</span>}>
             <div className="flex h-8 items-center justify-between rounded-lg bg-components-input-bg-normal px-3">
               <div className="flex items-center">
                 <span
@@ -88,7 +90,7 @@ export function ProxyConfigCard(props: ProxyConfigCardProps) {
                     proxyRunning ? 'bg-success animate-pulse' : 'bg-text-quaternary',
                   )}
                 />
-                <span className="system-xs-regular text-text-secondary">{proxyRunning ? '运行中' : '已暂停'}</span>
+                <span className="system-xs-regular text-text-secondary">{proxyRunning ? t('logicalModels.proxy.running') : t('logicalModels.proxy.paused')}</span>
               </div>
               <span className="font-mono system-xs-regular text-text-tertiary">
                 :{proxyPort}
@@ -103,13 +105,13 @@ export function ProxyConfigCard(props: ProxyConfigCardProps) {
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <p className="system-xs-medium text-text-primary">本地服务无需 API Key</p>
+              <p className="system-xs-medium text-text-primary">{t('logicalModels.proxy.noKeyTitle')}</p>
               <span className="inline-flex items-center gap-1 system-2xs-medium text-text-success">
-                <Check size={11} aria-hidden /> 已就绪
+                <Check size={11} aria-hidden /> {t('logicalModels.proxy.ready')}
               </span>
             </div>
             <p className="mt-1 system-xs-regular text-text-tertiary">
-              本地代理不校验 API Key。请求按模型名路由到对应逻辑模型，未命中回落到默认逻辑模型；请在「模型管理」中为各上游提供商配置 API Key（无需鉴权的上游可以留空）。
+              {t('logicalModels.proxy.noKeyDescription')}
             </p>
           </div>
         </div>

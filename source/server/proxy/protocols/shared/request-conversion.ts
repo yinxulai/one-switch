@@ -15,12 +15,12 @@ type Json = Record<string, unknown>
  */
 export function convertRequestBody(clientProtocol: Protocol, endpointProtocol: Protocol, requestBody: Buffer, providerModelName: string): Buffer {
   if (clientProtocol === endpointProtocol) {
-    throw new Error(`同协议请求不应进入转换路径: ${clientProtocol}`)
+    throw new Error(`Same-protocol requests must not enter the conversion path: ${clientProtocol}`)
   }
 
   const direction = findRequestDirection(clientProtocol, endpointProtocol)
   if (!direction) {
-    throw new Error(`不支持的协议转换方向: ${clientProtocol} -> ${endpointProtocol}`)
+    throw new Error(`Unsupported protocol conversion direction: ${clientProtocol} -> ${endpointProtocol}`)
   }
 
   const payload = JSON.parse(requestBody.toString('utf8')) as Json

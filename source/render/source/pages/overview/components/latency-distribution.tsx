@@ -3,10 +3,13 @@ import { Bar, BarChart, CartesianGrid, Tooltip, XAxis, YAxis } from 'recharts'
 import { Card, CardContent } from '@/components/ui/card'
 import { ChartContainer, type ChartConfig } from '@/components/ui/chart'
 import { CardSectionHeader } from '@/components/card-section-header'
+import { useTranslation, type AppTranslator } from '@/i18n/provider'
 
-const chartConfig = {
-  count: { label: '请求数', color: 'hsl(var(--success))' },
-} satisfies ChartConfig
+function buildChartConfig(t: AppTranslator): ChartConfig {
+  return {
+    count: { label: t('overview.latency.count'), color: 'hsl(var(--success))' },
+  }
+}
 
 interface LatencyDistributionProps {
   buckets: LatencyBucket[]
@@ -25,6 +28,7 @@ function formatAxisTick(value: string): string {
 
 function LatencyTooltip(props: LatencyTooltipProps) {
   const { active, label, payload } = props
+  const t = useTranslation()
   if (!active || !label || !payload?.length) return null
   const bucket = payload[0]?.payload
   if (!bucket) return null
@@ -33,7 +37,7 @@ function LatencyTooltip(props: LatencyTooltipProps) {
     <div className="rounded-lg border-[0.5px] border-components-panel-border bg-components-panel-bg-blur px-3 py-2 system-xs-regular backdrop-blur-[5px]">
       <div className="system-xs-medium text-text-primary">TTFT {bucket.range}</div>
       <div className="mt-1.5 flex items-center justify-between gap-6">
-        <span className="text-text-tertiary">请求数</span>
+        <span className="text-text-tertiary">{t('overview.latency.count')}</span>
         <span className="font-mono system-xs-medium tabular-nums text-text-primary">
           {bucket.count}（{bucket.percent}%）
         </span>
@@ -44,17 +48,18 @@ function LatencyTooltip(props: LatencyTooltipProps) {
 
 export function LatencyDistribution(props: LatencyDistributionProps) {
   const { buckets } = props
+  const t = useTranslation()
 
   return (
     <Card className="min-w-70">
-      <CardSectionHeader title="TTFT 分布" description="按 p95 均分区间" compact />
+      <CardSectionHeader title={t('overview.latency.title')} description={t('overview.latency.description')} compact />
       <CardContent className="pt-1">
         {buckets.length === 0 ? (
           <div className="flex min-h-44 items-center justify-center system-xs-regular text-text-tertiary">
-            暂无 TTFT 数据
+            {t('overview.latency.empty')}
           </div>
         ) : (
-          <ChartContainer config={chartConfig} className="aspect-auto h-44 w-full">
+          <ChartContainer config={buildChartConfig(t)} className="aspect-auto h-44 w-full">
             <BarChart data={buckets} margin={{ top: 8, right: 4, bottom: 0, left: 0 }} barCategoryGap="20%">
               <CartesianGrid vertical={false} />
               <XAxis

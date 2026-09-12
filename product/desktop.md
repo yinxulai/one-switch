@@ -45,7 +45,7 @@ Electron + Node + TypeScript + React/Vite，选型理由与版本要求见 [tech
 | 高级 | 请求重写 | 可复用重写规则的集中管理，见 [request-rewrite-rules.md](./request-rewrite-rules.md) |
 | 系统 | 接入配置 | 本地 Base URL 与各协议接入地址的展示与快捷复制 |
 | 系统 | 运行日志 | 应用运行时日志（`runtime_logs`） |
-| 系统 | 设置 | 监听、自启、出站代理、日志与数据维护 |
+| 系统 | 设置 | 外观（主题、语言）、启动、监听、出站代理、日志与数据维护 |
 
 ### 逻辑模型页
 

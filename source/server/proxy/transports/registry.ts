@@ -36,9 +36,9 @@ export function resolveTransportImplementation(resolution: TransportResolution):
     // `'websocket'` 是已声明但未实现的取值（见 `contracts/transport.ts`）。走到这里说明规划器
     // 真的给出了一条 WS 候选，而它本不该：没有实现时就不能产生这种候选。报错比静默回退到 HTTP
     // 好得多——后者会拿一个 WS 地址去发 HTTP 请求，失败原因与真实原因相差十万八千里。
-    throw new Error('WebSocket 传输尚未实现：规划器不应产出 websocket 候选')
+    throw new Error('WebSocket transport is not implemented: the planner must not produce websocket candidates')
   }
   const resolveIdleTimeoutMilliseconds = resolution.resolveIdleTimeoutMilliseconds
-  if (!resolveIdleTimeoutMilliseconds) throw new Error('HTTP 传输需要 resolveIdleTimeoutMilliseconds：连接会被复用，必须知道空闲多久回收')
+  if (!resolveIdleTimeoutMilliseconds) throw new Error('The HTTP transport needs resolveIdleTimeoutMilliseconds: connections are reused, so the idle timeout must be known')
   return createHttpTransport({ resolveIdleTimeoutMilliseconds })
 }

@@ -12,11 +12,11 @@ export async function applyManagementRequestGuards(method: string | undefined, u
 
   const pathname = new URL(url!, 'http://localhost').pathname
   if (!pathname.startsWith('/api/')) {
-    sendError(res, 'RESOURCE_NOT_FOUND', '管理 API 路径不存在', 404)
+    sendError(res, 'RESOURCE_NOT_FOUND', `Management API path not found: ${pathname}`, 404, { path: pathname })
     return false
   }
   if (method !== 'POST') {
-    sendError(res, 'METHOD_NOT_ALLOWED', '只支持 POST 请求', 405)
+    sendError(res, 'METHOD_NOT_ALLOWED', `Only POST is supported, received ${method ?? 'UNKNOWN'}`, 405, { method: method ?? 'UNKNOWN' })
     return false
   }
   return true

@@ -1,9 +1,11 @@
 import { useCallback } from 'react'
 import { useToast } from '@/components/ui/toast'
+import { useTranslation } from '@/i18n/provider'
 import { useProxyActions, useProxyStatus } from '@/features/proxy/hooks'
 
 export function useProxyToggle() {
   const toast = useToast()
+  const t = useTranslation()
   const proxyStatus = useProxyStatus()
   const proxyActions = useProxyActions()
 
@@ -15,8 +17,8 @@ export function useProxyToggle() {
       toast.error(result.errorMessage)
       return
     }
-    toast.success(result.data.running ? '服务已启动' : '服务已停止')
-  }, [proxyActions, proxyStatus, toast])
+    toast.success(result.data.running ? t('logicalModels.proxy.started') : t('logicalModels.proxy.stopped'))
+  }, [proxyActions, proxyStatus, t, toast])
 
   const proxyBaseUrl = proxyStatus ? `http://${proxyStatus.host}:${proxyStatus.port}` : ''
 

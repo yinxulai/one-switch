@@ -5,15 +5,14 @@ import { PageContent, PageHeader, PageLayout } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useToast } from '@/components/ui/toast'
+import { useTranslation, type AppTranslator } from '@/i18n/provider'
 import { RuleEditorDialog } from './components/rule-editor-dialog'
 import { RuleStats } from './components/rule-stats'
 import { RulesTable } from './components/rules-table'
-import { formatJsonActionValue, initialRules, parseJsonActionValue, type RequestRewriteRule, type RuleStatusFilter } from './types'
+import { formatJsonActionValue, parseJsonActionValue, type RequestRewriteRule, type RuleStatusFilter } from './types'
 import type { RequestRewriteRule as ApiRequestRewriteRule, Protocol } from '@common/schemas'
 
-const protocolLabels: Record<Protocol, string> = { 'openai-completions': 'OpenAI Completions', 'openai-responses': 'OpenAI Responses', 'anthropic-messages': 'Anthropic Messages' }
-const protocolValues = Object.fromEntries(Object.entries(protocolLabels).map(([value, label]) => [label, value])) as Record<string, Protocol>
-function toUiRule(rule: ApiRequestRewriteRule): RequestRewriteRule { return { id: rule.id, name: rule.name, description: rule.description, enabled: rule.enabled, global: rule.scope === 'global', protocols: rule.match.clientProtocols.map(item => protocolLabels[item]), match: { clientProtocols: rule.match.clientProtocols, upstreamProtocols: rule.match.upstreamProtocols }, actions: rule.actions.map((action, index) => ({ id: `${rule.id}-action-${index}`, stage: action.stage, target: action.type.startsWith('header-') ? 'header' : 'body', operation: action.type.endsWith('set') ? 'set' : action.type.endsWith('append') ? 'append' : action.type.endsWith('remove') || action.type.endsWith('delete') ? 'remove' : 'replace', path: 'name' in action ? action.name : action.path, value: 'value' in action ? (action.type === 'body-set' ? formatJsonActionValue(action.value) : String(action.value)) : 'search' in action ? action.search : undefined, replacement: 'replacement' in action ? action.replacement : undefined, regex: 'regex' in action ? action.regex : undefined })), testCases: rule.testCases.map(testCase => ({ ...testCase })), boundProviders: 0, updatedAt: new Date(rule.updatedTime).toLocaleString() } }
+function toUiRule(rule: ApiRequestRewriteRule): RequestRewriteRule { return { id: rule.id, name: rule.name, description: rule.description, enabled: rule.enabled, global: rule.scope === 'global', protocols: rule.match.clientProtocols, match: { clientProtocols: rule.match.clientProtocols, upstreamProtocols: rule.match.upstreamProtocols }, actions: rule.actions.map((action, index) => ({ id: `${rule.id}-action-${index}`, stage: action.stage, target: action.type.startsWith('header-') ? 'header' : 'body', operation: action.type.endsWith('set') ? 'set' : action.type.endsWith('append') ? 'append' : action.type.endsWith('remove') || action.type.endsWith('delete') ? 'remove' : 'replace', path: 'name' in action ? action.name : action.path, value: 'value' in action ? (action.type === 'body-set' ? formatJsonActionValue(action.value) : String(action.value)) : 'search' in action ? action.search : undefined, replacement: 'replacement' in action ? action.replacement : undefined, regex: 'regex' in action ? action.regex : undefined })), testCases: rule.testCases.map(testCase => ({ ...testCase })), boundProviders: 0, updatedTime: rule.updatedTime } }
 function toApiRule(rule: RequestRewriteRule): Omit<ApiRequestRewriteRule, 'id' | 'createdTime' | 'updatedTime' | 'deletedTime'> {
   return {
     name: rule.name,
@@ -22,7 +21,7 @@ function toApiRule(rule: RequestRewriteRule): Omit<ApiRequestRewriteRule, 'id' |
     scope: rule.global ? 'global' : 'model',
     schemaVersion: 1,
     source: 'user',
-    match: { clientProtocols: rule.protocols.map(item => protocolValues[item]), upstreamProtocols: rule.match.upstreamProtocols as Protocol[] },
+    match: { clientProtocols: rule.protocols, upstreamProtocols: rule.match.upstreamProtocols as Protocol[] },
     actions: rule.actions.map(action => {
       if (action.target === 'header') {
         if (action.operation === 'remove') return { type: 'header-remove', stage: action.stage, name: action.path }
@@ -36,11 +35,11 @@ function toApiRule(rule: RequestRewriteRule): Omit<ApiRequestRewriteRule, 'id' |
   }
 }
 
-function createRule(): RequestRewriteRule {
+function createRule(t: AppTranslator): RequestRewriteRule {
   const id = `rule-${Date.now()}`
   return {
     id,
-    name: '未命名规则',
+    name: t('rules.untitled'),
     description: '',
     enabled: true,
     global: false,
@@ -49,15 +48,16 @@ function createRule(): RequestRewriteRule {
     actions: [{ id: `${id}-action`, stage: 'request', target: 'header', operation: 'set', path: '', value: '' }],
     testCases: [],
     boundProviders: 0,
-    updatedAt: '尚未保存',
+    updatedTime: null,
   }
 }
 
 export function RequestRewriteRulesPage() {
+  const t = useTranslation()
   const toast = useToast()
   const [rules, setRules] = useState<RequestRewriteRule[]>([])
   const [editingRuleId, setEditingRuleId] = useState('')
-  const [draft, setDraft] = useState<RequestRewriteRule>(initialRules[0])
+  const [draft, setDraft] = useState<RequestRewriteRule>(() => createRule(t))
   const [loading, setLoading] = useState(true)
   useEffect(() => { void requestRewriteRuleApi.list().then(result => { if (result.success) { const next = result.data.map(toUiRule); setRules(next); if (next[0]) { setEditingRuleId(next[0].id); setDraft(next[0]) } } setLoading(false) }) }, [])
   const [editorOpen, setEditorOpen] = useState(false)
@@ -66,7 +66,7 @@ export function RequestRewriteRulesPage() {
   const [statusFilter, setStatusFilter] = useState<RuleStatusFilter>('all')
 
   const savedRule = rules.find(rule => rule.id === editingRuleId)
-  const dirty = draft.updatedAt === '尚未保存'
+  const dirty = draft.updatedTime === null
     || (savedRule ? JSON.stringify(savedRule) !== JSON.stringify(draft) : false)
   const filteredRules = useMemo(() => {
     const keyword = search.trim().toLocaleLowerCase()
@@ -87,44 +87,44 @@ export function RequestRewriteRulesPage() {
   }
 
   const addRule = () => {
-    const next = createRule()
+    const next = createRule(t)
     editRule(next)
   }
 
-  const saveRule = () => { void (async () => { const result = draft.id.startsWith('rule-') && draft.updatedAt === '尚未保存' ? await requestRewriteRuleApi.create(toApiRule(draft)) : await requestRewriteRuleApi.update(draft.id, toApiRule(draft)); if (!result.success) { toast.error(result.errorMessage); return }; const next = toUiRule(result.data); setRules(current => current.some(rule => rule.id === next.id) ? current.map(rule => rule.id === next.id ? next : rule) : [next, ...current]); setDraft(next); setEditingRuleId(next.id); setEditorOpen(false); toast.success('请求重写已保存') })() }
+  const saveRule = () => { void (async () => { const result = draft.updatedTime === null ? await requestRewriteRuleApi.create(toApiRule(draft)) : await requestRewriteRuleApi.update(draft.id, toApiRule(draft)); if (!result.success) { toast.error(result.errorMessage); return }; const next = toUiRule(result.data); setRules(current => current.some(rule => rule.id === next.id) ? current.map(rule => rule.id === next.id ? next : rule) : [next, ...current]); setDraft(next); setEditingRuleId(next.id); setEditorOpen(false); toast.success(t('rules.saved')) })() }
 
   const duplicateRule = (source: RequestRewriteRule = draft) => {
     const copy: RequestRewriteRule = {
       ...source,
       id: `rule-${Date.now()}`,
-      name: `${source.name} 副本`,
+      name: t('rules.duplicateSuffix', { name: source.name }),
       global: false,
       boundProviders: 0,
-      updatedAt: '尚未保存',
+      updatedTime: null,
       actions: source.actions.map((action, index) => ({ ...action, id: `action-${Date.now()}-${index}` })),
       testCases: source.testCases.map((testCase, index) => ({ ...testCase, id: `test-${Date.now()}-${index}` })),
     }
     editRule(copy)
   }
 
-  const deleteRule = (target: RequestRewriteRule) => { void (async () => { const result = await requestRewriteRuleApi.remove(target.id); if (!result.success) { toast.error(result.errorMessage); return }; setRules(current => current.filter(rule => rule.id !== target.id)); setDeleteTarget(null); setEditorOpen(false); toast.success('请求重写已删除，模型绑定已同步移除') })() }
+  const deleteRule = (target: RequestRewriteRule) => { void (async () => { const result = await requestRewriteRuleApi.remove(target.id); if (!result.success) { toast.error(result.errorMessage); return }; setRules(current => current.filter(rule => rule.id !== target.id)); setDeleteTarget(null); setEditorOpen(false); toast.success(t('rules.deleted')) })() }
 
   return (
     <PageLayout>
       <PageHeader
-        title="请求重写"
-        description="集中维护全局请求与响应重写规则"
+        title={t('rules.title')}
+        description={t('rules.description')}
         actions={(
           <div className="flex items-center gap-2">
-            <Button type="button" onClick={addRule}><Plus /> 新建规则</Button>
+            <Button type="button" onClick={addRule}><Plus /> {t('rules.create')}</Button>
           </div>
         )}
       />
       <PageContent>
-        {loading && <div className="system-xs-regular text-text-tertiary">正在加载请求重写规则…</div>}
+        {loading && <div className="system-xs-regular text-text-tertiary">{t('rules.loading')}</div>}
         <div className="flex items-center gap-2 rounded-lg border border-info/20 bg-info/8 px-3 py-2 system-xs-regular text-text-tertiary">
           <ShieldCheck className="size-3.5 shrink-0 text-info" />
-          全局请求重写会自动应用到所有匹配模型；普通请求重写需要在模型编辑窗口中绑定后才会生效。
+          {t('rules.notice')}
         </div>
         <RuleStats rules={rules} />
         <RulesTable
@@ -149,9 +149,9 @@ export function RequestRewriteRulesPage() {
         />
         <ConfirmDialog
           open={Boolean(deleteTarget)}
-          title={`删除“${deleteTarget?.name ?? ''}”？`}
-          description="该规则及其模型绑定将被同步移除，此操作无法撤销。"
-          confirmLabel="删除规则"
+          title={t('rules.delete.title', { name: deleteTarget?.name ?? '' })}
+          description={t('rules.delete.description')}
+          confirmLabel={t('rules.delete.confirm')}
           variant="destructive"
           onConfirm={() => deleteTarget && deleteRule(deleteTarget)}
           onOpenChange={open => !open && setDeleteTarget(null)}

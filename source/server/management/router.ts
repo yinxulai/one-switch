@@ -53,7 +53,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
   const route = router.match(req.method, url.pathname)
 
   if (!route) {
-    sendError(res, 'NOT_FOUND', `API 路径不存在 ${url.pathname}`, 404)
+    sendError(res, 'NOT_FOUND', `API path not found: ${url.pathname}`, 404, { path: url.pathname })
     return
   }
 

@@ -99,14 +99,26 @@
 
 ### 日志策略
 
-- 按天数保留：`logRetentionDays` 控制自动清理多少天之前的请求日志，默认 30 天，设置页可修改并可立即执行一次清理
-- 没有「保留最近 N 条」的条数上限：清理口径只有一个，即时间窗
-- 默认保存完整请求体和响应体；用户可显式关闭“记录请求内容”（`captureRequestContent`），关闭后不再采集新正文
+采集与保留是**两个正交的维度**，各有自己的开关与时间窗，四个设置项一一对应：
+
+| 维度 | 采集开关 | 自动保留 | 默认 |
+|------|----------|----------|------|
+| 请求日志（请求身份、逐次尝试、用量与指标） | `captureRequestLogs`（默认开） | `requestLogRetentionDays` | **`0` = 永久保留** |
+| 请求与响应正文（客户端与上游两个视角） | `captureRequestContent`（默认开） | `contentRetentionDays` | **7 天** |
+
+- **`0` 表示永久保留，不是「零天」。** 输入框里的 `0` 会把单位位置换成「永久」，避免被读成「马上删除」。默认值刻意不对称：指标行很小、且是历史统计与故障回溯的唯一来源，永久保留；正文会随请求长度线性膨胀，过期正文留 7 天就够了。
+- **正文开关失效于日志开关**：关掉 `captureRequestLogs` 后新请求只走代理链路、不落库，正文行也随之无处归属。关掉采集**不会**自动删除已有数据，删除只由保留策略与手动清理负责。
+- **正文过期只删正文。** `contentRetentionDays` 到期只删 `request_contents` 与 `attempt_contents`（协议转换前后的两个视角一起删），`request_logs`、`request_attempts` 与 `request_usages` / `attempt_usages` 全部保留：历史用量与延迟统计不会因为正文被清理而失真。
+- **请求日志过期是级联删除。** `requestLogRetentionDays` 到期依次删除 `attempt_contents`、`attempt_usages`、`request_contents`、`request_usages`、`request_attributes`、`request_attempts`，最后删除 `request_logs`，不留孤儿行。
+- 没有「保留最近 N 条」的条数上限：清理口径只有一个，即时间窗。
+- **手动清理与自动保留是两回事。** 设置页的“清理历史日志”可以分别输入「请求日志保留天数」和「请求响应正文保留天数」，即刻执行一次、不改动自动保留设置；单项填 `0` 表示本次跳过该项，两项都是 `0` 时不执行。接口 `PruneRequestLogsParams`（`requestLogRetentionDays?` / `contentRetentionDays?`）返回 `{ deletedLogs, deletedContents }`，两个数量分别对应两条删除路径。
+- **删除后的展示不能变形。** 正文被清理的记录仍是完整的一条请求记录，详情面板显式提示“正文已按保留策略清理”，而不是显示成空正文；列表、统计与分页在正文缺失时保持同一套布局。
+- 默认保存完整请求体和响应体；关闭 `captureRequestContent` 后不再采集新正文
 - 记录客户端原始请求与最终响应（`request_contents`），以及每次 upstream 尝试的请求/响应（`attempt_contents`）。
 - 协议转换不单独存储：展示时直接比较 `request_logs.clientProtocol` 与 `request_attempts.upstreamProtocol`，上游跳以什么形态作答读 `request_attempts.upstreamTransport`，耗时读 `request_attempts.durationMilliseconds`。转换前后的 Header 与正文分别由 `request_contents`（客户端侧）与 `attempt_contents`（上游侧）唯一提供。upstream 可以是供应商，也可以是协议转换器所在的中间目标。
 - **被拒的请求同样落库。** 协议无法识别、model 非法、没有可用逻辑模型、手动模型不可用、找不到上游目标、客户端中断——这些分支在建立执行上下文之前就返回了，但它们是用户真实发出的请求。不写日志会让「日志里查不到」被误读成「没发过这个请求」。
 - 正文与请求日志索引分开存储；单次正文不设置大小限制并完整读取、保存，以支持超长上下文和大体积请求。极大正文可能增加内存和数据库占用，但不应因日志记录失败影响代理请求。
-- 日志清理依次删除 `attempt_contents`、`attempt_usages`、`request_contents`、`request_usages`、`request_attributes`、`request_attempts`，最后删除 `request_logs`。
+- 日志清理依次删除 `attempt_contents`、`attempt_usages`、`request_contents`、`request_usages`、`request_attributes`、`request_attempts`，最后删除 `request_logs`；只清理正文时仅走 `request_contents` / `attempt_contents` 这一步
 - Authorization、API Key、Cookie 等敏感请求头始终脱敏，正文自身不视为已脱敏
 - 日志存储在本地应用数据目录
 - 支持日志导出（JSON 格式），正文默认不包含在导出文件中

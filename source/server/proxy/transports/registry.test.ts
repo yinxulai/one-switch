@@ -10,7 +10,7 @@ describe('传输实现解析', () => {
   it('fails loudly for a declared-but-unimplemented transport instead of falling back to http', () => {
     // `'websocket'` 是轴上的合法取值，但没有实现。静默回退到 HTTP 会拿一个 WS 地址去发 HTTP 请求，
     // 报出来的错与真实原因差得很远；规划器本来就不该产出这种候选，所以这里必须炸。
-    expect(() => resolveTransportImplementation({ transport: 'websocket' })).toThrow(/WebSocket 传输尚未实现/)
+    expect(() => resolveTransportImplementation({ transport: 'websocket' })).toThrow(/WebSocket transport is not implemented/)
   })
 
   it('refuses an http transport without an idle timeout source instead of silently never timing out', () => {

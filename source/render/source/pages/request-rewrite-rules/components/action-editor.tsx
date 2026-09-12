@@ -6,10 +6,39 @@ import { FormField } from '@/components/form-kit'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { useTranslation, type AppTranslator } from '@/i18n/provider'
+import type { UiCatalogKey } from '@common/i18n/catalogs'
 import type { RuleAction, RuleActionOperation, RuleActionTarget } from '../types'
 
-const operationLabels: Record<RuleActionOperation, string> = {
-  set: '设置', append: '追加', remove: '删除', replace: '替换',
+const OPERATION_LABEL_KEY: Record<RuleActionOperation, UiCatalogKey> = {
+  set: 'rules.actions.operation.set',
+  append: 'rules.actions.operation.append',
+  remove: 'rules.actions.operation.remove',
+  replace: 'rules.actions.operation.replace',
+}
+
+/** 值字段的标签与占位符按「是否替换」和「目标是 Header 还是 Body」分档。 */
+const VALUE_LABEL_KEY: Record<'replace' | 'header' | 'body', UiCatalogKey> = {
+  replace: 'rules.actions.valueLabel.replace',
+  header: 'rules.actions.valueLabel.header',
+  body: 'rules.actions.valueLabel.body',
+}
+const VALUE_PLACEHOLDER_KEY: Record<'replace' | 'header' | 'body', UiCatalogKey> = {
+  replace: 'rules.actions.valuePlaceholder.replace',
+  header: 'rules.actions.valuePlaceholder.header',
+  body: 'rules.actions.valuePlaceholder.body',
+}
+
+/** 目标只影响标签与占位符的接继，文案各自取自目录。 */
+function targetFieldLabels(t: AppTranslator, target: RuleActionTarget, operation: RuleActionOperation) {
+  const isHeader = target === 'header'
+  const suffix = operation === 'replace' ? 'replace' : isHeader ? 'header' : 'body'
+  return {
+    path: isHeader ? t('rules.actions.pathLabel.header') : t('rules.actions.pathLabel.body'),
+    pathPlaceholder: isHeader ? t('rules.actions.pathPlaceholder.header') : t('rules.actions.pathPlaceholder.body'),
+    value: t(VALUE_LABEL_KEY[suffix]),
+    valuePlaceholder: t(VALUE_PLACEHOLDER_KEY[suffix]),
+  }
 }
 
 interface ActionEditorProps {
@@ -18,6 +47,7 @@ interface ActionEditorProps {
 }
 
 export function ActionEditor(props: ActionEditorProps) {
+  const t = useTranslation()
   const [deleteActionId, setDeleteActionId] = useState<string>()
 
   const updateAction = (id: string, patch: Partial<RuleAction>) => {
@@ -32,19 +62,19 @@ export function ActionEditor(props: ActionEditorProps) {
     <section className="grid gap-3">
       <div className="flex items-end justify-between gap-3">
         <div>
-          <h3 className="system-sm-medium text-text-primary">动作</h3>
-          <p className="mt-1 system-xs-regular text-text-tertiary">按列表顺序依次修改请求或响应内容。</p>
+          <h3 className="system-sm-medium text-text-primary">{t('rules.actions.title')}</h3>
+          <p className="mt-1 system-xs-regular text-text-tertiary">{t('rules.actions.description')}</p>
         </div>
         <Button type="button" variant="outline" size="sm" className="h-8 px-2.5 system-xs-medium" onClick={addAction}>
-          <Plus /> 添加动作
+          <Plus /> {t('rules.actions.add')}
         </Button>
       </div>
 
       <div className="grid gap-2.5">
         {props.actions.length === 0 && (
           <div className="rounded-lg border border-dashed border-module-border px-4 py-8 text-center">
-            <p className="system-xs-medium text-text-primary">还没有动作</p>
-            <p className="mt-1 system-xs-regular text-text-tertiary">添加至少一个动作来修改 Header 或 JSON Body。</p>
+            <p className="system-xs-medium text-text-primary">{t('rules.actions.empty.title')}</p>
+            <p className="mt-1 system-xs-regular text-text-tertiary">{t('rules.actions.empty.description')}</p>
           </div>
         )}
         {props.actions.map((action, index) => {
@@ -52,42 +82,43 @@ export function ActionEditor(props: ActionEditorProps) {
           const isRemove = action.operation === 'remove'
           const isReplace = action.operation === 'replace'
           const operations = isHeader ? (['set', 'append', 'remove'] as RuleActionOperation[]) : (['set', 'remove', 'replace'] as RuleActionOperation[])
+          const labels = targetFieldLabels(t, action.target, action.operation)
 
           return (
             <div key={action.id} className="rounded-lg border border-module-border p-3">
               <div className="flex flex-wrap items-center gap-1.5 pb-3">
                 <span className="mr-1 flex size-6 shrink-0 items-center justify-center rounded-md bg-inset font-mono system-2xs-medium text-text-tertiary">{index + 1}</span>
                 <Select value={action.stage} onValueChange={value => updateAction(action.id, { stage: value as 'request' | 'response' })}>
-                  <SelectTrigger aria-label={`动作 ${index + 1} 阶段`}><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectItem value="request">请求</SelectItem><SelectItem value="response">响应</SelectItem></SelectContent>
+                  <SelectTrigger aria-label={t('rules.actions.stageAria', { index: index + 1 })}><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="request">{t('rules.stage.request')}</SelectItem><SelectItem value="response">{t('rules.stage.response')}</SelectItem></SelectContent>
                 </Select>
                 <Select value={action.target} onValueChange={value => updateAction(action.id, { target: value as RuleActionTarget, operation: 'set', value: '' })}>
-                  <SelectTrigger aria-label={`动作 ${index + 1} 目标`}><SelectValue /></SelectTrigger>
+                  <SelectTrigger aria-label={t('rules.actions.targetAria', { index: index + 1 })}><SelectValue /></SelectTrigger>
                   <SelectContent><SelectItem value="header">Header</SelectItem><SelectItem value="body">Body</SelectItem></SelectContent>
                 </Select>
                 <Select value={action.operation} onValueChange={value => updateAction(action.id, { operation: value as RuleActionOperation })}>
-                  <SelectTrigger aria-label={`动作 ${index + 1} 操作`}><SelectValue /></SelectTrigger>
-                  <SelectContent>{operations.map(operation => <SelectItem key={operation} value={operation}>{operationLabels[operation]}</SelectItem>)}</SelectContent>
+                  <SelectTrigger aria-label={t('rules.actions.operationAria', { index: index + 1 })}><SelectValue /></SelectTrigger>
+                  <SelectContent>{operations.map(operation => <SelectItem key={operation} value={operation}>{t(OPERATION_LABEL_KEY[operation])}</SelectItem>)}</SelectContent>
                 </Select>
-                <Button type="button" variant="ghost" size="icon-sm" aria-label="删除动作" className="ml-auto text-text-tertiary hover:text-text-destructive" onClick={() => setDeleteActionId(action.id)}>
+                <Button type="button" variant="ghost" size="icon-sm" aria-label={t('rules.actions.deleteAria')} className="ml-auto text-text-tertiary hover:text-text-destructive" onClick={() => setDeleteActionId(action.id)}>
                   <Trash2 />
                 </Button>
               </div>
 
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                <FormField label={isHeader ? 'Header 名称' : 'Body 路径'} htmlFor={`${action.id}-target`} className="sm:col-span-2">
+                <FormField label={labels.path} htmlFor={`${action.id}-target`} className="sm:col-span-2">
                   <Input
                     id={`${action.id}-target`}
                     value={action.path}
                     onChange={event => updateAction(action.id, { path: event.target.value })}
-                    placeholder={isHeader ? '例如 User-Agent' : '例如 $.metadata.source（当前支持 JSON Body）'}
+                    placeholder={labels.pathPlaceholder}
                     className="font-mono placeholder:font-mono"
                   />
                 </FormField>
                 {!isRemove && (
                   <FormField
                     className={isReplace ? 'sm:col-span-2' : undefined}
-                    label={isReplace ? '查找内容' : isHeader ? '值' : 'JSON 值'}
+                    label={labels.value}
                     htmlFor={`${action.id}-value`}
                   >
                     <div className="flex items-center gap-2">
@@ -95,25 +126,25 @@ export function ActionEditor(props: ActionEditorProps) {
                         id={`${action.id}-value`}
                         value={action.value ?? ''}
                         onChange={event => updateAction(action.id, { value: event.target.value })}
-                        placeholder={isReplace ? '输入查找内容，例如 foo(\\d+)' : isHeader ? '输入 Header 值' : '例如 "text"、true、42 或 {"key":"value"}'}
+                        placeholder={labels.valuePlaceholder}
                         className="min-w-0 flex-1 font-mono"
                       />
                       {isReplace && (
                         <label className="flex shrink-0 items-center gap-1.5 system-xs-regular text-text-tertiary">
-                          <Switch checked={action.regex ?? false} onCheckedChange={regex => updateAction(action.id, { regex })} aria-label="使用正则表达式" />
-                          正则
+                          <Switch checked={action.regex ?? false} onCheckedChange={regex => updateAction(action.id, { regex })} aria-label={t('rules.actions.regexAria')} />
+                          {t('rules.actions.regex')}
                         </label>
                       )}
                     </div>
                   </FormField>
                 )}
                 {isReplace && (
-                  <FormField label="替换为" htmlFor={`${action.id}-replacement`} className="sm:col-span-2">
+                  <FormField label={t('rules.actions.replacementLabel')} htmlFor={`${action.id}-replacement`} className="sm:col-span-2">
                     <Input
                       id={`${action.id}-replacement`}
                       value={action.replacement ?? ''}
                       onChange={event => updateAction(action.id, { replacement: event.target.value })}
-                      placeholder="输入替换结果，可用 $1 引用捕获组"
+                      placeholder={t('rules.actions.replacementPlaceholder')}
                     />
                   </FormField>
                 )}
@@ -124,9 +155,9 @@ export function ActionEditor(props: ActionEditorProps) {
       </div>
       <ConfirmDialog
         open={Boolean(deleteActionId)}
-        title="删除这个动作？"
-        description="该动作将从当前草稿中移除，保存规则后生效。"
-        confirmLabel="删除动作"
+        title={t('rules.actions.delete.title')}
+        description={t('rules.actions.delete.description')}
+        confirmLabel={t('rules.actions.delete.confirm')}
         variant="destructive"
         onConfirm={() => {
           props.onChange(props.actions.filter(action => action.id !== deleteActionId))

@@ -1,4 +1,13 @@
 import type { Protocol } from '@common/schemas'
+import type { UiCatalogKey } from '@common/i18n/catalogs'
+
+export interface ProtocolExample {
+  /** 品牌名，直接展示（不翻译） */
+  provider: string
+  /** 需要本地化的展示名，优先于 provider */
+  providerKey?: UiCatalogKey
+  url: string
+}
 
 export const PROTOCOL_PLACEHOLDERS: Record<Protocol, string> = {
   'openai-completions': 'https://api.openai.com/v1/chat/completions',
@@ -6,11 +15,11 @@ export const PROTOCOL_PLACEHOLDERS: Record<Protocol, string> = {
   'anthropic-messages': 'https://api.anthropic.com/v1/messages',
 }
 
-export const PROTOCOL_EXAMPLES: Record<Protocol, { provider: string; url: string }[]> = {
+export const PROTOCOL_EXAMPLES: Record<Protocol, ProtocolExample[]> = {
   'openai-completions': [
     { provider: 'OpenAI', url: 'https://api.openai.com/v1/chat/completions' },
     { provider: 'DeepSeek', url: 'https://api.deepseek.com/v1/chat/completions' },
-    { provider: 'Ollama（本地）', url: 'http://localhost:11434/v1/chat/completions' },
+    { provider: 'Ollama', providerKey: 'providers.example.ollamaLocal', url: 'http://localhost:11434/v1/chat/completions' },
   ],
   'openai-responses': [
     { provider: 'OpenAI', url: 'https://api.openai.com/v1/responses' },

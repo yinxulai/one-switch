@@ -26,24 +26,30 @@ describe('settings store', () => {
 
     const updated = await updateSettings({
       listenPort: 9400,
-      logRetentionDays: 14,
+      captureRequestLogs: true,
+      requestLogRetentionDays: 0,
       captureRequestContent: false,
+      contentRetentionDays: 3,
       consecutiveFailureThreshold: 5,
       idleTimeoutMilliseconds: 45_000,
     })
 
     expect(updated).toMatchObject({
       listenPort: 9400,
-      logRetentionDays: 14,
+      captureRequestLogs: true,
+      requestLogRetentionDays: 0,
       captureRequestContent: false,
+      contentRetentionDays: 3,
       consecutiveFailureThreshold: 5,
       idleTimeoutMilliseconds: 45_000,
     })
 
     expect(await getSettings()).toMatchObject({
       listenPort: 9400,
-      logRetentionDays: 14,
+      captureRequestLogs: true,
+      requestLogRetentionDays: 0,
       captureRequestContent: false,
+      contentRetentionDays: 3,
     })
     expect(listener).toHaveBeenCalledWith(expect.objectContaining({ listenPort: 9400 }))
 

@@ -88,6 +88,7 @@ one-switch/
 │   │
 │   ├── common/                     # server / command / render 共享
 │   │   ├── schemas.ts              # Zod schema（可被 server、command 和 render 引用）
+│   │   └── i18n/                   # i18n 核心与语言目录，见 i18n.md
 │   │
 │   └── render/                     # UI 入口：React 渲染进程
 │       ├── index.html
@@ -115,7 +116,7 @@ one-switch/
 | `source/server/proxy` | 代理请求链路：入口、路由、规划、执行、协议、修饰、观测 | [proxy-engine.md](./proxy-engine.md) |
 | `source/server/database` | SQLite + Drizzle 持久化层与按域拆分的 `*-store.ts` | [data-model.md](./data-model.md) |
 | `source/server/infrastructure`、`source/server/security` | 密钥环适配、Host 校验 | [security-privacy.md](./security-privacy.md) |
-| `source/common` | server / command / render 共享契约（Zod schema、协议表、路由类型） | 各自主题文档 |
+| `source/common` | server / command / render 共享契约（Zod schema、协议表、路由类型、i18n 核心与语言目录） | 各自主题文档、[i18n.md](./i18n.md) |
 | `source/command` | Electron 主进程：窗口、托盘、开机自启、自动更新、密钥存储 | [desktop.md](./desktop.md) |
 | `source/render` | React 控制台 | [desktop.md](./desktop.md) |
 

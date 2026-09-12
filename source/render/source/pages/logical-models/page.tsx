@@ -8,6 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/components/ui/toast'
 import { Plug, Plus } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
+import { useTranslation } from '@/i18n/provider'
 import { DndContext, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { restrictToWindowEdges } from '@dnd-kit/modifiers'
 import { SortableContext, arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable'
@@ -41,12 +42,13 @@ function LogicalModelColumn(props: LogicalModelColumnProps) {
   const service = useLogicalModelControlService(logicalModelId)
   const confirm = useConfirm()
   const toast = useToast()
+  const t = useTranslation()
   const [addModelOpen, setAddModelOpen] = useState(false)
   const removeModel = async (model: ProviderModelRoute) => {
     const confirmed = await confirm({
-      title: '移除模型',
-      description: `确定从“${logicalModelName}”逻辑模型移除 ${model.modelName} 吗？`,
-      confirmLabel: '移除',
+      title: t('logicalModels.remove.title'),
+      description: t('logicalModels.remove.description', { name: logicalModelName, model: model.modelName }),
+      confirmLabel: t('logicalModels.remove.confirm'),
       variant: 'destructive',
     })
     if (!confirmed) return
@@ -54,7 +56,7 @@ function LogicalModelColumn(props: LogicalModelColumnProps) {
       await unwrap(schedulingPolicyApi.remove(logicalModelId, model.id))
       await service.reload()
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '移除模型失败')
+      toast.error(error instanceof Error ? error.message : t('logicalModels.remove.failed'))
     }
   }
   return (
@@ -91,6 +93,7 @@ export function LogicalModelsPage(props: LogicalModelsPageProps) {
   const logicalModels = useLogicalModels()
   const { refresh: refreshLogicalModels, reorder: reorderLogicalModels } = useLogicalModelsActions()
   const service = useLogicalModelControlService('default')
+  const t = useTranslation()
   const [createLogicalModelOpen, setCreateLogicalModelOpen] = useState(false)
   const proxyRunning = service.proxyStatus?.running ?? false
   const enabledLogicalModels = logicalModels.filter(model => model.enabled)
@@ -117,16 +120,16 @@ export function LogicalModelsPage(props: LogicalModelsPageProps) {
   return (
     <PageLayout>
       <PageHeader
-        title="逻辑模型"
-        description="管理请求优先级、切换模式和模型启停"
+        title={t('logicalModels.title')}
+        description={t('logicalModels.description')}
         actions={(
           <div className="flex items-center gap-2">
             <Button onClick={() => setCreateLogicalModelOpen(true)}>
-              <Plus size={13} /> 创建逻辑模型
+              <Plus size={13} /> {t('logicalModels.create.open')}
             </Button>
             {onNavigateToAccess && (
               <Button variant="outline" onClick={onNavigateToAccess}>
-                <Plug size={13} /> 接入配置
+                <Plug size={13} /> {t('logicalModels.goToAccess')}
               </Button>
             )}
             <ProxyToggleButton running={proxyRunning} onToggle={service.toggleProxy} />

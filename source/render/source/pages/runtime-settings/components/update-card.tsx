@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { FormRow } from '@/components/form-kit'
 import { useToast } from '@/components/ui/toast'
+import { useLocale, useTranslation } from '@/i18n/provider'
 
 type StatusBadgeProps = {
   status: UpdateCheckStatus
@@ -51,9 +52,10 @@ function formatBytes(bytes: number): string {
   return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`
 }
 
-function formatDate(iso: string): string {
+/** 日期按当前界面语言格式化，不再写死 zh-CN。 */
+function formatDate(iso: string, locale: string): string {
   try {
-    return new Date(iso).toLocaleString('zh-CN', {
+    return new Date(iso).toLocaleString(locale, {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
@@ -89,16 +91,17 @@ type DownloadProgressProps = {
 }
 
 function PreviewCard() {
+  const t = useTranslation()
   return (
     <Card>
       <SettingsCardHeader
         icon={<Package />}
-        title="版本更新"
-        description="通过 GitHub Releases 获取应用更新"
+        title={t('settings.update.title')}
+        description={t('settings.update.descriptionMacOS')}
       />
       <CardContent className="px-4 py-3">
         <p className="system-xs-regular text-text-tertiary">
-          版本更新功能仅在 Electron 桌面端可用。
+          {t('settings.update.previewOnly')}
         </p>
       </CardContent>
     </Card>
@@ -107,10 +110,12 @@ function PreviewCard() {
 
 function VersionInfo(props: VersionInfoProps) {
   const { info } = props
+  const t = useTranslation()
+  const locale = useLocale()
   const parts = [
-    `当前版本 v${info?.currentVersion ?? '—'}`,
-    info ? `最新版本 v${info.latestVersion}` : null,
-    info?.releaseDate ? `发布于 ${formatDate(info.releaseDate)}` : null,
+    t('settings.update.currentVersion', { version: info?.currentVersion ?? '—' }),
+    info ? t('settings.update.latestVersion', { version: info.latestVersion }) : null,
+    info?.releaseDate ? t('settings.update.releasedAt', { date: formatDate(info.releaseDate, locale) }) : null,
   ].filter(Boolean)
 
   return <span>{parts.join(' · ')}</span>
@@ -118,6 +123,7 @@ function VersionInfo(props: VersionInfoProps) {
 
 function ReleaseNotes(props: ReleaseNotesProps) {
   const { info, hasUpdate } = props
+  const t = useTranslation()
   const notes = hasUpdate ? info?.releaseNotes : undefined
   if (!notes) return null
   // GitHub Releases 的 release notes 是 HTML，需要用 dangerouslySetInnerHTML 渲染
@@ -126,7 +132,7 @@ function ReleaseNotes(props: ReleaseNotesProps) {
   return (
     <details className="rounded-lg border border-module-border px-3 py-2 system-xs-regular">
       <summary className="cursor-pointer select-none system-xs-medium text-text-primary">
-        查看更新说明
+        {t('settings.update.notesToggle')}
       </summary>
       <div
         className="release-notes mt-2 max-h-48 overflow-y-auto system-2xs-regular text-text-tertiary"
@@ -138,6 +144,7 @@ function ReleaseNotes(props: ReleaseNotesProps) {
 
 function DownloadProgress(props: DownloadProgressProps) {
   const { progress } = props
+  const t = useTranslation()
   if (progress == null) return null
   const percent = Math.round(progress * 100)
   return (
@@ -148,7 +155,7 @@ function DownloadProgress(props: DownloadProgressProps) {
           style={{ width: `${percent}%` }}
         />
       </div>
-      <p className="system-2xs-regular text-text-tertiary">正在下载… {percent}%</p>
+      <p className="system-2xs-regular text-text-tertiary">{t('settings.update.downloading', { percent })}</p>
     </div>
   )
 }
@@ -163,6 +170,7 @@ function UpdateActions(props: UpdateActionsProps) {
     onInstall,
     onOpenReleases,
   } = props
+  const t = useTranslation()
 
   const renderUpdateAction = () => {
     if (!hasUpdate) return null
@@ -170,7 +178,7 @@ function UpdateActions(props: UpdateActionsProps) {
       return (
         <Button size="sm" onClick={onOpenReleases}>
           <Download className="size-3.5" />
-          前往下载 DMG
+          {t('settings.update.downloadDmg')}
         </Button>
       )
     }
@@ -178,7 +186,7 @@ function UpdateActions(props: UpdateActionsProps) {
       return (
         <Button size="sm" onClick={onOpenReleases}>
           <ExternalLink className="size-3.5" />
-          前往发布页
+          {t('settings.update.githubReleases')}
         </Button>
       )
     }
@@ -186,7 +194,7 @@ function UpdateActions(props: UpdateActionsProps) {
       return (
         <Button size="sm" onClick={onDownload}>
           <Download className="size-3.5" />
-          下载更新
+          {t('settings.update.download')}
         </Button>
       )
     }
@@ -194,7 +202,7 @@ function UpdateActions(props: UpdateActionsProps) {
       return (
         <Button size="sm" onClick={onInstall}>
           <Rocket className="size-3.5" />
-          立即安装
+          {t('settings.update.installNow')}
         </Button>
       )
     }
@@ -207,7 +215,7 @@ function UpdateActions(props: UpdateActionsProps) {
       {(!isMacOS || !hasUpdate) && (
         <Button size="sm" variant="ghost" onClick={onOpenReleases}>
           <ExternalLink className="size-3.5" />
-          GitHub 发布页
+          {t('settings.update.githubReleases')}
         </Button>
       )}
     </div>
@@ -216,6 +224,7 @@ function UpdateActions(props: UpdateActionsProps) {
 
 export function UpdateCard() {
   const toast = useToast()
+  const t = useTranslation()
   const [state, setState] = useState<UpdateState>({
     status: 'idle',
     info: null,
@@ -248,11 +257,11 @@ export function UpdateCard() {
     const next = await updater.check()
     applyState(next)
     if (next.status === 'up-to-date') {
-      toast.success('已是最新版本')
+      toast.success(t('settings.update.upToDateToast'))
     } else if (next.status === 'update-available') {
-      toast.success(`发现新版本 v${next.info?.latestVersion}`)
+      toast.success(t('settings.update.availableToast', { version: next.info?.latestVersion ?? '' }))
     } else if (next.status === 'error') {
-      toast.error(next.errorMessage ?? '检查更新失败')
+      toast.error(next.errorMessage ?? t('settings.update.checkFailed'))
     }
   }
 
@@ -260,9 +269,9 @@ export function UpdateCard() {
     if (!updater) return
     const ok = await updater.download()
     if (!ok) {
-      toast.error(state.errorMessage ?? '下载失败')
+      toast.error(state.errorMessage ?? t('settings.update.downloadFailed'))
     } else {
-      toast.success('安装包已下载完成')
+      toast.success(t('settings.update.downloadedToast'))
     }
   }
 
@@ -271,7 +280,7 @@ export function UpdateCard() {
     try {
       await updater.install()
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '启动安装程序失败')
+      toast.error(error instanceof Error ? error.message : t('settings.update.installFailed'))
     }
   }
 
@@ -295,14 +304,14 @@ export function UpdateCard() {
     <Card>
       <SettingsCardHeader
         icon={<Package />}
-        title="版本更新"
-        description={isMacOS ? '检查新版本并下载 DMG 安装包' : '检查新版本并通过系统安装程序升级'}
+        title={t('settings.update.title')}
+        description={isMacOS ? t('settings.update.descriptionMacOS') : t('settings.update.descriptionDesktop')}
         actions={<StatusBadge status={status} />}
       />
       <CardContent className="px-4">
         <div className="divide-y divide-border/50">
           <FormRow
-            title="版本"
+            title={t('settings.update.version')}
             description={<VersionInfo info={info} />}
             control={(
               <div className="flex flex-wrap items-center justify-end gap-2">
@@ -313,7 +322,7 @@ export function UpdateCard() {
                   disabled={isChecking}
                 >
                   <RefreshCw className={isChecking ? 'animate-spin' : ''} />
-                  {isChecking ? '检查中…' : '检查更新'}
+                  {isChecking ? t('settings.update.checking') : t('settings.update.check')}
                 </Button>
                 <UpdateActions
                   status={status}
@@ -330,7 +339,7 @@ export function UpdateCard() {
 
           {!isMacOS && info?.preferredAsset && (
             <FormRow
-              title="更新包"
+              title={t('settings.update.package')}
               description={<span className="font-mono">{info.preferredAsset.name}</span>}
               control={<span className="system-xs-regular text-text-tertiary">{formatBytes(info.preferredAsset.size)}</span>}
             />
@@ -353,20 +362,21 @@ export function UpdateCard() {
 
 function StatusBadge(props: StatusBadgeProps) {
   const { status } = props
+  const t = useTranslation()
   switch (status) {
     case 'checking':
-      return <Badge variant="info">检查中</Badge>
+      return <Badge variant="info">{t('settings.update.status.checking')}</Badge>
     case 'up-to-date':
-      return <Badge variant="success">最新</Badge>
+      return <Badge variant="success">{t('settings.update.status.upToDate')}</Badge>
     case 'update-available':
-      return <Badge variant="warning">可更新</Badge>
+      return <Badge variant="warning">{t('settings.update.status.available')}</Badge>
     case 'downloading':
-      return <Badge variant="info">下载中</Badge>
+      return <Badge variant="info">{t('settings.update.status.downloading')}</Badge>
     case 'downloaded':
-      return <Badge variant="success">待安装</Badge>
+      return <Badge variant="success">{t('settings.update.status.downloaded')}</Badge>
     case 'error':
-      return <Badge variant="destructive">检查失败</Badge>
+      return <Badge variant="destructive">{t('settings.update.status.error')}</Badge>
     default:
-      return <Badge variant="muted">未检查</Badge>
+      return <Badge variant="muted">{t('settings.update.status.idle')}</Badge>
   }
 }

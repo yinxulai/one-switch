@@ -55,12 +55,12 @@ export function serializeSseEvent(event: SseEvent): string {
 /** 非流式响应转换 */
 export function convertResponseBody(clientProtocol: Protocol, endpointProtocol: Protocol, body: Buffer): Buffer {
   if (clientProtocol === endpointProtocol) {
-    throw new Error(`同协议响应不应进入转换路径: ${clientProtocol}`)
+    throw new Error(`Same-protocol responses must not enter the conversion path: ${clientProtocol}`)
   }
 
   const direction = findResponseDirection(endpointProtocol, clientProtocol)
   if (!direction) {
-    throw new Error(`不支持的响应转换方向: ${endpointProtocol} -> ${clientProtocol}`)
+    throw new Error(`Unsupported response conversion direction: ${endpointProtocol} -> ${clientProtocol}`)
   }
 
   const payload = JSON.parse(body.toString('utf8')) as Json
@@ -73,12 +73,12 @@ export function convertResponseBody(clientProtocol: Protocol, endpointProtocol: 
  */
 export function createSseConverter(clientProtocol: Protocol, endpointProtocol: Protocol) {
   if (clientProtocol === endpointProtocol) {
-    throw new Error(`同协议流式响应不应进入转换路径: ${clientProtocol}`)
+    throw new Error(`Same-protocol streaming responses must not enter the conversion path: ${clientProtocol}`)
   }
 
   const direction = findResponseDirection(endpointProtocol, clientProtocol)
   if (!direction) {
-    throw new Error(`不支持的响应转换方向: ${endpointProtocol} -> ${clientProtocol}`)
+    throw new Error(`Unsupported response conversion direction: ${endpointProtocol} -> ${clientProtocol}`)
   }
 
   let buffer = ''

@@ -10,7 +10,8 @@ export const DATABASE_FILE_PREFIX = 'one-switch'
 /** 从应用版本号取主版本号：`1.0.0-rc.6` → `1`。 */
 export function getMajorVersion(appVersion: string): number {
   const matched = /^v?(\d+)/.exec(appVersion.trim())
-  if (!matched) throw new Error(`无法从应用版本号解析主版本号: ${appVersion}`)
+  // 诊断文案固定英文（见 product/i18n.md §2）：它会被写进启动失败日志与 issue。
+  if (!matched) throw new Error(`Cannot parse major version from app version: ${appVersion}`)
 
   return Number(matched[1])
 }

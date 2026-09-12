@@ -863,7 +863,9 @@ CREATE UNIQUE INDEX idx_attempt_contents_attempt
 安全与容量约束：
 
 - 默认开启正文采集，用户可在设置中显式关闭；关闭后不再记录新正文，但不会自动删除已有内容；
+- 采集与保留是两个独立维度：`captureRequestLogs` / `captureRequestContent` 各管一个开关，`requestLogRetentionDays`（默认 `0`，即永久）与 `contentRetentionDays`（默认 `7` 天）各管一个时间窗；`0` 一律表示永久保留；
 - 日志清理支持按保留天数执行，并同时删除请求正文、正文中的尝试内容、尝试记录和请求汇总；
+- 只清理正文时不删除任何「非载荷」行：`request_contents` / `attempt_contents` 走掉，请求汇总、尝试记录与用量行保留，因此历史统计不受影响；
 - API Key、Authorization、Cookie、Set-Cookie 等敏感请求头必须脱敏，正文自身不视为已脱敏；
 - 本地工具不限制正文大小，完整读取并保存已接收的请求和响应内容，以支持超长上下文和大体积请求；由此产生的内存与存储占用属于明确设计取舍；
 - 流式响应记录已接收的事件/文本片段，不阻塞代理转发，不因日志写入失败影响请求；

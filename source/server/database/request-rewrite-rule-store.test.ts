@@ -137,7 +137,7 @@ describe('request rewrite rule store', () => {
     await expect(replaceProviderModelRequestRewriteRuleBindings(providerModel.id, [
       { ruleId: globalRule.id, priority: 5, enabled: true },
       { ruleId: globalRule.id, priority: 10, enabled: true },
-    ])).rejects.toThrow('规则绑定或优先级重复')
+    ])).rejects.toThrow('A request rewrite rule with the same binding and priority already exists')
 
     const deleted = await deleteRequestRewriteRule(boundRule.id)
     expect(deleted).toMatchObject({ id: boundRule.id, affectedProviderModelCount: 1 })

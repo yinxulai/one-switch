@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useTranslation } from '@/i18n/provider'
 import { useModelManagementService } from './service'
 import { ProviderGrid } from './components/provider-grid'
 import { ProviderDetail } from './components/provider-detail'
@@ -20,25 +21,26 @@ interface ModelManagementPageProps {
 
 export function ModelManagementPage(props: ModelManagementPageProps) {
   const service = useModelManagementService()
+  const t = useTranslation()
   const [testPanelOpen, setTestPanelOpen] = useState(false)
 
   const renderHeaderActions = () => (
     <div className="flex items-center gap-2">
       <Button variant="outline" onClick={service.openImportFilePicker}>
-        <Upload size={14} /> 导入供应商
+        <Upload size={14} /> {t('providers.action.import')}
       </Button>
       <Button
         variant="outline"
         disabled={service.providers.length === 0}
         onClick={() => service.openExportDialog({ kind: 'all' })}
       >
-        <Download size={14} /> 导出全部
+        <Download size={14} /> {t('providers.action.exportAll')}
       </Button>
       <Button variant="outline" onClick={() => setTestPanelOpen(true)}>
-        <FlaskConical size={14} /> 连接测试
+        <FlaskConical size={14} /> {t('providers.action.connectionTest')}
       </Button>
       <Button onClick={() => service.openProviderDialog()}>
-        <Plus size={14} /> 新建供应商
+        <Plus size={14} /> {t('providers.action.create')}
       </Button>
     </div>
   )
@@ -117,16 +119,16 @@ export function ModelManagementPage(props: ModelManagementPageProps) {
       <Card>
         <EmptyState
           icon={MousePointerClick}
-          title={service.providers.length > 0 ? '选择一个供应商查看详情' : '还没有供应商'}
+          title={service.providers.length > 0 ? t('providers.empty.selectTitle') : t('providers.empty.noneTitle')}
           description={
             service.providers.length > 0
-              ? '从左侧列表中选择一个供应商，即可查看和管理其供应商模型与协议地址。'
-              : '创建供应商并配置凭据后，即可添加供应商模型与协议地址。'
+              ? t('providers.empty.selectDescription')
+              : t('providers.empty.noneDescription')
           }
           action={
             service.providers.length === 0 ? (
               <Button size="default" onClick={() => service.openProviderDialog()}>
-                <Plus size={14} /> 新建供应商
+                <Plus size={14} /> {t('providers.action.create')}
               </Button>
             ) : undefined
           }
@@ -230,7 +232,7 @@ export function ModelManagementPage(props: ModelManagementPageProps) {
 
   return (
     <PageLayout>
-      <PageHeader title="模型管理" description="集中管理供应商凭据与供应商模型映射" actions={renderHeaderActions()} />
+      <PageHeader title={t('providers.title')} description={t('providers.description')} actions={renderHeaderActions()} />
       <PageContent>
         {renderBody()}
         {renderDialogs()}

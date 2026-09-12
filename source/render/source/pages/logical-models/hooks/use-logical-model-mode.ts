@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
 import { useToast } from '@/components/ui/toast'
+import { useTranslation } from '@/i18n/provider'
 import { useLogicalModelModeQuery, useSwitchManualModelMutation } from '../queries'
 import type { ProviderHealth, ProviderModelHealth, ProviderModelRoute } from '@common/schemas'
 
@@ -8,6 +9,7 @@ type ProviderModelHealthMap = Record<string, ProviderModelHealth>
 
 export function useLogicalModelMode(logicalModelId: string, models: ProviderModelRoute[], health: HealthMap, providerModelHealth: ProviderModelHealthMap) {
   const toast = useToast()
+  const t = useTranslation()
   const query = useLogicalModelModeQuery(logicalModelId)
   const mutation = useSwitchManualModelMutation(logicalModelId)
   const manualModelId = query.data?.manualModelId ?? null
@@ -27,11 +29,11 @@ export function useLogicalModelMode(logicalModelId: string, models: ProviderMode
     if (mutation.isPending || nextMode === mode) return
     const initialModelId = nextMode === 'auto' ? null : manualModelId ?? models[0]?.id ?? null
     if (nextMode === 'manual' && !initialModelId) {
-      toast.error('请先添加一个模型，再切换到手动指定模式')
+      toast.error(t('logicalModels.mode.needModel'))
       return
     }
     try { await mutation.mutateAsync(initialModelId) } catch (error) { toast.error(error instanceof Error ? error.message : String(error)) }
-  }, [manualModelId, mode, models, mutation, toast])
+  }, [manualModelId, mode, models, mutation, t, toast])
 
   const selectManualModel = useCallback(async (model: ProviderModelRoute) => {
     if (mutation.isPending || mode !== 'manual') return

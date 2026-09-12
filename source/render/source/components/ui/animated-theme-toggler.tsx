@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, type ComponentPropsWithoutRef } from 'r
 import { Moon, Sun } from 'lucide-react'
 import { flushSync } from 'react-dom'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/i18n/provider'
 
 type Theme = 'light' | 'dark'
 
@@ -40,6 +41,7 @@ export function AnimatedThemeToggler({
   onThemeChange,
   ...props
 }: AnimatedThemeTogglerProps) {
+  const t = useTranslation()
   const buttonRef = useRef<HTMLButtonElement>(null)
   const transitioningRef = useRef(false)
   const animationRef = useRef<Animation | null>(null)
@@ -107,10 +109,10 @@ export function AnimatedThemeToggler({
       type="button"
       onClick={toggleTheme}
       className={cn(className)}
-      aria-label={theme === 'dark' ? '切换到浅色' : '切换到深色'}
+      aria-label={theme === 'dark' ? t('nav.theme.toLight') : t('nav.theme.toDark')}
     >
       {theme === 'dark' ? <Sun /> : <Moon />}
-      {children ?? <span className="sr-only">{theme === 'dark' ? '浅色模式' : '深色模式'}</span>}
+      {children ?? <span className="sr-only">{theme === 'dark' ? t('nav.theme.toLight') : t('nav.theme.toDark')}</span>}
     </button>
   )
 }

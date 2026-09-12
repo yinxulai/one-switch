@@ -4,7 +4,8 @@ import { Card, CardContent } from '@/components/ui/card'
 import { CardSectionHeader } from '@/components/card-section-header'
 import { MetricGrid } from '@/components/metric-grid'
 import { Badge } from '@/components/ui/badge'
-import { formatLatency, formatTokens } from '../lib/format'
+import { useLocale, useTranslation } from '@/i18n/provider'
+import { formatCount, formatLatency, formatTokens } from '../lib/format'
 import { FailureReasons } from './failure-reasons'
 import { LatencyDistribution } from './latency-distribution'
 import { TrendChart } from './trend-chart'
@@ -17,27 +18,29 @@ interface ProviderDetailProps {
 export function ProviderDetail(props: ProviderDetailProps) {
   const { summary, models: providerModels } = props.detail
   const hasSuccessfulCalls = summary.success > 0
+  const t = useTranslation()
+  const locale = useLocale()
 
   return (
     <div className="grid gap-4">
       <MetricGrid className="sm:grid-cols-5" items={[
-        { label: '尝试数', value: summary.attempts.toLocaleString(), Icon: BarChart3 },
-        { label: '尝试成功率', value: `${(summary.successRate * 100).toFixed(1)}%`, Icon: CheckCircle2 },
-        { label: '失败尝试', value: summary.failed.toLocaleString(), Icon: TriangleAlert },
-        { label: '平均延迟', value: hasSuccessfulCalls ? formatLatency(summary.avgLatencyMs) : '—', Icon: Clock3 },
-        { label: '用量', value: formatTokens(summary.totalTokens), Icon: Coins },
+        { label: t('overview.providerDetail.attempts'), value: formatCount(locale, summary.attempts), Icon: BarChart3 },
+        { label: t('overview.providerDetail.successRate'), value: `${(summary.successRate * 100).toFixed(1)}%`, Icon: CheckCircle2 },
+        { label: t('overview.providerDetail.failed'), value: formatCount(locale, summary.failed), Icon: TriangleAlert },
+        { label: t('overview.providerDetail.avgLatency'), value: hasSuccessfulCalls ? formatLatency(summary.avgLatencyMs) : '—', Icon: Clock3 },
+        { label: t('overview.providerDetail.usage'), value: formatTokens(summary.totalTokens), Icon: Coins },
       ]} />
 
       <Card>
-        <CardSectionHeader title="模型表现" description="按调用量排序 · 用于定位具体模型的质量与缓存差异" compact />
+        <CardSectionHeader title={t('overview.providerDetail.models.title')} description={t('overview.providerDetail.models.description')} compact />
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[720px] system-xs-regular">
-              <thead className="bg-inset text-text-tertiary"><tr><th className="px-4 py-2 text-left system-2xs-medium">模型</th><th className="px-3 py-2 text-right system-2xs-medium">尝试数</th><th className="px-3 py-2 text-right system-2xs-medium">平均延迟</th><th className="px-3 py-2 text-right system-2xs-medium">平均 TTFT</th><th className="px-3 py-2 text-right system-2xs-medium">平均 TPS</th><th className="px-3 py-2 text-right system-2xs-medium">缓存命中率</th><th className="px-4 py-2 text-right system-2xs-medium">成功率</th></tr></thead>
-              <tbody>{providerModels.length === 0 ? <tr><td colSpan={7} className="py-8 text-center text-text-tertiary">暂无模型数据</td></tr> : providerModels.map(model => (
+              <thead className="bg-inset text-text-tertiary"><tr><th className="px-4 py-2 text-left system-2xs-medium">{t('overview.models.column.model')}</th><th className="px-3 py-2 text-right system-2xs-medium">{t('overview.providerDetail.attempts')}</th><th className="px-3 py-2 text-right system-2xs-medium">{t('overview.models.column.avgLatency')}</th><th className="px-3 py-2 text-right system-2xs-medium">{t('overview.models.column.avgTtft')}</th><th className="px-3 py-2 text-right system-2xs-medium">{t('overview.models.column.avgTps')}</th><th className="px-3 py-2 text-right system-2xs-medium">{t('overview.models.column.cacheHitRate')}</th><th className="px-4 py-2 text-right system-2xs-medium">{t('overview.models.column.successRate')}</th></tr></thead>
+              <tbody>{providerModels.length === 0 ? <tr><td colSpan={7} className="py-8 text-center text-text-tertiary">{t('overview.providerDetail.models.empty')}</td></tr> : providerModels.map(model => (
                 <tr key={model.providerModelId} className="border-t border-border/40 transition-colors hover:bg-state-base-hover">
                   <td className="max-w-52 truncate px-4 py-2.5 system-xs-medium text-text-primary">{model.providerModelName}</td>
-                  <td className="px-3 py-2.5 text-right tabular-nums text-text-secondary">{model.attempts.toLocaleString()}</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums text-text-secondary">{formatCount(locale, model.attempts)}</td>
                   <td className="px-3 py-2.5 text-right tabular-nums text-text-secondary">{model.success > 0 ? formatLatency(model.avgLatencyMs) : '—'}</td>
                   <td className="px-3 py-2.5 text-right tabular-nums text-text-secondary">{model.avgTtftMs == null ? '—' : formatLatency(model.avgTtftMs)}</td>
                   <td className="px-3 py-2.5 text-right tabular-nums text-text-secondary">{model.avgTps == null ? '—' : model.avgTps.toFixed(1)}</td>

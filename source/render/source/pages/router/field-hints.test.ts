@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
+import { createAppTranslator } from '@common/i18n/catalogs'
 import { resolveInputHints } from './field-hints'
 import type { WorkflowGraph, WorkflowNodeModel } from '@common/router/types'
 
+const t = createAppTranslator('zh-CN')
 const position = { x: 0, y: 0 }
 const samplePayload = { request: { body: { model: 'gpt-4o-mini', priority: 2 } }, metadata: { source: 'test' } }
 const edge = (sourceNodeId: string, sourcePort: string, targetNodeId: string) => ({ id: `${sourceNodeId}:${sourcePort}->${targetNodeId}`, sourceNodeId, sourcePort, targetNodeId })
@@ -15,13 +17,13 @@ const control = (id: string): WorkflowNodeModel => ({ id, kind: 'control-input',
 describe('resolveInputHints', () => {
   it('仅提供真实上游字段并沿多级连接传递', () => {
     const target = condition('target')
-    const hints = resolveInputHints(graph([input(), control('control'), protocol('protocol'), target, output()], [edge('input', 'out', 'control'), edge('control', 'out', 'protocol'), edge('protocol', 'openai-completions', 'target')]), target.id, samplePayload)
+    const hints = resolveInputHints(t, graph([input(), control('control'), protocol('protocol'), target, output()], [edge('input', 'out', 'control'), edge('control', 'out', 'protocol'), edge('protocol', 'openai-completions', 'target')]), target.id, samplePayload)
     expect(hints.fields.map(field => field.path)).toEqual(expect.arrayContaining(['request.body.model', 'route.controls.mode', 'route.protocol']))
     expect(hints.fields.find(field => field.path === 'route.controls.mode')).toMatchObject({ valueType: 'enum', enumOptions: ['fast', 'safe'] })
   })
   it('按协议分支收窄枚举并忽略孤立节点', () => {
     const target = condition('target')
-    const hints = resolveInputHints(graph([input(), protocol('protocol'), target, control('isolated'), output()], [edge('input', 'out', 'protocol'), edge('protocol', 'unknown', 'target')]), target.id, samplePayload)
+    const hints = resolveInputHints(t, graph([input(), protocol('protocol'), target, control('isolated'), output()], [edge('input', 'out', 'protocol'), edge('protocol', 'unknown', 'target')]), target.id, samplePayload)
     expect(hints.fields.find(field => field.path === 'route.protocol')?.enumOptions).toEqual(['unknown'])
     // 只有一根轴：枚举 = 引擎承认的取值集合，因此包含这一版还没接上的 `websocket`。
     // 这里少一个值就等于让用户写不出合法的判断。
@@ -31,7 +33,7 @@ describe('resolveInputHints', () => {
   it('循环图不会无限遍历且禁用节点不产生字段', () => {
     const target = condition('target')
     const disabled = control('control'); disabled.enabled = false
-    const hints = resolveInputHints(graph([input(), disabled, target, output()], [edge('input', 'out', 'control'), edge('control', 'out', 'target'), edge('target', 'else', 'control')]), target.id, samplePayload)
+    const hints = resolveInputHints(t, graph([input(), disabled, target, output()], [edge('input', 'out', 'control'), edge('control', 'out', 'target'), edge('target', 'else', 'control')]), target.id, samplePayload)
     expect(hints.upstreamNodeIds).toEqual(expect.arrayContaining(['input', 'control']))
     expect(hints.upstreamNodeIds).not.toContain('target')
     expect(hints.fields.map(field => field.path)).not.toContain('route.controls.mode')
@@ -39,7 +41,7 @@ describe('resolveInputHints', () => {
   it('声明逻辑模型选择节点的落点逻辑模型字段', () => {
     const target = condition('target')
     const modelSelect: WorkflowNodeModel = { id: 'model-select', kind: 'model-select', name: '逻辑模型选择', enabled: true, description: '', position, source: 'fixed', variablePath: '', modelIds: ['model-a', 'model-b'], fallbackModelIds: [] }
-    const hints = resolveInputHints(graph([input(), modelSelect, target, output()], [edge('input', 'out', 'model-select'), edge('model-select', 'out', 'target')]), target.id, samplePayload)
+    const hints = resolveInputHints(t, graph([input(), modelSelect, target, output()], [edge('input', 'out', 'model-select'), edge('model-select', 'out', 'target')]), target.id, samplePayload)
     expect(hints.fields.map(field => field.path)).toContain('route.modelIds')
     expect(hints.fields.map(field => field.path)).toContain('route.fallback')
     expect(hints.fields.map(field => field.path)).not.toContain('metadata.iteration.current')
@@ -49,6 +51,7 @@ describe('resolveInputHints', () => {
   it('提供路由决策依据字段用于通用条件判断', () => {
     const target = condition('target')
     const hints = resolveInputHints(
+      t,
       graph([input(), protocol('protocol'), target, output()], [edge('input', 'out', 'protocol'), edge('protocol', 'openai-completions', 'target')]),
       target.id,
       {
@@ -81,6 +84,7 @@ describe('resolveInputHints', () => {
   it('对象字段同时暴露整体与细化字段，便于整块判断', () => {
     const target = condition('target')
     const hints = resolveInputHints(
+      t,
       graph([input(), target, output()], [edge('input', 'out', 'target')]),
       target.id,
       { request: { body: { model: 'x', options: { tier: 'gold', retries: 2 } } } },
@@ -98,6 +102,7 @@ describe('resolveInputHints', () => {
   it('对象数组给出通配投影字段，普通数组只给整体字段', () => {
     const target = condition('target')
     const hints = resolveInputHints(
+      t,
       graph([input(), target, output()], [edge('input', 'out', 'target')]),
       target.id,
       {
@@ -133,6 +138,7 @@ describe('resolveInputHints', () => {
       maxIterations: 10,
     }
     const hints = resolveInputHints(
+      t,
       graph([input(), iteration, target, output()], [edge('input', 'out', 'iteration'), edge('iteration', 'body', 'body-condition')]),
       target.id,
       samplePayload,
@@ -171,6 +177,7 @@ describe('resolveInputHints', () => {
       maxIterations: 5,
     }
     const hints = resolveInputHints(
+      t,
       graph([input(), iteration, target, output()], [edge('input', 'out', 'iteration'), edge('iteration', 'body', 'body-condition')]),
       target.id,
       samplePayload,

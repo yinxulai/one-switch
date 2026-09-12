@@ -6,7 +6,7 @@ export class ClientRequestCancelledError extends Error {
   readonly code = 'CLIENT_REQUEST_ABORTED'
 
   constructor() {
-    super('客户端已取消请求')
+    super('The client cancelled the request')
     this.name = 'ClientRequestCancelledError'
   }
 }

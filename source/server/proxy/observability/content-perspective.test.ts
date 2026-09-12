@@ -12,7 +12,8 @@ const mocks = vi.hoisted(() => ({
   updateRequestLogStatus: vi.fn(),
   recordAttemptUsage: vi.fn(),
   pruneRequestLogs: vi.fn(),
-  getSettings: vi.fn(async () => ({ logRetentionDays: 7 })),
+  pruneRequestContents: vi.fn(),
+  getSettings: vi.fn(async () => ({ requestLogRetentionDays: 7, contentRetentionDays: 7 })),
 }))
 
 vi.mock('@server/database/request-log-store', () => ({
@@ -25,6 +26,7 @@ vi.mock('@server/database/request-log-store', () => ({
   recordAttemptUsage: mocks.recordAttemptUsage,
   updateRequestLogStatus: mocks.updateRequestLogStatus,
   pruneRequestLogs: mocks.pruneRequestLogs,
+  pruneRequestContents: mocks.pruneRequestContents,
 }))
 
 vi.mock('@server/database/settings-store', () => ({
@@ -50,6 +52,7 @@ function requestLoggingInput() {
     headers: { 'content-type': 'application/json', authorization: 'Bearer client-secret' },
     requestBody: Buffer.from('{"client":"request-body"}'),
     transport: 'http' as const,
+    captureRequestLogs: true,
     captureRequestContent: true,
   }
 }
@@ -85,6 +88,18 @@ function lastRequestContentInput(): Record<string, unknown> {
 }
 
 describe('内容记录的视角隔离', () => {
+  it('关掉请求日志开关时整条链路都不写库', async () => {
+    const logger = await initializeRequestLogger({ ...requestLoggingInput(), captureRequestLogs: false })
+    await logger.finalizeRequestLog('success', Date.now())
+    await logger.finalizeLocalErrorContent(500, {}, '{"error":"local"}')
+
+    expect(logger.requestContentId).toBeNull()
+    expect(mocks.createRequestLog).not.toHaveBeenCalled()
+    expect(mocks.createRequestContent).not.toHaveBeenCalled()
+    expect(mocks.updateRequestLogStatus).not.toHaveBeenCalled()
+    expect(mocks.pruneRequestLogs).not.toHaveBeenCalled()
+  })
+
   it('客户端正文只记录客户端请求，且不携带尝试标识', async () => {
     await initializeRequestLogger(requestLoggingInput())
 

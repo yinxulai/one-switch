@@ -1,4 +1,5 @@
 import type { AnalyticsRange } from '@common/schemas'
+import type { AppTranslator } from '@/i18n/provider'
 
 export function formatLatency(ms: number): string {
   if (ms < 1000) return `${Math.round(ms)}ms`
@@ -11,8 +12,13 @@ export function formatTokens(tokens: number): string {
   return tokens.toString()
 }
 
-export function formatTrendDescription(range: AnalyticsRange): string {
-  return range === 'today' ? '15 分钟粒度用量' : '每日用量'
+/** 千分位分隔必须跟随界面语言，不能用运行时默认语言。 */
+export function formatCount(locale: string, value: number): string {
+  return value.toLocaleString(locale)
+}
+
+export function formatTrendDescription(t: AppTranslator, range: AnalyticsRange): string {
+  return range === 'today' ? t('overview.trend.description.today') : t('overview.trend.description.daily')
 }
 
 export const PROVIDER_COLORS = [

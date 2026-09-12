@@ -10,6 +10,7 @@ import { ElectronSecretStore } from './secret-store'
 import { TrayManager } from './tray-manager'
 import { AutoLaunchManager } from './auto-launch'
 import { UpdaterManager, type UpdateState } from './updater'
+import { nativeTranslator, onNativeLocaleChanged, startNativeLanguageSync } from './i18n'
 // Vite 将 build/icon.png 打包为 data URL，避免运行时路径解析问题。
 // Windows 任务栏/窗口图标需要位图，PNG 可被 nativeImage 直接识别。
 import windowIconPng from '../../build/icon.png?url'
@@ -72,7 +73,7 @@ function registerUpdaterIpc() {
 
 registerUpdaterIpc()
 
-function reportFatalError(error: unknown, title = 'One Switch 运行失败'): void {
+function reportFatalError(error: unknown, title = nativeTranslator()('native.error.fatalTitle')): void {
   if (fatalErrorShown) return
   fatalErrorShown = true
 
@@ -80,7 +81,7 @@ function reportFatalError(error: unknown, title = 'One Switch 运行失败'): vo
   console.error(`[one-switch] ${title}`, detail)
 
   const showDialog = () => {
-    dialog.showErrorBox(title, `${detail}\n\n应用将退出，请检查日志后重试。`)
+    dialog.showErrorBox(title, `${detail}\n\n${nativeTranslator()('native.error.fatalDetail')}`)
   }
 
   if (app.isReady()) {
@@ -123,9 +124,10 @@ function showStartupError(error: unknown): void {
 
   // 启动阶段还没有可用的渲染窗口，必须使用原生对话框告知用户，
   // 否则 app.quit() 会让应用看起来像是“启动后直接关闭”。
+  const t = nativeTranslator()
   dialog.showErrorBox(
-    'One Switch 启动失败',
-    `应用无法完成启动，请检查日志后重试。\n\n${detail}`,
+    t('native.error.startupTitle'),
+    `${t('native.error.startupDetail')}\n\n${detail}`,
   )
 }
 
@@ -179,6 +181,69 @@ function resolveWindowIcon() {
   return nativeImage.createFromDataURL(windowIconPng)
 }
 
+/**
+ * 安装 macOS 应用菜单。
+ *
+ * 保留系统应用菜单，否则 Cmd+V / Cmd+Q 等原生快捷键会失效。
+ * - Cmd+Q 退出应用（走 before-quit 清理流程）
+ * - Cmd+W 关闭窗口（被 tray-manager 拦截为隐藏到菜单栏）
+ * - Cmd+M 最小化、Cmd+H 隐藏、Cmd+R 刷新界面
+ *
+ * 子项都用 `role`，标签由 Electron 按系统语言给出；这里只翻顶层 label。
+ * 语言变化时需要重新调用一次，菜单文案是构建期快照。
+ */
+function installApplicationMenu(): void {
+  const t = nativeTranslator()
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    {
+      label: app.getName(),
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    },
+    {
+      label: t('native.menu.edit'),
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' },
+      ],
+    },
+    {
+      label: t('native.menu.view'),
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+        { role: 'toggleDevTools', visible: isDevelopment },
+      ],
+    },
+    {
+      label: t('native.menu.window'),
+      submenu: [
+        { role: 'minimize' },
+        { role: 'zoom' },
+        { role: 'close' },
+      ],
+    },
+  ]))
+}
+
 function createWindow() {
   win = new BrowserWindow({
     title: 'One Switch',
@@ -198,62 +263,15 @@ function createWindow() {
   // 移除默认菜单栏
   win.setMenuBarVisibility(false)
   if (process.platform === 'darwin') {
-    // 保留系统应用菜单，否则 Cmd+V / Cmd+Q 等原生快捷键会失效。
-    // - Cmd+Q 退出应用（走 before-quit 清理流程）
-    // - Cmd+W 关闭窗口（被 tray-manager 拦截为隐藏到菜单栏）
-    // - Cmd+M 最小化、Cmd+H 隐藏、Cmd+R 刷新界面
-    Menu.setApplicationMenu(Menu.buildFromTemplate([
-      {
-        label: app.getName(),
-        submenu: [
-          { role: 'about' },
-          { type: 'separator' },
-          { role: 'hide' },
-          { role: 'hideOthers' },
-          { role: 'unhide' },
-          { type: 'separator' },
-          { role: 'quit' },
-        ],
-      },
-      {
-        label: 'Edit',
-        submenu: [
-          { role: 'undo' },
-          { role: 'redo' },
-          { type: 'separator' },
-          { role: 'cut' },
-          { role: 'copy' },
-          { role: 'paste' },
-          { role: 'selectAll' },
-        ],
-      },
-      {
-        label: 'View',
-        submenu: [
-          { role: 'reload' },
-          { role: 'forceReload' },
-          { type: 'separator' },
-          { role: 'resetZoom' },
-          { role: 'zoomIn' },
-          { role: 'zoomOut' },
-          { type: 'separator' },
-          { role: 'togglefullscreen' },
-          { role: 'toggleDevTools', visible: isDevelopment },
-        ],
-      },
-      {
-        label: 'Window',
-        submenu: [
-          { role: 'minimize' },
-          { role: 'zoom' },
-          { role: 'close' },
-        ],
-      },
-    ]))
+    installApplicationMenu()
   }
 
   win.webContents.once('did-fail-load', (_event, errorCode, errorDescription) => {
-    showStartupError(new Error(`主界面加载失败 (${errorCode})：${errorDescription}`))
+    const failed = nativeTranslator()('native.error.rendererLoadFailed', {
+      code: errorCode,
+      description: errorDescription,
+    })
+    showStartupError(new Error(failed))
     void stopServer().catch(stopError => {
       console.error('[one-switch] failed to stop server after renderer load failure', formatError(stopError))
     })
@@ -295,6 +313,13 @@ app.whenReady().then(async () => {
     app.quit()
     return
   }
+
+  // 托盘 / 应用菜单 / 原生对话框都在主进程，语言真相源仍是 settings.language；
+  // 数据库还读不出来时退回 app.getLocale()。必须在服务端启动后同步。
+  onNativeLocaleChanged(() => {
+    if (process.platform === 'darwin') installApplicationMenu()
+  })
+  await startNativeLanguageSync()
 
   try {
     createWindow()

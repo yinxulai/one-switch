@@ -4,6 +4,7 @@ import { SettingsCardHeader } from '@/components/settings-card-header'
 import { Card, CardContent } from '@/components/ui/card'
 import { FormRow } from '@/components/form-kit'
 import { Input } from '@/components/ui/input'
+import { useTranslation } from '@/i18n/provider'
 
 interface ListenConfigCardProps {
   listenHost: string
@@ -15,23 +16,28 @@ interface ListenConfigCardProps {
 
 export function ListenConfigCard(props: ListenConfigCardProps) {
   const { listenHost, listenPort, proxyRunning, onHostChange, onPortChange } = props
+  const t = useTranslation()
 
   return (
     <Card>
       <SettingsCardHeader
         icon={<RadioTower />}
-        title="监听服务"
-        description="设置本地代理的访问地址"
-        actions={<Badge variant={proxyRunning ? 'success' : 'muted'}>{proxyRunning ? '运行中' : '已停止'}</Badge>}
+        title={t('settings.listen.title')}
+        description={t('settings.listen.description')}
+        actions={(
+          <Badge variant={proxyRunning ? 'success' : 'muted'}>
+            {proxyRunning ? t('common.state.running') : t('common.state.stopped')}
+          </Badge>
+        )}
       />
       <CardContent className="divide-y divide-border/50 px-4">
         <FormRow
-          title="监听地址"
-          description="推荐 127.0.0.1，仅允许本机访问"
+          title={t('settings.listen.host')}
+          description={t('settings.listen.hostDescription')}
           control={(
             <Input
               id="listen-host"
-              aria-label="监听地址"
+              aria-label={t('settings.listen.hostAria')}
               className="w-56 font-mono"
               placeholder="127.0.0.1"
               value={listenHost}
@@ -40,12 +46,12 @@ export function ListenConfigCard(props: ListenConfigCardProps) {
           )}
         />
         <FormRow
-          title="监听端口"
-          description="保存后代理会自动使用新端口"
+          title={t('settings.listen.port')}
+          description={t('settings.listen.portDescription')}
           control={(
             <Input
               id="listen-port"
-              aria-label="监听端口"
+              aria-label={t('settings.listen.portAria')}
               className="w-24 text-right"
               max={65535}
               min={1}

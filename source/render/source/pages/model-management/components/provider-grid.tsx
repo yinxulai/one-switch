@@ -3,6 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Server } from 'lucide-react'
+import { useTranslation } from '@/i18n/provider'
 import { ProviderIcon } from './provider-icon'
 import { findPresetByName, getBuiltInProviderSuggestions } from '../lib/provider-presets'
 import type { ProviderPreset } from '../lib/provider-presets'
@@ -26,6 +27,7 @@ interface ProviderGridItem {
 
 export function ProviderGrid(props: ProviderGridProps) {
   const { providers, models, selectedProviderId, onSelectProvider, onSelectBuiltInProvider } = props
+  const t = useTranslation()
   const builtinSuggestions = getBuiltInProviderSuggestions(providers.map(provider => provider.name))
 
   const renderItem = (item: ProviderGridItem) => {
@@ -56,12 +58,12 @@ export function ProviderGrid(props: ProviderGridProps) {
           </span>
           <div className="flex min-w-0 flex-1 items-baseline gap-1">
             <span className="min-w-0 truncate system-xs-medium text-text-primary">{item.name}</span>
-            <span className="shrink-0 system-2xs-regular text-text-tertiary">{item.modelCount} 个模型</span>
+            <span className="shrink-0 system-2xs-regular text-text-tertiary">{t('providers.modelCount', { count: item.modelCount })}</span>
           </div>
         </div>
         {!item.enabled && (
           <Badge variant="muted" className="shrink-0 system-2xs-medium">
-            停用
+            {t('common.state.disabled')}
           </Badge>
         )}
       </button>
@@ -71,9 +73,9 @@ export function ProviderGrid(props: ProviderGridProps) {
   return (
     <Card className="h-fit">
       <CardHeader className="pb-3">
-        <CardTitle>供应商</CardTitle>
+        <CardTitle>{t('providers.grid.title')}</CardTitle>
         <CardDescription>
-          密钥按供应商保存，可为每个协议配置默认接口地址，模型可单独覆盖。
+          {t('providers.grid.description')}
         </CardDescription>
       </CardHeader>
       <CardContent className="p-0">
@@ -103,8 +105,8 @@ export function ProviderGrid(props: ProviderGridProps) {
         ) : (
           <EmptyState
             icon={Server}
-            title="还没有供应商"
-            description="点击新建供应商手动配置，或稍后接入内置厂商。"
+            title={t('providers.empty.noneTitle')}
+            description={t('providers.grid.emptyDescription')}
             className="min-h-36 py-6"
             embedded
           />

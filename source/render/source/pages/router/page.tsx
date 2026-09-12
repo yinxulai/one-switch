@@ -38,6 +38,7 @@ import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/components/ui/toast'
 import { useLogicalModels } from '@/features/logical-models/hooks'
+import { useTranslation } from '@/i18n/provider'
 import { cn } from '@/lib/utils'
 
 import { NodeSelector } from './components/node-selector'
@@ -47,6 +48,7 @@ import { VersionMenu } from './components/version-menu'
 import { WorkflowConnectionLine } from './components/workflow-connection-line'
 import { WorkflowNodePanel } from './components/workflow-node-panel'
 import { resolveInputHints } from './field-hints'
+import { policyPresetTextKeys } from './policy-preset-text'
 import { buildFlowEdges, layoutRouterNodes, type WorkflowFlowEdge } from './flow-projection'
 import { toRouterGraphVersion, toRouterGraphVersions, type RouterGraphVersion } from './graph-versions'
 import {
@@ -117,6 +119,7 @@ function resolveInsertPosition(source: WorkflowNodeModel | null, target: Workflo
 function WorkflowStudioCanvas() {
   const flow = useReactFlow<RouteFlowNode, WorkflowFlowEdge>()
   const toast = useToast()
+  const t = useTranslation()
   const logicalModels = useLogicalModels()
   /**
    * 预设生成与测试运行共用的逻辑模型列表。
@@ -163,13 +166,13 @@ function WorkflowStudioCanvas() {
         setVersions(toRouterGraphVersions(summaries))
       } catch (error) {
         if (cancelled) return
-        toast.error(error instanceof Error ? error.message : '读取路由图失败')
+        toast.error(error instanceof Error ? error.message : t('router.error.loadGraph'))
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [toast])
+  }, [toast, t])
 
   /**
    * 测试输入框的行数随内容增长（上限 28 行），剩下的交给抽屉整体滚动。
@@ -492,8 +495,8 @@ function WorkflowStudioCanvas() {
       && selectedNode.kind !== 'script'
       && selectedNode.kind !== 'prompt'
     ) return []
-    return resolveInputHints(graph, selectedNode.id, samplePayload).fields
-  }, [graph, selectedNode, samplePayload])
+    return resolveInputHints(t, graph, selectedNode.id, samplePayload).fields
+  }, [graph, selectedNode, samplePayload, t])
 
   // ---- 运行与保存 ----------------------------------------------------------
 
@@ -508,9 +511,9 @@ function WorkflowStudioCanvas() {
       setPayloadError('')
     } catch (error) {
       setRunResult(null)
-      setPayloadError(error instanceof Error ? error.message : '输入负载不是合法 JSON。')
+      setPayloadError(error instanceof Error ? error.message : t('router.error.invalidPayload'))
     }
-  }, [graph, runtimeLogicalModels, payloadText])
+  }, [graph, runtimeLogicalModels, payloadText, t])
 
   /**
    * 保存 = 发布一个新版本。
@@ -521,15 +524,15 @@ function WorkflowStudioCanvas() {
     try {
       const result = await unwrap(routerApi.saveGraph(graphRef.current))
       if (!result.created) {
-        toast.info(`当前内容与最新版本 v${result.version} 一致，未生成新版本`)
+        toast.info(t('router.toast.identicalToLatest', { version: result.version }))
         return
       }
       setVersions(current => [toRouterGraphVersion(result), ...current])
-      toast.success(`已保存为新版本 v${result.version}，代理立即按它路由`)
+      toast.success(t('router.toast.versionSaved', { version: result.version }))
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '保存失败，请稍后重试')
+      toast.error(error instanceof Error ? error.message : t('router.error.saveFailed'))
     }
-  }, [toast])
+  }, [toast, t])
 
   /**
    * 把历史某一版载入画布。
@@ -541,17 +544,17 @@ function WorkflowStudioCanvas() {
     try {
       const snapshot = await unwrap(routerApi.getGraphVersion(version.sequence))
       if (!snapshot) {
-        toast.error(`版本 v${version.sequence} 已不存在`)
+        toast.error(t('router.error.versionMissing', { sequence: version.sequence }))
         return
       }
       setGraph(toCanvasGraph(snapshot.graph))
       setSelectedNodeId(null)
       setRunResult(null)
-      toast.success(`已载入版本 v${version.sequence}，保存后生效`)
+      toast.success(t('router.toast.versionLoaded', { sequence: version.sequence }))
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '载入版本失败')
+      toast.error(error instanceof Error ? error.message : t('router.error.restoreFailed'))
     }
-  }, [toast])
+  }, [toast, t])
 
   /**
    * 套用内置策略：整张画布换成预设内容。
@@ -561,8 +564,9 @@ function WorkflowStudioCanvas() {
     setGraph(preset.createGraph(runtimeLogicalModels))
     setSelectedNodeId(null)
     setRunResult(null)
-    toast.success(`已套用策略：${preset.name}，保存后生效`)
-  }, [runtimeLogicalModels, toast])
+    const textKeys = policyPresetTextKeys(preset.id)
+    toast.success(t('router.toast.policyApplied', { name: textKeys ? t(textKeys.name) : preset.id }))
+  }, [runtimeLogicalModels, toast, t])
 
   /** 当前画布与哪个预设一致（不一致时为 null）。 */
   const activePolicyId = useMemo(
@@ -578,8 +582,8 @@ function WorkflowStudioCanvas() {
   return (
     <PageLayout>
       <PageHeader
-        title="智能路由"
-        description="用基础节点组合出路由策略：输入 → 协议发现 → 条件 → 逻辑模型选择 → 输出"
+        title={t('router.title')}
+        description={t('router.description')}
         // 面板占掉右侧后标题栏会变窄，说明文案保持单行截断，避免换行把标题栏撑高、
         // 进而让画布高度在「选中/取消选中节点」之间跳动。
         className="[&_p]:truncate"
@@ -589,10 +593,10 @@ function WorkflowStudioCanvas() {
           <div className="flex items-center gap-2" style={{ paddingRight: headerInset }}>
             <PolicyMenu activePolicyId={activePolicyId} onApply={applyPolicy} />
             <DifyButton size="medium" onClick={() => setTestDrawerOpen(true)}>
-              <CirclePlay className="size-3.5" aria-hidden /> 测试运行
+              <CirclePlay className="size-3.5" aria-hidden /> {t('router.run')}
             </DifyButton>
             <DifyButton size="medium" variant="primary" onClick={saveWorkflow}>
-              <Save className="size-3.5" aria-hidden /> 保存
+              <Save className="size-3.5" aria-hidden /> {t('router.save')}
             </DifyButton>
             <VersionMenu versions={versions} onRestore={restoreVersion} />
           </div>
@@ -604,13 +608,13 @@ function WorkflowStudioCanvas() {
           {legendKinds.map(kind => (
             <span key={kind} className="flex items-center gap-1.5">
               <span className={cn('size-2 rounded-full', kindAccent(kind))} />
-              {NODE_KIND_META[kind].label}
+              {t(NODE_KIND_META[kind].labelKey)}
             </span>
           ))}
           {/* 节点面板是窗口级固定定位，展开后会盖住这一行右侧，说明文案先收起。 */}
           {!selectedNode && (
             <span className="ml-auto hidden text-text-quaternary sm:inline">
-              拖动节点组合策略 · 端口 + 号插入节点 · 拖拽端口连线 · 点击节点配置
+              {t('router.legendHint')}
             </span>
           )}
         </div>
@@ -673,7 +677,7 @@ function WorkflowStudioCanvas() {
                     trigger={(
                       <button
                         type="button"
-                        aria-label="添加节点"
+                        aria-label={t('router.canvas.addNodeAria')}
                         className="flex size-8 items-center justify-center rounded-lg text-text-tertiary transition-colors hover:bg-state-base-hover hover:text-text-secondary"
                       >
                         <Plus className="size-3.5" aria-hidden />
@@ -685,7 +689,7 @@ function WorkflowStudioCanvas() {
 
                   <button
                     type="button"
-                    aria-label="框选模式"
+                    aria-label={t('router.canvas.selectModeAria')}
                     className={cn(
                       'flex size-8 items-center justify-center rounded-lg transition-colors',
                       dockMode === 'select' ? 'bg-state-accent-solid text-components-button-primary-text' : 'text-text-tertiary hover:bg-state-base-hover hover:text-text-secondary',
@@ -696,7 +700,7 @@ function WorkflowStudioCanvas() {
                   </button>
                   <button
                     type="button"
-                    aria-label="平移模式"
+                    aria-label={t('router.canvas.panModeAria')}
                     className={cn(
                       'flex size-8 items-center justify-center rounded-lg transition-colors',
                       dockMode === 'pan' ? 'bg-state-accent-solid text-components-button-primary-text' : 'text-text-tertiary hover:bg-state-base-hover hover:text-text-secondary',
@@ -707,7 +711,7 @@ function WorkflowStudioCanvas() {
                   </button>
                   <button
                     type="button"
-                    aria-label={dragEnabled ? '锁定节点位置' : '解锁节点位置'}
+                    aria-label={dragEnabled ? t('router.canvas.lockAria') : t('router.canvas.unlockAria')}
                     className={cn(
                       'flex size-8 items-center justify-center rounded-lg transition-colors',
                       dragEnabled ? 'text-text-tertiary hover:bg-state-base-hover hover:text-text-secondary' : 'bg-state-accent-solid text-components-button-primary-text',
@@ -721,7 +725,7 @@ function WorkflowStudioCanvas() {
 
                   <button
                     type="button"
-                    aria-label="适应画布"
+                    aria-label={t('router.canvas.fitViewAria')}
                     className="flex size-8 items-center justify-center rounded-lg text-text-tertiary transition-colors hover:bg-state-base-hover hover:text-text-secondary"
                     onClick={() => void flow.fitView({ padding: 0.25, maxZoom: 1 })}
                   >
@@ -752,15 +756,15 @@ function WorkflowStudioCanvas() {
       <Drawer open={testDrawerOpen} onOpenChange={setTestDrawerOpen} direction="right">
         <DrawerContent className="workflow-test-drawer workflow-dify-surface h-full w-208! max-w-[90vw]! border-l-[0.5px] border-components-panel-border bg-components-panel-bg">
           <DrawerHeader>
-            <DrawerTitle className="flex items-center gap-2"><ArrowRight className="size-4" /> 测试运行</DrawerTitle>
-            <DrawerDescription>在此输入 JSON，执行路由并查看结果与完整轨迹。</DrawerDescription>
+            <DrawerTitle className="flex items-center gap-2"><ArrowRight className="size-4" /> {t('router.run')}</DrawerTitle>
+            <DrawerDescription>{t('router.runPanel.description')}</DrawerDescription>
           </DrawerHeader>
 
           {/* 输入与结果共用一个滚动容器：窗口变小时整体滚动，
               而不是输入区、结果区各滚各的（结果里的 Trace 也不再单独滚动）。 */}
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pb-4">
             <div className="flex flex-col gap-2">
-              <div className="py-1 system-sm-medium text-text-secondary">测试输入</div>
+              <div className="py-1 system-sm-medium text-text-secondary">{t('router.runPanel.inputTitle')}</div>
               <Textarea
                 value={payloadText}
                 onChange={event => setPayloadText(event.target.value)}
@@ -771,22 +775,22 @@ function WorkflowStudioCanvas() {
             </div>
 
             <div className="flex flex-col gap-3">
-              <div className="py-1 system-sm-medium text-text-secondary">测试结果</div>
-              {!runResult && <div className="rounded-lg border border-module-border bg-workflow-block-parma-bg p-3 system-xs-regular text-text-tertiary">点击下方“运行测试”查看结果。</div>}
+              <div className="py-1 system-sm-medium text-text-secondary">{t('router.runPanel.resultTitle')}</div>
+              {!runResult && <div className="rounded-lg border border-module-border bg-workflow-block-parma-bg p-3 system-xs-regular text-text-tertiary">{t('router.runPanel.emptyResult')}</div>}
 
               {runResult && (
                 <>
                   <div className="flex flex-wrap items-center gap-2 text-xs">
                     <Badge variant={runResult.stopReason === 'output' ? 'success' : 'warning'}>
-                      路由状态：{runResult.stopReason === 'output' ? '已到达输出节点' : runResult.stopReason}
+                      {t('router.runPanel.routeStatus')}{runResult.stopReason === 'output' ? t('router.runPanel.reachedOutput') : runResult.stopReason}
                     </Badge>
-                    <Badge variant="info">协议：{runResult.protocol}</Badge>
-                    <Badge variant="muted">节点数：{runResult.trace.length}</Badge>
+                    <Badge variant="info">{t('router.runPanel.protocol')}{runResult.protocol}</Badge>
+                    <Badge variant="muted">{t('router.runPanel.nodeCount')}{runResult.trace.length}</Badge>
                   </div>
                   <div className="space-y-1.5 rounded-lg border border-module-border bg-workflow-block-parma-bg p-2">
-                    <div className="system-2xs-medium-uppercase text-text-tertiary">节点输出</div>
+                    <div className="system-2xs-medium-uppercase text-text-tertiary">{t('router.runPanel.nodeOutputs')}</div>
                     {nodeOutputGroups.length === 0
-                      ? <div className="system-xs-regular text-text-tertiary">本次运行没有产生节点输出。</div>
+                      ? <div className="system-xs-regular text-text-tertiary">{t('router.runPanel.noNodeOutputs')}</div>
                       : (
                         <div className="space-y-1.5">
                           {nodeOutputGroups.map(group => (
@@ -835,8 +839,8 @@ function WorkflowStudioCanvas() {
           </div>
 
           <DrawerFooter className="flex-row justify-end">
-            <DifyButton size="medium" variant="primary" onClick={runLocalTest}>运行测试</DifyButton>
-            <DifyButton size="medium" onClick={() => setTestDrawerOpen(false)}>关闭</DifyButton>
+            <DifyButton size="medium" variant="primary" onClick={runLocalTest}>{t('router.runPanel.run')}</DifyButton>
+            <DifyButton size="medium" onClick={() => setTestDrawerOpen(false)}>{t('common.action.close')}</DifyButton>
           </DrawerFooter>
         </DrawerContent>
       </Drawer>

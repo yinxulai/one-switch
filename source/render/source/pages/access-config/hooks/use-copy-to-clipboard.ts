@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useToast } from '@/components/ui/toast'
+import { useTranslation } from '@/i18n/provider'
 
 const FEEDBACK_DURATION = 1500
 
@@ -9,6 +10,7 @@ const FEEDBACK_DURATION = 1500
  */
 export function useCopyToClipboard() {
   const toast = useToast()
+  const t = useTranslation()
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
   const timerRef = useRef<number | null>(null)
 
@@ -23,9 +25,9 @@ export function useCopyToClipboard() {
       setCopiedKey(key)
       if (timerRef.current !== null) window.clearTimeout(timerRef.current)
       timerRef.current = window.setTimeout(() => setCopiedKey(null), FEEDBACK_DURATION)
-      toast.success('已复制到剪贴板')
+      toast.success(t('common.toast.copied'))
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '复制失败')
+      toast.error(error instanceof Error ? error.message : t('common.action.copyFailed'))
     }
   }
 

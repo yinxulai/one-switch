@@ -1,5 +1,6 @@
 import { Globe2, Link2, Power, ScrollText } from 'lucide-react'
 import { MetricGrid } from '@/components/metric-grid'
+import { useTranslation } from '@/i18n/provider'
 import type { RequestRewriteRule } from '../types'
 
 interface RuleStatsProps {
@@ -7,12 +8,13 @@ interface RuleStatsProps {
 }
 
 export function RuleStats(props: RuleStatsProps) {
+  const t = useTranslation()
   return (
     <MetricGrid items={[
-      { label: '全部规则', value: props.rules.length, Icon: ScrollText },
-      { label: '全局规则', value: props.rules.filter(rule => rule.global).length, Icon: Globe2 },
-      { label: '普通规则', value: props.rules.filter(rule => !rule.global).length, Icon: Link2 },
-      { label: '已启用', value: props.rules.filter(rule => rule.enabled).length, Icon: Power },
+      { label: t('rules.stats.all'), value: props.rules.length, Icon: ScrollText },
+      { label: t('rules.stats.global'), value: props.rules.filter(rule => rule.global).length, Icon: Globe2 },
+      { label: t('rules.stats.normal'), value: props.rules.filter(rule => !rule.global).length, Icon: Link2 },
+      { label: t('rules.stats.enabled'), value: props.rules.filter(rule => rule.enabled).length, Icon: Power },
     ]} />
   )
 }

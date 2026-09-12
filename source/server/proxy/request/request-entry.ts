@@ -93,7 +93,7 @@ export async function handleProxyRequest(req: IncomingMessage, res: ServerRespon
   const endpoint = matchProtocolEndpoint(method, path)
   if (!endpoint) {
     console.warn(`[proxy] unknown API path method=${method} path=${path} requestId=${requestId}`)
-    await reject({ statusCode: 404, errorCode: 'UNKNOWN_API_PATH', errorMessage: '无法识别的 API 路径' }, { logicalModelId: null, clientProtocol: null, requestBody: NO_REQUEST_BODY, transport: 'http' })
+    await reject({ statusCode: 404, errorCode: 'UNKNOWN_API_PATH', errorMessage: 'Unrecognized API path' }, { logicalModelId: null, clientProtocol: null, requestBody: NO_REQUEST_BODY, transport: 'http' })
     return
   }
   const protocol = endpoint.protocol
@@ -151,8 +151,8 @@ export async function handleProxyRequest(req: IncomingMessage, res: ServerRespon
       await reject({ statusCode: 409, errorCode: 'MANUAL_MODEL_UNAVAILABLE', errorMessage: plan.detail }, { logicalModelId: landing, clientProtocol: protocol, requestBody, transport })
       return
     }
-    console.warn(`[proxy] 没有可用的上游供应商: ${method} ${path} (protocol=${protocol}, landingModels=${route.logicalModelIds.join('、')}, graphVersion=${route.graphVersion}, requestId=${requestId}, reason=${plan.reason}, detail=${plan.detail})`)
-    await reject({ statusCode: 503, errorCode: 'NO_AVAILABLE_PROVIDER', errorMessage: `没有可用的上游 Provider：${plan.detail}` }, { logicalModelId: landing, clientProtocol: protocol, requestBody, transport })
+    console.warn(`[proxy] no available upstream provider: ${method} ${path} (protocol=${protocol}, landingModels=${route.logicalModelIds.join(',')}, graphVersion=${route.graphVersion}, requestId=${requestId}, reason=${plan.reason}, detail=${plan.detail})`)
+    await reject({ statusCode: 503, errorCode: 'NO_AVAILABLE_PROVIDER', errorMessage: `No available upstream provider: ${plan.detail}` }, { logicalModelId: landing, clientProtocol: protocol, requestBody, transport })
     return
   }
 
@@ -197,6 +197,7 @@ async function openExchangeLogger(input: ExchangeIdentity & ExchangeResolution):
     attributes: input.attributes,
     requestBody: input.requestBody,
     transport: input.transport,
+    captureRequestLogs: settings.captureRequestLogs,
     captureRequestContent: settings.captureRequestContent,
     hooks: input.hooks,
   })

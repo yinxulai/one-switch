@@ -39,7 +39,7 @@ async function handleGetProvider(_req: IncomingMessage, res: ServerResponse, bod
   const { id } = GetProviderSchema.parse(body)
   const provider = await getProvider(id)
   if (!provider) {
-    sendError(res, 'NOT_FOUND', 'Provider 不存在', 404)
+    sendError(res, 'NOT_FOUND', `Provider not found: ${id}`, 404, { providerId: id })
     return
   }
   sendSuccess(res, provider)
@@ -100,7 +100,7 @@ async function handleUpdateProvider(_req: IncomingMessage, res: ServerResponse, 
   const { id, apiKey, endpoints, ...updates } = UpdateProviderSchema.parse(body)
   const current = await getProvider(id)
   if (!current) {
-    sendError(res, 'NOT_FOUND', 'Provider 不存在', 404)
+    sendError(res, 'NOT_FOUND', `Provider not found: ${id}`, 404, { providerId: id })
     return
   }
   if (apiKey) await getSecretStore().set(current.apiKeyReference, apiKey)

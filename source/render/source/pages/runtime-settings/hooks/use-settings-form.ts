@@ -5,10 +5,12 @@ import { unwrap } from '@/api/unwrap'
 import { useToast } from '@/components/ui/toast'
 import { settingsKeys, useSettings, useSettingsLoading } from '@/features/settings/hooks'
 import { useProxyStatus, useProxyActions } from '@/features/proxy/hooks'
+import { useTranslation } from '@/i18n/provider'
 import { useRuntimeSettingsUiStore } from '../store'
 
 export function useSettingsForm() {
   const toast = useToast()
+  const t = useTranslation()
   const client = useQueryClient()
   const globalSettings = useSettings()
   const proxyActions = useProxyActions()
@@ -26,17 +28,17 @@ export function useSettingsForm() {
 
   const mutation = useMutation({
     mutationFn: async () => {
-      if (!settings) throw new Error('设置尚未加载')
+      if (!settings) throw new Error(t('settings.save.notLoaded'))
       const previousListenHost = proxyStatus?.host ?? settings.listenHost
       const previousListenPort = proxyStatus?.port ?? settings.listenPort
-      const updated = await unwrap(settingsApi.update({ listenHost: settings.listenHost, listenPort: settings.listenPort, logRetentionDays: settings.logRetentionDays, captureRequestContent: settings.captureRequestContent, cooldownBaseSeconds: settings.cooldownBaseSeconds, cooldownMaxSeconds: settings.cooldownMaxSeconds, consecutiveFailureThreshold: settings.consecutiveFailureThreshold, idleTimeoutMilliseconds: settings.idleTimeoutMilliseconds, outboundProxyMode: settings.outboundProxyMode, outboundProxyUrl: settings.outboundProxyUrl, outboundProxyBypass: settings.outboundProxyBypass, autoLaunch: settings.autoLaunch }))
+      const updated = await unwrap(settingsApi.update({ listenHost: settings.listenHost, listenPort: settings.listenPort, captureRequestLogs: settings.captureRequestLogs, requestLogRetentionDays: settings.requestLogRetentionDays, captureRequestContent: settings.captureRequestContent, contentRetentionDays: settings.contentRetentionDays, cooldownBaseSeconds: settings.cooldownBaseSeconds, cooldownMaxSeconds: settings.cooldownMaxSeconds, consecutiveFailureThreshold: settings.consecutiveFailureThreshold, idleTimeoutMilliseconds: settings.idleTimeoutMilliseconds, outboundProxyMode: settings.outboundProxyMode, outboundProxyUrl: settings.outboundProxyUrl, outboundProxyBypass: settings.outboundProxyBypass, autoLaunch: settings.autoLaunch, language: settings.language }))
       if (previousListenHost !== updated.listenHost || previousListenPort !== updated.listenPort) {
         const restart = await proxyActions.restart()
-        if (!restart.success) throw new Error(`设置已保存，但代理重启失败：${restart.errorMessage}`)
+        if (!restart.success) throw new Error(t('settings.save.proxyRestartFailed', { message: restart.errorMessage }))
       }
       return updated
     },
-    onSuccess: updated => { client.setQueryData(settingsKeys.all, updated); hydrate(updated); setSaved(true); toast.success('设置已保存'); window.setTimeout(() => setSaved(false), 2000) },
+    onSuccess: updated => { client.setQueryData(settingsKeys.all, updated); hydrate(updated); setSaved(true); toast.success(t('settings.save.success')); window.setTimeout(() => setSaved(false), 2000) },
     onError: error => toast.error(error.message),
   })
   const saveSettings = useCallback(async () => {

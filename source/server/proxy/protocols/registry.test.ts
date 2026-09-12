@@ -48,7 +48,7 @@ describe('protocol adapter registry', () => {
     }))).toString())
     expect(response.object).toBe('chat.completion')
     expect(response.choices[0].message.content).toBe('hello')
-    expect(() => protocolAdapters.resolve('anthropic-messages', 'openai-responses')).toThrow('不支持的协议转换方向')
+    expect(() => protocolAdapters.resolve('anthropic-messages', 'openai-responses')).toThrow('Unsupported protocol conversion direction')
   })
 })
 

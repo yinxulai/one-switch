@@ -9,6 +9,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ITERATION_COLLECT_MODE_HINTS, ITERATION_COLLECT_MODE_LABELS } from '../node-meta'
+import { useTranslation } from '@/i18n/provider'
 import type { NodePanelProps } from '../node-data'
 import type { IterationCollectMode, IterationNode } from '@common/router/types'
 import {
@@ -34,6 +35,7 @@ export function IterationPanel(props: NodePanelProps) {
   const resultPath = node?.resultPath ?? ''
   const collectMode = node?.collectMode ?? 'first'
   const maxIterations = node?.maxIterations ?? 10
+  const t = useTranslation()
 
   const patch = useCallback((patchValue: Partial<IterationNode>) => {
     update(current => current.kind === 'iteration' ? { ...current, ...patchValue } : current)
@@ -56,20 +58,20 @@ export function IterationPanel(props: NodePanelProps) {
   return (
     <div className="grid gap-2.5">
       <NodePanelHint>
-        遍历来源支持通配投影：
+        {t('router.panel.iterationHintPrefix')}
         <span className="font-mono">logicalModels[*].id</span>
-        会把每个逻辑模型的 id 取出来拼成数组。数组按元素遍历、对象按键值对遍历，标量按单项处理。
+        {t('router.panel.iterationHintSuffix')}
       </NodePanelHint>
 
-      <NodePanelField label="遍历来源路径">
+      <NodePanelField label={t('router.panel.iterationSourcePath')}>
         <Input
           value={sourcePath}
-          placeholder="logicalModels 或 logicalModels[*].id"
+          placeholder={t('router.panel.iterationSourcePlaceholder')}
           onChange={event => patch({ sourcePath: event.target.value })}
         />
         {iterableFields.length > 0 && (
           <Select value={sourcePath || undefined} onValueChange={value => patch({ sourcePath: value })}>
-            <SelectTrigger className="w-full"><SelectValue placeholder="从上游 schema 选择" /></SelectTrigger>
+            <SelectTrigger className="w-full"><SelectValue placeholder={t('router.panel.selectFromSchema')} /></SelectTrigger>
             <SelectContent className={PANEL_POPUP_SURFACE_CLASSNAME}>
               {iterableFields.map(field => (
                 <SelectItem className={PANEL_POPUP_ITEM_CLASSNAME} key={field.path} value={field.path}>
@@ -83,11 +85,11 @@ export function IterationPanel(props: NodePanelProps) {
 
       {iterableFields.length === 0 && (
         <NodePanelHint tone="warning">
-          上游暂无可遍历的数组 / 对象字段，请把输入节点或产出数组的节点接到本节点上游。
+          {t('router.panel.iterationNoFields')}
         </NodePanelHint>
       )}
 
-      <NodePanelField label="每轮结果路径">
+      <NodePanelField label={t('router.panel.collectPath')}>
         <Input
           value={collectPath}
           placeholder="route.modelIds"
@@ -95,7 +97,7 @@ export function IterationPanel(props: NodePanelProps) {
         />
       </NodePanelField>
 
-      <NodePanelField label="收集模式">
+      <NodePanelField label={t('router.panel.collectMode')}>
         <Select
           value={collectMode}
           onValueChange={value => patch({ collectMode: value as IterationCollectMode })}
@@ -104,16 +106,16 @@ export function IterationPanel(props: NodePanelProps) {
           <SelectContent className={PANEL_POPUP_SURFACE_CLASSNAME}>
             {COLLECT_MODES.map(mode => (
               <SelectItem className={PANEL_POPUP_ITEM_CLASSNAME} key={mode} value={mode}>
-                {ITERATION_COLLECT_MODE_LABELS[mode]}
+                {t(ITERATION_COLLECT_MODE_LABELS[mode])}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
       </NodePanelField>
 
-      <NodePanelHint>{ITERATION_COLLECT_MODE_HINTS[collectMode]}</NodePanelHint>
+      <NodePanelHint>{t(ITERATION_COLLECT_MODE_HINTS[collectMode])}</NodePanelHint>
 
-      <NodePanelField label="汇总写回路径">
+      <NodePanelField label={t('router.panel.summaryPath')}>
         <Input
           value={resultPath}
           placeholder="route.modelIds"
@@ -121,7 +123,7 @@ export function IterationPanel(props: NodePanelProps) {
         />
         {resultFields.length > 0 && (
           <Select value={resultPath || undefined} onValueChange={value => patch({ resultPath: value })}>
-            <SelectTrigger className="w-full"><SelectValue placeholder="从上游 schema 选择" /></SelectTrigger>
+            <SelectTrigger className="w-full"><SelectValue placeholder={t('router.panel.selectFromSchema')} /></SelectTrigger>
             <SelectContent className={PANEL_POPUP_SURFACE_CLASSNAME}>
               {resultFields.map(field => (
                 <SelectItem className={PANEL_POPUP_ITEM_CLASSNAME} key={field.path} value={field.path}>
@@ -133,7 +135,7 @@ export function IterationPanel(props: NodePanelProps) {
         )}
       </NodePanelField>
 
-      <NodePanelField label="轮数上限">
+      <NodePanelField label={t('router.panel.maxIterations')}>
         <Input
           type="number"
           min={1}
@@ -146,8 +148,7 @@ export function IterationPanel(props: NodePanelProps) {
       </NodePanelField>
 
       <NodePanelHint tone="warning">
-        循环体从「循环体」端口接出，末端再连回本节点即表示本轮结束。
-        循环体里用
+        {t('router.panel.iterationLoopPrefix')}
         {' '}
         <span className="font-mono">route.iteration.item</span>
         {' / '}
@@ -157,7 +158,7 @@ export function IterationPanel(props: NodePanelProps) {
         {' / '}
         <span className="font-mono">total</span>
         {' '}
-        读取当前轮状态。
+        {t('router.panel.iterationLoopSuffix')}
       </NodePanelHint>
     </div>
   )

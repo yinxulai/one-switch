@@ -44,7 +44,7 @@ export async function listProviderModelRequestRewriteRules(providerModelId: stri
   return getDb().select().from(providerModelRequestRewriteRules).where(and(eq(providerModelRequestRewriteRules.providerModelId, providerModelId), isNull(providerModelRequestRewriteRules.deletedTime))).orderBy(asc(providerModelRequestRewriteRules.priority)).all().map(parseBinding)
 }
 export async function replaceProviderModelRequestRewriteRuleBindings(providerModelId: string, bindings: Array<Pick<ProviderModelRequestRewriteRule, 'ruleId' | 'priority' | 'enabled'>>): Promise<ProviderModelRequestRewriteRule[]> {
-  if (new Set(bindings.map(item => item.ruleId)).size !== bindings.length || new Set(bindings.map(item => item.priority)).size !== bindings.length) throw new Error('规则绑定或优先级重复')
+  if (new Set(bindings.map(item => item.ruleId)).size !== bindings.length || new Set(bindings.map(item => item.priority)).size !== bindings.length) throw new Error('A request rewrite rule with the same binding and priority already exists')
   const time = now(); const db = getDb()
   db.transaction(tx => {
     const model = tx.select({ id: providerModels.id }).from(providerModels).where(and(eq(providerModels.id, providerModelId), isNull(providerModels.deletedTime))).get()

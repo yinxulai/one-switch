@@ -1,5 +1,6 @@
 import { app, shell } from 'electron'
 import { autoUpdater, type UpdateInfo } from 'electron-updater'
+import { nativeTranslator } from './i18n'
 
 const GITHUB_RELEASES_PAGE = 'https://github.com/yinxulai/one-switch/releases/latest'
 
@@ -123,9 +124,11 @@ export class UpdaterManager {
     })
 
     autoUpdater.on('error', (error: Error) => {
+      // 未打包时 electron-updater 取不到 app-update.yml，报错是预期的，
+      // 补一句上下文避免用户把开发环境的报错当故障。
       const message = app.isPackaged
         ? error.message
-        : `开发环境无法检查更新：${error.message}`
+        : nativeTranslator()('native.update.devCheckFailed', { message: error.message })
       console.error(`[updater] operation failed status=${this.state.status} message=${message}`, error)
       this.setState({
         status: 'error',
@@ -199,7 +202,7 @@ export class UpdaterManager {
     if (this.state.status !== 'update-available') {
       this.setState({
         status: 'error',
-        errorMessage: '当前没有可下载的更新',
+        errorMessage: nativeTranslator()('native.update.noneDownloadable'),
       })
       return false
     }

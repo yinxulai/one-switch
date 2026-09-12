@@ -7,6 +7,7 @@ import { AppLayout } from '@/components/layout'
 import { ErrorBoundary, ErrorFallback } from '@/components/error-boundary'
 import { AppSidebar, type PageKey, type Theme } from '@/components/app-sidebar'
 import { useAppUiStore } from '@/store/app-ui-store'
+import { useTranslation } from '@/i18n/provider'
 import { useProxyStatus } from './features/proxy/hooks'
 
 const pagePaths = {
@@ -29,6 +30,7 @@ function App() {
   const setThemeMode = useAppUiStore(state => state.setThemeMode)
   const [systemTheme, setSystemTheme] = useState<Theme>('light')
   const proxyStatus = useProxyStatus()
+  const t = useTranslation()
 
   useEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)')
@@ -74,8 +76,8 @@ function App() {
                 <ErrorFallback
                   {...fallbackProps}
                   embedded
-                  title="页面出错了"
-                  description="当前页面的路由组件抛出了异常，已经被拦截下来，其它页面不受影响。"
+                  title={t('common.error.pageTitle')}
+                  description={t('common.error.pageDescription')}
                 />
               )}
             >

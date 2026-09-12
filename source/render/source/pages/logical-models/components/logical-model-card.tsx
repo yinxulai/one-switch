@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { useTranslation } from '@/i18n/provider'
 import { cn } from '@/lib/utils'
 import { SortableProviderModel } from './sortable-provider-model'
 import { ProviderModelRow } from './provider-model-row'
@@ -69,6 +70,7 @@ export function LogicalModelCard(props: LogicalModelCardProps) {
     dragHandleProps,
     dragging,
   } = props
+  const t = useTranslation()
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -89,28 +91,28 @@ export function LogicalModelCard(props: LogicalModelCardProps) {
         <button
           type="button"
           className="flex h-7 w-5 shrink-0 cursor-grab touch-none select-none items-center justify-center rounded text-text-quaternary transition-colors hover:text-text-primary focus-visible:bg-accent focus-visible:text-text-primary focus-visible:outline-none active:cursor-grabbing"
-          aria-label={`拖动“${logicalModelName}”逻辑模型排序`}
-          title="拖动排序"
+          aria-label={t('logicalModels.card.dragAria', { name: logicalModelName })}
+          title={t('logicalModels.card.dragTitle')}
           {...dragHandleProps}
         >
           <GripVertical size={15} />
         </button>
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <CardTitle>{logicalModelName} 逻辑模型</CardTitle>
+            <CardTitle>{t('logicalModels.card.title', { name: logicalModelName })}</CardTitle>
           </div>
           <CardDescription className="mt-1">
-            {models.length ? `${models.length} 个模型 · ${enabledCount} 个已启用` : '添加模型后配置优先级和故障转移'}
-            {coolingCount > 0 && <span className="text-text-warning"> · {coolingCount} 个冷却中</span>}
+            {models.length ? t('logicalModels.card.count', { count: models.length, enabled: enabledCount }) : t('logicalModels.card.noModelsHint')}
+            {coolingCount > 0 && <span className="text-text-warning"> · {t('logicalModels.card.cooling', { count: coolingCount })}</span>}
           </CardDescription>
         </div>
       </div>
       <div className="flex items-center gap-2">
-        {onAddModel && <Button variant="outline" onClick={onAddModel}>添加模型</Button>}
+        {onAddModel && <Button variant="outline" onClick={onAddModel}>{t('logicalModels.card.addModel')}</Button>}
         <Tabs value={mode} onValueChange={value => onModeChange(value as 'auto' | 'manual')}>
           <TabsList>
-            <TabsTrigger value="auto" disabled={switchingMode} className="px-2.5 system-xs-medium"><RefreshCw size={12} className={switchingMode ? 'animate-spin' : undefined} /> 自动转移</TabsTrigger>
-            <TabsTrigger value="manual" disabled={switchingMode} className="px-2.5 system-xs-medium"><Target size={12} /> 手动指定</TabsTrigger>
+            <TabsTrigger value="auto" disabled={switchingMode} className="px-2.5 system-xs-medium"><RefreshCw size={12} className={switchingMode ? 'animate-spin' : undefined} /> {t('logicalModels.card.mode.auto')}</TabsTrigger>
+            <TabsTrigger value="manual" disabled={switchingMode} className="px-2.5 system-xs-medium"><Target size={12} /> {t('logicalModels.card.mode.manual')}</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
@@ -156,10 +158,10 @@ export function LogicalModelCard(props: LogicalModelCardProps) {
   const renderEmptyState = () => (
     <EmptyState
       icon={ListTree}
-      title="逻辑模型中还没有模型"
-      description="为这个逻辑模型显式添加模型后，模型才会参与请求。"
+      title={t('logicalModels.card.empty.title')}
+      description={t('logicalModels.card.empty.description')}
       action={onAddModel && (
-        <Button variant="outline" size="sm" onClick={onAddModel}>添加模型</Button>
+        <Button variant="outline" size="sm" onClick={onAddModel}>{t('logicalModels.card.addModel')}</Button>
       )}
       className="min-h-48 border-0 py-10"
     />

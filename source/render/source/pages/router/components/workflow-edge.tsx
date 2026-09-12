@@ -9,6 +9,7 @@ import {
 import { Plus } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/i18n/provider'
 import type { WorkflowFlowEdge } from '../flow-projection'
 import { EDGE_STROKE_HANDLE, EDGE_STROKE_NORMAL, edgeRunStatusStroke } from '../node-meta'
 import { EdgeLinearGradient } from './edge-linear-gradient'
@@ -42,6 +43,7 @@ export const WorkflowEdge = memo(function WorkflowEdge(props: EdgeProps<Workflow
   const [edgeHovered, setEdgeHovered] = useState(false)
   const [triggerHovered, setTriggerHovered] = useState(false)
   const [selectorOpen, setSelectorOpen] = useState(false)
+  const t = useTranslation()
 
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX: sourceX - 8,
@@ -119,7 +121,7 @@ export const WorkflowEdge = memo(function WorkflowEdge(props: EdgeProps<Workflow
               trigger={(
                 <button
                   type="button"
-                  aria-label="在连线上插入节点"
+                  aria-label={t('router.edge.insertAria')}
                   className={cn(
                     'flex size-4 items-center justify-center rounded-full',
                     'bg-components-button-primary-bg text-components-button-primary-text',

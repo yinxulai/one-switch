@@ -1,6 +1,7 @@
 import { Repeat } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { CONVERTIBLE_PROTOCOLS } from '@common/protocols'
+import { useTranslation } from '@/i18n/provider'
 import { PROTOCOL_SHORT_LABELS } from '../lib/protocols'
 import type { ProtocolEndpointEntry } from '../hooks/types'
 
@@ -12,6 +13,7 @@ interface ProtocolConversionSettingsProps {
 
 export function ProtocolConversionSettings(props: ProtocolConversionSettingsProps) {
   const { entry, index, updateProtocolEntry } = props
+  const t = useTranslation()
   const convertibleProtocols = CONVERTIBLE_PROTOCOLS[entry.protocol]
 
   if (convertibleProtocols.length === 0) return null
@@ -21,7 +23,7 @@ export function ProtocolConversionSettings(props: ProtocolConversionSettingsProp
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-1.5">
           <Repeat className="size-3.5 text-text-tertiary" aria-hidden />
-          <span className="system-sm-medium text-text-primary">协议转换</span>
+          <span className="system-sm-medium text-text-primary">{t('models.conversion.title')}</span>
         </div>
         <Switch
           checked={entry.protocolConversionEnabled}
@@ -29,7 +31,7 @@ export function ProtocolConversionSettings(props: ProtocolConversionSettingsProp
         />
       </div>
       <p className="system-xs-regular text-text-tertiary">
-        开启后，此端点可接收其他协议的请求并自动转换（兼容层，部分参数可能丢失）
+        {t('models.conversion.description')}
       </p>
       {entry.protocolConversionEnabled && (
         <div className="flex flex-wrap gap-1">
@@ -43,7 +45,7 @@ export function ProtocolConversionSettings(props: ProtocolConversionSettingsProp
             </span>
           ))}
           <p className="w-full system-2xs-regular text-text-tertiary">
-            原生请求优先；转换请求仅在没有原生候选时使用
+            {t('models.conversion.priorityHint')}
           </p>
         </div>
       )}

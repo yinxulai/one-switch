@@ -12,6 +12,7 @@ import {
 import type { AnalyticsRange } from '@common/schemas'
 import App from './App'
 import { ErrorFallback } from './components/error-boundary'
+import { useTranslation } from './i18n/provider'
 import { LogicalModelsPage } from './pages/logical-models/page'
 import { ModelManagementPage } from './pages/model-management/page'
 import { OverviewPage } from './pages/overview/page'
@@ -30,7 +31,8 @@ import { RouterPage } from './pages/router/page'
  * 配了之后，任何一个路由组件在渲染期抛错都由它接管，用户能原地重试。
  */
 function RootErrorComponent(props: ErrorComponentProps) {
-  return <ErrorFallback error={props.error} reset={props.reset} title="页面出错了" description="当前页面的路由组件抛出了异常，已经被拦截下来，其它页面不受影响。" />
+  const t = useTranslation()
+  return <ErrorFallback error={props.error} reset={props.reset} title={t('common.error.rootTitle')} description={t('common.error.rootDescription')} />
 }
 
 const rootRoute = createRootRoute({ component: App, errorComponent: RootErrorComponent })

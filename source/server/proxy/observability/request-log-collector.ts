@@ -4,6 +4,7 @@ import { getSettings } from '@server/database/settings-store'
 import {
   createRequestContent,
   createRequestLog,
+  pruneRequestContents,
   pruneRequestLogs,
   updateRequestContent,
   updateRequestLogStatus,
@@ -20,15 +21,38 @@ import type { RequestContentOutcome, RequestLogger, RequestLoggingInput } from '
 const PRUNE_INTERVAL_MS = 60_000
 let lastPruneTime = 0
 
+/**
+ * 请求记录与正文各自按自己的保留窗口清理。
+ *
+ * 两条窗口是独立设置：可能「请求永久保留、正文只留 7 天」，也可能反过来。
+ * 取值为 0 的那一项表示永久保留，跳过即可——清理函数自己也会把 `< 1` 当作不做。
+ */
 async function pruneRequestLogsThrottled(): Promise<void> {
   const time = Date.now()
   if (time - lastPruneTime < PRUNE_INTERVAL_MS) return
   lastPruneTime = time
   const settings = await getSettings()
-  await pruneRequestLogs(settings.logRetentionDays)
+  await pruneRequestLogs(settings.requestLogRetentionDays)
+  await pruneRequestContents(settings.contentRetentionDays)
+}
+
+/**
+ * 关掉「记录请求日志」时用的空日志器。
+ *
+ * 返回它而不是 `null`：调用方（收尾、拒绝、中断三条路径）不必各自分支，
+ * 「不记录」就是一组什么都不做的实现。
+ */
+const NOOP_REQUEST_LOGGER: RequestLogger = {
+  requestContentId: null,
+  finalizeRequestLog: async () => {},
+  finalizeRequestContent: async () => {},
+  finalizeLocalErrorContent: async () => {},
 }
 
 export async function initializeRequestLogger(input: RequestLoggingInput): Promise<RequestLogger> {
+  // 请求行是日志的根：没有它，尝试行、用量、正文都无处归属，索性整条链路都不写。
+  if (!input.captureRequestLogs) return NOOP_REQUEST_LOGGER
+
   let requestContentId: string | null = null
   try {
     await createRequestLog({
@@ -53,7 +77,7 @@ export async function initializeRequestLogger(input: RequestLoggingInput): Promi
       requestContentId = content.id
     }
   } catch (error) {
-    console.error(`[proxy] 写入请求日志失败: ${(error as Error).message}`)
+    console.error(`[proxy] failed to write the request log: ${(error as Error).message}`)
   }
 
   return createRequestLogger(requestContentId, input)
@@ -75,7 +99,7 @@ function createRequestLogger(requestContentId: string | null, input: RequestLogg
       })
       await pruneRequestLogsThrottled()
     } catch (error) {
-      console.error(`[proxy] 更新请求日志失败: ${(error as Error).message}`)
+      console.error(`[proxy] failed to update the request log: ${(error as Error).message}`)
     }
   }
 
@@ -93,7 +117,7 @@ function createRequestLogger(requestContentId: string | null, input: RequestLogg
       })
       await hooks.onContentCaptured?.({ requestId: input.requestId, perspective: 'client' })
     } catch (error) {
-      console.error(`[proxy] 更新请求正文失败: ${(error as Error).message}`)
+      console.error(`[proxy] failed to update the request body: ${(error as Error).message}`)
     }
   }
 

@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   updateRequestLogStatus: vi.fn(),
   recordAttemptUsage: vi.fn(),
   pruneRequestLogs: vi.fn(),
+  pruneRequestContents: vi.fn(),
 }))
 
 vi.mock('@server/proxy/routing/router', async importOriginal => {
@@ -42,7 +43,7 @@ vi.mock('@server/proxy/upstream/health', () => ({
 }))
 
 vi.mock('@server/database/settings-store', () => ({
-  getSettings: async () => ({ idleTimeoutMilliseconds: 1_000, logRetentionDays: 7, captureRequestContent: mocks.captureRequestContent }),
+  getSettings: async () => ({ idleTimeoutMilliseconds: 1_000, requestLogRetentionDays: 7, contentRetentionDays: 7, captureRequestLogs: true, captureRequestContent: mocks.captureRequestContent }),
 }))
 
 vi.mock('@server/database/logical-model-store', () => ({
@@ -83,6 +84,7 @@ vi.mock('@server/database/request-log-store', () => ({
   updateRequestLogStatus: mocks.updateRequestLogStatus,
   recordAttemptUsage: mocks.recordAttemptUsage,
   pruneRequestLogs: mocks.pruneRequestLogs,
+  pruneRequestContents: mocks.pruneRequestContents,
 }))
 
 vi.mock('@server/database/request-rewrite-rule-store', () => ({
@@ -209,7 +211,7 @@ describe('handleProxyRequest', () => {
     expect(await response.json()).toEqual({
       success: false,
       errorCode: 'UNKNOWN_API_PATH',
-      errorMessage: '无法识别的 API 路径',
+      errorMessage: 'Unrecognized API path',
     })
     // 连协议都识别不出来，因此客户端协议为 null。
     await expectRejectionRecorded({ clientProtocol: null, logicalModelId: null })
@@ -233,7 +235,7 @@ describe('handleProxyRequest', () => {
     expect(await response.json()).toEqual({
       success: false,
       errorCode: 'NO_AVAILABLE_PROVIDER',
-      errorMessage: expect.stringContaining('没有可用的上游 Provider'),
+      errorMessage: expect.stringContaining('No available upstream provider'),
     })
     await expectRejectionRecorded({ clientProtocol: 'anthropic-messages', logicalModelId: 'default' })
   })
@@ -439,7 +441,7 @@ describe('handleProxyRequest', () => {
     expect(await response.json()).toEqual({
       success: false,
       errorCode: 'MANUAL_MODEL_UNAVAILABLE',
-      errorMessage: '手动指定的 ProviderModel 当前不可用于该协议',
+      errorMessage: 'The manually selected ProviderModel is not available for this protocol',
     })
     expect(upstreamHandler).not.toHaveBeenCalled()
     await expectRejectionRecorded({ clientProtocol: 'openai-completions', logicalModelId: 'default' })
@@ -473,9 +475,9 @@ describe('handleProxyRequest', () => {
   })
 
   it.each([
-    [{ messages: [] }, '缺少 model 字段'],
-    [{ model: '', messages: [] }, 'model 必须为非空字符串'],
-    [{ model: 123, messages: [] }, 'model 必须为非空字符串'],
+    [{ messages: [] }, 'Missing the model field'],
+    [{ model: '', messages: [] }, 'The model field must be a non-empty string'],
+    [{ model: 123, messages: [] }, 'The model field must be a non-empty string'],
   ])('rejects invalid model input before contacting upstream: %s', async (body, expectedMessage) => {
     const upstreamHandler = vi.fn((_req: http.IncomingMessage, res: http.ServerResponse) => res.end())
     const upstream = await listen(upstreamHandler)
@@ -541,7 +543,7 @@ describe('handleProxyRequest', () => {
     expect(await response.json()).toEqual({
       success: false,
       errorCode: 'REQUEST_REWRITE_RULE_FAILED',
-      errorMessage: '禁止修改受保护 Header: Authorization',
+      errorMessage: 'Modifying a protected header is not allowed: Authorization',
     })
     expect(upstreamHandler).not.toHaveBeenCalled()
     expect(mocks.createRequestAttempt).not.toHaveBeenCalled()
@@ -554,7 +556,7 @@ describe('handleProxyRequest', () => {
       responseBody: JSON.stringify({
         success: false,
         errorCode: 'REQUEST_REWRITE_RULE_FAILED',
-        errorMessage: '禁止修改受保护 Header: Authorization',
+        errorMessage: 'Modifying a protected header is not allowed: Authorization',
       }),
     }))
   })
@@ -872,7 +874,7 @@ describe('handleProxyRequest', () => {
     expect(JSON.parse(responseBody)).toEqual({
       success: false,
       errorCode: 'ALL_PROVIDERS_FAILED',
-      errorMessage: '所有 Provider 都失败了',
+      errorMessage: 'All providers failed',
     })
     expect(mocks.updateRequestContent).toHaveBeenCalledWith('content_request', expect.objectContaining({
       captureStatus: 'captured',
@@ -1270,8 +1272,8 @@ describe('handleProxyRequest', () => {
 
     expect(response.status).toBe(503)
     const payload = await response.json()
-    expect(payload.errorMessage).toContain('未配置')
-    expect(payload.errorMessage).toContain('协议转换')
+    expect(payload.errorMessage).toContain('protocol conversion')
+    expect(payload.errorMessage).toContain('No available upstream provider')
   })
 
   it('prefers the native endpoint over a conversion-enabled endpoint', async () => {

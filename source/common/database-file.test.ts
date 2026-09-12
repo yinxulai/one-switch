@@ -15,7 +15,7 @@ describe('database file name', () => {
 
   it('rejects a version without a leading number instead of guessing one', () => {
     // 猜一个主版本号会静默指向另一个数据文件，宁可让打包流程立刻失败。
-    expect(() => getMajorVersion('unknown')).toThrow('无法从应用版本号解析主版本号: unknown')
+    expect(() => getMajorVersion('unknown')).toThrow('Cannot parse major version from app version: unknown')
   })
 
   it('puts the major version in the data file name', () => {

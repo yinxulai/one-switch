@@ -14,7 +14,7 @@ const BindingsSchema = z.object({ providerModelId: z.string().min(1), bindings: 
 const TestSchema = z.object({ rule: RequestRewriteRuleSchema, testCase: z.object({ stage: z.enum(['request', 'response']), body: z.string().max(2 * 1024 * 1024), headers: z.string().max(64 * 1024), clientProtocol: z.string(), upstreamProtocol: z.string(), transport: TransportKindSchema }) })
 export const requestRewriteRuleRoutes = new HttpRouter<ManagementHandler>()
   .post('/api/request-rewrite-rule/list', async (_req, res) => sendSuccess(res, await listRequestRewriteRules()))
-  .post('/api/request-rewrite-rule/get', async (_req, res, body) => { const result = await getRequestRewriteRule(IdSchema.parse(body).id); if (!result) return sendError(res, 'NOT_FOUND', '请求重写规则不存在', 404); sendSuccess(res, result) })
+  .post('/api/request-rewrite-rule/get', async (_req, res, body) => { const result = await getRequestRewriteRule(IdSchema.parse(body).id); if (!result) return sendError(res, 'NOT_FOUND', 'Request rewrite rule not found', 404); sendSuccess(res, result) })
   .post('/api/request-rewrite-rule/create', async (_req, res, body) => sendSuccess(res, await createRequestRewriteRule(RuleInput.parse(body))))
   .post('/api/request-rewrite-rule/update', async (_req, res, body) => { const input = UpdateSchema.parse(body); const { id, ...updates } = input; sendSuccess(res, await updateRequestRewriteRule(id, updates)) })
   .post('/api/request-rewrite-rule/delete', async (_req, res, body) => { const { id } = IdSchema.parse(body); sendSuccess(res, await deleteRequestRewriteRule(id)) })

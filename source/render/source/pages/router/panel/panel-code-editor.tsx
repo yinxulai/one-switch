@@ -27,6 +27,7 @@ import {
 import { tags } from '@lezer/highlight'
 
 import { cn } from '@/lib/utils'
+import { useTranslation, type AppTranslator } from '@/i18n/provider'
 import type { SchemaFieldDescriptor } from '@common/router/types'
 
 /**
@@ -102,11 +103,13 @@ const SCRIPT_PAYLOAD_ACCESS = /\bpayload(?:\.[\w[\]]*)*\.?$/
 /** 提示词模板里正在写的 `${...}`。与引擎 `renderTemplate` 的正则保持一致。 */
 const TEMPLATE_VARIABLE = /\$\{[^}]*$/
 
-const SCRIPT_GLOBAL_COMPLETIONS: Completion[] = [
-  { label: 'payload', type: 'variable', detail: '本次运行数据的深拷贝' },
-  snippetCompletion("get('${0}')", { label: 'get(...)', type: 'function', detail: '按路径取值（支持 a[*].b）' }),
-  snippetCompletion('console.log(${0})', { label: 'console.log(...)', type: 'function', detail: '写进运行 trace' }),
-]
+function scriptGlobalCompletions(t: AppTranslator): Completion[] {
+  return [
+    { label: 'payload', type: 'variable', detail: t('router.panel.completion.payloadDetail') },
+    snippetCompletion("get('${0}')", { label: 'get(...)', type: 'function', detail: t('router.panel.completion.getValueDetail') }),
+    snippetCompletion('console.log(${0})', { label: 'console.log(...)', type: 'function', detail: t('router.panel.completion.consoleLogDetail') }),
+  ]
+}
 
 /** 提示词模板里 `${变量}` 的标记。只做上色，不参与语法解析。 */
 const templateVariableMatcher = new MatchDecorator({
@@ -143,7 +146,7 @@ function fieldCompletion(field: SchemaFieldDescriptor, closer: string): Completi
 }
 
 /** JS 脚本的候选源：`get('...')` / `payload.` 给字段路径，普通标识符给沙箱内置。 */
-function createScriptCompletionSource(fields: MutableRefObject<SchemaFieldDescriptor[]>) {
+function createScriptCompletionSource(fields: MutableRefObject<SchemaFieldDescriptor[]>, t: AppTranslator) {
   return (context: CompletionContext): CompletionResult | null => {
     const optionFields = fields.current.map(field => fieldCompletion(field, "'"))
 
@@ -160,7 +163,7 @@ function createScriptCompletionSource(fields: MutableRefObject<SchemaFieldDescri
 
     const word = context.matchBefore(/[A-Za-z_$][\w$]*$/)
     if (!word || (word.from === word.to && !context.explicit)) return null
-    return { from: word.from, options: SCRIPT_GLOBAL_COMPLETIONS, validFor: /^[\w$]*$/ }
+    return { from: word.from, options: scriptGlobalCompletions(t), validFor: /^[\w$]*$/ }
   }
 }
 
@@ -179,6 +182,7 @@ interface EditorRuntime {
   fields: MutableRefObject<SchemaFieldDescriptor[]>
   onChange: MutableRefObject<(value: string) => void>
   placeholder: string | undefined
+  t: AppTranslator
 }
 
 /** 只声明我们真正会传的字段，避免依赖 autocomplete 未导出的配置类型。 */
@@ -188,7 +192,7 @@ interface EditorCompletionOptions {
 }
 
 function buildExtensions(runtime: EditorRuntime): Extension[] {
-  const { language, fields, onChange, placeholder } = runtime
+  const { language, fields, onChange, placeholder, t } = runtime
   const completionOptions: EditorCompletionOptions = { icons: false }
   // 模板没有语言包，只能整块覆盖候选源；JS 走 language data，不能 override。
   if (language === 'template') completionOptions.override = [createTemplateCompletionSource(fields)]
@@ -204,7 +208,11 @@ function buildExtensions(runtime: EditorRuntime): Extension[] {
     EditorView.updateListener.of((update) => {
       if (update.docChanged) onChange.current(update.state.doc.toString())
     }),
-    EditorView.contentAttributes.of({ 'aria-label': language === 'javascript' ? '脚本代码' : '提示词模板' }),
+    EditorView.contentAttributes.of({
+      'aria-label': language === 'javascript'
+        ? t('router.panel.scriptEditorAria')
+        : t('router.panel.templateEditorAria'),
+    }),
   ]
 
   if (language === 'javascript') {
@@ -212,7 +220,7 @@ function buildExtensions(runtime: EditorRuntime): Extension[] {
       autocompletion(completionOptions),
       javascript(),
       // 语言自带的补全源（局部变量、成员访问）走 language data，不能被 override 顶掉。
-      javascriptLanguage.data.of({ autocomplete: createScriptCompletionSource(fields) }),
+      javascriptLanguage.data.of({ autocomplete: createScriptCompletionSource(fields, t) }),
     )
   } else {
     extensions.push(
@@ -232,6 +240,7 @@ export function PanelCodeEditor(props: PanelCodeEditorProps) {
   const fieldsRef = useRef(fields)
   const changeRef = useRef(onChange)
   const valueRef = useRef(value)
+  const t = useTranslation()
 
   useEffect(() => {
     fieldsRef.current = fields
@@ -240,8 +249,8 @@ export function PanelCodeEditor(props: PanelCodeEditorProps) {
   }, [fields, onChange, value])
 
   const extensions = useMemo(
-    () => buildExtensions({ language, fields: fieldsRef, onChange: changeRef, placeholder }),
-    [language, placeholder],
+    () => buildExtensions({ language, fields: fieldsRef, onChange: changeRef, placeholder, t }),
+    [language, placeholder, t],
   )
 
   useEffect(() => {

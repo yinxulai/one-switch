@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { useLocale, useTranslation, type AppTranslator } from '@/i18n/provider'
 import { cn } from '@/lib/utils'
 
 const LEVEL_STYLE: Record<LogEntry['level'], string> = {
@@ -23,8 +24,8 @@ const LEVEL_LABEL: Record<LogEntry['level'], string> = {
   debug: 'DEBUG',
 }
 
-function formatTimestamp(timestamp: number) {
-  return new Intl.DateTimeFormat('zh-CN', {
+function formatTimestamp(timestamp: number, locale: string) {
+  return new Intl.DateTimeFormat(locale, {
     hour12: false,
     month: '2-digit',
     day: '2-digit',
@@ -51,30 +52,30 @@ function renderLoadingRows() {
   ))
 }
 
-function renderEmptyRow(filtered: boolean) {
+function renderEmptyRow(t: AppTranslator, filtered: boolean) {
   if (filtered) {
-    return <TableStateRow colSpan={3} icon={SearchX} title="没有匹配的运行日志" description="试着放宽搜索词或把级别筛选切回「全部级别」。" />
+    return <TableStateRow colSpan={3} icon={SearchX} title={t('logs.empty.filteredTitle')} description={t('logs.empty.filteredDescription')} />
   }
 
-  return <TableStateRow colSpan={3} icon={Inbox} title="还没有运行日志" description="服务产生日志后会实时出现在这里。" />
+  return <TableStateRow colSpan={3} icon={Inbox} title={t('logs.empty.title')} description={t('logs.empty.description')} />
 }
 
-function renderErrorRow(message: string, onRetry: () => void) {
+function renderErrorRow(t: AppTranslator, message: string, onRetry: () => void) {
   return (
-    <TableStateRow colSpan={3} icon={AlertTriangle} tone="destructive" title="运行日志读取失败" description={message} action={
+    <TableStateRow colSpan={3} icon={AlertTriangle} tone="destructive" title={t('logs.error.title')} description={message} action={
       <Button variant="outline" className="mt-1" onClick={onRetry}>
         <RefreshCw size={14} />
-        重试
+        {t('common.action.retry')}
       </Button>
     } />
   )
 }
 
-function renderLogRows(logs: LogEntry[]) {
+function renderLogRows(locale: string, logs: LogEntry[]) {
   return logs.map(log => (
     <TableRow key={log.id} className={cn(tableRowClass, 'align-top')}>
       <TableCell className={cn(tableCellClass, 'whitespace-nowrap font-mono text-text-quaternary')}>
-        {formatTimestamp(log.timestamp)}
+        {formatTimestamp(log.timestamp, locale)}
       </TableCell>
       <TableCell className={tableCellClass}>
         <Badge variant="outline" className={cn('h-5 border-transparent px-1.5 font-mono system-2xs-medium', LEVEL_STYLE[log.level])}>
@@ -90,12 +91,14 @@ interface LogsTableProps { logs: LogEntry[]; loading: boolean; error: string | n
 
 export function LogsTable(props: LogsTableProps) {
   const { logs, loading } = props
+  const t = useTranslation()
+  const locale = useLocale()
 
   const renderTableBody = () => {
     if (loading) return renderLoadingRows()
-    if (props.error !== null && logs.length === 0) return renderErrorRow(props.error, props.onRetry)
-    if (logs.length === 0) return renderEmptyRow(props.filtered)
-    return renderLogRows(logs)
+    if (props.error !== null && logs.length === 0) return renderErrorRow(t, props.error, props.onRetry)
+    if (logs.length === 0) return renderEmptyRow(t, props.filtered)
+    return renderLogRows(locale, logs)
   }
 
   return (
@@ -104,9 +107,9 @@ export function LogsTable(props: LogsTableProps) {
         <Table className="w-full table-fixed text-xs">
           <TableHeader className={cn('sticky top-0 z-10 bg-card/95 backdrop-blur-sm', tableHeaderClass)}>
             <TableRow className="h-8">
-              <TableHead className={cn(tableHeaderCellClass, 'h-auto w-40 py-1.5')}>时间</TableHead>
-              <TableHead className={cn(tableHeaderCellClass, 'h-auto w-20 py-1.5')}>级别</TableHead>
-              <TableHead className={cn(tableHeaderCellClass, 'h-auto py-1.5')}>消息</TableHead>
+              <TableHead className={cn(tableHeaderCellClass, 'h-auto w-40 py-1.5')}>{t('logs.table.time')}</TableHead>
+              <TableHead className={cn(tableHeaderCellClass, 'h-auto w-20 py-1.5')}>{t('logs.table.level')}</TableHead>
+              <TableHead className={cn(tableHeaderCellClass, 'h-auto py-1.5')}>{t('logs.table.message')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>{renderTableBody()}</TableBody>

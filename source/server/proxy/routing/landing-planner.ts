@@ -15,10 +15,10 @@ import { getManualModel } from './manual-routing'
  */
 
 /** 落点都不可用时的兜底说明：规划器没给 detail 时用它，避免错误信息出现空白。 */
-const NO_PROVIDER_DETAIL = '该逻辑模型没有已启用且健康的供应商模型'
+const NO_PROVIDER_DETAIL = 'This logical model has no enabled and healthy provider model'
 
 /** 图没有产出任何落点。 */
-export const NO_LANDING_DETAIL = '路由图没有选出落点逻辑模型'
+export const NO_LANDING_DETAIL = 'The routing graph selected no landing logical model'
 
 export interface LandingPlanInput {
   /** 图算出的落点逻辑模型，按优先级排列 */
@@ -90,5 +90,5 @@ export async function planLandingTargets(input: LandingPlanInput): Promise<Landi
 function describeUnavailableLandings(unavailable: readonly UnavailableLanding[]): string {
   if (unavailable.length === 1) return unavailable[0].detail
   const lines = unavailable.map(item => `${item.logicalModelId}: ${item.detail}`)
-  return `落点逻辑模型都不可用（${lines.join('；')}）`
+  return `No landing logical model is usable (${lines.join('; ')})`
 }

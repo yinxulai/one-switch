@@ -3,6 +3,7 @@ import { Plus, Search } from 'lucide-react'
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/i18n/provider'
 import { APPENDABLE_KINDS, NODE_KIND_META } from '../node-meta'
 import type { AppendableKind } from '@common/router/types'
 import { BlockIcon } from './block-icon'
@@ -45,6 +46,7 @@ export function NodeSelector(props: NodeSelectorProps) {
   const [localOpen, setLocalOpen] = useState(false)
   const [keyword, setKeyword] = useState('')
   const open = openFromProps === undefined ? localOpen : openFromProps
+  const t = useTranslation()
 
   const items = useMemo(() => {
     const normalized = keyword.trim().toLowerCase()
@@ -52,11 +54,11 @@ export function NodeSelector(props: NodeSelectorProps) {
       .map(kind => ({ kind, meta: NODE_KIND_META[kind] }))
       .filter(item => {
         if (!normalized) return true
-        return item.meta.label.toLowerCase().includes(normalized)
-          || item.meta.hint.toLowerCase().includes(normalized)
+        return t(item.meta.labelKey).toLowerCase().includes(normalized)
+          || t(item.meta.hintKey).toLowerCase().includes(normalized)
           || item.kind.includes(normalized)
       })
-  }, [availableKinds, keyword])
+  }, [availableKinds, keyword, t])
 
   const handleOpenChange = (next: boolean) => {
     setLocalOpen(next)
@@ -71,7 +73,7 @@ export function NodeSelector(props: NodeSelectorProps) {
   const defaultTrigger = (
     <button
       type="button"
-      aria-label="在此处插入节点"
+      aria-label={t('router.selector.aria')}
       className={cn(
         'absolute top-1/2 left-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-components-button-primary-bg text-components-button-primary-text transition-opacity duration-150',
         'hover:bg-components-button-primary-bg-hover',
@@ -113,7 +115,7 @@ export function NodeSelector(props: NodeSelectorProps) {
             autoFocus
             value={keyword}
             onChange={event => setKeyword(event.target.value)}
-            placeholder="搜索节点"
+            placeholder={t('router.selector.searchPlaceholder')}
             className="h-5 w-full min-w-0 bg-transparent system-xs-regular text-components-input-text-filled outline-none placeholder:text-components-input-text-placeholder"
           />
         </div>
@@ -131,14 +133,14 @@ export function NodeSelector(props: NodeSelectorProps) {
             >
               <BlockIcon kind={item.kind} size="sm" />
               <span className="min-w-0 flex-1">
-                <span className="block truncate system-xs-medium text-text-primary">{item.meta.label}</span>
-                <span className="mt-0.5 block truncate system-2xs-regular text-text-tertiary">{item.meta.hint}</span>
+                <span className="block truncate system-xs-medium text-text-primary">{t(item.meta.labelKey)}</span>
+                <span className="mt-0.5 block truncate system-2xs-regular text-text-tertiary">{t(item.meta.hintKey)}</span>
               </span>
             </button>
           ))}
 
           {items.length === 0 && (
-            <div className="px-2 py-4 text-center system-xs-regular text-text-tertiary">没有匹配的节点</div>
+            <div className="px-2 py-4 text-center system-xs-regular text-text-tertiary">{t('router.selector.empty')}</div>
           )}
         </div>
       </PopoverContent>

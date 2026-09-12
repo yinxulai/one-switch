@@ -1,6 +1,6 @@
 import { and, eq, gte, sql, type SQL } from 'drizzle-orm'
 import type { AnySQLiteColumn } from 'drizzle-orm/sqlite-core'
-import type { RequestSourceStat, RequestStatus } from '@common/schemas'
+import type { FailureReasonCategory, RequestSourceStat, RequestStatus } from '@common/schemas'
 import { getDb } from './index'
 import { attemptUsages, requestAttempts, requestAttributes, requestLogs, requestUsages } from './schema'
 
@@ -215,6 +215,7 @@ const providerStatSelect = {
 type ProviderStatRow = { providerId: string; providerName: string; attempts: number | null; success: number | null; failed: number | null; avgLatency: number | null }
 
 function normalizeDevelopmentProviderName(providerId: string, providerName: string): string {
+  // `（开发示例）` 是开发种子数据用过的**历史后缀字面量**，改了它旧开发库里的行就清不掉后缀了。
   return providerId.startsWith('prov_dev_') ? providerName.replace(/（开发示例）$/, '') : providerName
 }
 
@@ -428,21 +429,22 @@ export async function getLatencyDistribution(sinceMs: number, providerId?: strin
   return rows.map(row => ({ range: formatLatencyBucketRange(row.bucket), count: row.count }))
 }
 
-export interface FailureReasonStat { reason: string; count: number }
+export interface FailureReasonStat { reason: FailureReasonCategory; count: number }
 
 export async function getFailureReasons(sinceMs: number, providerId?: string): Promise<FailureReasonStat[]> {
   const finalFailedAttempt = sql`${requestAttempts.attemptIndex} = (SELECT max(final_attempt.attemptIndex) FROM request_attempts AS final_attempt WHERE final_attempt.requestId = ${requestAttempts.requestId} AND final_attempt.status = 'failed')`
   const filters = [sql`${requestLogs.createdTime} >= ${sinceMs}`, eq(requestLogs.status, 'failed'), eq(requestAttempts.status, 'failed' as RequestStatus), finalFailedAttempt]
   if (providerId) filters.push(eq(requestAttempts.providerId, providerId))
   const rows = getDb().select({ errorCode: requestAttempts.errorCode, count: sql<number>`count(distinct ${requestAttempts.requestId})`.as('count') }).from(requestAttempts).innerJoin(requestLogs, eq(requestAttempts.requestId, requestLogs.id)).where(and(...filters)).groupBy(requestAttempts.errorCode).orderBy(sql`count desc`).all()
-  const categories: Record<string, number> = { '超时': 0, '限流 (429)': 0, '服务错误 (5xx)': 0, '认证失败': 0, '其他': 0 }
+  // 桶名是机器码，界面自己翻：服务端不该决定标签长什么样（见 `FAILURE_REASON_CATEGORIES`）。
+  const categories: Record<FailureReasonCategory, number> = { TIMEOUT: 0, RATE_LIMITED: 0, SERVER_ERROR: 0, AUTH_FAILED: 0, OTHER: 0 }
   for (const row of rows) {
     const code = row.errorCode ?? 'UNKNOWN'
-    if (code.includes('TIMEOUT') || code.includes('ECONNRESET') || code.includes('ETIMEDOUT')) categories['超时'] += row.count
-    else if (code.includes('429') || code.includes('RATE_LIMIT')) categories['限流 (429)'] += row.count
-    else if (/Status_5\d\d/.test(code) || code.includes('UPSTREAM_ERROR') || code.includes('SERVER_ERROR')) categories['服务错误 (5xx)'] += row.count
-    else if (code.includes('401') || code.includes('403') || code.includes('AUTH')) categories['认证失败'] += row.count
-    else categories['其他'] += row.count
+    if (code.includes('TIMEOUT') || code.includes('ECONNRESET') || code.includes('ETIMEDOUT')) categories.TIMEOUT += row.count
+    else if (code.includes('429') || code.includes('RATE_LIMIT')) categories.RATE_LIMITED += row.count
+    else if (/Status_5\d\d/.test(code) || code.includes('UPSTREAM_ERROR') || code.includes('SERVER_ERROR')) categories.SERVER_ERROR += row.count
+    else if (code.includes('401') || code.includes('403') || code.includes('AUTH')) categories.AUTH_FAILED += row.count
+    else categories.OTHER += row.count
   }
-  return Object.entries(categories).map(([reason, count]) => ({ reason, count })).filter(row => row.count > 0).sort((left, right) => right.count - left.count)
+  return Object.entries(categories).map(([reason, count]) => ({ reason: reason as FailureReasonCategory, count })).filter(row => row.count > 0).sort((left, right) => right.count - left.count)
 }

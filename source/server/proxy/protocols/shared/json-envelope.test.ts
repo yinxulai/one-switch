@@ -11,12 +11,12 @@ describe('readJsonModel', () => {
   })
 
   it('reports why the model cannot be read', () => {
-    expect(readJsonModel(Buffer.from('{'))).toEqual({ ok: false, reason: '请求体必须是 JSON 对象' })
-    expect(readJsonModel(Buffer.from('[]'))).toEqual({ ok: false, reason: '请求体必须是 JSON 对象' })
-    expect(readJsonModel(Buffer.alloc(0))).toEqual({ ok: false, reason: '请求体必须是 JSON 对象' })
-    expect(readJsonModel(Buffer.from(JSON.stringify({ input: 'hello' })))).toEqual({ ok: false, reason: '缺少 model 字段' })
-    expect(readJsonModel(Buffer.from(JSON.stringify({ model: 42 })))).toEqual({ ok: false, reason: 'model 必须为非空字符串' })
-    expect(readJsonModel(Buffer.from(JSON.stringify({ model: '   ' })))).toEqual({ ok: false, reason: 'model 必须为非空字符串' })
+    expect(readJsonModel(Buffer.from('{'))).toEqual({ ok: false, reason: 'The request body must be a JSON object' })
+    expect(readJsonModel(Buffer.from('[]'))).toEqual({ ok: false, reason: 'The request body must be a JSON object' })
+    expect(readJsonModel(Buffer.alloc(0))).toEqual({ ok: false, reason: 'The request body must be a JSON object' })
+    expect(readJsonModel(Buffer.from(JSON.stringify({ input: 'hello' })))).toEqual({ ok: false, reason: 'Missing the model field' })
+    expect(readJsonModel(Buffer.from(JSON.stringify({ model: 42 })))).toEqual({ ok: false, reason: 'The model field must be a non-empty string' })
+    expect(readJsonModel(Buffer.from(JSON.stringify({ model: '   ' })))).toEqual({ ok: false, reason: 'The model field must be a non-empty string' })
   })
 })
 

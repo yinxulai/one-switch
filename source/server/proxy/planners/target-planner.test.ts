@@ -111,8 +111,8 @@ describe('端点匹配', () => {
 
     expect(result.targets).toHaveLength(0)
     expect(result.reason).toBe('no-available-provider')
-    expect(result.detail).toContain('未开启协议转换')
-    expect(result.detail).toContain('当前配置协议: openai-completions')
+    expect(result.detail).toContain('protocol conversion is disabled')
+    expect(result.detail).toContain('configured protocols: openai-completions')
     expect(result.detail).toContain('prov_alpha/model_alpha-upstream')
   })
 
@@ -128,7 +128,7 @@ describe('端点匹配', () => {
     expect(result.targets).toHaveLength(0)
     expect(result.reason).toBe('no-available-provider')
     // 报错不能把原因说成「未开启协议转换」：转换是开的，拦住它的是形态。
-    expect(result.detail).toContain('跨形态转换不在支持范围')
+    expect(result.detail).toContain('cross-shape conversion is out of scope')
   })
 })
 
@@ -138,7 +138,7 @@ describe('候选为空时的原因', () => {
 
     expect(result.targets).toHaveLength(0)
     expect(result.reason).toBe('model-not-configured')
-    expect(result.detail).toBe('该逻辑模型没有已启用且健康的供应商模型')
+    expect(result.detail).toBe('This logical model has no enabled and healthy provider model')
   })
 
   it('reports manual-model-unavailable when the manually locked model is gone', async () => {
@@ -148,7 +148,7 @@ describe('候选为空时的原因', () => {
 
     // 手动锁定的模型不可用绝不能退化成「没有可用供应商」：那会是一句与用户操作无关的报错。
     expect(result.reason).toBe('manual-model-unavailable')
-    expect(result.detail).toBe('手动指定的 ProviderModel 当前不可用于该协议')
+    expect(result.detail).toBe('The manually selected ProviderModel is not available for this protocol')
   })
 
   it('reports manual-model-unavailable when the locked model cannot serve the protocol', async () => {

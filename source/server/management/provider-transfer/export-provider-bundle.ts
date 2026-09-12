@@ -56,7 +56,7 @@ function selectProviders(providers: Provider[], providerIds: ProviderBundleExpor
     if (provider) selected.push(provider)
     else missing.push(id)
   }
-  if (missing.length > 0) throw new AppError('RESOURCE_NOT_FOUND', 404, `供应商不存在：${missing.join('、')}`)
+  if (missing.length > 0) throw new AppError('RESOURCE_NOT_FOUND', 404, `Provider not found: ${missing.join(', ')}`, { details: { providerIds: missing.join(', ') } })
   return selected
 }
 

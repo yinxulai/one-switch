@@ -2,6 +2,7 @@ import { BarChart3, Download, Pencil, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
+import { useTranslation } from '@/i18n/provider'
 import { ProviderIcon } from './provider-icon'
 import { findPresetByName } from '../lib/provider-presets'
 import type { Provider } from '@common/schemas'
@@ -17,6 +18,7 @@ interface ProviderDetailHeaderProps {
 
 export function ProviderDetailHeader(props: ProviderDetailHeaderProps) {
   const { provider, onToggleProviderEnabled, onEditProvider, onExportProvider, onRemoveProvider } = props
+  const t = useTranslation()
   const iconColor = findPresetByName(provider.name)?.color
 
   return (
@@ -34,7 +36,7 @@ export function ProviderDetailHeader(props: ProviderDetailHeaderProps) {
         <div>
           <CardTitle>{provider.name}</CardTitle>
           <CardDescription className="mt-1">
-            凭据按供应商保存，模型沿用默认接口地址，也可单独覆盖。
+            {t('providers.detail.description')}
           </CardDescription>
         </div>
       </div>
@@ -42,24 +44,24 @@ export function ProviderDetailHeader(props: ProviderDetailHeaderProps) {
         <Switch
           checked={provider.enabled}
           onCheckedChange={onToggleProviderEnabled}
-          aria-label={`${provider.name} 启用状态`}
+          aria-label={t('models.row.enabledState', { name: provider.name })}
         />
         <Button variant="outline" onClick={onExportProvider}>
-          <Download size={13} /> 导出
+          <Download size={13} /> {t('providers.action.export')}
         </Button>
         {props.onNavigateToAnalytics && (
           <Button variant="outline" onClick={props.onNavigateToAnalytics}>
-            <BarChart3 size={13} /> 数据分析
+            <BarChart3 size={13} /> {t('providers.action.analytics')}
           </Button>
         )}
         <Button variant="outline" onClick={onEditProvider}>
-          <Pencil size={13} /> 编辑
+          <Pencil size={13} /> {t('providers.action.edit')}
         </Button>
         <Button
           variant="ghost"
           size="icon"
           className="text-text-destructive"
-          title="删除供应商"
+          title={t('providers.action.delete')}
           onClick={onRemoveProvider}
         >
           <Trash2 size={13} />

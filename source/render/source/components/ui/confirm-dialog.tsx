@@ -10,6 +10,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import type { Button } from '@/components/ui/button'
+import { useTranslation } from '@/i18n/provider'
 
 interface ConfirmDialogProps {
   open: boolean
@@ -26,12 +27,13 @@ export function ConfirmDialog({
   open,
   title,
   description,
-  confirmLabel = '确认',
-  cancelLabel = '取消',
+  confirmLabel,
+  cancelLabel,
   variant = 'default',
   onConfirm,
   onOpenChange,
 }: ConfirmDialogProps) {
+  const t = useTranslation()
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
@@ -40,8 +42,8 @@ export function ConfirmDialog({
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>{cancelLabel}</AlertDialogCancel>
-          <AlertDialogAction variant={variant} onClick={onConfirm}>{confirmLabel}</AlertDialogAction>
+          <AlertDialogCancel>{cancelLabel ?? t('common.confirm.cancelLabel')}</AlertDialogCancel>
+          <AlertDialogAction variant={variant} onClick={onConfirm}>{confirmLabel ?? t('common.confirm.confirmLabel')}</AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

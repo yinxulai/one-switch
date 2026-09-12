@@ -45,7 +45,7 @@ export function createAttemptLogger(input: AttemptLoggingInput): AttemptLogger {
       })
       await input.hooks.onContentCaptured?.({ requestId: input.requestId, perspective: 'upstream' })
     } catch (error) {
-      console.error(`[proxy] 写入请求正文失败: ${(error as Error).message}`)
+      console.error(`[proxy] failed to write the request body: ${(error as Error).message}`)
     }
   }
 
@@ -76,7 +76,7 @@ export function createAttemptLogger(input: AttemptLoggingInput): AttemptLogger {
       })
       // 这次尝试已经落库：后到的是更弱的事实（取消），不能覆盖已落库的用量与正文。
       if (!attempt) {
-        console.debug(`[proxy] 尝试记录已存在，跳过重复写入 requestId=${input.requestId} attemptIndex=${input.attemptIndex}`)
+        console.debug(`[proxy] attempt record already exists, skipping duplicate write requestId=${input.requestId} attemptIndex=${input.attemptIndex}`)
         return
       }
       await recordAttemptUsage({
@@ -92,7 +92,7 @@ export function createAttemptLogger(input: AttemptLoggingInput): AttemptLogger {
       await input.hooks.onAttemptRecorded?.({ requestId: input.requestId, attemptId: attempt.id })
       if (finalization.upstreamContent) await recordUpstreamContent(attempt.id, finalization.upstreamContent)
     } catch (error) {
-      console.error(`[proxy] 写入请求尝试日志失败: ${(error as Error).message}`)
+      console.error(`[proxy] failed to write the request attempt log: ${(error as Error).message}`)
     }
   }
 

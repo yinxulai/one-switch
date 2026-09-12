@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { FormRow } from '@/components/form-kit'
 import { SettingsCardHeader } from '@/components/settings-card-header'
+import { useTranslation } from '@/i18n/provider'
 import { cn } from '@/lib/utils'
 
 interface RowValueProps {
@@ -22,29 +23,30 @@ function RowValue(props: RowValueProps) {
 
 export function ClientSetupCard(props: ClientSetupCardProps) {
   const { onNavigateToModels } = props
+  const t = useTranslation()
   return (
     <Card>
       <SettingsCardHeader
         icon={<KeyRound />}
-        title="客户端配置"
-        description="本地服务不校验鉴权，真实的上游凭证由 One Switch 按供应商注入"
+        title={t('access.client.title')}
+        description={t('access.client.description')}
       />
       <CardContent className="divide-y divide-border/50">
         <FormRow
-          title="模型名"
-          description="客户端填任意模型 ID 都能用：命中逻辑模型就直连它，没命中回落到默认逻辑模型"
+          title={t('access.client.modelName.title')}
+          description={t('access.client.modelName.description')}
           control={<RowValue mono>default</RowValue>}
         />
         <FormRow
-          title="API Key"
-          description="本地服务无需鉴权，客户端强制要求填写时用任意值即可"
-          control={<RowValue>任意值</RowValue>}
+          title={t('access.client.apiKey.title')}
+          description={t('access.client.apiKey.description')}
+          control={<RowValue>{t('access.client.apiKey.value')}</RowValue>}
         />
         <FormRow
-          title="上游凭证"
-          description="各供应商的 API Key 在模型管理中维护，客户端无需感知"
+          title={t('access.client.upstream.title')}
+          description={t('access.client.upstream.description')}
           control={onNavigateToModels && (
-            <Button variant="outline" size="sm" onClick={onNavigateToModels}>前往模型管理</Button>
+            <Button variant="outline" size="sm" onClick={onNavigateToModels}>{t('access.client.goToModels')}</Button>
           )}
         />
       </CardContent>

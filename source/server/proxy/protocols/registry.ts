@@ -48,7 +48,7 @@ for (const descriptor of protocolDescriptors) {
   }
   for (const endpoint of descriptor.endpoints) {
     const key = `${descriptor.id}:${endpoint.id}`
-    if (endpointsByKey.has(key)) throw new Error(`协议接口重复声明: ${key}`)
+    if (endpointsByKey.has(key)) throw new Error(`Duplicate protocol endpoint declaration: ${key}`)
     endpointsByKey.set(key, endpoint)
     // 一个接口可以有多条匹配规则（`*` 方法、多个路径别名），先展开成具体的 (方法, 路径)。
     // 路由键里没有传输形态：`HttpRouter` 一个键只能挂一个 handler，而形态的差异在响应体
@@ -65,7 +65,7 @@ for (const descriptor of protocolDescriptors) {
     }
     for (const entry of entries) {
       if (routes.some(route => route.method === entry.method && route.path === entry.path)) {
-        throw new Error(`入口重复声明: ${entry.method} ${entry.path}`)
+        throw new Error(`Duplicate protocol entry declaration: ${entry.method} ${entry.path}`)
       }
       routes.push({ method: entry.method, path: entry.path, protocol: descriptor.id, endpointId: endpoint.id })
       declaredEndpointRouter.mount({ [entry.path]: { protocol: descriptor.id, endpointId: endpoint.id, spec: endpoint } }, entry.method as HttpMethod)
@@ -76,7 +76,7 @@ for (const descriptor of protocolDescriptors) {
 export const protocolAdapters: ProtocolAdapterRegistry = {
   resolve(clientProtocol, endpointProtocol): ProtocolAdapter {
     const adapter = adapters.get(`${clientProtocol}:${endpointProtocol}`)
-    if (!adapter) throw new Error(`不支持的协议转换方向: ${clientProtocol} -> ${endpointProtocol}`)
+    if (!adapter) throw new Error(`Unsupported protocol conversion direction: ${clientProtocol} -> ${endpointProtocol}`)
     return adapter
   },
 }

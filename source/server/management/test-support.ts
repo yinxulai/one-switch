@@ -13,6 +13,7 @@ export function mockResponse(overrides: Partial<ServerResponse> = {}): ServerRes
     statusCode: 0,
     headersSent: false,
     writableEnded: false,
+    destroyed: false,
     destroy: vi.fn(),
     setHeader: vi.fn(),
     end: vi.fn(),

@@ -181,6 +181,6 @@ describe('analytics boundaries', () => {
 
     const since = (await getRequestLog(inWindow.id))!.createdTime
     expect(await getStatsSummary(since)).toMatchObject({ totalRequests: 1, failedCount: 1 })
-    expect(await getFailureReasons(since)).toEqual([{ reason: '认证失败', count: 1 }])
+    expect(await getFailureReasons(since)).toEqual([{ reason: 'AUTH_FAILED', count: 1 }])
   })
 })
