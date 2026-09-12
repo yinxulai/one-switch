@@ -107,7 +107,7 @@ function formatNodeOutputValue(value: unknown): string {
   return JSON.stringify(value)
 }
 
-/** 读取本地缓存的图；缓存不合法时回落到默认图。 */
+/** 读取本地缓存的图；缓存不合法时回落到空白起始图（不是默认策略预设）。 */
 function loadInitialGraph(): WorkflowGraph {
   try {
     const cached = localStorage.getItem(routerStorageKey)

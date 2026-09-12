@@ -144,24 +144,34 @@ Input ─▶ Condition（route.requestedModel in logicalModels[*].id）
 
 旧图里用过的 `mode: 'follow-request-model'` 会在读取时迁移为「`source: 'variable'` + `variablePath: 'route.requestedModel'`」，行为不变；旧的 `queue-select` 节点同样会在解析时迁移成 `model-select`。
 
-预设策略放在 `graph-model.ts` 的 `ROUTER_POLICY_PRESETS` 中，第一个即默认策略，其它预设同样由基础节点拼成，UI 侧由 `components/policy-menu.tsx` 呈现：
+预设策略放在 `graph-model.ts` 的 `ROUTER_POLICY_PRESETS` 中，第一个即默认策略。四个预设都只由基础节点拼成（没有专用节点），UI 侧由 `components/policy-menu.tsx` 呈现：
 
 | 预设 id | 名称 | 拼法 |
 | --- | --- | --- |
-| `model-direct` | 默认策略：模型直达 | 条件（`route.requestedModel in logicalModels[*].id`）+ 两次逻辑模型选择 |
-| `iteration-model-match` | 遍历匹配模板：命中请求模型 | 遍历 `logicalModels` 逐个比对 `route.iteration.item.id` 与 `route.requestedModel`，命中就直连该模型；整轮没命中回落兜底逻辑模型 |
-| `ua-source-routing` | UA 分流模板：按客户端来源 | 遍历 `request.headers` 的头值识别客户端（Cursor / Claude CLI），分流到不同逻辑模型；认不出来回落兜底逻辑模型 |
-| `protocol-then-condition` | 协议分流模板 | 协议发现 + 条件 + 逻辑模型选择 |
-| `iteration-first-enabled` | 遍历迭代模板：首个启用模型 | 遍历 `logicalModels` 判断 `enabled`，首次命中即停止 |
+| `model-direct` | 逻辑模型命中 | 条件（`route.requestedModel in logicalModels[*].id`）+ 两次逻辑模型选择 |
+| `ua-source-routing` | UA 区分来源 | 遍历 `request.headers` 的头值识别客户端（Cursor / Claude CLI），分流到不同逻辑模型；认不出来回落兜底逻辑模型 |
+| `llm-complexity-routing` | LLM 分析请求复杂度 | LLM 节点判断请求复杂度写进 `route.complexity` + 条件（正则 `[Cc]omplex`）+ 两个固定落点 |
+| `script-routing` | JS 脚本处理请求 | JS 脚本节点按消息数 / 上下文字数 / 工具数算复杂度写进 `route.complexity` + 条件（等于 `complex`）+ 两个固定落点 |
 
-`iteration-model-match` 与 `ua-source-routing` 共用一套「循环体写落点、迭代节点只判定命中」的拼法，和 `iteration-first-enabled` 的关键差别在 `resultPath`：
+四个预设覆盖四种「判定依据」：请求模型（读上下文）→ 请求头（循环遍历）→ LLM（自然语言判定）→ JS 脚本（确定性计算）。同类型的拼法只留一个，需要变体时在画布上改比多一个菜单项更好用。
+
+`ua-source-routing` 用一套「循环体写落点、迭代节点只判定命中」的拼法：
 
 - **循环体负责产出**：循环体末端的 `model-select`（固定值或取 `route.iteration.item.id`）把落点写进 `route.modelIds`，这就是唯一的结果载体；
 - **命中判定复用同一路径**：迭代节点的 `collectPath` 直接填 `route.modelIds`，每轮结束读一次，非空即「本轮命中」；`collectMode: 'first'` 表示命中即停止遍历；
-- **`resultPath` 留空**：`resultPath` 是「整轮汇总结果」的写回位置。`iteration-first-enabled` 把汇总结果本身当作落点，所以填 `route.modelIds`（没找到启用模型时写回空数组、输出节点据此报「没有可用逻辑模型」）；而这两个模板要区分「命中」和「没命中」，若同样填 `route.modelIds`，整轮没命中时会用空数组把循环体已经写下的落点覆盖掉，因此留空，让 `route.modelIds` 保持迭代结束时的状态；
+- **`resultPath` 留空**：`resultPath` 是「整轮汇总结果」的写回位置。如果把汇总结果本身当作落点，就填 `route.modelIds`；而这个预设要区分「命中」和「没命中」，若同样填 `route.modelIds`，整轮没命中时会用空数组把循环体已经写下的落点覆盖掉，因此留空，让 `route.modelIds` 保持迭代结束时的状态；
 - **兜底交给下游**：循环体下游再接一个 `source: 'variable'`、`variablePath: 'route.modelIds'` 的逻辑模型选择节点，命中时它读到循环体写的 id（`matched: true`、不标记回落），没命中时读到空值、走自己的 `fallbackModelIds`（`matched: false`、`route.fallback = true`）。一个节点同时覆盖「命中沿用」和「未命中兜底」，不需要额外条件分支。
 
-`ua-source-routing` 之所以遍历 `request.headers` 而不是直接取 `request.headers.user-agent`：**判定的是头值里出现的客户端标识，不是某个固定头名**。头名大小写、由哪个头携带（`user-agent` / `x-client-name` / 自定义头）都不影响结果，客户端改名或换头也不用改图；代价是兜底分支要负责「一个都没认出来」。
+它之所以遍历 `request.headers` 而不是直接取 `request.headers.user-agent`：**判定的是头值里出现的客户端标识，不是某个固定头名**。头名大小写、由哪个头携带（`user-agent` / `x-client-name` / 自定义头）都不影响结果，客户端改名或换头也不用改图；代价是兜底分支要负责「一个都没认出来」。
+
+两个复杂度预设的骨架完全一致（判定 → 条件 → 两个固定落点），差别只在「谁来判定」：
+
+- **LLM 节点**：提示词只要求回答一个词，回复自由度高，所以条件用不锚定首尾的**正则匹配** `[Cc]omplex`，兼顾多余空白与首字母大写；代价是每次路由都会多一次模型调用，且判定结果不可完全预期。
+- **JS 脚本节点**：返回值是确定的字符串，所以条件用**等于**精确判定；`console.log` 会进 trace 的「控制台」，打分过程可以在测试运行面板里核对；代价是规则要自己维护。
+
+两者的判定结果都写在 `route.complexity`。LLM / 脚本节点失败时该字段读不到值，条件自然走「其余」（简单）分支，判定失败倾向于走便宜模型。想让判定绝对可靠，可以把 LLM 提示词改成「只回答 JSON」，再用脚本节点解析它。
+
+预设里的落点 id（`high-effort` / `fast-cheap` / `cursor` / `claude-cli`）都是占位值，换成自己的逻辑模型即可。
 
 循环体用**回边**闭合：从迭代节点的 `body` 端口连出去，末端连回迭代节点自身即代表「本轮结束」，不是死循环。
 

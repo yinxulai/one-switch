@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { runWorkflow } from './engine'
 import { appendNode, cloneNode, connectEdge, insertNode, portKey, primarySourcePort, removeEdges, removeNode, resolveInsertAnchor } from './graph-ops'
-import { createDefaultGraph, createDefaultPolicyGraph, createIterationGraph, createNodeByKind, findPolicyPreset, ROUTER_POLICY_PRESETS } from './graph-model'
+import { createDefaultGraph, createDefaultPolicyGraph, createNodeByKind, createUserAgentGraph, findPolicyPreset, ROUTER_POLICY_PRESETS } from './graph-model'
 import { APPENDABLE_KINDS } from './node-meta'
 import { WorkflowGraphSchema } from './schemas'
 import type { ConditionNode, ControlInputNode, WorkflowGraph, WorkflowNodeModel } from './types'
@@ -258,23 +258,27 @@ describe('图谱校验（回归）', () => {
     })
   })
 
-  it('遍历迭代模板必须通过 schema 校验，且循环体靠回边闭合', () => {
-    const graph = createIterationGraph()
+  it('UA 预设必须通过 schema 校验，且循环体靠回边闭合', () => {
+    const graph = createUserAgentGraph()
     expect(WorkflowGraphSchema.safeParse(graph).error?.issues).toBeUndefined()
 
     const iteration = graph.nodes.find(node => node.kind === 'iteration')
     expect(iteration).toBeDefined()
-    expect(iteration?.sourcePath).toBe('logicalModels')
+    // 遍历头值而不是某个固定头名，头名大小写与由谁携带都不影响判定。
+    expect(iteration?.sourcePath).toBe('request.headers')
+    // resultPath 留空：命中判定与循环体写落点共用 collectPath，没命中时汇总结果不能盖掉它。
+    expect(iteration?.resultPath).toBe('')
+    expect(iteration?.collectPath).toBe('route.modelIds')
 
     // body 端口进循环体，循环体末端连回迭代节点自身表示「本轮结束」。
     const bodyEdge = graph.edges.find(edge => edge.sourceNodeId === iteration?.id && edge.sourcePort === 'body')
-    expect(bodyEdge?.targetNodeId).toBe('iteration-condition')
+    expect(bodyEdge?.targetNodeId).toBe('ua-condition')
     const backEdges = graph.edges
       .filter(edge => edge.targetNodeId === iteration?.id && edge.sourceNodeId !== 'input')
       .map(edge => edge.sourceNodeId)
-    expect(backEdges.sort()).toEqual(['iteration-condition', 'iteration-model'])
+    expect(backEdges.sort()).toEqual(['model-claude-cli', 'model-cursor', 'ua-condition'])
     // 从 body 端口往回走能回到本节点，说明循环是闭合的。
-    expect(graph.edges.some(edge => edge.sourceNodeId === 'iteration-model' && edge.targetNodeId === iteration?.id)).toBe(true)
+    expect(graph.edges.some(edge => edge.sourceNodeId === 'model-cursor' && edge.targetNodeId === iteration?.id)).toBe(true)
   })
 
   it('旧图的 kind / mode / queueIds 会被迁移到 model-select', () => {
