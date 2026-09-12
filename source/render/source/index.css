@@ -824,3 +824,37 @@ html[data-magicui-theme-vt="active"] [data-slot="app-sidebar"] > div:first-child
 :is(.workflow-node-panel, .workflow-test-drawer) [data-slot='select-trigger'][data-state='open'] svg {
   color: var(--color-text-secondary);
 }
+
+/* 面板里的代码编辑器（JS 脚本 / 提示词模板）外框，与上面的 textarea 钩子保持同一档视觉。
+   编辑器内部的排版与配色由 `panel/code-editor.tsx` 的 EditorView.theme 负责，
+   这里只管我们自己的宿主元素。 */
+.panel-code-editor {
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background-color: var(--color-components-input-bg-normal);
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.panel-code-editor:hover {
+  border-color: var(--color-components-input-border-hover);
+  background-color: var(--color-components-input-bg-hover);
+}
+
+.panel-code-editor:focus-within {
+  border-color: var(--color-components-input-border-active);
+  background-color: var(--color-components-input-bg-active);
+}
+
+.panel-code-editor > .cm-editor {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* 提示词模板里的 `${路径}`：只用一层强调色底与靛蓝字，标识「这是变量」而不抢正文阅读。
+   不套模块边框 —— 它是一枚行内标记，不是模块容器。 */
+.panel-code-variable {
+  border-radius: 4px;
+  background-color: var(--color-state-accent-hover);
+  color: var(--color-util-colors-indigo-indigo-500);
+}
