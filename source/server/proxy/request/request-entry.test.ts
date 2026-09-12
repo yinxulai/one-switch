@@ -175,7 +175,7 @@ describe('handleProxyRequest', () => {
 
   it('records a rejected request even when the api path is unknown', async () => {
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/unknown`, {
@@ -199,7 +199,7 @@ describe('handleProxyRequest', () => {
       model('model_text', 'prov_text', 'https://example.com/v1/completions', 'text-model', 'openai-completions'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/messages`, {
@@ -239,7 +239,7 @@ describe('handleProxyRequest', () => {
     ]
     setManualModel('default', 'model_second')
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/chat/completions`, {
@@ -282,7 +282,7 @@ describe('handleProxyRequest', () => {
     ]
     setManualModel('default', 'model_second')
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/chat/completions`, {
@@ -317,7 +317,7 @@ describe('handleProxyRequest', () => {
     })
     mocks.models = [model('model_shared', 'prov_shared', `${upstream.url}/v1/completions`, 'shared-model')]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const responses = await Promise.all(Array.from({ length: 8 }, async (_, index) => {
@@ -369,7 +369,7 @@ describe('handleProxyRequest', () => {
       model('model_second', 'prov_second', `${second.url}/v1/completions`, 'second-model'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const firstResponse = await fetch(`${proxy.url}/v1/completions`, {
@@ -405,7 +405,7 @@ describe('handleProxyRequest', () => {
     ]
     setManualModel('default', 'model_anthropic')
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/chat/completions`, {
@@ -437,7 +437,7 @@ describe('handleProxyRequest', () => {
     const upstream = await listen(upstreamHandler)
     mocks.models = [model('model_first', 'prov_first', `${upstream.url}/v1/chat/completions`, 'first-model')]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/chat/completions`, {
@@ -460,7 +460,7 @@ describe('handleProxyRequest', () => {
     const upstream = await listen(upstreamHandler)
     mocks.models = [model('model_first', 'prov_first', `${upstream.url}/v1/chat/completions`, 'first-model')]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/chat/completions`, {
@@ -507,7 +507,7 @@ describe('handleProxyRequest', () => {
     const upstream = await listen(upstreamHandler)
     mocks.models = [model('model_rewrite', 'prov_rewrite', `${upstream.url}/v1/completions`, 'rewrite-model')]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/completions`, {
@@ -564,7 +564,7 @@ describe('handleProxyRequest', () => {
     ]
 
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
     const response = await fetch(`${proxy.url}/v1/completions?client=value`, {
       method: 'POST',
@@ -635,7 +635,7 @@ describe('handleProxyRequest', () => {
       model('model_second', 'prov_second', `${second.url}/v1/completions`, 'second-model'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/completions`, {
@@ -685,7 +685,7 @@ describe('handleProxyRequest', () => {
       model('model_second', 'prov_second', `${second.url}/v1/completions`, 'second-model'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/completions`, {
@@ -740,7 +740,7 @@ describe('handleProxyRequest', () => {
       model('model_second', 'prov_second', `${second.url}/v1/completions`, 'second-model'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/completions`, {
@@ -796,7 +796,7 @@ describe('handleProxyRequest', () => {
       model('model_second', 'prov_second', `${second.url}/v1/completions`, 'second-model'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/completions`, {
@@ -837,7 +837,7 @@ describe('handleProxyRequest', () => {
       model('model_failed', 'prov_failed', `${upstream.url}/v1/completions`, 'failed-model'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/completions`, {
@@ -883,7 +883,7 @@ describe('handleProxyRequest', () => {
       model('model_retry_success', 'prov_retry_success', `${second.url}/v1/completions`, 'retry-success-model'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/completions`, {
@@ -931,7 +931,7 @@ describe('handleProxyRequest', () => {
       model('model_fallback_stream', 'prov_fallback_stream', `${second.url}/v1/responses`, 'fallback-stream-model', 'openai-responses'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/responses`, {
@@ -980,7 +980,7 @@ describe('handleProxyRequest', () => {
       model('model_retry_body_fallback', 'prov_retry_body_fallback', `${fallback.url}/v1/completions`, 'retry-body-fallback-model'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/completions`, {
@@ -1021,7 +1021,7 @@ describe('handleProxyRequest', () => {
       ),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/messages?beta=true`, {
@@ -1057,7 +1057,7 @@ describe('handleProxyRequest', () => {
       model('model_chat', 'prov_chat', `${upstream.url}/v1/chat/completions`, 'chat-model'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/chat/completions`, {
@@ -1109,7 +1109,7 @@ describe('handleProxyRequest', () => {
       model('model_anthropic_usage', 'prov_anthropic_usage', `${upstream.url}/v1/messages`, 'claude-model', 'anthropic-messages'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/messages`, {
@@ -1153,7 +1153,7 @@ describe('handleProxyRequest', () => {
       model('model_responses', 'prov_responses', `${upstream.url}/v1/responses`, 'responses-model', 'openai-responses'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/responses`, {
@@ -1202,7 +1202,7 @@ describe('handleProxyRequest', () => {
       convertibleModel('model_conv', 'prov_conv', `${upstream.url}/v1/chat/completions`, 'upstream-model', 'openai-completions'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/messages`, {
@@ -1238,7 +1238,7 @@ describe('handleProxyRequest', () => {
       model('model_native', 'prov_native', `${upstream.url}/v1/chat/completions`, 'native-model', 'openai-completions'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/messages`, {
@@ -1271,7 +1271,7 @@ describe('handleProxyRequest', () => {
     entry.model.endpoints.push({ protocol: 'anthropic-messages', endpointUrl: `${native.url}/v1/messages`, customAuthHeader: null, protocolConversionEnabled: false })
     mocks.models = [entry]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/messages`, {
@@ -1307,7 +1307,7 @@ describe('handleProxyRequest', () => {
       convertibleModel('model_stream_conv', 'prov_stream_conv', `${upstream.url}/v1/chat/completions`, 'stream-model', 'openai-completions'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/messages`, {
@@ -1402,7 +1402,7 @@ describe('handleProxyRequest', () => {
       model('model_fallback', 'prov_fallback', `${fallback.url}/v1/responses`, 'fallback-model', 'openai-responses'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     await fetch(`${proxy.url}/v1/responses`, {
@@ -1453,7 +1453,7 @@ describe('handleProxyRequest', () => {
       model('model_cancel', 'prov_cancel', `${upstream.url}/v1/responses`, 'cancel-model', 'openai-responses'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const client = http.request(`${proxy.url}/v1/responses`, {
@@ -1483,7 +1483,7 @@ describe('handleProxyRequest', () => {
   it('records a request whose body never finished arriving', async () => {
     mocks.models = []
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const client = http.request(`${proxy.url}/v1/completions`, {

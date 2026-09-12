@@ -11,10 +11,16 @@ function runWorkflow(graph: WorkflowGraph, inputPayload: unknown, options?: Work
   return runWorkflowEngine(graph, inputPayload, options)
 }
 
-/** 策略预设测试用的逻辑模型列表：`default` 是内置默认落点。 */
+/**
+ * 策略预设测试用的逻辑模型列表。
+ *
+ * `default` 是内置默认落点；另外两个是分流落点的候选——预设生成时会按顺序取它们，
+ * 所以这里至少给两个，才能验出「两个分支落点不同」。
+ */
 const presetLogicalModels = [
   { id: 'default', name: 'Default', enabled: true },
   { id: 'model-fast', name: 'Model Fast', enabled: true },
+  { id: 'model-smart', name: 'Model Smart', enabled: true },
 ]
 
 function singleCase(conditions: ConditionRule[] = [{ fieldPath: 'request.body.tenant', valueType: 'string', operator: 'startsWith', value: 'vip-' }]): ConditionCase {
@@ -611,12 +617,13 @@ describe('router engine', () => {
   })
 
   it('默认策略（基础节点组合）：请求模型是逻辑模型时直连该逻辑模型', async () => {
-    const result = await runWorkflow(createDefaultPolicyGraph(), {
+    const logicalModels = [
+      { id: 'model-hit', name: 'Model Hit', enabled: true },
+      { id: 'default', name: 'Default', enabled: true },
+    ]
+    const result = await runWorkflow(createDefaultPolicyGraph(logicalModels), {
       request: { path: '/v1/chat/completions', headers: { 'x-provider': 'openai' }, body: { model: 'model-hit' } },
-      logicalModels: [
-        { id: 'model-hit', name: 'Model Hit', enabled: true },
-        { id: 'default', name: 'Default', enabled: true },
-      ],
+      logicalModels,
       metadata: {},
     })
 
@@ -631,9 +638,13 @@ describe('router engine', () => {
   })
 
   it('默认策略（基础节点组合）：请求模型不是逻辑模型时落到默认逻辑模型', async () => {
-    const result = await runWorkflow(createDefaultPolicyGraph(), {
+    const logicalModels = [
+      { id: 'model-hit', name: 'Model Hit', enabled: true },
+      { id: 'default', name: 'Default', enabled: true },
+    ]
+    const result = await runWorkflow(createDefaultPolicyGraph(logicalModels), {
       request: { path: '/v1/chat/completions', headers: { 'x-provider': 'openai' }, body: { model: 'gpt-4o-mini' } },
-      logicalModels: [{ id: 'model-hit', name: 'Model Hit', enabled: true }],
+      logicalModels,
       metadata: {},
     })
 
@@ -645,36 +656,37 @@ describe('router engine', () => {
   })
 
   it('UA 分流模板：按头值里的客户端标识落到不同逻辑模型', async () => {
-    const cursor = await runWorkflow(createUserAgentGraph(), {
+    const cursor = await runWorkflow(createUserAgentGraph(presetLogicalModels), {
       request: { path: '/v1/chat/completions', headers: { 'content-type': 'application/json', 'user-agent': 'Cursor/0.42.3' }, body: { model: 'gpt-4o-mini' } },
       logicalModels: presetLogicalModels,
       metadata: {},
     })
     const cursorPayload = cursor.outputPayload as { route: { modelIds: string[]; fallback: boolean } }
-    expect(cursorPayload.route.modelIds).toEqual(['cursor'])
+    // 落点在生成时按逻辑模型列表定好：第一个分流落点拿到 `default` 之外的头一个。
+    expect(cursorPayload.route.modelIds).toEqual(['model-fast'])
     expect(cursorPayload.route.fallback).toBe(false)
     // content-type 先被扫过、user-agent 第二个命中：跑满两轮后提前收工（对象模式的 key 就是头名）。
     expect(cursor.trace.find(item => item.nodeId === 'iteration')?.details)
       .toMatchObject({ sourcePath: 'request.headers', itemCount: 2, executed: 2, hitCount: 1, hitKeys: ['user-agent'] })
 
-    const claudeCli = await runWorkflow(createUserAgentGraph(), {
+    const claudeCli = await runWorkflow(createUserAgentGraph(presetLogicalModels), {
       request: { path: '/v1/chat/completions', headers: { 'user-agent': 'claude-cli/1.0.0 (external, cli)' }, body: { model: 'gpt-4o-mini' } },
       logicalModels: presetLogicalModels,
       metadata: {},
     })
-    expect((claudeCli.outputPayload as { route: { modelIds: string[] } }).route.modelIds).toEqual(['claude-cli'])
+    expect((claudeCli.outputPayload as { route: { modelIds: string[] } }).route.modelIds).toEqual(['model-smart'])
   })
 
   it('UA 分流模板：头名大小写不影响判定，认不出的来源回落默认', async () => {
     // 遍历的是头值，所以 `User-Agent` 这种大写头名照样能识别出客户端。
-    const mixedCase = await runWorkflow(createUserAgentGraph(), {
+    const mixedCase = await runWorkflow(createUserAgentGraph(presetLogicalModels), {
       request: { path: '/v1/chat/completions', headers: { 'User-Agent': 'Cursor/0.42.3' }, body: { model: 'gpt-4o-mini' } },
       logicalModels: presetLogicalModels,
       metadata: {},
     })
-    expect((mixedCase.outputPayload as { route: { modelIds: string[] } }).route.modelIds).toEqual(['cursor'])
+    expect((mixedCase.outputPayload as { route: { modelIds: string[] } }).route.modelIds).toEqual(['model-fast'])
 
-    const unknown = await runWorkflow(createUserAgentGraph(), {
+    const unknown = await runWorkflow(createUserAgentGraph(presetLogicalModels), {
       request: { path: '/v1/chat/completions', headers: { 'user-agent': 'curl/8.4.0' }, body: { model: 'gpt-4o-mini' } },
       logicalModels: presetLogicalModels,
       metadata: {},
@@ -688,7 +700,7 @@ describe('router engine', () => {
   })
 
   it('UA 分流模板：循环由回边闭合，out 端口通向兜底链路', () => {
-    const graph = createUserAgentGraph()
+    const graph = createUserAgentGraph(presetLogicalModels)
     expect(WorkflowGraphSchema.safeParse(graph).error?.issues).toBeUndefined()
 
     const iteration = graph.nodes.find(node => node.kind === 'iteration')
@@ -702,7 +714,7 @@ describe('router engine', () => {
 
   it('LLM 分流模板：让逻辑模型判定复杂度，回复命中「复杂」就走高性能落点', async () => {
     const invocations: PromptInvocation[] = []
-    const result = await runWorkflow(createLlmComplexityGraph(), {
+    const result = await runWorkflow(createLlmComplexityGraph(presetLogicalModels), {
       request: { path: '/v1/chat/completions', headers: { 'x-provider': 'openai' }, body: { model: 'gpt-4o-mini', messages: [{ role: 'user', content: '帮我重构这个模块' }] } },
       logicalModels: presetLogicalModels,
       metadata: {},
@@ -716,6 +728,7 @@ describe('router engine', () => {
     })
 
     expect(invocations).toHaveLength(1)
+    // LLM 节点的判定模型用的是兜底落点（内建默认逻辑模型）。
     expect(invocations[0].logicalModelId).toBe('default')
     // 请求体整体插值进提示词，且不会把 `${...}` 原样发给上游。
     expect(invocations[0].prompt).toContain('帮我重构这个模块')
@@ -725,7 +738,7 @@ describe('router engine', () => {
     const payload = result.outputPayload as { route: { modelIds: string[]; complexity: string } }
     expect(payload.route.complexity).toBe('Complex')
     // 条件用不锚定首尾的正则匹配，首字母大写的回复照样命中。
-    expect(payload.route.modelIds).toEqual(['high-effort'])
+    expect(payload.route.modelIds).toEqual(['model-fast'])
     expect(result.nodeOutputs).not.toHaveProperty('model-simple')
     expect(result.stopReason).toBe('output')
   })
@@ -737,15 +750,15 @@ describe('router engine', () => {
       metadata: {},
     }
 
-    const simple = await runWorkflow(createLlmComplexityGraph(), input, {
+    const simple = await runWorkflow(createLlmComplexityGraph(presetLogicalModels), input, {
       capabilities: { runPrompt: async () => ({ success: true, text: 'simple', durationMilliseconds: 12 }) },
     })
-    expect((simple.outputPayload as { route: { modelIds: string[] } }).route.modelIds).toEqual(['fast-cheap'])
+    expect((simple.outputPayload as { route: { modelIds: string[] } }).route.modelIds).toEqual(['model-smart'])
 
     // 没注入执行能力时 LLM 节点记为失败，但整张图仍然走到出口。
-    const unavailable = await runWorkflow(createLlmComplexityGraph(), input)
+    const unavailable = await runWorkflow(createLlmComplexityGraph(presetLogicalModels), input)
     expect(unavailable.trace.find(item => item.nodeId === 'complexity-prompt')?.success).toBe(false)
-    expect((unavailable.outputPayload as { route: { modelIds: string[] } }).route.modelIds).toEqual(['fast-cheap'])
+    expect((unavailable.outputPayload as { route: { modelIds: string[] } }).route.modelIds).toEqual(['model-smart'])
     expect(unavailable.stopReason).toBe('output')
   })
 
@@ -756,7 +769,7 @@ describe('router engine', () => {
       logicalModels: presetLogicalModels,
       metadata: {},
     }
-    const complex = await runWorkflow(createScriptRoutingGraph(), input, {
+    const complex = await runWorkflow(createScriptRoutingGraph(presetLogicalModels), input, {
       capabilities: {
         runScript: async (invocation) => {
           invocations.push(invocation)
@@ -769,18 +782,18 @@ describe('router engine', () => {
     // 脚本读的是 messages / tools，缺字段时自己兜住，不依赖调用方一定传全。
     expect(invocations[0].code).toContain("get('request.body.messages')")
     expect(invocations[0].code).toContain("get('request.body.tools')")
-    expect((complex.outputPayload as { route: { modelIds: string[] } }).route.modelIds).toEqual(['high-effort'])
+    expect((complex.outputPayload as { route: { modelIds: string[] } }).route.modelIds).toEqual(['model-fast'])
     expect(complex.nodeOutputs).not.toHaveProperty('model-simple')
     expect(complex.stopReason).toBe('output')
 
-    const simple = await runWorkflow(createScriptRoutingGraph(), input, {
+    const simple = await runWorkflow(createScriptRoutingGraph(presetLogicalModels), input, {
       capabilities: { runScript: async () => ({ success: true, value: 'simple', logs: [], durationMilliseconds: 2 }) },
     })
-    expect((simple.outputPayload as { route: { modelIds: string[] } }).route.modelIds).toEqual(['fast-cheap'])
+    expect((simple.outputPayload as { route: { modelIds: string[] } }).route.modelIds).toEqual(['model-smart'])
   })
 
   it('JS 分流模板：脚本失败时落点仍然落到「其余」，图照常走完', async () => {
-    const failed = await runWorkflow(createScriptRoutingGraph(), {
+    const failed = await runWorkflow(createScriptRoutingGraph(presetLogicalModels), {
       request: { path: '/v1/chat/completions', headers: { 'x-provider': 'openai' }, body: { model: 'gpt-4o-mini' } },
       logicalModels: presetLogicalModels,
       metadata: {},
@@ -789,7 +802,7 @@ describe('router engine', () => {
     })
 
     expect(failed.trace.find(item => item.nodeId === 'complexity-script')?.success).toBe(false)
-    expect((failed.outputPayload as { route: { modelIds: string[] } }).route.modelIds).toEqual(['fast-cheap'])
+    expect((failed.outputPayload as { route: { modelIds: string[] } }).route.modelIds).toEqual(['model-smart'])
     expect(failed.stopReason).toBe('output')
   })
 

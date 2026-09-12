@@ -148,6 +148,31 @@ export type SchedulingPolicy = z.infer<typeof SchedulingPolicySchema>
 /** Logical model IDs are stable public model identifiers. */
 export const LogicalModelIdSchema = z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/, '逻辑模型 ID 必须以小写字母开头，只能包含小写字母、数字、下划线和连字符（最多 64 个字符）')
 
+/**
+ * 内建默认逻辑模型的名字：启动时由 `ensureDefaultLogicalModel` 建出来（id 与 name 都取这个值）。
+ *
+ * 它是内建「模型直达」规则的回落落点——请求模型没命中任何已启用逻辑模型时落到这里。
+ * 服务端的回落匹配、启动时的种子写入、以及路由工作台里默认策略的落点都引用同一个常量，
+ * 不再各自重复写这个字面量。
+ */
+export const BUILT_IN_DEFAULT_LOGICAL_MODEL_NAME = 'default'
+
+/** 只用到 id 与 name 的模型描述，避免让谓词依赖完整的 `LogicalModel`。 */
+export interface LogicalModelIdentity {
+  id: string
+  name: string
+}
+
+/**
+ * 是否是内建默认逻辑模型。
+ *
+ * 种子写入时 id 与 name 都是 `default`，但历史数据或手改过的记录可能只对上其中一个，
+ * 所以两个都比对一次——请求模型命中的判断也是 id 与 name 都看的，两边保持一致。
+ */
+export function isBuiltInDefaultLogicalModel(model: LogicalModelIdentity): boolean {
+  return model.id === BUILT_IN_DEFAULT_LOGICAL_MODEL_NAME || model.name === BUILT_IN_DEFAULT_LOGICAL_MODEL_NAME
+}
+
 export const LogicalModelSchema = z.object({
   id: LogicalModelIdSchema,
   name: z.string().min(1).max(100),

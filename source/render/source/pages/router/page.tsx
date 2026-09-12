@@ -146,6 +146,16 @@ function WorkflowStudioCanvas() {
   const flow = useReactFlow<RouteFlowNode, WorkflowFlowEdge>()
   const toast = useToast()
   const logicalModels = useLogicalModels()
+  /**
+   * 预设生成与测试运行共用的逻辑模型列表。
+   *
+   * 预设的落点在生成时就要定成真实 id，所以它必须拿到当前这份列表；
+   * 测试运行的负载也注入同一份，两侧看到的模型完全一致。
+   */
+  const runtimeLogicalModels = useMemo(
+    () => logicalModels.map(model => ({ id: model.id, name: model.name, enabled: model.enabled })),
+    [logicalModels],
+  )
 
   const [graph, setGraph] = useState<WorkflowGraph>(loadInitialGraph)
   const graphRef = useRef(graph)
@@ -182,10 +192,14 @@ function WorkflowStudioCanvas() {
 
     const update = () => {
       const rect = element.getBoundingClientRect()
-      setCanvasSize({
+      const next = {
         width: rect.width,
         height: Math.max(420, window.innerHeight - rect.top - 28),
-      })
+      }
+      // 量出来的高度会作为 inline style 写回这个元素自己，而它同时又是被观察的对象：
+      // 「量一次 → 重渲染 → 改高度 → ResizeObserver 再触发 → 再量一次」。
+      // 值没变时必须跳过写 state，否则窗口拖拽期间每帧都多一次全画布重渲染。
+      setCanvasSize(current => (current.width === next.width && current.height === next.height ? current : next))
     }
 
     update()
@@ -388,7 +402,11 @@ function WorkflowStudioCanvas() {
         .map(edge => String(edge.sourcePort))
       const targetConnected = graph.edges.some(edge => edge.targetNodeId === model.id)
       const runStatus = runStatusByNode.get(model.id) ?? 'idle'
-      const flags = `${model.id === selectedNodeId}|${draggable}|${runStatus}|${sourcePorts.join(',')}|${targetConnected}`
+      // 尺寸必须参与缓存键：React Flow 是异步量节点的，首帧量到的是 undefined，
+      // 之后才拿到真实尺寸。不把它算进来的话，缓存会一直拿首次那个 `measured: undefined` 的对象，
+      // 后续 `adoptUserNodes` 重建内部节点时尺寸就被抹平（拖动时报 error015、fitView 拿到 0 尺寸）。
+      const measured = flow.getInternalNode(model.id)?.measured
+      const flags = `${model.id === selectedNodeId}|${draggable}|${runStatus}|${sourcePorts.join(',')}|${targetConnected}|${measured?.width ?? 0}x${measured?.height ?? 0}`
 
       const cached = previous.get(model.id)
       if (cached && cached.model === model && cached.flags === flags) {
@@ -405,7 +423,7 @@ function WorkflowStudioCanvas() {
         // 尺寸带回来，尺寸会被重置成 undefined：`calculateNodePosition` 会打印 error015
         // （“trying to drag a node that is not initialized”），框选 / fitView 等几何计算
         // 也会拿到 0 尺寸。
-        measured: flow.getInternalNode(model.id)?.measured,
+        measured,
         draggable,
         data: {
           model,
@@ -486,7 +504,7 @@ function WorkflowStudioCanvas() {
     try {
       const payload = JSON.parse(payloadText) as unknown
       const normalizedPayload = (payload && typeof payload === 'object' ? payload : {}) as Record<string, unknown>
-      normalizedPayload.logicalModels = logicalModels.map(model => ({ id: model.id, name: model.name, enabled: model.enabled }))
+      normalizedPayload.logicalModels = runtimeLogicalModels
 
       const result = await unwrap(routerApi.run(graph, normalizedPayload))
       setRunResult(result)
@@ -495,7 +513,7 @@ function WorkflowStudioCanvas() {
       setRunResult(null)
       setPayloadError(error instanceof Error ? error.message : '输入负载不是合法 JSON。')
     }
-  }, [graph, logicalModels, payloadText])
+  }, [graph, runtimeLogicalModels, payloadText])
 
   /**
    * 保存 = 生成一个新版本。
@@ -542,7 +560,7 @@ function WorkflowStudioCanvas() {
    * 预设里没有用户的改动，所以不需要额外确认，但会清掉选中态与上次运行结果。
    */
   const applyPolicy = useCallback((preset: RouterPolicyPreset) => {
-    const next = preset.createGraph()
+    const next = preset.createGraph(runtimeLogicalModels)
     setGraph(next)
     setSelectedNodeId(null)
     setRunResult(null)
@@ -552,12 +570,12 @@ function WorkflowStudioCanvas() {
       // 工作副本写入失败不影响画布切版
     }
     toast.success(`已套用策略：${preset.name}`)
-  }, [toast])
+  }, [runtimeLogicalModels, toast])
 
   /** 当前画布与哪个预设一致（不一致时为 null）。 */
   const activePolicyId = useMemo(
-    () => ROUTER_POLICY_PRESETS.find(preset => isSameGraph(preset.createGraph(), graph))?.id ?? null,
-    [graph],
+    () => ROUTER_POLICY_PRESETS.find(preset => isSameGraph(preset.createGraph(runtimeLogicalModels), graph))?.id ?? null,
+    [graph, runtimeLogicalModels],
   )
 
   const draggable = dragEnabled && dockMode === 'select'
@@ -762,7 +780,7 @@ function WorkflowStudioCanvas() {
 
             <div className="flex flex-col gap-3">
               <div className="py-1 system-sm-medium text-text-secondary">测试结果</div>
-              {!runResult && <div className="rounded-lg bg-workflow-block-parma-bg p-3 system-xs-regular text-text-tertiary">点击下方“运行测试”查看结果。</div>}
+              {!runResult && <div className="rounded-lg border border-module-border bg-workflow-block-parma-bg p-3 system-xs-regular text-text-tertiary">点击下方“运行测试”查看结果。</div>}
 
               {runResult && (
                 <>
@@ -773,14 +791,14 @@ function WorkflowStudioCanvas() {
                     <Badge variant="info">协议：{runResult.protocol}</Badge>
                     <Badge variant="muted">节点数：{runResult.trace.length}</Badge>
                   </div>
-                  <div className="space-y-1.5 rounded-lg bg-workflow-block-parma-bg p-2">
+                  <div className="space-y-1.5 rounded-lg border border-module-border bg-workflow-block-parma-bg p-2">
                     <div className="system-2xs-medium-uppercase text-text-tertiary">节点输出</div>
                     {nodeOutputGroups.length === 0
                       ? <div className="system-xs-regular text-text-tertiary">本次运行没有产生节点输出。</div>
                       : (
                         <div className="space-y-1.5">
                           {nodeOutputGroups.map(group => (
-                            <div key={group.nodeId} className="rounded-md bg-workflow-block-bg p-2">
+                            <div key={group.nodeId} className="rounded-md border border-module-border bg-workflow-block-bg p-2">
                               <div className="mb-1 flex items-center gap-2">
                                 <span className="system-xs-medium text-text-primary">{group.nodeName}</span>
                                 <span className="font-mono system-2xs-regular text-text-tertiary">{group.nodeId}</span>
@@ -801,15 +819,15 @@ function WorkflowStudioCanvas() {
                         </div>
                       )}
                   </div>
-                  <div className="rounded-lg bg-workflow-block-parma-bg p-2 font-mono system-2xs-regular">
+                  <div className="rounded-lg border border-module-border bg-workflow-block-parma-bg p-2 font-mono system-2xs-regular">
                     <div className="mb-1 system-2xs-medium-uppercase text-text-tertiary">Output</div>
                     <pre className="whitespace-pre-wrap break-all">{JSON.stringify(runResult.outputPayload, null, 2)}</pre>
                   </div>
-                  <div className="space-y-1.5 rounded-lg bg-workflow-block-parma-bg p-2">
+                  <div className="space-y-1.5 rounded-lg border border-module-border bg-workflow-block-parma-bg p-2">
                     <div className="system-2xs-medium-uppercase text-text-tertiary">Trace</div>
                     <div className="space-y-1.5">
                       {runResult.trace.map(item => (
-                        <div key={`${item.nodeId}-${item.message}`} className="rounded-md bg-workflow-block-bg p-2 system-xs-regular">
+                        <div key={`${item.nodeId}-${item.message}`} className="rounded-md border border-module-border bg-workflow-block-bg p-2 system-xs-regular">
                           <div className="mb-0.5 flex items-center gap-2">
                             <span className="system-xs-medium text-text-primary">{item.nodeName}</span>
                             <Badge variant={item.success ? 'success' : 'warning'}>{item.kind}</Badge>
