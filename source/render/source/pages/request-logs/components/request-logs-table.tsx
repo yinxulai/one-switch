@@ -1,8 +1,10 @@
 import { Fragment } from 'react'
-import { ArrowDownToLine, ArrowUpFromLine, ChevronDown, ChevronRight, Clock, Database, Zap } from 'lucide-react'
+import { AlertTriangle, ArrowDownToLine, ArrowUpFromLine, ChevronDown, ChevronRight, Clock, Database, RefreshCw, SearchX, Zap } from 'lucide-react'
 import type { RequestLogDetail, RequestLogEntry } from '@common/schemas'
 import { tableCellClass, tableHeaderCellClass, tableHeaderClass, TableFrame } from '@/components/table-primitives'
+import { TableStateRow } from '@/components/table-state'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { formatDuration, formatNumber, formatTime, formatTPS, formatTTFT } from '../lib/format'
@@ -25,12 +27,15 @@ interface RequestLogTableRowProps {
 interface RequestLogsTableProps {
   logs: RequestLogEntry[]
   loading: boolean
+  error: string | null
+  filtered: boolean
   expandedId: string | null
   details: Record<string, RequestLogDetail>
   detailLoadingIds: Record<string, boolean>
   detailErrors: Record<string, string>
   getModelName: (id: string | null) => string
   toggleExpand: (id: string) => void
+  onRetry: () => void
 }
 
 function formatModelSummary(log: RequestLogEntry) {
@@ -209,14 +214,19 @@ export function RequestLogsTable(props: RequestLogsTableProps) {
 
   if (props.loading) {
     body = <RequestLogsLoadingRows />
-  } else if (props.logs.length === 0) {
+  } else if (props.error !== null && props.logs.length === 0) {
     body = (
-      <tr>
-        <td colSpan={10} className="px-4 py-12 text-center text-muted-foreground">
-          暂无匹配的请求记录
-        </td>
-      </tr>
+      <TableStateRow colSpan={10} icon={AlertTriangle} tone="destructive" title="请求记录读取失败" description={props.error} action={
+        <Button variant="outline" className="mt-1" onClick={props.onRetry}>
+          <RefreshCw size={14} />
+          重试
+        </Button>
+      } />
     )
+  } else if (props.logs.length === 0) {
+    body = props.filtered
+      ? <TableStateRow colSpan={10} icon={SearchX} title="没有匹配的请求记录" description="试着放宽筛选条件或把时间范围调大一些。" />
+      : <TableStateRow colSpan={10} icon={SearchX} title="还没有请求记录" description="代理收到请求后会在这里留下记录。" />
   } else {
     body = props.logs.map(log => (
       <RequestLogTableRow

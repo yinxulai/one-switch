@@ -1,6 +1,9 @@
 import type { LogEntry } from '@common/schemas'
+import { AlertTriangle, Inbox, RefreshCw, SearchX } from 'lucide-react'
 import { tableCellClass, tableHeaderCellClass, tableHeaderClass, tableRowClass, TableFrame } from '@/components/table-primitives'
+import { TableStateRow } from '@/components/table-state'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { cn } from '@/lib/utils'
@@ -48,13 +51,22 @@ function renderLoadingRows() {
   ))
 }
 
-function renderEmptyRow() {
+function renderEmptyRow(filtered: boolean) {
+  if (filtered) {
+    return <TableStateRow colSpan={3} icon={SearchX} title="没有匹配的运行日志" description="试着放宽搜索词或把级别筛选切回「全部级别」。" />
+  }
+
+  return <TableStateRow colSpan={3} icon={Inbox} title="还没有运行日志" description="服务产生日志后会实时出现在这里。" />
+}
+
+function renderErrorRow(message: string, onRetry: () => void) {
   return (
-    <TableRow>
-      <TableCell colSpan={3} className="px-4 py-16 text-center text-muted-foreground">
-        暂无匹配的运行日志
-      </TableCell>
-    </TableRow>
+    <TableStateRow colSpan={3} icon={AlertTriangle} tone="destructive" title="运行日志读取失败" description={message} action={
+      <Button variant="outline" className="mt-1" onClick={onRetry}>
+        <RefreshCw size={14} />
+        重试
+      </Button>
+    } />
   )
 }
 
@@ -69,19 +81,20 @@ function renderLogRows(logs: LogEntry[]) {
           {LEVEL_LABEL[log.level]}
         </Badge>
       </TableCell>
-      <TableCell className={cn(tableCellClass, 'whitespace-pre-wrap break-all font-mono leading-5')}>{log.message}</TableCell>
+      <TableCell className={cn(tableCellClass, 'whitespace-pre-wrap break-words font-mono leading-5')}>{log.message}</TableCell>
     </TableRow>
   ))
 }
 
-interface LogsTableProps { logs: LogEntry[]; loading: boolean }
+interface LogsTableProps { logs: LogEntry[]; loading: boolean; error: string | null; filtered: boolean; onRetry: () => void }
 
 export function LogsTable(props: LogsTableProps) {
   const { logs, loading } = props
 
   const renderTableBody = () => {
     if (loading) return renderLoadingRows()
-    if (logs.length === 0) return renderEmptyRow()
+    if (props.error !== null && logs.length === 0) return renderErrorRow(props.error, props.onRetry)
+    if (logs.length === 0) return renderEmptyRow(props.filtered)
     return renderLogRows(logs)
   }
 

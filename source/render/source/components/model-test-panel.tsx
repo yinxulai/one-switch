@@ -18,6 +18,7 @@ import {
 import type { Protocol, Provider, ProviderModelRoute } from '@common/schemas'
 import { CONVERTIBLE_PROTOCOLS } from '@common/protocols'
 import { modelTestApi, type ModelTestResult } from '@/api/tools'
+import { InlineEmptyState } from '@/components/inline-empty-state'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -249,7 +250,7 @@ function ModelSelection(props: ModelSelectionProps) {
           </section>
         ))}
         {providerViews.length === 0 && (
-          <div className="px-3 py-10 text-center text-[11px] text-muted-foreground">没有匹配的渠道或模型</div>
+          <InlineEmptyState title="没有匹配的渠道或模型" className="px-3 py-10" />
         )}
       </div>
     </aside>

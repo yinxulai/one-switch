@@ -73,16 +73,10 @@ export function PageHeader(props: PageHeaderProps) {
             ))}
           </nav>
         )}
-        <h1 className="text-[15px] font-semibold leading-none">{title}</h1>
-        {description && <p className="mt-1 text-xs text-muted-foreground/80">{description}</p>}
+        <h1 className="system-xl-semibold">{title}</h1>
+        {description && <p className="mt-1 system-xs-regular text-muted-foreground">{description}</p>}
       </div>
-      {actions && (
-        <div
-          className="shrink-0 [&_[data-slot=button][data-size=sm]]:h-8 [&_[data-slot=button][data-size=sm]]:rounded-lg [&_[data-slot=button][data-size=sm]]:gap-1.5 [&_[data-slot=button][data-size=sm]]:px-2.5 [&_[data-slot=button][data-size=sm]]:text-sm [&_[data-slot=button][data-size=sm]_svg:not([class*='size-'])]:size-4"
-        >
-          {actions}
-        </div>
-      )}
+      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
     </header>
   )
 }

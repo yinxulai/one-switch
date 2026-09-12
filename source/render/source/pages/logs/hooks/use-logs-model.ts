@@ -49,6 +49,8 @@ export function useLogsModel(initialSearchText?: string) {
   const logs = query.data?.logs ?? []
   const total = query.data?.total ?? 0
   const totalPages = Math.max(1, Math.ceil(total / LOGS_PAGE_SIZE))
+  const filtered = levelFilter !== 'all' || searchText.trim() !== ''
+  const error = query.error === null ? null : query.error instanceof Error ? query.error.message : String(query.error)
   const refresh = useCallback(() => query.refetch(), [query])
   const goToPage = useCallback((targetPage: number) => {
     setPage(Math.min(Math.max(1, targetPage), totalPages))
@@ -62,5 +64,5 @@ export function useLogsModel(initialSearchText?: string) {
     } catch (error) { toast.error(error instanceof Error ? error.message : '运行日志导出失败') }
   }, [exportMutation, toast])
   const clearLogs = useCallback(async () => { try { await clearMutation.mutateAsync() } catch (error) { toast.error(error instanceof Error ? error.message : '运行日志清空失败') } }, [clearMutation, toast])
-  return { logs, total, totalPages, page, goToPage, pageSize: LOGS_PAGE_SIZE, loading: query.isPending, refreshing: query.isFetching && !query.isPending, live, setLive, levelFilter, setLevelFilter, searchText, setSearchText, clearDialogOpen, setClearDialogOpen, refresh, exportLogs, clearLogs }
+  return { logs, total, totalPages, page, goToPage, pageSize: LOGS_PAGE_SIZE, loading: query.isPending, refreshing: query.isFetching && !query.isPending, error, filtered, live, setLive, levelFilter, setLevelFilter, searchText, setSearchText, clearDialogOpen, setClearDialogOpen, refresh, exportLogs, clearLogs }
 }

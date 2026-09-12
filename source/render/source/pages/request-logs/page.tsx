@@ -1,15 +1,16 @@
 import { useMemo } from 'react'
-import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { PageContent, PageHeader, PageLayout } from '@/components/layout'
+import { TablePager } from '@/components/table-primitives'
 import { RequestLogsFilters } from './components/request-logs-filters'
 import { RequestLogsTable } from './components/request-logs-table'
 import { PAGE_SIZE } from './queries'
 import { useRequestLogsService } from './service'
 
 export function RequestLogsPage() {
-  const { logs, total, providers, providerModelOptions, loading, refreshing, details, detailLoadingIds, detailErrors, getModelName, loadDetail, refresh, setFilter, filter, expandedId, goToPage, page } = useRequestLogsService()
+  const { logs, total, providers, providerModelOptions, loading, refreshing, error, filtered, details, detailLoadingIds, detailErrors, getModelName, loadDetail, refresh, setFilter, filter, expandedId, goToPage, page } = useRequestLogsService()
 
   const providerOptions = useMemo(() => {
     return providers
@@ -51,38 +52,17 @@ export function RequestLogsPage() {
         <RequestLogsTable
           logs={logs}
           loading={loading}
+          error={error}
+          filtered={filtered}
           expandedId={expandedId}
           details={details}
           detailLoadingIds={detailLoadingIds}
           detailErrors={detailErrors}
           getModelName={getModelName}
           toggleExpand={toggleExpand}
+          onRetry={() => void refresh()}
         />
-        {!loading && total > PAGE_SIZE && (
-          <div className="mt-3 flex items-center justify-end gap-2 text-xs text-foreground/75">
-            <span>
-              第 {page} / {totalPages} 页
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 px-2"
-              disabled={page <= 1}
-              onClick={() => handlePageChange(page - 1)}
-            >
-              <ChevronLeft size={14} />
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 px-2"
-              disabled={page >= totalPages}
-              onClick={() => handlePageChange(page + 1)}
-            >
-              <ChevronRight size={14} />
-            </Button>
-          </div>
-        )}
+        {!loading && totalPages > 1 && <TablePager page={page} totalPages={totalPages} onPageChange={handlePageChange} />}
       </PageContent>
     </PageLayout>
   )
