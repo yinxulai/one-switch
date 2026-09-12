@@ -1,7 +1,15 @@
-import type { Protocol } from '@common/schemas'
-import type { RequestRewriteRule, RequestRewriteRuleAction } from '@common/schemas'
+import type { Protocol, RequestRewriteRule, RequestRewriteRuleAction, TransportKind } from '@common/schemas'
 
 const PROTECTED_HEADERS = new Set(['authorization', 'host', 'content-length', 'connection', 'transfer-encoding'])
+/**
+ * 传输形态在正文里的落点。现行三个协议（openai-completions / anthropic-messages / openai-responses）
+ * 都用根级 `stream` 表达「这一跳要增量还是整包」，因此它不是一个普通的业务字段。
+ *
+ * 改写规则**不许碰它**。形态在规划期就由客户端自己的声明定下来（§1.6.1），规则把它改掉
+ * 等于替客户端改主意：代理会按「非流式」转发上游，却仍然按「流式」交付客户端——
+ * 两边对「这一跳是什么形态」的认知当场分叉，而这正是代理最不该制造的状态。
+ */
+const PROTECTED_BODY_FIELDS = new Set(['stream'])
 const MAX_BODY_BYTES = 2 * 1024 * 1024
 const MAX_ACTIONS = 50
 const MAX_REPLACEMENTS = 100
@@ -11,13 +19,14 @@ export interface RequestRewriteContext {
   clientProtocol: Protocol
   upstreamProtocol: Protocol
   /**
-   * 正文是否以**分块**形式交付（手里只有片段，没有完整正文）。只有响应阶段的改写会用到。
+   * 响应阶段这一跳的传输形态（{@link TransportKind}）。只有响应阶段会用到。
    *
-   * 注意它不是「客户端要不要增量」（那是 `DeliveryMode`），而是出口的**合成**事实
-   * （`isStreamingDelivery(delivery, headers)`）：调用方得传合成结果，不能直接把
-   * 客户端意图丢进来，否则「客户端要增量但上游回了整包 JSON」会被误当成分块而跳过改写。
+   * 必须传客户端声明的**预期**，不能传「客户端要增量 **且** 上游是 SSE」之类的合成值：
+   * 合成量在预期落空时语义未定义——客户端要增量而上游回了整包 JSON 时，合成值为假，
+   * 规则会被当成「手里是完整正文」而放行，改写了一整份 JSON 却以分块方式发出去（§1.6.2）。
+   * 反过来，上游回 SSE 而客户端只要整包时，两份正文的形状本来就不一样，跳过才是对的。
    */
-  incrementalDelivery?: boolean
+  transport?: TransportKind
 }
 
 export interface RequestRewriteResult {
@@ -44,7 +53,7 @@ export function applyRequestRewriteRules(body: Buffer, headers: Record<string, s
     if (!rule.enabled || rule.deletedTime !== null) { skippedRuleIds.push(rule.id); continue }
     const actions = rule.actions.filter(action => action.stage === context.stage)
     if (actions.length === 0 || !matches(rule, context)) { skippedRuleIds.push(rule.id); continue }
-    if (context.stage === 'response' && context.incrementalDelivery) { skippedRuleIds.push(rule.id); continue }
+    if (context.stage === 'response' && context.transport === 'http-stream') { skippedRuleIds.push(rule.id); continue }
     if (actions.length > MAX_ACTIONS) throw new RequestRewriteError('规则动作数量超过限制', rule.id)
     for (const action of actions) {
       if (action.type.startsWith('header-')) applyHeader(currentHeaders, action as Extract<RequestRewriteRuleAction, { type: `header-${string}` }>, rule.id)
@@ -92,6 +101,7 @@ function parsePath(path: string, ruleId: string): string[] {
   if (!path.startsWith('$.')) throw new RequestRewriteError(`JSON Path 无效: ${path}`, ruleId)
   const segments = path.slice(2).split('.').filter(Boolean)
   if (!segments.length || segments.some(segment => !/^[A-Za-z0-9_-]+$/.test(segment))) throw new RequestRewriteError(`JSON Path 无效: ${path}`, ruleId)
+  if (segments.length === 1 && PROTECTED_BODY_FIELDS.has(segments[0])) throw new RequestRewriteError(`禁止修改交付方式字段: ${path}`, ruleId)
   return segments
 }
 function setPath(root: unknown, segments: string[], value: unknown, ruleId: string): void {

@@ -1,4 +1,5 @@
 import type { Frame, FrameSink, HeadFrame, Modifier, ModifierContext, Observer } from '@server/proxy/contracts'
+import { selectCandidates } from './modifier-selection'
 
 export interface FramePipeInput {
   /** 上游帧序列。 */
@@ -7,7 +8,7 @@ export interface FramePipeInput {
   readonly sink: FrameSink
   /** 本次交换的上下文；`direction` 决定管道执行哪一批修改器。 */
   readonly context: ModifierContext
-  /** 候选修改器；管道自己按 `direction` / `frameMode` / `match` 过滤并按 `order` 排序。 */
+  /** 候选修改器；管道按 `direction` / `frameMode` / `scope` 先筛一次，再在每一帧上问 `match`。 */
   readonly modifiers: readonly Modifier[]
   /** 观察者。只读且不改字节，抛错只丢掉自己的记录。 */
   readonly observers?: readonly Observer[]
@@ -51,8 +52,11 @@ export async function pipeFrames(input: FramePipeInput): Promise<FramePipeResult
   let error: Error | null = null
   let ended = false
   let stopped = false
-  let selected: readonly Modifier[] | null = null
-  let selectedWithHead = false
+  /**
+   * 结构性候选在上游回话之前就算完：它只取决于这次交换的形态（见 `selectCandidates`）。
+   * `match` 不在这里篩——它可能依赖 `upstreamHead`，那要等到头帧到手才有答案。
+   */
+  const candidates = selectCandidates(input.modifiers, input.context, 'frame')
 
   for await (const frame of input.frames) {
     if (input.sink.closed) {
@@ -64,17 +68,12 @@ export async function pipeFrames(input: FramePipeInput): Promise<FramePipeResult
       input.onHead?.(frame)
     }
     const context: ModifierContext = { ...input.context, upstreamHead }
-    // 修改器在头帧之后才第一次筛选：`match` 经常要先知道「上游怎么回的」（例如是不是 SSE）。
-    if (selected === null || (upstreamHead !== null && !selectedWithHead)) {
-      selected = selectFrameModifiers(input.modifiers, context)
-      selectedWithHead = upstreamHead !== null
-    }
     if (frame.kind === 'head') {
       for (const observer of observers) notify(() => observer.onUpstreamHead?.(context.exchange, context.attempt, frame.status, frame.headers))
     } else if (frame.kind === 'data') {
       for (const observer of observers) notify(() => observer.onUpstreamChunk?.(context.exchange, context.attempt, frame.body))
     }
-    for (const next of await applyFrameModifiers(selected, context, frame)) {
+    for (const next of await applyFrameModifiers(candidates, context, frame)) {
       if (next.kind === 'head') emittedHead = next
       else if (next.kind === 'data') {
         frameCount += 1
@@ -90,12 +89,14 @@ export async function pipeFrames(input: FramePipeInput): Promise<FramePipeResult
   return { head: emittedHead, frameCount, byteCount, error, ended, stopped }
 }
 
-/** 参与本次管道的修改器：方向一致、逐帧粒度、`match` 通过，按 `order` 升序（同值保持注册顺序）。 */
+/**
+ * 参与本次管道的修改器：结构性筛选 + `match` 通过，按 `order` 升序。
+ *
+ * 管道内部不调它——管道把两段分开：结构性筛选算一次，`match` 在每一帧上现算。
+ * 它留给「想知道这个上下文下谁会上场」的调用方（管理端的诊断、测试）。
+ */
 export function selectFrameModifiers(modifiers: readonly Modifier[], context: ModifierContext): readonly Modifier[] {
-  return modifiers
-    .filter(modifier => modifier.direction === context.direction && modifier.frameMode === 'frame' && modifier.match(context))
-    .slice()
-    .sort((left, right) => left.order - right.order)
+  return selectCandidates(modifiers, context, 'frame').filter(modifier => modifier.match(context))
 }
 
 /**
@@ -113,13 +114,14 @@ function notify(action: () => void): void {
 }
 
 /**
- * 逐个修改器串联作用在一帧上。
+ * 逐个修改器串联作用在一帧上：`match` 在这里现算（它可能依赖 `upstreamHead`），然后按 `order` 串联。
  * 修改器返回 `null` 表示丢弃这一帧；返回数组表示把一帧拆成多帧（例如 SSE 一次读到多条事件）；
  * 未实现 `applyFrame` 的修改器原样透传。
  */
 async function applyFrameModifiers(modifiers: readonly Modifier[], context: ModifierContext, frame: Frame): Promise<readonly Frame[]> {
   let current: readonly Frame[] = [frame]
   for (const modifier of modifiers) {
+    if (!modifier.match(context)) continue
     const next: Frame[] = []
     for (const candidate of current) {
       const result = await modifier.applyFrame?.(context, candidate)

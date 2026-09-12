@@ -116,53 +116,28 @@ describe('protocol descriptors', () => {
     const match = matchProtocolEndpoint('POST', '/v1/embeddings')
     expect(match?.protocol).toBe('openai-completions')
     expect(match?.endpointId).toBe('embeddings')
-    // 接口级的封装描述是「交付方式」的唯一来源：embeddings 没有增量交付的概念。
-    expect(match?.envelope.resolveDelivery({ headers: {}, body: Buffer.from('{"stream":true}'), url: null })).toBe('buffered')
+    // 接口级的封装描述是传输形态的唯一来源：embeddings 没有增量这一说，请求体里写
+    // `stream: true` 也读不出 `http-stream`。
+    expect(match?.envelope.resolveTransport({ headers: {}, body: Buffer.from('{"stream":true}'), url: null })).toBe('http')
     expect(getProtocolEndpoint('openai-completions', 'embeddings')).toBeDefined()
     expect(getProtocolEndpoint('openai-completions', 'no-such-endpoint')).toBeUndefined()
   })
 
-  it('declares one envelope implementation per interface and transport', () => {
+  it('declares exactly one envelope per interface', () => {
     for (const descriptor of protocolDescriptors) {
       for (const endpoint of descriptor.endpoints) {
-        expect(Object.keys(endpoint.envelopes).length, `${descriptor.id}:${endpoint.id}`).toBeGreaterThan(0)
-        for (const envelope of Object.values(endpoint.envelopes)) {
-          expect(envelope?.body).toBe('json')
-        }
+        expect(endpoint.envelope.body, `${descriptor.id}:${endpoint.id}`).toBe('json')
       }
     }
   })
 
-  it('rejects a transport an interface does not declare', () => {
-    // `'websocket'` 是轴上的合法取值，但今天没有任何接口声明 WS 封装，因此**每一条**路由在
-    // websocket 上都必须为 null。这个断言同时也是「未实现的传输不会静默地落到某个处理器」的证据：
-    // 一旦有人加了 WS 封装却忘了真实现，这里会先响。
-    const websocketRoutes = listProtocolRoutes()
-      .filter(route => matchProtocolEndpoint(route.method, route.path, 'websocket') !== null)
-      .map(route => `${route.method} ${route.path}`)
-    expect(websocketRoutes).toEqual([])
-    expect(matchProtocolEndpoint('POST', '/v1/responses', 'websocket')).toBeNull()
-    expect(matchProtocolEndpoint('GET', '/v1/responses', 'websocket')).toBeNull()
-    expect(matchProtocolEndpoint('POST', '/chat/completions', 'websocket')).toBeNull()
-  })
-
-  it('keeps transport out of the interface identity', () => {
-    // 传输是接口的属性，不是接口 id 的一部分。把传输写进 id（`responses` / `responses-websocket`）
-    // 会让「这个接口支持哪些传输」失去唯一答案，也会让只改传输的改动看起来像新增接口。
-    // 现在 WS 没有实现，这条不变式反而更需要被钉住——它正是 WS 回来时不用改 id 的原因。
-    expect(matchProtocolEndpoint('POST', '/v1/responses', 'http')?.endpointId).toBe('responses')
+  it('leaves the transport out of the interface identity', () => {
+    // 协议层不知道传输形态：接口 id 里没有它，同一个入口在两种形态下都是同一条路由。
+    // 把形态写进 id（`responses` / `responses-websocket`）会让「这个接口有哪几种形态」
+    // 失去唯一答案；形态的合法性由传输注册表判定（见 transports/registry.test.ts）。
+    expect(getProtocolEndpoint('openai-responses', 'responses')?.id).toBe('responses')
     expect(getProtocolEndpoint('openai-responses', 'responses')?.match.length).toBe(2)
     expect(getProtocolEndpoint('openai-responses', 'responses-websocket')).toBeUndefined()
-  })
-
-  it('reports the transports each entry route is valid on', () => {
-    const byKey = new Map(listProtocolRoutes().map(route => [`${route.method} ${route.path}`, [...route.transports].sort()]))
-    // 没写 `transport` 的匹配规则归集出接口声明的全部传输；今天每个入口都只有 http。
-    expect(byKey.get('POST /v1/chat/completions')).toEqual(['http'])
-    expect(byKey.get('POST /v1/responses')).toEqual(['http'])
-    // 传输不在入口的集合里 = 该传输上不存在这个入口，而不是「路径不认识」。
-    expect(matchProtocolEndpoint('GET', '/v1/responses', 'http')).toBeNull()
-    expect(matchProtocolEndpoint('GET', '/v1/chat/completions', 'http')).toBeNull()
   })
 
   it('provides an adapter for every direction declared convertible in @common/protocols', () => {

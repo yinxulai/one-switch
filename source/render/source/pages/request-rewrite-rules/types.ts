@@ -1,4 +1,4 @@
-import type { Protocol } from '@common/schemas'
+import type { Protocol, TransportKind } from '@common/schemas'
 
 export type RuleStage = 'request' | 'response'
 export type RuleStatusFilter = 'all' | 'enabled' | 'disabled'
@@ -24,7 +24,8 @@ export interface RuleTestCase {
   headers: string
   clientProtocol: Protocol
   upstreamProtocol: Protocol
-  streaming: boolean
+  /** 试跑时假设的传输形态；响应阶段的动作在 `http-stream` 下不适用。 */
+  transport: TransportKind
 }
 
 export interface RequestRewriteRule {

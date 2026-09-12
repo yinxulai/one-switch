@@ -1,10 +1,11 @@
 import type { BufferedPayload, Modifier, ModifierContext } from '@server/proxy/contracts'
+import { selectCandidates } from './modifier-selection'
 
 export interface BufferedPipeInput {
   /** 进入上一个循环的载荷；请求方向就是客户端原文加原始头。 */
   readonly payload: BufferedPayload
   readonly context: ModifierContext
-  /** 候选修改器；管道自己按 `direction` / `frameMode` / `match` 过滤并按 `order` 排序。 */
+  /** 候选修改器；管道按 `direction` / `frameMode` / `scope` / `match` 过滤并按 `order` 排序。 */
   readonly modifiers: readonly Modifier[]
 }
 
@@ -34,10 +35,7 @@ export async function pipeBuffered(input: BufferedPipeInput): Promise<BufferedPi
   return { payload, appliedModifierIds }
 }
 
-/** 参与本次管道的修改器：方向一致、缓冲区粒度、`match` 通过，按 `order` 升序（同值保持注册顺序）。 */
+/** 参与本次管道的修改器：结构性筛选（含 `scope`）+ `match` 通过，按 `order` 升序。 */
 export function selectBufferedModifiers(modifiers: readonly Modifier[], context: ModifierContext): readonly Modifier[] {
-  return modifiers
-    .filter(modifier => modifier.direction === context.direction && modifier.frameMode === 'buffered' && modifier.match(context))
-    .slice()
-    .sort((left, right) => left.order - right.order)
+  return selectCandidates(modifiers, context, 'buffered').filter(modifier => modifier.match(context))
 }

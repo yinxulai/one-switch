@@ -1,8 +1,7 @@
-import type { Protocol } from '@common/schemas'
+import type { Protocol, TransportKind } from '@common/schemas'
 import type { Frame, HeadFrame } from './frame'
 import type { HeaderMap } from './headers'
 import type { AttemptView, ExchangeView } from './exchange'
-import type { TransportKind } from './transport'
 
 /** 修改器作用的方向。 */
 export type ModifierDirection = 'request' | 'response'
@@ -31,18 +30,28 @@ export interface ModifierContext {
   readonly clientProtocol: Protocol
   readonly upstreamProtocol: Protocol
   /**
-   * 客户端侧传输，与 `exchange.transport` 同值，放在这里是为了让 `match` 与 `apply*`
-   * 不必先解构 `exchange` 才能判断「这个修改器在当前传输上是否成立」。
-   */
-  readonly transport: TransportKind
-  /**
    * 上游响应头投影；尚未收到响应头时为 `null`。
    *
-   * 修改器判断自己该不该介入往往只取决于响应头（例如「上游是不是用 SSE 返回」），
-   * 而 `match()` 拿不到帧，因此把这份事实放进上下文。这里始终是上游的原始头，
-   * 不会被任何修改器改写。
+   * 这里始终是上游的原始头，不会被任何修改器改写。它的用途只有两个：
+   * 选**解析器**（手里这堆字节是 SSE 还是整包 JSON），以及**校验预期**（客户端要的传输
+   * 形态到底兑现没有）。它不用来回答「该做什么」——那个问题的答案在
+   * `exchange.transport`（预期）里，早在上游回话之前就定了（见 `product/proxy-engine.md` §1.6.2）。
    */
   readonly upstreamHead: HeadFrame | null
+}
+
+/**
+ * 修改器声明的适用范围。
+ *
+ * **声明式**：内核按它排除修改器，修改器自己不必再判断传输形态——这正是
+ * 「hooks 基于 protocol 与 transport 处理数据，且不需要自己去判断」的落地方式。
+ *
+ * 它与 `match` 的分工：`scope` 说的是「这种形态下根本没有它能做的事」（静态能力，
+ * 结论要进日志：本规则在本形态下未生效），`match` 说的是「这一条请求不满足它的条件」。
+ */
+export interface ModifierScope {
+  /** **客户端跳**的传输形态。省略表示不限。 */
+  readonly transports?: readonly TransportKind[]
 }
 
 /**
@@ -58,6 +67,8 @@ export interface Modifier {
   readonly order: number
   readonly direction: ModifierDirection
   readonly frameMode: ModifierFrameMode
+  /** 声明适用范围；内核在调 `match` 之前先按它排除。省略表示本方向、本粒度下全适用。 */
+  readonly scope?: ModifierScope
   match(context: ModifierContext): boolean
   applyBuffered?(context: ModifierContext, payload: BufferedPayload): BufferedPayload | null | Promise<BufferedPayload | null>
   applyFrame?(context: ModifierContext, frame: Frame): Frame | readonly Frame[] | null | Promise<Frame | readonly Frame[] | null>

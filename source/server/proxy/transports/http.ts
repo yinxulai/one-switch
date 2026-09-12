@@ -31,7 +31,9 @@ export interface HttpTransportOptions {
  */
 export function createHttpTransport(options: HttpTransportOptions): Transport {
   return {
-    kind: 'http',
+    // 一问一答的两种形态共用这一个实现：建连、TLS、超时、abort、出网方式一字不差，
+    // 差别只在响应体怎么分帧，而分帧由修改器与响应侧处理，不是一条不同的连接路径。
+    transports: ['http', 'http-stream'],
     connect(target: UpstreamTarget, exchange: ExchangeView, attempt: AttemptView): Promise<UpstreamConnection> {
       return connectHttp(target, exchange, attempt, options)
     },
@@ -48,7 +50,7 @@ function connectHttp(target: UpstreamTarget, exchange: ExchangeView, attempt: At
     headers: resolveOutboundHeaders(exchange.headers, exchange.body.length),
     timeout: target.timeoutMilliseconds,
   }
-  console.debug(`[proxy] transport connect requestId=${exchange.requestId} attempt=${attempt.index} endpointId=${target.endpointId} transport=http timeout=${target.timeoutMilliseconds}ms bodyBytes=${exchange.body.length}`)
+  console.debug(`[proxy] transport connect requestId=${exchange.requestId} attempt=${attempt.index} endpointId=${target.endpointId} transport=${exchange.transport} timeout=${target.timeoutMilliseconds}ms bodyBytes=${exchange.body.length}`)
 
   return new Promise<UpstreamConnection>((resolve, reject) => {
     const queue = new FrameQueue()

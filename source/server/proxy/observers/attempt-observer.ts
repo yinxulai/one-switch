@@ -1,5 +1,5 @@
 import type { AttemptView, ExchangeView, HeadFrame, HeaderMap, Observer } from '@server/proxy/contracts'
-import { isStreamingDelivery, serializeStreamingChunks } from '@server/proxy/adapters/http-response-sink'
+import { serializeChunkSnapshot } from '@server/proxy/adapters/http-response-sink'
 import { createUsageTracker, type ExtractedUsage } from './usage'
 
 export interface AttemptObserverOptions {
@@ -15,17 +15,22 @@ export interface AttemptObserverOptions {
  * 一次尝试的观察者：把「上游怎么回的」变成可落库的事实。
  *
  * 它是响应侧唯一的字节读者，因此也是替换 `ResponsePipeline` 里那半份观测职责的落点：
- * 用量、TTFT、上游视角正文都从这里出，而出口只负责把字节写出去。两者共享同一个
- * 流式判定（{@link isStreamingDelivery}），所以上游视角与客户端视角永远同形。
+ * 用量、TTFT、上游视角正文都从这里出，而出口只负责把字节写出去。
+ *
+ * 两者对「这份正文该怎么记」共用同一个判断——客户端跳声明的形态是不是 `http-stream`——
+ * 因此正文的**形状**始终一致：要么两边都是分块快照，要么两边都是原文。
+ *
+ * 上一版这里读的是合成量「客户端要增量 **且** 上游以 SSE 回答」，等于把「上游没兼现形态」
+ * 这个状态抹平成了「那就当整包记」；现在这个状态由执行器显式判定为 failover（§1.6.2），
+ * 观察者不再掺和。**上游跳实际是什么形态**仍是独立的一件事，由执行器读响应头得出
+ * （`upstreamTransport`），落库时进的是尝试行而不是请求行。
  *
  * 观察者不改任何字节，也不影响转发结果——它抛错只会丢掉自己的记录。
  */
 export interface AttemptObserver extends Observer {
   /** 上游响应头投影；尚未收到时为 `null`。 */
   head(): HeadFrame | null
-  /** 「客户端要流式 + 上游以 SSE 返回」。 */
-  streaming(): boolean
-  /** 上游视角正文；流式是分块快照，非流式是原文。 */
+  /** 上游视角正文；交付方式是 `stream` 时是分块快照，否则是原文。 */
   upstreamBody(): string | null
   /** 原文字节；流式下发时为完整 SSE 文本（与分块快照相对，用于健康度判定）。 */
   rawBody(): string | null
@@ -47,7 +52,6 @@ class ObserverState implements AttemptObserver {
   private readonly tracker = createUsageTracker()
   private readonly upstreamChunks: string[] = []
   private headFrame: HeadFrame | null = null
-  private streamingResponse = false
   private raw = ''
   private firstOutputAt: number | null = null
 
@@ -59,12 +63,8 @@ class ObserverState implements AttemptObserver {
     return this.headFrame
   }
 
-  streaming(): boolean {
-    return this.streamingResponse
-  }
-
   upstreamBody(): string | null {
-    if (this.streamingResponse) return serializeStreamingChunks(this.upstreamChunks)
+    if (this.expectsStreaming()) return serializeChunkSnapshot(this.upstreamChunks)
     return this.raw || null
   }
 
@@ -84,10 +84,9 @@ class ObserverState implements AttemptObserver {
     return this.firstOutputAt === null ? null : this.firstOutputAt - this.options.startedAt
   }
 
-  onUpstreamHead(exchange: ExchangeView, _attempt: AttemptView, status: number, headers: HeaderMap): void {
+  onUpstreamHead(_exchange: ExchangeView, _attempt: AttemptView, status: number, headers: HeaderMap): void {
     // 这里拿到的始终是上游原始头：修改器可能已经改写过头帧，但「上游怎么回的」不该被改写。
     this.headFrame = { kind: 'head', status, headers }
-    this.streamingResponse = isStreamingDelivery(exchange.delivery, headers)
   }
 
   onUpstreamChunk(_exchange: ExchangeView, _attempt: AttemptView, chunk: Buffer): void {
@@ -95,16 +94,21 @@ class ObserverState implements AttemptObserver {
     this.raw += text
     if (this.options.captureEnabled) this.upstreamChunks.push(text)
     // 非流式正文在收尾时一次性解析：中途的半截 JSON 解析不出任何东西。
-    if (!this.streamingResponse) return
+    if (!this.expectsStreaming()) return
     if (this.tracker.consumeSseChunk(text)) this.markFirstOutput()
   }
 
   onAttemptEnd(_exchange: ExchangeView, _attempt: AttemptView): void {
-    if (this.streamingResponse) {
+    if (this.expectsStreaming()) {
       if (this.tracker.flush()) this.markFirstOutput()
       return
     }
     this.tracker.consumeJson(this.raw)
+  }
+
+  /** 客户端跳声明的形态是不是 `http-stream`。**预期**，与上游实际怎么回的无关。 */
+  private expectsStreaming(): boolean {
+    return this.options.exchange.transport === 'http-stream'
   }
 
   private markFirstOutput(): void {

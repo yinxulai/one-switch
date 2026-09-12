@@ -58,7 +58,7 @@ function makeRule(overrides: Partial<RuleInput> = {}): RuleInput {
       headers: '{"content-type":"application/json"}',
       clientProtocol: 'openai-completions',
       upstreamProtocol: 'openai-completions',
-      streaming: false,
+      transport: 'http',
     }],
     ...overrides,
   }

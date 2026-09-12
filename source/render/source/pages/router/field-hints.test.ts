@@ -23,9 +23,9 @@ describe('resolveInputHints', () => {
     const target = condition('target')
     const hints = resolveInputHints(graph([input(), protocol('protocol'), target, control('isolated'), output()], [edge('input', 'out', 'protocol'), edge('protocol', 'unknown', 'target')]), target.id, samplePayload)
     expect(hints.fields.find(field => field.path === 'route.protocol')?.enumOptions).toEqual(['unknown'])
-    // 传输枚举 = 引擎承认的取值集合，因此包含这一版还没接上的 `websocket`：
-    // 规则可以按它先写好，等 WS 入口落地时图不必改；这里少一个值就等于让用户写不出合法的判断。
-    expect(hints.fields.find(field => field.path === 'route.transport')?.enumOptions).toEqual(['http', 'http-sse', 'websocket'])
+    // 只有一根轴：枚举 = 引擎承认的取值集合，因此包含这一版还没接上的 `websocket`。
+    // 这里少一个值就等于让用户写不出合法的判断。
+    expect(hints.fields.find(field => field.path === 'route.transport')?.enumOptions).toEqual(['http', 'http-stream', 'websocket'])
     expect(hints.fields.map(field => field.path)).not.toContain('route.controls.mode')
   })
   it('循环图不会无限遍历且禁用节点不产生字段', () => {

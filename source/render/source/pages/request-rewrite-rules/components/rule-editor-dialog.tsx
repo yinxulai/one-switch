@@ -51,7 +51,7 @@ export function RuleEditorDialog(props: RuleEditorDialogProps) {
   const addTestCase = () => {
     const id = `test-${Date.now()}`
     const input = defaultTestInput('request')
-    const testCase: RuleTestCase = { id, name: `测试用例 ${props.rule.testCases.length + 1}`, stage: 'request', ...input, clientProtocol: 'openai-completions', upstreamProtocol: 'openai-completions', streaming: false }
+    const testCase: RuleTestCase = { id, name: `测试用例 ${props.rule.testCases.length + 1}`, stage: 'request', ...input, clientProtocol: 'openai-completions', upstreamProtocol: 'openai-completions', transport: 'http' }
     updateTestCases([...props.rule.testCases, testCase])
   }
   const updateTestCase = (id: string, patch: Partial<RuleTestCase>) => {

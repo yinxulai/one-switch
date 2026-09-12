@@ -7,12 +7,11 @@
  */
 
 export type { HeaderMap } from './headers'
-export type { DeliveryMode } from './delivery'
 export type { Frame, FrameSink, HeadFrame } from './frame'
 export type { RouteMatcher, RouteMethod } from './route-matcher'
 export type { AttemptView, ExchangeView } from './exchange'
 export type { Transport, TransportKind, UpstreamConnection, UpstreamTarget } from './transport'
-export type { BufferedPayload, Modifier, ModifierContext, ModifierDirection, ModifierFrameMode } from './modifier'
+export type { BufferedPayload, Modifier, ModifierContext, ModifierDirection, ModifierFrameMode, ModifierScope } from './modifier'
 export type { AttemptPlanner, PlanExhaustedReason, PlannerInput, PlanResult } from './planner'
 export type { LocalHandler, LocalHandlerInput } from './local-handler'
 export type { EnvelopeInput, EnvelopeWriteResult, ProtocolBodyKind, ProtocolEndpointSpec, ProtocolEnvelope, ProtocolModelReadResult } from './protocol'

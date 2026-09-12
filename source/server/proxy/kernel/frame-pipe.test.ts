@@ -16,7 +16,6 @@ function createContext(direction: 'request' | 'response' = 'response'): Modifier
     direction,
     clientProtocol: 'openai-completions',
     upstreamProtocol: 'anthropic-messages',
-    transport: 'http',
     exchange: {
       requestId: 'req-1',
       logicalModelId: 'logical-1',
@@ -26,7 +25,6 @@ function createContext(direction: 'request' | 'response' = 'response'): Modifier
       path: '/v1/chat/completions',
       headers: {},
       body: Buffer.alloc(0),
-      delivery: 'buffered',
       signal: new AbortController().signal,
     },
     attempt: { index: 0, endpointId: 'messages', endpointProtocol: 'anthropic-messages' },

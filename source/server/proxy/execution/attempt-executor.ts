@@ -12,7 +12,9 @@ import { listRulesForProviderModel } from '@server/database/request-rewrite-rule
 import { createAttemptLogger, initializeRequestLogger } from '@server/proxy/observability/logging'
 import type { AttemptView, ExchangeView, UpstreamTarget } from '@server/proxy/contracts'
 import { createHttpResponseSink, isEventStreamResponse } from '@server/proxy/adapters/http-response-sink'
-import { resolveTransport } from '@server/proxy/transports/registry'
+import { resolveTransportImplementation } from '@server/proxy/transports/registry'
+import { resolveUpstreamTransport } from '@server/proxy/routing/upstream-url'
+import type { TransportKind } from '@common/schemas'
 import { createAttemptObserver } from '@server/proxy/observers/attempt-observer'
 import { createRequestModifiers, type RewriteEvaluation } from '@server/proxy/modifiers/request-modifiers'
 import { createResponseModifiers, type AttemptRouting } from '@server/proxy/modifiers/response-modifiers'
@@ -46,7 +48,7 @@ export async function executeProxyRequest(options: ProxyExecutionOptions): Promi
     headers: context.headers,
     attributes: context.attributes,
     requestBody,
-    delivery: context.delivery,
+    transport: context.transport,
     captureRequestContent: settings.captureRequestContent,
     hooks,
   })
@@ -103,7 +105,6 @@ async function attemptRequest(context: RequestContext, response: ProxyResponse, 
       path: context.path,
       headers: context.headers,
       requestBody,
-      delivery: context.delivery,
       signal: controller.signal,
     })
     const adapter = protocolAdapters.resolve(protocol, endpointProtocol)
@@ -120,7 +121,6 @@ async function attemptRequest(context: RequestContext, response: ProxyResponse, 
       path: context.path,
       headers: context.headers,
       body: requestBody,
-      delivery: context.delivery,
       signal: controller.signal,
     }
     const routing: AttemptRouting = { deliverable: false, successful: false }
@@ -135,7 +135,7 @@ async function attemptRequest(context: RequestContext, response: ProxyResponse, 
     })
     const sink = createHttpResponseSink({
       response,
-      delivery: context.delivery,
+      transport: context.transport,
       captureEnabled: settings.captureRequestContent,
     })
 
@@ -153,13 +153,13 @@ async function attemptRequest(context: RequestContext, response: ProxyResponse, 
       rules,
       onRewriteEvaluated: result => { Object.assign(responseEvaluation, result) },
       onConversionError: error => {
-        console.warn(`[proxy] response conversion failed requestId=${requestId} attempt=${attemptIndex} providerModelId=${target.providerModelId} clientProtocol=${protocol} upstreamProtocol=${endpointProtocol} streaming=${observer.streaming()} error=${error.message}`)
+        console.warn(`[proxy] response conversion failed requestId=${requestId} attempt=${attemptIndex} providerModelId=${target.providerModelId} clientProtocol=${protocol} upstreamProtocol=${endpointProtocol} transport=${context.transport} error=${error.message}`)
       },
     })
 
     const requestPipe = await pipeBuffered({
       payload: { body: requestBody, headers: context.headers },
-      context: { exchange, attempt, direction: 'request', clientProtocol: protocol, upstreamProtocol: endpointProtocol, transport: context.transport, upstreamHead: null },
+      context: { exchange, attempt, direction: 'request', clientProtocol: protocol, upstreamProtocol: endpointProtocol, upstreamHead: null },
       modifiers: requestModifiers,
     })
     if (!requestPipe.payload) throw new Error(`请求在转发前被修改器丢弃: ${target.providerModelName}`)
@@ -181,16 +181,18 @@ async function attemptRequest(context: RequestContext, response: ProxyResponse, 
       hooks,
     })
 
-    // 传输由 `target.transport` 决定，不由这里写死：传输种类是规划器已经声明过的事实，
-    // 执行器无须也无权替它选实现。
-    const transport = resolveTransport({
-      kind: target.transport,
+    // 上游跳的形态来自端点地址的 scheme（`wss://` 就是 websocket），其余情况与客户端跳同形——
+    // 代理只做忠诚转发，不会因为客户端想收增量就给上游换成另一种形态。
+    const transport = resolveTransportImplementation({
+      transport: resolveUpstreamTransport(target.url, context.transport),
       resolveIdleTimeoutMilliseconds: () => settings.idleTimeoutMilliseconds,
     })
 
     let statusCode = 502
     let disposition: UpstreamStatusDisposition = 'terminal'
-    let upstreamStreaming = false
+    let upstreamTransport: TransportKind | null = null
+    /** 客户端跳要求的形态没有被上游跳兼现（要 `http-stream` 却回了非 SSE 的 2xx）。 */
+    let transportMismatch = false
     let upstreamRequestId: string | null = null
     const relay = await relayAttempt({
       exchange,
@@ -206,13 +208,24 @@ async function attemptRequest(context: RequestContext, response: ProxyResponse, 
       // 因此这里一旦判定不交付，立刻让出口进入丢弃态，后续帧只喂观察者。
       onHead: head => {
         statusCode = head.status
+        upstreamTransport = isEventStreamResponse(head.headers) ? 'http-stream' : 'http'
         disposition = classifyUpstreamStatus(statusCode)
+        // 期望与事实的落差：客户端跳要求增量交付，上游跳却回了一个非 SSE 的 2xx。
+        //
+        // 代理只做忠诚转发：既不替上游补做形态的转换，也不把整包 JSON 硬塞进流式响应——
+        // 那种「看起来能用」的响应只是把上游违约藏起来，客户端拿到的是一个 SSE 语义下的 JSON
+        // 字节流，而日志里看不出任何异常（§1.6.2）。因此它不是成功，而是一次失败：
+        // 按切换策略处理，让下一个候选来接。
+        transportMismatch = disposition === 'success' && context.transport === 'http-stream' && upstreamTransport !== 'http-stream'
+        if (transportMismatch) {
+          disposition = 'failover'
+          console.warn(`[proxy] transport mismatch requestId=${requestId} attempt=${attemptIndex} providerModelId=${target.providerModelId} transport=${context.transport} upstreamTransport=${upstreamTransport} upstreamContentType=${String(head.headers['content-type'] ?? '')}`)
+        }
         routing.successful = disposition === 'success'
         routing.deliverable = disposition !== 'failover'
         if (!routing.deliverable) sink.discard()
-        upstreamStreaming = isEventStreamResponse(head.headers)
         upstreamRequestId = extractUpstreamRequestId(head.headers)
-        console.debug(`[proxy] upstream response received requestId=${requestId} attempt=${attemptIndex} providerModelId=${target.providerModelId} status=${statusCode} disposition=${disposition} streaming=${observer.streaming()} upstreamStreaming=${upstreamStreaming} upstreamRequestIdPresent=${upstreamRequestId !== null} responseLatency=${Date.now() - attemptStartedAt}ms`)
+        console.debug(`[proxy] upstream response received requestId=${requestId} attempt=${attemptIndex} providerModelId=${target.providerModelId} status=${statusCode} disposition=${disposition} transport=${context.transport} transportMismatch=${transportMismatch} upstreamTransport=${upstreamTransport} upstreamRequestIdPresent=${upstreamRequestId !== null} responseLatency=${Date.now() - attemptStartedAt}ms`)
       },
     }).catch(error => {
       if (isClientRequestCancelled(error)) throw new ClientRequestCancelledError()
@@ -234,7 +247,8 @@ async function attemptRequest(context: RequestContext, response: ProxyResponse, 
       response,
       statusCode,
       disposition,
-      upstreamStreaming,
+      upstreamTransport,
+      transportMismatch,
       upstreamRequestId,
       durationMilliseconds,
       upstreamProtocol: adapter.kind === 'conversion' ? endpointProtocol : null,
@@ -247,7 +261,13 @@ async function attemptRequest(context: RequestContext, response: ProxyResponse, 
     }
     if (!routing.deliverable) return await concludeUndeliverableAttempt(conclusion)
 
-    console.debug(`[proxy] response rewrite evaluated requestId=${requestId} attempt=${attemptIndex} providerModelId=${target.providerModelId} streaming=${observer.streaming()} skippedForStreaming=${observer.streaming()} rules=${rules.length} applied=${responseEvaluation.appliedRuleIds.length} skipped=${observer.streaming() ? rules.length : responseEvaluation.skippedRuleIds.length} appliedRuleIds=${responseEvaluation.appliedRuleIds.join(',') || 'none'}`)
+    // 响应改写只作用于 `http` 这种整包形态（见 `createResponseRewriteModifier` 的 `scope`）：
+    // 增量交付时它根本没被选中，因此这里分开记，免得日志里出现一排「0 条命中」的假评估。
+    if (context.transport === 'http-stream') {
+      console.debug(`[proxy] response rewrite skipped requestId=${requestId} attempt=${attemptIndex} providerModelId=${target.providerModelId} transport=http-stream rules=${rules.length} reason=modifier-not-applicable`)
+    } else {
+      console.debug(`[proxy] response rewrite evaluated requestId=${requestId} attempt=${attemptIndex} providerModelId=${target.providerModelId} transport=${context.transport} rules=${rules.length} applied=${responseEvaluation.appliedRuleIds.length} skipped=${responseEvaluation.skippedRuleIds.length} appliedRuleIds=${responseEvaluation.appliedRuleIds.join(',') || 'none'}`)
+    }
     return await concludeDeliveredAttempt(conclusion)
   } finally {
     context.signal.removeEventListener('abort', abortAttempt)

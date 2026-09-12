@@ -65,7 +65,7 @@ export function createRequestFinalizer(options: RequestFinalizerOptions): Reques
 
     onFailover: async (target, outcome, attemptIndex) => {
       const nextTarget = targets[attemptIndex + 1]
-      const healthScope = await recordHealthFailure(target, outcome.statusCode, outcome.upstreamResponseBody)
+      const healthScope = await recordHealthFailure(target, outcome.statusCode, outcome.upstreamResponseBody, outcome.transportMismatch)
       console.warn(
         `[proxy] upstream failover scheduled requestId=${requestId} method=${context.method} path=${context.path} target=${formatTarget(target)} clientProtocol=${protocol} attempt=${attemptIndex} status=${outcome.statusCode} duration=${outcome.durationMilliseconds}ms nextProviderModelId=${nextTarget?.providerModelId ?? 'none'} healthFailureScope=${healthScope}`,
       )
@@ -103,8 +103,8 @@ export function createRequestFinalizer(options: RequestFinalizerOptions): Reques
             status: 'cancelled',
             httpStatus: null,
             retryable: false,
-            // 客户端取消时上游未必已响应，因此不知道上游是否在流式返回。
-            streaming: null,
+            // 客户端取消时上游未必已响应，因此不知道上游跳是什么形态。
+            upstreamTransport: null,
             // 客户端什么都没收到，因此不承担请求级用量。
             servesRequest: false,
             errorCode: 'CLIENT_REQUEST_ABORTED',
@@ -138,8 +138,8 @@ export function createRequestFinalizer(options: RequestFinalizerOptions): Reques
             status: 'failed',
             httpStatus: null,
             retryable: !response.headersSent,
-            // 连接层面的失败往往连响应头都没拿到，无从判断上游是否在流式返回。
-            streaming: null,
+            // 连接层面的失败往往连响应头都没拿到，无从判断上游跳是什么形态。
+            upstreamTransport: null,
             servesRequest: false,
             errorCode: 'UPSTREAM_ERROR',
             errorMessage: lastError.message,
@@ -157,7 +157,7 @@ export function createRequestFinalizer(options: RequestFinalizerOptions): Reques
       const recordedOutcome = error instanceof RecordedAttemptError ? error.outcome : null
       let healthScope: HealthFailureScope = 'none'
       if (!isOutboundProxyConnectionError(rootError)) {
-        healthScope = await recordHealthFailure(target, recordedOutcome?.statusCode ?? null, recordedOutcome?.upstreamResponseBody)
+        healthScope = await recordHealthFailure(target, recordedOutcome?.statusCode ?? null, recordedOutcome?.upstreamResponseBody, recordedOutcome?.transportMismatch)
       }
       if (healthScope !== 'none') {
         console.debug(

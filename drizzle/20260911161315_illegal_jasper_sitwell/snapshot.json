@@ -1055,12 +1055,12 @@
       "table": "request_attempts"
     },
     {
-      "type": "integer",
+      "type": "text",
       "notNull": false,
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "streaming",
+      "name": "upstreamTransport",
       "entityType": "columns",
       "table": "request_attempts"
     },
@@ -1335,12 +1335,12 @@
       "table": "request_logs"
     },
     {
-      "type": "integer",
+      "type": "text",
       "notNull": true,
       "autoincrement": false,
-      "default": "false",
+      "default": "'http'",
       "generated": null,
-      "name": "streaming",
+      "name": "transport",
       "entityType": "columns",
       "table": "request_logs"
     },

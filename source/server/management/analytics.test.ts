@@ -70,14 +70,14 @@ describe('analytics route', () => {
     const successLog = await createRequestLog({
       logicalModelId: 'default',
       clientProtocol: 'openai-responses',
-      streaming: false,
+      transport: 'http',
       status: 'success',
       totalDurationMilliseconds: 1500,
     })
     const failedLog = await createRequestLog({
       logicalModelId: 'default',
       clientProtocol: 'openai-responses',
-      streaming: false,
+      transport: 'http',
       status: 'failed',
       totalDurationMilliseconds: 2200,
     })
@@ -93,7 +93,7 @@ describe('analytics route', () => {
       url: 'https://example.com/success',
       httpStatus: 200,
       retryable: false,
-      streaming: false,
+      upstreamTransport: 'http',
       attemptIndex: 0,
       status: 'success',
       durationMilliseconds: 1500,
@@ -112,7 +112,7 @@ describe('analytics route', () => {
       url: 'https://example.com/failed',
       httpStatus: 429,
       retryable: true,
-      streaming: false,
+      upstreamTransport: 'http',
       attemptIndex: 0,
       status: 'failed',
       durationMilliseconds: 2200,
@@ -178,7 +178,7 @@ describe('analytics route', () => {
     const log = await createRequestLog({
       logicalModelId: 'default',
       clientProtocol: 'openai-responses',
-      streaming: false,
+      transport: 'http',
       status: 'success',
       totalDurationMilliseconds: 1500,
     })
@@ -193,7 +193,7 @@ describe('analytics route', () => {
       url: 'https://example.com/intraday',
       httpStatus: 200,
       retryable: false,
-      streaming: false,
+      upstreamTransport: 'http',
       attemptIndex: 0,
       status: 'success',
       durationMilliseconds: 1500,
@@ -217,19 +217,19 @@ describe('analytics route', () => {
     const firstProvider = await createProvider({ name: 'First Provider', apiKeyReference: 'key_first', timeoutMilliseconds: 30_000, enabled: true })
     const secondProvider = await createProvider({ name: 'Second Provider', apiKeyReference: 'key_second', timeoutMilliseconds: 30_000, enabled: true })
     const log = await createRequestLog({
-      logicalModelId: 'default', clientProtocol: 'openai-responses', streaming: false, status: 'success',
+      logicalModelId: 'default', clientProtocol: 'openai-responses', transport: 'http', status: 'success',
       totalDurationMilliseconds: 30,
     })
     const failedAttempt = await createAttemptOrThrow({
       requestId: log.id, providerId: firstProvider.id, providerModelId: 'model_first', providerName: firstProvider.name,
       providerModelName: 'first-model', upstreamProtocol: 'openai-responses', upstreamRequestId: null,
-      url: 'https://first.example.com', httpStatus: 503, retryable: true, streaming: false, attemptIndex: 0, status: 'failed',
+      url: 'https://first.example.com', httpStatus: 503, retryable: true, upstreamTransport: 'http', attemptIndex: 0, status: 'failed',
       durationMilliseconds: 10, ttftMilliseconds: 10, errorCode: 'Status_503', errorMessage: 'unavailable',
     })
     const successAttempt = await createAttemptOrThrow({
       requestId: log.id, providerId: secondProvider.id, providerModelId: 'model_second', providerName: secondProvider.name,
       providerModelName: 'second-model', upstreamProtocol: 'openai-responses', upstreamRequestId: null,
-      url: 'https://second.example.com', httpStatus: 200, retryable: false, streaming: false, attemptIndex: 1, status: 'success',
+      url: 'https://second.example.com', httpStatus: 200, retryable: false, upstreamTransport: 'http', attemptIndex: 1, status: 'success',
       durationMilliseconds: 20, ttftMilliseconds: 10, errorCode: null, errorMessage: null,
     })
     await recordAttemptUsage({ attemptId: failedAttempt.id, servesRequest: false, ...EMPTY_USAGE })
@@ -276,7 +276,7 @@ describe('analytics route', () => {
     const shortTtftLongDuration = await createRequestLog({
       logicalModelId: 'default',
       clientProtocol: 'openai-responses',
-      streaming: false,
+      transport: 'http',
       status: 'success',
       totalDurationMilliseconds: 8_000,
     })
@@ -291,7 +291,7 @@ describe('analytics route', () => {
       url: 'https://example.com/ttft',
       httpStatus: 200,
       retryable: false,
-      streaming: false,
+      upstreamTransport: 'http',
       attemptIndex: 0,
       status: 'success',
       durationMilliseconds: 8_000,

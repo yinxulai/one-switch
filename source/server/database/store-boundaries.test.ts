@@ -44,7 +44,7 @@ describe('request log persistence boundaries', () => {
       id: 'req_initial_metrics',
       logicalModelId: 'model_default',
       clientProtocol: 'openai-responses',
-      streaming: true,
+      transport: 'http-stream',
       status: 'success',
       totalDurationMilliseconds: 120,
     })
@@ -54,7 +54,7 @@ describe('request log persistence boundaries', () => {
       id: log.id,
       logicalModelId: 'model_default',
       clientProtocol: 'openai-responses',
-      streaming: true,
+      transport: 'http-stream',
       status: 'success',
       totalDurationMilliseconds: 120,
       totalTokens: null,
@@ -75,7 +75,7 @@ describe('request log persistence boundaries', () => {
       id: 'req_usage_boundaries',
       logicalModelId: 'model_default',
       clientProtocol: 'openai-completions',
-      streaming: false,
+      transport: 'http',
       status: 'success',
       totalDurationMilliseconds: 1,
     })
@@ -91,7 +91,7 @@ describe('request log persistence boundaries', () => {
       url: 'https://example.com/v1/chat/completions',
       httpStatus: 200,
       retryable: false,
-      streaming: false,
+      upstreamTransport: 'http',
       attemptIndex: 0,
       status: 'success',
       durationMilliseconds: 1,
@@ -113,7 +113,7 @@ describe('request log persistence boundaries', () => {
       id: 'req_usage_status_update',
       logicalModelId: 'model_default',
       clientProtocol: 'openai-responses',
-      streaming: false,
+      transport: 'http',
       status: 'pending',
       totalDurationMilliseconds: 0,
     })
@@ -129,7 +129,7 @@ describe('request log persistence boundaries', () => {
       url: 'https://example.com/v1/chat/completions',
       httpStatus: 200,
       retryable: false,
-      streaming: false,
+      upstreamTransport: 'http',
       attemptIndex: 0,
       status: 'success',
       durationMilliseconds: 25,
@@ -157,7 +157,7 @@ describe('analytics boundaries', () => {
       id: 'req_in_window',
       logicalModelId: 'model_default',
       clientProtocol: 'openai-completions',
-      streaming: false,
+      transport: 'http',
       status: 'failed',
       totalDurationMilliseconds: 20,
     })
@@ -165,7 +165,7 @@ describe('analytics boundaries', () => {
       id: 'req_outside_window',
       logicalModelId: 'model_default',
       clientProtocol: 'openai-completions',
-      streaming: false,
+      transport: 'http',
       status: 'failed',
       totalDurationMilliseconds: 20,
     })
@@ -175,9 +175,9 @@ describe('analytics boundaries', () => {
     const database = getDb()
     database.$client.prepare('UPDATE request_logs SET createdTime = ? WHERE id = ?').run(oldTime, outsideWindow.id)
 
-    await createRequestAttempt({ requestId: inWindow.id, providerId: provider.id, providerModelId: 'model_a', providerName: provider.name, providerModelName: 'model-a', upstreamProtocol: 'openai-completions', upstreamRequestId: null, url: 'https://example.com/a', httpStatus: 503, retryable: true, streaming: false, attemptIndex: 0, status: 'failed', errorCode: 'Status_503', durationMilliseconds: 5 })
-    await createRequestAttempt({ requestId: inWindow.id, providerId: provider.id, providerModelId: 'model_b', providerName: provider.name, providerModelName: 'model-b', upstreamProtocol: 'openai-completions', upstreamRequestId: null, url: 'https://example.com/b', httpStatus: 401, retryable: false, streaming: false, attemptIndex: 1, status: 'failed', errorCode: 'AUTH_401', durationMilliseconds: 15 })
-    await createRequestAttempt({ requestId: outsideWindow.id, providerId: provider.id, providerModelId: 'model_old', providerName: provider.name, providerModelName: 'model-old', upstreamProtocol: 'openai-completions', upstreamRequestId: null, url: 'https://example.com/old', httpStatus: 504, retryable: true, streaming: false, attemptIndex: 0, status: 'failed', errorCode: 'TIMEOUT', durationMilliseconds: 20 })
+    await createRequestAttempt({ requestId: inWindow.id, providerId: provider.id, providerModelId: 'model_a', providerName: provider.name, providerModelName: 'model-a', upstreamProtocol: 'openai-completions', upstreamRequestId: null, url: 'https://example.com/a', httpStatus: 503, retryable: true, upstreamTransport: 'http', attemptIndex: 0, status: 'failed', errorCode: 'Status_503', durationMilliseconds: 5 })
+    await createRequestAttempt({ requestId: inWindow.id, providerId: provider.id, providerModelId: 'model_b', providerName: provider.name, providerModelName: 'model-b', upstreamProtocol: 'openai-completions', upstreamRequestId: null, url: 'https://example.com/b', httpStatus: 401, retryable: false, upstreamTransport: 'http', attemptIndex: 1, status: 'failed', errorCode: 'AUTH_401', durationMilliseconds: 15 })
+    await createRequestAttempt({ requestId: outsideWindow.id, providerId: provider.id, providerModelId: 'model_old', providerName: provider.name, providerModelName: 'model-old', upstreamProtocol: 'openai-completions', upstreamRequestId: null, url: 'https://example.com/old', httpStatus: 504, retryable: true, upstreamTransport: 'http', attemptIndex: 0, status: 'failed', errorCode: 'TIMEOUT', durationMilliseconds: 20 })
 
     const since = (await getRequestLog(inWindow.id))!.createdTime
     expect(await getStatsSummary(since)).toMatchObject({ totalRequests: 1, failedCount: 1 })

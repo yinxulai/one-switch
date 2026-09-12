@@ -42,7 +42,7 @@ async function createLog(id: string, status: 'pending' | 'success' | 'failed' = 
     id,
     logicalModelId: 'model_default',
     clientProtocol: 'openai-completions',
-    streaming: true,
+    transport: 'http-stream',
     status,
     totalDurationMilliseconds: 10,
   })
@@ -88,7 +88,7 @@ describe('request log store persistence', () => {
       status: 'success',
       httpStatus: 200,
       retryable: false,
-      streaming: true,
+      upstreamTransport: 'http-stream',
       durationMilliseconds: 8,
       ttftMilliseconds: 3,
       requestRewriteRuleIds: ['rule_a', 'rule_b'],
@@ -116,7 +116,7 @@ describe('request log store persistence', () => {
     expect(await listAttemptsByRequest(log.id)).toEqual([expect.objectContaining({
       id: attempt.id,
       httpStatus: 200,
-      streaming: true,
+      upstreamTransport: 'http-stream',
       ttftMilliseconds: 3,
       requestRewriteRuleIds: ['rule_a', 'rule_b'],
       responseRewriteRuleIds: ['rule_c'],
@@ -183,7 +183,7 @@ describe('request log store persistence', () => {
       status: 'success',
       httpStatus: 200,
       retryable: false,
-      streaming: false,
+      upstreamTransport: 'http',
       durationMilliseconds: 3,
     })
     await createAttemptContent({

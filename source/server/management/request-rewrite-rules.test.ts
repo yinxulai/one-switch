@@ -95,7 +95,7 @@ describe('request rewrite rule routes', () => {
         headers: '{"authorization":"Bearer token"}',
         clientProtocol: 'openai-responses',
         upstreamProtocol: 'openai-responses',
-        streaming: false,
+        transport: 'http',
       },
     })
     expect(responseData(testRes).data).toMatchObject({ body: '{"hello":"world"}' })

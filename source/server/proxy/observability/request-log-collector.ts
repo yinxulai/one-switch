@@ -35,8 +35,8 @@ export async function initializeRequestLogger(input: RequestLoggingInput): Promi
       id: input.requestId,
       logicalModelId: input.logicalModelId,
       clientProtocol: input.clientProtocol,
-      // 客户端要求的交付方式由入口按接口声明解析，这里只把轴上的取值投影成布尔列。
-      streaming: input.delivery === 'stream',
+      // 传输形态是客户端声明的预期，原样落库；上游跳是否同形是尝试行的事。
+      transport: input.transport,
       status: 'pending',
       totalDurationMilliseconds: 0,
       attributes: input.attributes,

@@ -1,5 +1,5 @@
 import type { Protocol } from '@common/schemas'
-import type { PlanExhaustedReason, TransportKind, UpstreamTarget } from '../contracts'
+import type { PlanExhaustedReason, UpstreamTarget } from '../contracts'
 import { proxyTargetPlanner } from '../planners/target-planner'
 import { getManualModel } from './manual-routing'
 
@@ -24,7 +24,6 @@ export interface LandingPlanInput {
   /** 图算出的落点逻辑模型，按优先级排列 */
   readonly logicalModelIds: readonly string[]
   readonly clientProtocol: Protocol
-  readonly transport: TransportKind
 }
 
 /** 有落点可用：候选列表与它所属的逻辑模型一起给出，调用方不必再判断两者是否一致。 */
@@ -62,7 +61,7 @@ export async function planLandingTargets(input: LandingPlanInput): Promise<Landi
   const unavailable: UnavailableLanding[] = []
   for (const logicalModelId of input.logicalModelIds) {
     const manualModelId = getManualModel(logicalModelId)
-    const plan = await proxyTargetPlanner.plan({ logicalModelId, clientProtocol: input.clientProtocol, manualModelId, transport: input.transport })
+    const plan = await proxyTargetPlanner.plan({ logicalModelId, clientProtocol: input.clientProtocol, manualModelId })
     if (plan.targets.length > 0) {
       return { logicalModelId, targets: plan.targets, manualModelId }
     }

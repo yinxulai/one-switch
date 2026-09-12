@@ -64,7 +64,7 @@ export function createAttemptLogger(input: AttemptLoggingInput): AttemptLogger {
         status: finalization.status,
         httpStatus: finalization.httpStatus,
         retryable: finalization.retryable,
-        streaming: finalization.streaming,
+        upstreamTransport: finalization.upstreamTransport,
         errorCode: finalization.errorCode ?? null,
         errorMessage: finalization.errorMessage ?? null,
         upstreamRequestId: finalization.upstreamRequestId ?? null,

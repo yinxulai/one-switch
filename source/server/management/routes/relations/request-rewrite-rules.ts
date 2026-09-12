@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { RequestRewriteRuleSchema, ProviderModelRequestRewriteRuleSchema } from '@common/schemas'
+import { RequestRewriteRuleSchema, ProviderModelRequestRewriteRuleSchema, TransportKindSchema } from '@common/schemas'
 import { createRequestRewriteRule, deleteRequestRewriteRule, getRequestRewriteRule, listProviderModelRequestRewriteRules, listRequestRewriteRules, replaceProviderModelRequestRewriteRuleBindings, updateRequestRewriteRule } from '@server/database/request-rewrite-rule-store'
 import { applyRequestRewriteRules } from '@server/proxy/request-rewrite/request-rewrite-engine'
 import { HttpRouter } from '@server/http-router'
@@ -11,7 +11,7 @@ const ModelSchema = z.object({ providerModelId: z.string().min(1) })
 const RuleInput = RequestRewriteRuleSchema.omit({ id: true, createdTime: true, updatedTime: true, deletedTime: true })
 const UpdateSchema = RequestRewriteRuleSchema.partial().required({ id: true })
 const BindingsSchema = z.object({ providerModelId: z.string().min(1), bindings: z.array(ProviderModelRequestRewriteRuleSchema.pick({ ruleId: true, priority: true, enabled: true })).max(50) })
-const TestSchema = z.object({ rule: RequestRewriteRuleSchema, testCase: z.object({ stage: z.enum(['request', 'response']), body: z.string().max(2 * 1024 * 1024), headers: z.string().max(64 * 1024), clientProtocol: z.string(), upstreamProtocol: z.string(), streaming: z.boolean() }) })
+const TestSchema = z.object({ rule: RequestRewriteRuleSchema, testCase: z.object({ stage: z.enum(['request', 'response']), body: z.string().max(2 * 1024 * 1024), headers: z.string().max(64 * 1024), clientProtocol: z.string(), upstreamProtocol: z.string(), transport: TransportKindSchema }) })
 export const requestRewriteRuleRoutes = new HttpRouter<ManagementHandler>()
   .post('/api/request-rewrite-rule/list', async (_req, res) => sendSuccess(res, await listRequestRewriteRules()))
   .post('/api/request-rewrite-rule/get', async (_req, res, body) => { const result = await getRequestRewriteRule(IdSchema.parse(body).id); if (!result) return sendError(res, 'NOT_FOUND', '请求重写规则不存在', 404); sendSuccess(res, result) })
@@ -22,9 +22,8 @@ export const requestRewriteRuleRoutes = new HttpRouter<ManagementHandler>()
     const input = TestSchema.parse(body)
     const parsedBody = JSON.parse(input.testCase.body) as object
     const parsedHeaders = JSON.parse(input.testCase.headers) as Record<string, string | string[] | undefined>
-    // 试跑入参叫 `streaming`（落库的用例字段，改名要迁数据），语义是「假设这次响应是分块交付」，
-    // 因此在这里映射到改写引擎的 `incrementalDelivery`，不把旧名带进引擎。
-    const result = applyRequestRewriteRules(Buffer.from(JSON.stringify(parsedBody)), parsedHeaders, [input.rule], { stage: input.testCase.stage, clientProtocol: input.testCase.clientProtocol as Parameters<typeof applyRequestRewriteRules>[3]['clientProtocol'], upstreamProtocol: input.testCase.upstreamProtocol as Parameters<typeof applyRequestRewriteRules>[3]['upstreamProtocol'], incrementalDelivery: input.testCase.streaming })
+    // 试跑入参是传输形态本身（与落库的用例字段同名），引擎只认 `transport`，直接透传。
+    const result = applyRequestRewriteRules(Buffer.from(JSON.stringify(parsedBody)), parsedHeaders, [input.rule], { stage: input.testCase.stage, clientProtocol: input.testCase.clientProtocol as Parameters<typeof applyRequestRewriteRules>[3]['clientProtocol'], upstreamProtocol: input.testCase.upstreamProtocol as Parameters<typeof applyRequestRewriteRules>[3]['upstreamProtocol'], transport: input.testCase.transport })
     sendSuccess(res, { ...result, body: result.body.toString('utf8') })
   })
   .post('/api/request-rewrite-rule/bindings', async (_req, res, body) => sendSuccess(res, await listProviderModelRequestRewriteRules(ModelSchema.parse(body).providerModelId)))

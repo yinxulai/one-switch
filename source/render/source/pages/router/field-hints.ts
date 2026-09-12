@@ -1,6 +1,6 @@
+import { ALL_TRANSPORT_KINDS } from '@common/schemas'
 import {
   ALL_WORKFLOW_PROTOCOLS,
-  ALL_WORKFLOW_TRANSPORTS,
   DEFAULT_OPERATOR_SET,
   PATH_WILDCARD_SUFFIX,
   type ConfigHints,
@@ -240,12 +240,16 @@ export function resolveInputHints(graph: WorkflowGraph, targetNodeId: string, sa
         sourcePort: 'protocol',
         enumOptions: protocolEnumOptions,
       })
+      // 传输形态是随请求一起进来的确凿事实，不是这个节点「发现」出来的；
+      // 这里只是把它告诉下游条件节点。枚举直接取引擎承认的取值集合，
+      // 所以带上这一版还没接上的 `websocket` —— 规则可以先按它写好，WS 入口落地时图不必改。
+      // 只有这一根轴：连接方式就是端点 URL 的 scheme，不再是一个能单独给值的字段。
       addUniqueField(fields, {
         path: 'route.transport',
         valueType: 'enum',
         sourceNodeId: model.id,
-        sourcePort: 'transport',
-        enumOptions: [...ALL_WORKFLOW_TRANSPORTS],
+        sourcePort: 'context',
+        enumOptions: [...ALL_TRANSPORT_KINDS],
       })
       continue
     }

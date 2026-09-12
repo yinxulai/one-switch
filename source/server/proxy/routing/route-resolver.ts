@@ -1,6 +1,6 @@
-import type { Protocol } from '@common/schemas'
-import { readLandingModelIds, runWorkflow } from '@common/router/engine'
-import type { RouteContextInput, WorkflowRequestPayload, WorkflowRunResult, WorkflowTrace, WorkflowTransport } from '@common/router/types'
+import type { Protocol, TransportKind } from '@common/schemas'
+import { readLandingModelIds, readRouteDecision, runWorkflow } from '@common/router/engine'
+import type { RouteContextInput, WorkflowRequestPayload, WorkflowRunResult, WorkflowTrace } from '@common/router/types'
 import { listLogicalModels } from '@server/database/logical-model-store'
 import { resolveRouterGraph } from '@server/database/router-graph-store'
 import { createRouteCapabilities } from '../capabilities/route-capabilities'
@@ -19,8 +19,8 @@ export interface RouteResolutionInput {
   readonly request: WorkflowRequestPayload
   /** 客户端协议。端点匹配时就已经确定，不再让图去猜。 */
   readonly clientProtocol: Protocol
-  /** 传输方式：HTTP 的流式请求是 `http-sse`，升级连接是 `websocket`。 */
-  readonly transport: WorkflowTransport
+  /** 客户端跳的传输形态（**事实**）：入口按接口封装描述解析出来，不由请求头临时猜。 */
+  readonly transport: TransportKind
   /** 本次运行的追踪 id，直接沿用交换 id，让图与请求日志指向同一个交换。 */
   readonly traceId: string
 }
@@ -28,6 +28,10 @@ export interface RouteResolutionInput {
 export interface RouteResolution {
   /** 图选出的落点逻辑模型，按优先级排列；没有落点时为空数组。 */
   readonly logicalModelIds: string[]
+  /** 图最终认定的协议；图没跑到协议发现节点时退回入口匹配到的协议。 */
+  readonly protocol: Protocol
+  /** 图最终认定的客户端跳传输形态；同样退回入口给出的事实。 */
+  readonly transport: TransportKind
   /** 生效的图版本；`0` 表示还没有人保存过图，用的是内建默认策略。 */
   readonly graphVersion: number
   /** 图停下来时的原因，用于日志。 */
@@ -52,8 +56,17 @@ export async function resolveRoute(input: RouteResolutionInput): Promise<RouteRe
   // 否则图上真配了这两种节点，运行时只会得到一句「能力未注入」。
   const result = await runWorkflow(snapshot.graph, routeContext, { capabilities: createRouteCapabilities() })
 
+  // 决策以图为准：读到什么就回什么，读不到（还没走到写决策的节点）才退回入口的事实。
+  const decision = readRouteDecision(result.outputPayload)
+  const discovered = decision?.protocol
+  // 图判定为 `unknown` 说明协议发现节点没猜出来；此时入口匹配到的协议更可信。
+  const protocol: Protocol = discovered && discovered !== 'unknown' ? discovered : input.clientProtocol
+
+  const transport = decision?.transport ?? input.transport
   return {
     logicalModelIds: readLandingModelIds(result.outputPayload),
+    protocol,
+    transport,
     graphVersion: snapshot.version,
     stopReason: result.stopReason,
     trace: result.trace,

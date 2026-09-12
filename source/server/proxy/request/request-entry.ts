@@ -1,8 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import type { Protocol, RequestAttribute } from '@common/schemas'
+import type { Protocol, RequestAttribute, TransportKind } from '@common/schemas'
 import { getSettings } from '@server/database/settings-store'
 import { generateId } from '@common/utils'
-import type { DeliveryMode } from '../contracts'
 import { executeProxyRequest } from '../execution/attempt-executor'
 import { initializeRequestLogger, type RequestLogger } from '../observability/logging'
 import { NOOP_PROXY_OBSERVATION_HOOKS, type ProxyObservationHooks } from '../observability/hooks'
@@ -12,6 +11,7 @@ import { proxyTargetPlanner } from '../planners/target-planner'
 import { matchProtocolEndpoint } from '../protocols/registry'
 import { NO_LANDING_DETAIL, planLandingTargets } from '../routing/landing-planner'
 import { parseRouteBody, resolveRoute, toRouteHeaders } from '../routing/route-resolver'
+import { resolveUpstreamTransport } from '../routing/upstream-url'
 import { collectRequestAttributes, extractClientRequestId } from '@server/proxy/observability/request-attribute-collector'
 
 /**
@@ -43,8 +43,8 @@ interface ExchangeResolution {
   clientProtocol: Protocol | null
   /** 已读到的请求体。客户端中途断开时是断开前已经收到的部分，可能不完整。 */
   requestBody: Buffer
-  /** 客户端要求的交付方式。由接口的封装描述解析；接口都无法识别时为 `'buffered'`。 */
-  delivery: DeliveryMode
+  /** 客户端跳的传输形态。由接口的封装描述解析；接口都无法识别时为 `'http'`。 */
+  transport: TransportKind
 }
 
 /** 我们回给客户端的拒绝响应。 */
@@ -93,7 +93,7 @@ export async function handleProxyRequest(req: IncomingMessage, res: ServerRespon
   const endpoint = matchProtocolEndpoint(method, path)
   if (!endpoint) {
     console.warn(`[proxy] unknown API path method=${method} path=${path} requestId=${requestId}`)
-    await reject({ statusCode: 404, errorCode: 'UNKNOWN_API_PATH', errorMessage: '无法识别的 API 路径' }, { logicalModelId: null, clientProtocol: null, requestBody: NO_REQUEST_BODY, delivery: 'buffered' })
+    await reject({ statusCode: 404, errorCode: 'UNKNOWN_API_PATH', errorMessage: '无法识别的 API 路径' }, { logicalModelId: null, clientProtocol: null, requestBody: NO_REQUEST_BODY, transport: 'http' })
     return
   }
   const protocol = endpoint.protocol
@@ -106,17 +106,17 @@ export async function handleProxyRequest(req: IncomingMessage, res: ServerRespon
     // 客户端在正文读完前断开：请求确实到达了代理，但我们既拿不到完整正文，
     // 也没有任何响应能写回客户端，只能记成「已取消」——但不能因此不记。
     console.debug(`[proxy] client request aborted requestId=${requestId} phase=read-body bodyBytes=${requestBody.length}`)
-    await abort({ logicalModelId: null, clientProtocol: protocol, requestBody, delivery: endpoint.envelope.resolveDelivery(readEnvelope(requestBody)) })
+    await abort({ logicalModelId: null, clientProtocol: protocol, requestBody, transport: endpoint.envelope.resolveTransport(readEnvelope(requestBody)) })
     return
   }
   const clientRequestId = extractClientRequestId(req.headers)
   console.debug(`[proxy] request accepted requestId=${requestId} clientRequestId=${clientRequestId ?? 'none'} method=${req.method ?? 'POST'} path=${req.url ?? '/'} protocol=${protocol} endpoint=${endpoint.endpointId} bodyBytes=${requestBody.length}`)
   const envelopeInput = readEnvelope(requestBody)
-  const delivery = endpoint.envelope.resolveDelivery(envelopeInput)
+  const transport = endpoint.envelope.resolveTransport(envelopeInput)
   const modelResult = endpoint.envelope.readModel(envelopeInput)
   if (!modelResult.ok) {
     console.warn(`[proxy] invalid model request requestId=${requestId} protocol=${protocol} reason=${modelResult.reason}`)
-    await reject({ statusCode: 400, errorCode: 'INVALID_MODEL', errorMessage: modelResult.reason }, { logicalModelId: null, clientProtocol: protocol, requestBody, delivery })
+    await reject({ statusCode: 400, errorCode: 'INVALID_MODEL', errorMessage: modelResult.reason }, { logicalModelId: null, clientProtocol: protocol, requestBody, transport })
     return
   }
 
@@ -126,30 +126,33 @@ export async function handleProxyRequest(req: IncomingMessage, res: ServerRespon
   const route = await resolveRoute({
     request: { path: requestUrl.pathname, method, headers: toRouteHeaders(req.headers), body: parseRouteBody(requestBody) },
     clientProtocol: protocol,
-    // 传输在这里一次定下：流式响应的 HTTP 请求走 `http-sse`，其余是普通 `http`。
-    transport: delivery === 'stream' ? 'http-sse' : 'http',
+    // 形态如实上报：这个入口就是 HTTP，客户端「要不要增量」由封装描述解析出的 `transport` 表达。
+    // 图与代理层说的是同一个词、同一个取值集合。
+    transport,
     traceId: requestId,
   })
   if (route.logicalModelIds.length === 0) {
     console.error(`[proxy] no landing logical model requestId=${requestId} requestedModel=${requestedModel} graphVersion=${route.graphVersion} stopReason=${route.stopReason}`)
-    await reject({ statusCode: 503, errorCode: 'NO_MODEL_CONFIGURED', errorMessage: NO_LANDING_DETAIL }, { logicalModelId: null, clientProtocol: protocol, requestBody, delivery })
+    await reject({ statusCode: 503, errorCode: 'NO_MODEL_CONFIGURED', errorMessage: NO_LANDING_DETAIL }, { logicalModelId: null, clientProtocol: protocol, requestBody, transport })
     return
   }
   console.debug(`[proxy] route resolved requestId=${requestId} requestedModel=${requestedModel} graphVersion=${route.graphVersion} stopReason=${route.stopReason} landingModels=${route.logicalModelIds.join(',')}`)
 
   // 落点 → 候选：落点列表按优先级排，第一个有可用候选的落点胜出。
-  const plan = await planLandingTargets({ logicalModelIds: route.logicalModelIds, clientProtocol: protocol, transport: 'http' })
-  console.debug(`[proxy] routing planned requestId=${requestId} landingModels=${route.logicalModelIds.join(',')} logicalModelId=${plan.logicalModelId ?? 'none'} protocol=${protocol} planner=${proxyTargetPlanner.id} manualModelId=${plan.manualModelId ?? 'none'} reason=${plan.logicalModelId === null ? plan.reason : 'none'} targets=${plan.targets.length} targetOrder=${plan.targets.map(target => target.providerModelId).join(',') || 'none'}`)
+  // 协议取自图的决策而不是入口自己再记一份：两者同源才能保证「图说是什么就是什么」。
+  // 形态**不传**：上游跳用什么形态是规划器对那个候选的决定（端点地址的 scheme），客户端偏好从不改变哪个端点合法。
+  const plan = await planLandingTargets({ logicalModelIds: route.logicalModelIds, clientProtocol: route.protocol })
+  console.debug(`[proxy] routing planned requestId=${requestId} landingModels=${route.logicalModelIds.join(',')} logicalModelId=${plan.logicalModelId ?? 'none'} protocol=${route.protocol} transport=${route.transport} planner=${proxyTargetPlanner.id} manualModelId=${plan.manualModelId ?? 'none'} reason=${plan.logicalModelId === null ? plan.reason : 'none'} targets=${plan.targets.length} targetOrder=${plan.targets.map(target => target.providerModelId).join(',') || 'none'} upstreamTransports=${plan.targets.map(target => resolveUpstreamTransport(target.url, route.transport)).join(',') || 'none'}`)
   if (plan.logicalModelId === null) {
     // 落点一个都没成，但图确实选过落点：日志照记首选落点，否则「路由到了谁」会被记成空白。
     const landing = route.logicalModelIds[0]
     if (plan.reason === 'manual-model-unavailable') {
       console.warn(`[proxy] manual provider model unavailable requestId=${requestId} protocol=${protocol} detail=${plan.detail}`)
-      await reject({ statusCode: 409, errorCode: 'MANUAL_MODEL_UNAVAILABLE', errorMessage: plan.detail }, { logicalModelId: landing, clientProtocol: protocol, requestBody, delivery })
+      await reject({ statusCode: 409, errorCode: 'MANUAL_MODEL_UNAVAILABLE', errorMessage: plan.detail }, { logicalModelId: landing, clientProtocol: protocol, requestBody, transport })
       return
     }
     console.warn(`[proxy] 没有可用的上游供应商: ${method} ${path} (protocol=${protocol}, landingModels=${route.logicalModelIds.join('、')}, graphVersion=${route.graphVersion}, requestId=${requestId}, reason=${plan.reason}, detail=${plan.detail})`)
-    await reject({ statusCode: 503, errorCode: 'NO_AVAILABLE_PROVIDER', errorMessage: `没有可用的上游 Provider：${plan.detail}` }, { logicalModelId: landing, clientProtocol: protocol, requestBody, delivery })
+    await reject({ statusCode: 503, errorCode: 'NO_AVAILABLE_PROVIDER', errorMessage: `没有可用的上游 Provider：${plan.detail}` }, { logicalModelId: landing, clientProtocol: protocol, requestBody, transport })
     return
   }
 
@@ -163,14 +166,13 @@ export async function handleProxyRequest(req: IncomingMessage, res: ServerRespon
     requestId,
     logicalModelId,
     clientProtocol: protocol,
-    // 这个入口就是 HTTP：传输在这里定一次，后面的交换投影与修改器上下文共用它。
-    transport: 'http',
+    // 客户端跳的形态就是入口解析出来的那一个：换层不换词。
+    transport,
     method,
     path,
     headers: req.headers,
     attributes,
     requestBody,
-    delivery,
     signal: controller.signal,
   })
 
@@ -194,7 +196,7 @@ async function openExchangeLogger(input: ExchangeIdentity & ExchangeResolution):
     headers: input.headers,
     attributes: input.attributes,
     requestBody: input.requestBody,
-    delivery: input.delivery,
+    transport: input.transport,
     captureRequestContent: settings.captureRequestContent,
     hooks: input.hooks,
   })

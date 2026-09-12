@@ -205,8 +205,8 @@ export async function seedDevelopmentData(secretStore: KeychainApi, options: Dev
         cacheCreationInputTokens: failed ? null : index % 5 === 0 ? 128 : 0,
         promptCacheHit: failed ? null : index % 3 === 0,
         ttftMilliseconds: failed ? null : 110 + (index * 31) % 420,
-        // 客户端是否要求流式：请求体里就有这个事实。
-        clientStreaming: index % 4 === 0,
+        // 客户端跳声明的形态：请求体里就有这个事实。
+        transport: index % 4 === 0 ? 'http-stream' as const : 'http' as const,
         createdTime: timestamp - index * 6 * 3_600_000,
         provider,
         index,
@@ -218,7 +218,7 @@ export async function seedDevelopmentData(secretStore: KeychainApi, options: Dev
       id: request.id,
       logicalModelId: request.logicalModelId,
       clientProtocol: request.protocol,
-      streaming: request.clientStreaming,
+      transport: request.transport,
       status: request.status,
       totalDurationMilliseconds: request.totalDurationMilliseconds,
       createdTime: request.createdTime,
@@ -241,8 +241,8 @@ export async function seedDevelopmentData(secretStore: KeychainApi, options: Dev
     transaction.insert(requestAttempts).values(sampleRequests.flatMap(request => {
       const fixture = PROVIDER_MODEL_FIXTURES[request.index % PROVIDER_MODEL_FIXTURES.length]
       const providerModelId = `model_dev_provider_${request.index % PROVIDER_MODEL_FIXTURES.length + 1}`
-      // 开发示例：客户端要求流式时，上游也以 SSE 返回。
-      const upstreamStreaming = request.clientStreaming
+      // 开发示例：客户端跳要增量时，上游跳也以 SSE 返回（忠诚转发的典型情形）。
+      const upstreamTransport = request.transport === 'http-stream' ? 'http-stream' as const : 'http' as const
       const attempt = {
         id: `att_dev_${request.id}`,
         requestId: request.id,
@@ -257,8 +257,8 @@ export async function seedDevelopmentData(secretStore: KeychainApi, options: Dev
         httpStatus: request.failed ? 504 : 200,
         retryable: request.failed,
         attemptIndex: 0,
-        // 上游是否以流式返回。本行最终失败的尝试根本没等到响应，因此无从判断。
-        streaming: request.failed ? null : upstreamStreaming,
+        // 上游跳实际是什么形态。本行最终失败的尝试根本没等到响应，因此无从判断。
+        upstreamTransport: request.failed ? null : upstreamTransport,
         errorCode: request.failed ? 'UPSTREAM_TIMEOUT' : null,
         errorMessage: request.failed ? '开发示例：上游请求超时' : null,
         durationMilliseconds: request.totalDurationMilliseconds,
@@ -270,7 +270,7 @@ export async function seedDevelopmentData(secretStore: KeychainApi, options: Dev
       }
       if (!request.failed) return [attempt]
       return [
-        { ...attempt, id: `att_dev_${request.id}_retry`, status: 'success', httpStatus: 200, retryable: false, attemptIndex: 1, streaming: upstreamStreaming, errorCode: null, errorMessage: null, durationMilliseconds: request.totalDurationMilliseconds + 640 },
+        { ...attempt, id: `att_dev_${request.id}_retry`, status: 'success', httpStatus: 200, retryable: false, attemptIndex: 1, upstreamTransport, errorCode: null, errorMessage: null, durationMilliseconds: request.totalDurationMilliseconds + 640 },
         { ...attempt, attemptIndex: 0 },
       ]
     })).run()

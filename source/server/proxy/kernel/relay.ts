@@ -49,7 +49,13 @@ export interface RelayInput {
   readonly inbound?: RelayInboundInput
 }
 
-export type RelayAttemptInput = RelayInput & { readonly transport: Transport }
+export type RelayAttemptInput = RelayInput & {
+  /**
+   * 建连实现。它服务哪些传输形态写在 `Transport.transports` 上，由 `transports/registry.ts`
+   * 按上游跳的形态选出，因此这里的类型是接口而不是一个形态取值。
+   */
+  readonly transport: Transport
+}
 
 export type RelayConnectedInput = RelayInput & { readonly connection: UpstreamConnection }
 
@@ -130,7 +136,7 @@ async function runRelay(input: RelayConnectedInput): Promise<RelayAttemptResult>
       result = await upstreamToClient
     } else {
       const outbound = connection.outbound
-      if (!outbound) throw new Error(`双向交换的上游连接缺少写入侧: transport=${input.target.transport} url=${input.target.url}`)
+      if (!outbound) throw new Error(`双向交换的上游连接缺少写入侧: url=${input.target.url}`)
       // 反方向不挂观察者：观察者契约里的 `onUpstreamChunk` / `onDownstreamChunk` 说的是响应方向，
       // 套到上行帧上会产出「上游发来了一个字」这种假事实。
       const clientToUpstream = pipeFrames({
@@ -161,7 +167,7 @@ async function runRelay(input: RelayConnectedInput): Promise<RelayAttemptResult>
     durationMilliseconds: Date.now() - input.startedAt,
   }
   for (const observer of input.observers) observer.onAttemptEnd?.(input.exchange, input.attempt, outcome)
-  console.debug(`[proxy] attempt relayed requestId=${input.exchange.requestId} attempt=${input.attempt.index} endpointId=${input.attempt.endpointId} transport=${input.target.transport} status=${outcome.status ?? 'none'} frames=${result.frameCount} bytes=${result.byteCount} duration=${outcome.durationMilliseconds}ms ended=${result.ended} stopped=${result.stopped}${reverse === null ? '' : ` inboundFrames=${reverse.frameCount} inboundBytes=${reverse.byteCount} inboundStopped=${reverse.stopped}`}`)
+  console.debug(`[proxy] attempt relayed requestId=${input.exchange.requestId} attempt=${input.attempt.index} endpointId=${input.attempt.endpointId} transport=${input.exchange.transport} status=${outcome.status ?? 'none'} frames=${result.frameCount} bytes=${result.byteCount} duration=${outcome.durationMilliseconds}ms ended=${result.ended} stopped=${result.stopped}${reverse === null ? '' : ` inboundFrames=${reverse.frameCount} inboundBytes=${reverse.byteCount} inboundStopped=${reverse.stopped}`}`)
   return { ...result, inbound: reverse, firstEnded }
 }
 
@@ -170,6 +176,10 @@ async function runRelay(input: RelayConnectedInput): Promise<RelayAttemptResult>
  *
  * `upstreamHead` 起手为 `null`，由帧管道收到头帧后逐帧补齐——请求方向同样如此，因为上行帧
  * 跑在响应头之前。
+ *
+ * 刻意**不**带 `transport` 的副本：那次交换的形态在 `exchange` 上已经有了，再拷一份
+ * 就会出现「同一件事两个字段」的错位风险（上一版的 `transport` 字段正是如此：写三处、读零处）。
+ * 修改器要判断形态时读 `exchange`，或者在自己身上声明 `scope` 让内核代判。
  */
 function createModifierContext(input: RelayConnectedInput, direction: ModifierDirection): ModifierContext {
   return {
@@ -178,7 +188,6 @@ function createModifierContext(input: RelayConnectedInput, direction: ModifierDi
     direction,
     clientProtocol: input.exchange.clientProtocol,
     upstreamProtocol: input.attempt.endpointProtocol,
-    transport: input.exchange.transport,
     upstreamHead: null,
   }
 }

@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { Braces, Check, ChevronRight, Copy, Route, ScrollText } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
-import type { RequestLogDetail, RequestLogEntry, RequestLogEntryAttempt } from '@common/schemas'
+import type { RequestLogDetail, RequestLogEntry, RequestLogEntryAttempt, TransportKind } from '@common/schemas'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
@@ -17,6 +17,7 @@ import {
   formatTPS,
   formatTTFT,
   formatTime,
+  formatTransport,
 } from '../lib/format'
 import { RequestContentsSheet } from './request-contents-sheet'
 
@@ -38,8 +39,8 @@ interface ProviderRouteProps {
   attempts: RequestLogEntryAttempt[]
   /** 客户端协议；用来判断某次尝试是否发生了协议转换。 */
   clientProtocol: string | null
-  /** 客户端是否要求流式；用来点出「要求流式却拿到非流式」这种异常。 */
-  clientStreaming: boolean
+  /** 客户端跳声明的传输形态。**预期**：用来点出「要了增量却拿到整包」这种上游违约。 */
+  transport: TransportKind
   onSelect: (attemptId: string) => void
 }
 
@@ -210,7 +211,7 @@ interface AttemptRowProps {
   attempt: RequestLogEntryAttempt
   index: number
   clientProtocol: string | null
-  clientStreaming: boolean
+  transport: TransportKind
   summary: RouteSummary
   onSelect: (attemptId: string) => void
 }
@@ -236,8 +237,8 @@ function AttemptRow(props: AttemptRowProps) {
   const message = distinctAttemptErrorMessage(attempt)
   const errorMessage = message && message !== summary.commonErrorMessage ? message : null
   const errorCode = distinctAttemptErrorCode(attempt)
-  // 客户端要流式、上游却回了非流式，是需要点出来的异常；一致时不再占用版面。
-  const unexpectedNonStreaming = !ok && props.clientStreaming && attempt.streaming === false
+  // 客户端跳要了增量、上游跳却回了整包，是上游没兑现预期；一致时不再占用版面。
+  const transportMismatch = !ok && props.transport === 'http-stream' && attempt.upstreamTransport === 'http'
 
   return (
     <div
@@ -285,7 +286,7 @@ function AttemptRow(props: AttemptRowProps) {
           {formatAttemptOutcome(attempt)}
         </Badge>
         {attempt.retryable && !ok && <Badge variant="warning" className="font-normal">可重试</Badge>}
-        {unexpectedNonStreaming && <Badge variant="warning" className="font-normal">未按流式返回</Badge>}
+        {transportMismatch && <Badge variant="warning" className="font-normal">未按增量返回</Badge>}
       </div>
 
       <div className="shrink-0 text-right font-mono system-2xs-regular tabular-nums">
@@ -345,7 +346,7 @@ function ProviderRoute(props: ProviderRouteProps) {
             attempt={attempt}
             index={index}
             clientProtocol={props.clientProtocol}
-            clientStreaming={props.clientStreaming}
+            transport={props.transport}
             summary={summary}
             onSelect={props.onSelect}
           />
@@ -451,8 +452,8 @@ export function RequestLogDetailRow(props: RequestLogDetailRowProps) {
                     </>
                   )}
                 <MetaFact label={converted ? '协议转换' : '协议'} value={protocolText} tone={converted ? 'warning' : 'default'} />
-                {/* 客户端是否要求流式是请求级事实，与上游是否以 SSE 回无关。 */}
-                <MetaFact label="流式" value={log.streaming ? '是' : '否'} />
+                {/* 传输形态是客户端跳声明的预期，与上游跳实际怎么回无关。 */}
+                <MetaFact label="传输形态" value={formatTransport(log.transport)} />
                 <MetaFact label="时间" value={formatTime(log.createdTime)} />
                 <MetaFact label="请求 ID" value={log.id} mono copyValue={log.id} />
               </div>
@@ -471,7 +472,7 @@ export function RequestLogDetailRow(props: RequestLogDetailRowProps) {
             <ProviderRoute
               attempts={log.attempts}
               clientProtocol={log.clientProtocol}
-              clientStreaming={log.streaming}
+              transport={log.transport}
               onSelect={setSelectedAttemptId}
             />
             <RawUsage usage={log.rawUsage} />

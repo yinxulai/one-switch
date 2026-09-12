@@ -11,7 +11,7 @@ export const anthropicMessagesDescriptor: ProtocolDescriptor = {
         { method: 'POST', path: '/v1/messages' },
         { method: 'POST', path: '/messages' },
       ],
-      envelopes: { http: createJsonEnvelope({ streamingField: 'stream' }) },
+      envelope: createJsonEnvelope({ streamingField: 'stream' }),
     },
   ],
   createAdapters: () => [

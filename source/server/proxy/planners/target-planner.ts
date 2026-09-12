@@ -1,20 +1,24 @@
 import type { Protocol, ProviderModelRoute, ProviderModelRouteEndpoint } from '@common/schemas'
-import type { AttemptPlanner, PlanResult, PlannerInput, TransportKind, UpstreamTarget } from '@server/proxy/contracts'
+import type { AttemptPlanner, PlanResult, PlannerInput, UpstreamTarget } from '@server/proxy/contracts'
 import {
   findConvertibleEndpoint,
   findEndpoint,
   getAvailableModels,
   type ModelWithProvider,
 } from '@server/proxy/routing/router'
-import { resolveUpstreamUrl } from '@server/proxy/routing/upstream-url'
+import { isWebSocketEndpoint, resolveUpstreamUrl } from '@server/proxy/routing/upstream-url'
 
 /**
  * 默认尝试规划器。
  *
- * 它是整个代理里**唯一**的「路由决策点」：把「逻辑模型 + 客户端协议 + 传输能力」翻译成
+ * 它是整个代理里**唯一**的「路由决策点」：把「逻辑模型 + 客户端协议」翻译成
  * 一份有序的 `UpstreamTarget` 列表（用户排序优先、健康模型优先），并把「一个候选都没有」
  * 的原因一并说清楚。执行器只管按顺序尝试，入口只管把原因翻成拒绝码——路由策略换了
  * （成本最低、延迟最低、工作流编排），只换这个文件。
+ *
+ * **客户端跳的取值不在这里。** 上游用哪种形态是上游侧的事实：它由端点自己配置的地址决定
+ * （`wss://` 是 WebSocket，其余地址上忠实转发），客户端说要 WebSocket 也改变不了一个
+ * `https://` 端点的形态。客户端偏好从不改变哪个上游端点合法（见 `product/proxy-engine.md` §2.3.1）。
  *
  * 三层信息在这里合成一份结果，任何一层都不需要知道另外两层：
  * - `routing/router`：谁能用（启用、健康、手动锁定）与端点匹配；
@@ -33,7 +37,7 @@ const MANUAL_UNAVAILABLE_DETAIL = '手动指定的 ProviderModel 当前不可用
 const NO_MODEL_DETAIL = '该逻辑模型没有已启用且健康的供应商模型'
 
 export async function planProxyTargets(input: PlannerInput): Promise<PlanResult> {
-  const { logicalModelId, clientProtocol: protocol, manualModelId, transport } = input
+  const { logicalModelId, clientProtocol: protocol, manualModelId } = input
   const availableModels = await getAvailableModels(logicalModelId, { manualModelId })
 
   // 手动模式下「候选为空」永远是「手动指定的模型不可用」，哪怕它是被删掉了：
@@ -45,12 +49,12 @@ export async function planProxyTargets(input: PlannerInput): Promise<PlanResult>
   }
 
   const targets = availableModels.flatMap(candidate => {
-    const target = buildUpstreamTarget(candidate, protocol, transport)
+    const target = buildUpstreamTarget(candidate, protocol)
     return target === null ? [] : [target]
   })
   if (targets.length === 0) {
     return manualModelId === null
-      ? { targets: [], reason: 'no-available-provider', detail: describeCandidates(availableModels, protocol, transport) }
+      ? { targets: [], reason: 'no-available-provider', detail: describeCandidates(availableModels, protocol) }
       : { targets: [], reason: 'manual-model-unavailable', detail: MANUAL_UNAVAILABLE_DETAIL }
   }
 
@@ -58,15 +62,16 @@ export async function planProxyTargets(input: PlannerInput): Promise<PlanResult>
 }
 
 /**
- * 把一个候选拼成一次连接需要的全部事实；这个候选服务不了该协议（或该传输）时返回 `null`。
+ * 把一个候选拼成一次连接需要的全部事实；这个候选服务不了该协议（或该载体）时返回 `null`。
  *
  * 执行器与传输层只认这份结果，不再回查模型与供应商。规划器批量规划时用它；
  * 设置页的「测试连接」只有一个特定模型要测、没有候选可排，也用同一个口，
  * 免得 URL 规范化、自定义鉴权头、端点标识这些字段映射在两处各写一遍、各自漂移。
  */
-export function buildUpstreamTarget(candidate: ModelWithProvider, protocol: Protocol, transport: TransportKind): UpstreamTarget | null {
-  const endpoint = selectEndpoint(candidate.model, protocol, transport)
+export function buildUpstreamTarget(candidate: ModelWithProvider, protocol: Protocol): UpstreamTarget | null {
+  const endpoint = selectEndpoint(candidate.model, protocol)
   if (endpoint === undefined) return null
+  const url = readUpstreamUrl(endpoint.endpointUrl)
 
   return {
     providerId: candidate.provider.id,
@@ -77,27 +82,27 @@ export function buildUpstreamTarget(candidate: ModelWithProvider, protocol: Prot
     customAuthHeader: endpoint.customAuthHeader,
     endpointId: resolveEndpointId(candidate.model, endpoint.protocol),
     protocol: endpoint.protocol,
-    url: readUpstreamUrl(endpoint.endpointUrl),
-    transport,
+    url,
     timeoutMilliseconds: candidate.provider.timeoutMilliseconds,
   }
 }
 
 /**
- * 挑选这次传输要用的端点。
+ * 挑选这次连接要用的端点。
  *
- * 原生端点永远优先；没有原生端点时，只有 HTTP 传输能接受「协议转换」的候选：
+ * 原生端点永远优先；没有原生端点时，只有 HTTP 端点能接受「协议转换」的候选：
  * 双向长连接跨协议意味着要把两个方向上的帧桥接成请求再桥回来，那不是一个转换适配器
- * 能承担的事，所以双向传输只有原生候选。
+ * 能承担的事。
  *
- * 另一种传输今天还没实现，也就是说这个分支现在不会被走到——留着它是因为它是这个函数的
- * **完整性**要求：删掉它，`transport` 为别的取值时就会静默地按 HTTP 规则给出候选。
+ * 判据是**端点自己的地址**，不是客户端的偏好：换成客户端传什么都要看这个端点能不能用，
+ * 客户端说要 WS 也不会让一个 `https://` 端点变成转换候选。
  */
-function selectEndpoint(model: ProviderModelRoute, protocol: Protocol, transport: TransportKind): ProviderModelRouteEndpoint | undefined {
+function selectEndpoint(model: ProviderModelRoute, protocol: Protocol): ProviderModelRouteEndpoint | undefined {
   const native = findEndpoint(model, protocol)
   if (native) return native
-  if (transport === 'websocket') return undefined
-  return findConvertibleEndpoint(model, protocol)
+  const convertible = findConvertibleEndpoint(model, protocol)
+  if (convertible && isWebSocketEndpoint(convertible.endpointUrl)) return undefined
+  return convertible
 }
 
 /**
@@ -125,12 +130,19 @@ function resolveEndpointId(model: ProviderModelRoute, endpointProtocol: Protocol
 }
 
 /** 为什么一个候选都用不上。这段文字同时是日志与用户看到的错误信息，只说事实、不猜原因。 */
-function describeCandidates(availableModels: ModelWithProvider[], protocol: Protocol, transport: TransportKind): string {
+function describeCandidates(availableModels: ModelWithProvider[], protocol: Protocol): string {
   const discovered = availableModels.map(candidate => `${candidate.provider.name}/${candidate.model.modelName}`).join(', ')
   const suffix = discovered ? `，已发现: ${discovered}` : ''
 
-  if (transport === 'websocket') {
-    return `没有原生支持 ${protocol} 的可用 ProviderModel（WebSocket 传输需要上游原生支持该协议）${suffix}`
+  // 「没开协议转换」和「开了但端点不是 HTTP 形态」必须分开说：合成一句「未开启协议转换」在后一种
+  // 情况下就是假话，会让人去改一个本来就是打开的开关。
+  const crossShapeProtocols = [...new Set(availableModels.flatMap(candidate => candidate.model.endpoints
+    .filter(endpoint => endpoint.protocol !== protocol
+      && endpoint.protocolConversionEnabled
+      && isWebSocketEndpoint(endpoint.endpointUrl))
+    .map(endpoint => endpoint.protocol)))]
+  if (crossShapeProtocols.length > 0) {
+    return `可用供应商模型未原生配置 ${protocol} 协议，可转换的端点是 websocket 形态，跨形态转换不在支持范围内（可转换协议: ${crossShapeProtocols.join(', ')}）${suffix}`
   }
 
   const configuredProtocols = [...new Set(availableModels.flatMap(candidate => candidate.model.endpoints.map(endpoint => endpoint.protocol)))]
