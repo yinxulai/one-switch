@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { runWorkflow as runWorkflowEngine } from './engine'
-import { createDefaultPolicyGraph, createIterationMatchGraph, createUserAgentGraph } from './graph-model'
+import { runWorkflow as runWorkflowEngine, type WorkflowRunOptions } from './engine'
+import { createDefaultPolicyGraph, createLlmComplexityGraph, createScriptRoutingGraph, createUserAgentGraph } from './graph-model'
 import { WorkflowGraphSchema } from './schemas'
 import { PROMPT_TIMEOUT_DEFAULT, SCRIPT_TIMEOUT_DEFAULT } from './types'
 import type { ConditionCase, ConditionRule, PromptInvocation, ScriptInvocation, WorkflowGraph, WorkflowNodeModel } from './types'
 
 const edge = (sourceNodeId: string, sourcePort: string, targetNodeId: string) => ({ id: `${sourceNodeId}:${sourcePort}->${targetNodeId}`, sourceNodeId, sourcePort, targetNodeId })
 
-function runWorkflow(graph: WorkflowGraph, inputPayload: unknown) {
-  return runWorkflowEngine(graph, inputPayload)
+function runWorkflow(graph: WorkflowGraph, inputPayload: unknown, options?: WorkflowRunOptions) {
+  return runWorkflowEngine(graph, inputPayload, options)
 }
 
 /** 策略预设测试用的逻辑模型列表：`default` 是内置默认落点。 */
@@ -644,37 +644,6 @@ describe('router engine', () => {
     expect(result.trace.some(item => item.nodeId === 'condition' && !item.success)).toBe(true)
   })
 
-  it('遍历匹配模板：请求模型命中逻辑模型时直连它，命中即停止遍历', async () => {
-    const result = await runWorkflow(createIterationMatchGraph(), {
-      request: { path: '/v1/chat/completions', headers: { 'x-provider': 'openai' }, body: { model: 'model-fast' } },
-      logicalModels: presetLogicalModels,
-      metadata: {},
-    })
-
-    const payload = result.outputPayload as { route: { modelIds: string[]; fallback: boolean } }
-    expect(result.stopReason).toBe('output')
-    expect(payload.route.modelIds).toEqual(['model-fast'])
-    expect(payload.route.fallback).toBe(false)
-    // default 不匹配、model-fast 命中：跑满两轮后提前收工。
-    expect(result.trace.find(item => item.nodeId === 'iteration')?.details)
-      .toMatchObject({ sourcePath: 'logicalModels', itemCount: 2, executed: 2, hitCount: 1, hitKeys: ['1'] })
-  })
-
-  it('遍历匹配模板：整轮没命中时回落默认逻辑模型，且不覆盖 route.modelIds', async () => {
-    const result = await runWorkflow(createIterationMatchGraph(), {
-      request: { path: '/v1/chat/completions', headers: { 'x-provider': 'openai' }, body: { model: 'gpt-4o-mini' } },
-      logicalModels: presetLogicalModels,
-      metadata: {},
-    })
-
-    const payload = result.outputPayload as { route: { modelIds: string[]; fallback: boolean } }
-    expect(payload.route.modelIds).toEqual(['default'])
-    expect(payload.route.fallback).toBe(true)
-    // resultPath 留空：整轮没命中时汇总结果不能把 route.modelIds 覆盖成空数组。
-    expect(result.trace.find(item => item.nodeId === 'iteration')?.details)
-      .toMatchObject({ executed: 2, hitCount: 0, hitKeys: [], resultPath: '' })
-  })
-
   it('UA 分流模板：按头值里的客户端标识落到不同逻辑模型', async () => {
     const cursor = await runWorkflow(createUserAgentGraph(), {
       request: { path: '/v1/chat/completions', headers: { 'content-type': 'application/json', 'user-agent': 'Cursor/0.42.3' }, body: { model: 'gpt-4o-mini' } },
@@ -684,6 +653,9 @@ describe('router engine', () => {
     const cursorPayload = cursor.outputPayload as { route: { modelIds: string[]; fallback: boolean } }
     expect(cursorPayload.route.modelIds).toEqual(['cursor'])
     expect(cursorPayload.route.fallback).toBe(false)
+    // content-type 先被扫过、user-agent 第二个命中：跑满两轮后提前收工（对象模式的 key 就是头名）。
+    expect(cursor.trace.find(item => item.nodeId === 'iteration')?.details)
+      .toMatchObject({ sourcePath: 'request.headers', itemCount: 2, executed: 2, hitCount: 1, hitKeys: ['user-agent'] })
 
     const claudeCli = await runWorkflow(createUserAgentGraph(), {
       request: { path: '/v1/chat/completions', headers: { 'user-agent': 'claude-cli/1.0.0 (external, cli)' }, body: { model: 'gpt-4o-mini' } },
@@ -710,21 +682,115 @@ describe('router engine', () => {
     const unknownPayload = unknown.outputPayload as { route: { modelIds: string[]; fallback: boolean } }
     expect(unknownPayload.route.modelIds).toEqual(['default'])
     expect(unknownPayload.route.fallback).toBe(true)
+    // resultPath 留空：整轮没命中时汇总结果不能把 route.modelIds 覆盖成空数组。
+    expect(unknown.trace.find(item => item.nodeId === 'iteration')?.details)
+      .toMatchObject({ executed: 1, hitCount: 0, hitKeys: [], resultPath: '' })
   })
 
-  it('两个新预设都通过 schema 校验，且循环体靠回边闭合', () => {
-    for (const graph of [createIterationMatchGraph(), createUserAgentGraph()]) {
-      expect(WorkflowGraphSchema.safeParse(graph).error?.issues).toBeUndefined()
-      const iteration = graph.nodes.find(node => node.kind === 'iteration')
-      expect(iteration).toBeDefined()
-      const bodyEdge = graph.edges.find(item => item.sourceNodeId === iteration?.id && item.sourcePort === 'body')
-      expect(bodyEdge).toBeDefined()
-      // 从 body 端口进循环体，末端能回到迭代节点本身，说明循环是闭合的。
-      const backEdges = graph.edges.filter(item => item.targetNodeId === iteration?.id && item.sourceNodeId !== 'input')
-      expect(backEdges.length).toBeGreaterThanOrEqual(2)
-      // 循环体外还有 out 端口通向出口链路。
-      expect(graph.edges.some(item => item.sourceNodeId === iteration?.id && item.sourcePort === 'out')).toBe(true)
+  it('UA 分流模板：循环由回边闭合，out 端口通向兜底链路', () => {
+    const graph = createUserAgentGraph()
+    expect(WorkflowGraphSchema.safeParse(graph).error?.issues).toBeUndefined()
+
+    const iteration = graph.nodes.find(node => node.kind === 'iteration')
+    expect(iteration).toBeDefined()
+    // 从 body 端口进循环体，末端能回到迭代节点本身，说明循环是闭合的。
+    const backEdges = graph.edges.filter(item => item.targetNodeId === iteration?.id && item.sourceNodeId !== 'input')
+    expect(backEdges.map(item => item.sourceNodeId).sort()).toEqual(['model-claude-cli', 'model-cursor', 'ua-condition'])
+    // 循环体外还有 out 端口通向出口链路。
+    expect(graph.edges.some(item => item.sourceNodeId === iteration?.id && item.sourcePort === 'out')).toBe(true)
+  })
+
+  it('LLM 分流模板：让逻辑模型判定复杂度，回复命中「复杂」就走高性能落点', async () => {
+    const invocations: PromptInvocation[] = []
+    const result = await runWorkflow(createLlmComplexityGraph(), {
+      request: { path: '/v1/chat/completions', headers: { 'x-provider': 'openai' }, body: { model: 'gpt-4o-mini', messages: [{ role: 'user', content: '帮我重构这个模块' }] } },
+      logicalModels: presetLogicalModels,
+      metadata: {},
+    }, {
+      capabilities: {
+        runPrompt: async (invocation) => {
+          invocations.push(invocation)
+          return { success: true, text: 'Complex', target: 'openai/gpt-4o-mini', durationMilliseconds: 88 }
+        },
+      },
+    })
+
+    expect(invocations).toHaveLength(1)
+    expect(invocations[0].logicalModelId).toBe('default')
+    // 请求体整体插值进提示词，且不会把 `${...}` 原样发给上游。
+    expect(invocations[0].prompt).toContain('帮我重构这个模块')
+    expect(invocations[0].prompt).not.toContain('${')
+    expect(invocations[0].temperature).toBe(0.2)
+
+    const payload = result.outputPayload as { route: { modelIds: string[]; complexity: string } }
+    expect(payload.route.complexity).toBe('Complex')
+    // 条件用不锚定首尾的正则匹配，首字母大写的回复照样命中。
+    expect(payload.route.modelIds).toEqual(['high-effort'])
+    expect(result.nodeOutputs).not.toHaveProperty('model-simple')
+    expect(result.stopReason).toBe('output')
+  })
+
+  it('LLM 分流模板：回答认不出来、或 LLM 不可用时都走「其余」落点', async () => {
+    const input = {
+      request: { path: '/v1/chat/completions', headers: { 'x-provider': 'openai' }, body: { model: 'gpt-4o-mini', messages: [{ role: 'user', content: '你好' }] } },
+      logicalModels: presetLogicalModels,
+      metadata: {},
     }
+
+    const simple = await runWorkflow(createLlmComplexityGraph(), input, {
+      capabilities: { runPrompt: async () => ({ success: true, text: 'simple', durationMilliseconds: 12 }) },
+    })
+    expect((simple.outputPayload as { route: { modelIds: string[] } }).route.modelIds).toEqual(['fast-cheap'])
+
+    // 没注入执行能力时 LLM 节点记为失败，但整张图仍然走到出口。
+    const unavailable = await runWorkflow(createLlmComplexityGraph(), input)
+    expect(unavailable.trace.find(item => item.nodeId === 'complexity-prompt')?.success).toBe(false)
+    expect((unavailable.outputPayload as { route: { modelIds: string[] } }).route.modelIds).toEqual(['fast-cheap'])
+    expect(unavailable.stopReason).toBe('output')
+  })
+
+  it('JS 分流模板：脚本的打分结果决定落点', async () => {
+    const invocations: ScriptInvocation[] = []
+    const input = {
+      request: { path: '/v1/chat/completions', headers: { 'x-provider': 'openai' }, body: { model: 'gpt-4o-mini' } },
+      logicalModels: presetLogicalModels,
+      metadata: {},
+    }
+    const complex = await runWorkflow(createScriptRoutingGraph(), input, {
+      capabilities: {
+        runScript: async (invocation) => {
+          invocations.push(invocation)
+          return { success: true, value: 'complex', logs: ['复杂度打分'], durationMilliseconds: 3 }
+        },
+      },
+    })
+
+    expect(invocations).toHaveLength(1)
+    // 脚本读的是 messages / tools，缺字段时自己兜住，不依赖调用方一定传全。
+    expect(invocations[0].code).toContain("get('request.body.messages')")
+    expect(invocations[0].code).toContain("get('request.body.tools')")
+    expect((complex.outputPayload as { route: { modelIds: string[] } }).route.modelIds).toEqual(['high-effort'])
+    expect(complex.nodeOutputs).not.toHaveProperty('model-simple')
+    expect(complex.stopReason).toBe('output')
+
+    const simple = await runWorkflow(createScriptRoutingGraph(), input, {
+      capabilities: { runScript: async () => ({ success: true, value: 'simple', logs: [], durationMilliseconds: 2 }) },
+    })
+    expect((simple.outputPayload as { route: { modelIds: string[] } }).route.modelIds).toEqual(['fast-cheap'])
+  })
+
+  it('JS 分流模板：脚本失败时落点仍然落到「其余」，图照常走完', async () => {
+    const failed = await runWorkflow(createScriptRoutingGraph(), {
+      request: { path: '/v1/chat/completions', headers: { 'x-provider': 'openai' }, body: { model: 'gpt-4o-mini' } },
+      logicalModels: presetLogicalModels,
+      metadata: {},
+    }, {
+      capabilities: { runScript: async () => ({ success: false, logs: [], error: '脚本执行超时', durationMilliseconds: 2_000 }) },
+    })
+
+    expect(failed.trace.find(item => item.nodeId === 'complexity-script')?.success).toBe(false)
+    expect((failed.outputPayload as { route: { modelIds: string[] } }).route.modelIds).toEqual(['fast-cheap'])
+    expect(failed.stopReason).toBe('output')
   })
 
   it('变量取值：字段为空时回落到兜底逻辑模型', async () => {

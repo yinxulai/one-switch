@@ -29,9 +29,10 @@ export const routerStorageKey = 'one-switch.router.graph.v1'
 
 /**
  * 测试运行用的示例原始输入。
- * 保持最小形态：只有路由真正会读到的请求事实（路径 / 方法 / 头 / 体），
- * 不再预置业务字段。`logicalModels` 由页面在运行时注入真实模型列表。
- * `user-agent` 是给「UA 分流模板」用的：不预置它，那个模板跑起来只能走兜底分支。
+ * 保持最小形态：只有路由真正会读到的请求事实（路径 / 方法 / 头 / 体）。
+ * `logicalModels` 由页面在运行时注入真实模型列表。
+ * `user-agent` 是给「UA 区分来源」用的，`messages` / `tools` 是给两个复杂度预设用的：
+ * 不预置这些字段，对应预设跑起来就只能走兜底分支。
  */
 export const samplePayload = {
   request: {
@@ -45,6 +46,8 @@ export const samplePayload = {
     body: {
       model: 'gpt-4o-mini',
       tenant: 'vip-cn',
+      messages: [{ role: 'user', content: '帮我把这个模块重构成 TypeScript。' }],
+      tools: [{ type: 'function', function: { name: 'read_file', description: '读取文件内容' } }],
     },
   },
 }
@@ -329,7 +332,12 @@ export function createDefaultPolicyGraph(): WorkflowGraph {
   }
 }
 
-/** 协议分流模板：先识别协议，再按条件分流，最后落到不同逻辑模型。 */
+/**
+ * 空白 / 新建图：没有本地缓存（或缓存损坏）时给用户的起始图。
+ *
+ * 起点选「协议发现 → 条件 → 逻辑模型选择」，因为协议是路由里最基础的一层事实；
+ * 它不是策略预设 —— 菜单里的「逻辑模型命中」才是内建默认策略。
+ */
 export function createDefaultGraph(): WorkflowGraph {
   // 分支 id 固定，保证同一预设每次生成的图完全一致（否则「当前策略」永远匹配不上）。
   const conditionCase = createConditionCase('case-1')
@@ -391,188 +399,18 @@ export interface RouterPolicyPreset {
 }
 
 /**
- * 遍历迭代模板：逐个检查逻辑模型，挑出第一个启用的。
- *
- * 展示迭代节点的完整用法：
- * - `body` 端口进循环体（条件判定），循环体末端连回迭代节点即「本轮结束」；
- * - `route.iteration.item` 是当前轮元素，可以继续取字段（`route.iteration.item.id`）；
- * - `collectMode: 'first'` 表示首次命中就收工，`collectPath` 读的是本轮结果。
- */
-export function createIterationGraph(): WorkflowGraph {
-  const iterationCase: ConditionCase = {
-    id: 'case-1',
-    name: '本轮模型已启用',
-    logicalOperator: 'and',
-    conditions: [
-      {
-        fieldPath: 'route.iteration.item.enabled',
-        valueType: 'boolean',
-        operator: 'isTrue',
-        valueSource: 'literal',
-        valueFieldPath: '',
-        value: '',
-      },
-    ],
-  }
-
-  const nodes: WorkflowNodeModel[] = [
-    createInputNode({ x: 80, y: 320 }),
-    {
-      id: 'iteration',
-      kind: 'iteration',
-      name: '遍历逻辑模型',
-      enabled: true,
-      description: '逐个遍历 logicalModels，找出第一个启用中的模型。',
-      position: { x: 440, y: 320 },
-      sourcePath: 'logicalModels',
-      collectPath: 'route.modelIds',
-      collectMode: 'first',
-      resultPath: 'route.modelIds',
-      maxIterations: 10,
-    },
-    {
-      id: 'iteration-condition',
-      kind: 'condition',
-      name: '本轮模型是否启用',
-      enabled: true,
-      description: '读取 route.iteration.item.enabled，命中说明本轮可用。',
-      position: { x: 800, y: 140 },
-      cases: [iterationCase],
-    },
-    {
-      id: 'iteration-model',
-      kind: 'model-select',
-      name: '取本轮模型 id',
-      enabled: true,
-      description: '把 route.iteration.item.id 当成本轮落点逻辑模型。',
-      position: { x: 1160, y: 40 },
-      source: 'variable',
-      variablePath: 'route.iteration.item.id',
-      modelIds: [],
-      fallbackModelIds: [],
-    },
-    createOutputNode({ x: 1160, y: 480 }),
-  ]
-
-  const edges: WorkflowEdge[] = [
-    { id: 'edge-input-iteration', sourceNodeId: 'input', sourcePort: 'out', targetNodeId: 'iteration' },
-    { id: 'edge-iteration-body', sourceNodeId: 'iteration', sourcePort: 'body', targetNodeId: 'iteration-condition' },
-    { id: 'edge-iteration-case', sourceNodeId: 'iteration-condition', sourcePort: iterationCase.id, targetNodeId: 'iteration-model' },
-    // 循环体末端连回迭代节点：这一条边代表「本轮结束」，不是死循环。
-    { id: 'edge-iteration-model-back', sourceNodeId: 'iteration-model', sourcePort: 'out', targetNodeId: 'iteration' },
-    { id: 'edge-iteration-else-back', sourceNodeId: 'iteration-condition', sourcePort: 'else', targetNodeId: 'iteration' },
-    { id: 'edge-iteration-output', sourceNodeId: 'iteration', sourcePort: 'out', targetNodeId: 'output' },
-  ]
-
-  return { version: 1, nodes, edges }
-}
-
-/**
- * 遍历匹配模板：逐个逻辑模型比对请求模型 id，命中就直连它，整轮没命中则回落默认。
- *
- * 与默认策略（一条 `in` 条件做整体判定）是同一件事的两种写法，
- * 差别在于这里把「查找」交给迭代节点，适合还想在循环体里做更多判断的场景：
- * 输入 → 迭代（来源 logicalModels，命中值收进 route.modelIds）
- *        └─ 循环体：条件（route.iteration.item.id === route.requestedModel）
- *                  ├─ 命中 → 逻辑模型选择（变量 route.iteration.item.id）→ 回迭代节点
- *                  └─ 未命中 → 回迭代节点（继续下一轮）
- *        迭代 out → 逻辑模型选择（变量 route.modelIds，兜底 default）→ 出口
- *
- * `collectPath` 直接复用 `route.modelIds`：命中时循环体已经把 id 写在那里，
- * 迭代节点读到非空值即「本轮命中」；`resultPath` 留空，避免整轮没命中时把 `route.modelIds`
- * 覆盖成空数组，兜底逻辑因此可以完全交给下游的逻辑模型选择节点。
- */
-export function createIterationMatchGraph(): WorkflowGraph {
-  const matchCase: ConditionCase = {
-    id: 'case-1',
-    name: '本轮 id 命中请求模型',
-    logicalOperator: 'and',
-    conditions: [
-      {
-        fieldPath: 'route.iteration.item.id',
-        valueType: 'string',
-        operator: 'equals',
-        valueSource: 'field',
-        valueFieldPath: 'route.requestedModel',
-      },
-    ],
-  }
-
-  const nodes: WorkflowNodeModel[] = [
-    createInputNode({ x: 80, y: 280 }),
-    {
-      id: 'iteration',
-      kind: 'iteration',
-      name: '遍历逻辑模型找请求模型',
-      enabled: true,
-      description: '逐个遍历 logicalModels，把 id 等于 route.requestedModel 的那个收进 route.modelIds。',
-      position: { x: 460, y: 280 },
-      sourcePath: 'logicalModels',
-      collectPath: 'route.modelIds',
-      collectMode: 'first',
-      resultPath: '',
-      maxIterations: 50,
-    },
-    {
-      id: 'match-condition',
-      kind: 'condition',
-      name: '本轮 id 是否命中',
-      enabled: true,
-      description: 'route.iteration.item.id 等于 route.requestedModel 时命中，命中即停止遍历。',
-      position: { x: 840, y: 140 },
-      cases: [matchCase],
-    },
-    {
-      id: 'match-model',
-      kind: 'model-select',
-      name: '命中：直连该逻辑模型',
-      enabled: true,
-      description: '把本轮元素 id 当作落点逻辑模型，写进 route.modelIds。',
-      position: { x: 1220, y: 40 },
-      source: 'variable',
-      variablePath: 'route.iteration.item.id',
-      modelIds: [],
-      fallbackModelIds: [],
-    },
-    {
-      id: 'fallback-model',
-      kind: 'model-select',
-      name: '落点：命中即用，否则兜底',
-      enabled: true,
-      description: '迭代命中时 route.modelIds 已经有值，直接沿用；整轮没命中时才回落到兜底逻辑模型。',
-      position: { x: 1220, y: 480 },
-      source: 'variable',
-      variablePath: 'route.modelIds',
-      modelIds: [],
-      fallbackModelIds: [...DEFAULT_MODEL_IDS],
-    },
-    createOutputNode({ x: 1600, y: 280 }),
-  ]
-
-  const edges: WorkflowEdge[] = [
-    { id: 'edge-input-iteration', sourceNodeId: 'input', sourcePort: 'out', targetNodeId: 'iteration' },
-    { id: 'edge-iteration-body', sourceNodeId: 'iteration', sourcePort: 'body', targetNodeId: 'match-condition' },
-    { id: 'edge-condition-hit', sourceNodeId: 'match-condition', sourcePort: matchCase.id, targetNodeId: 'match-model' },
-    // 未命中也要回到迭代节点：这一条边代表「本轮结束」，不是死循环。
-    { id: 'edge-condition-miss-back', sourceNodeId: 'match-condition', sourcePort: 'else', targetNodeId: 'iteration' },
-    { id: 'edge-match-back', sourceNodeId: 'match-model', sourcePort: 'out', targetNodeId: 'iteration' },
-    { id: 'edge-iteration-fallback', sourceNodeId: 'iteration', sourcePort: 'out', targetNodeId: 'fallback-model' },
-    { id: 'edge-fallback-output', sourceNodeId: 'fallback-model', sourcePort: 'out', targetNodeId: 'output' },
-  ]
-
-  return { version: 1, nodes, edges }
-}
-
-/**
  * UA 分流模板：按客户端来源分流到不同逻辑模型，其余来源回落默认。
  *
  * 「来源」不依赖具体头名：遍历 `request.headers` 逐个看头值，
  * 值里出现哪个客户端标识就走哪个分支 —— 头名大小写、由哪个头携带都不影响判定，
  * 这正是遍历迭代相对「直接取 `request.headers.user-agent`」的价值所在。
  *
- * 两个分支的落点是占位 id（`cursor` / `claude-cli`），换成自己的逻辑模型即可；
- * 命中判定同样走 `collectPath: 'route.modelIds'`，因此落点必须先填好，
- * 否则循环体写不出非空值、迭代节点读不到命中。
+ * 两个分支的落点是占位 id（`cursor` / `claude-cli`），换成自己的逻辑模型即可。
+ *
+ * 循环与命中判定靠三条约定咬合：
+ * - 循环体末端把落点写进 `route.modelIds`，迭代节点读同一个 `collectPath` 判定本轮命中；
+ * - `resultPath` 留空：整轮都没命中时，汇总结果不能用空数组把循环体已写下的值盖掉；
+ * - 兜底放在下游一个变量取值的逻辑模型选择节点里，它同时覆盖「命中沿用」与「未命中兜底」。
  */
 export function createUserAgentGraph(): WorkflowGraph {
   const cursorCase: ConditionCase = {
@@ -684,42 +522,232 @@ export function createUserAgentGraph(): WorkflowGraph {
   return { version: 1, nodes, edges }
 }
 
+/**
+ * LLM 复杂度分流模板：让逻辑模型读一遍请求，按复杂度落到不同逻辑模型。
+ *
+ * 输入 → LLM 节点（判断复杂度，回复写进 route.complexity）
+ *        → 条件（route.complexity 匹配正则 [Cc]omplex）
+ *          ├─ 复杂 → 逻辑模型选择（固定 high-effort）→ 出口
+ *          └─ 其余 → 逻辑模型选择（固定 fast-cheap）→ 出口
+ *
+ * 判定用「匹配正则」而不是「等于」：LLM 的回复是自由文本，正则不锚定首尾，
+ * 天然容忍多余空白，`[Cc]` 又顺手兼容了首字母大写。
+ * 想让判定绝对可靠，就把提示词改成「只回答 JSON」，再用脚本节点解析它。
+ *
+ * LLM 节点默认借用内置的 default 逻辑模型，换成专门的判定用小模型更省；
+ * 两个落点都是占位 id，替换成自己的逻辑模型即可。
+ */
+export function createLlmComplexityGraph(): WorkflowGraph {
+  const complexCase: ConditionCase = {
+    id: 'case-complex',
+    name: '复杂请求',
+    logicalOperator: 'and',
+    conditions: [
+      {
+        fieldPath: 'route.complexity',
+        valueType: 'string',
+        operator: 'regex',
+        valueSource: 'literal',
+        value: '[Cc]omplex',
+      },
+    ],
+  }
+
+  const nodes: WorkflowNodeModel[] = [
+    createInputNode({ x: 80, y: 300 }),
+    {
+      id: 'complexity-prompt',
+      kind: 'prompt',
+      name: 'LLM 判断请求复杂度',
+      enabled: true,
+      description: '把请求交给逻辑模型读一遍，只让它回一个词：simple 或 complex。',
+      position: { x: 460, y: 300 },
+      logicalModelId: DEFAULT_MODEL_IDS[0],
+      systemPrompt: '你是模型路由助手：只判断请求复杂度，不回答请求内容，也不做任何解释。',
+      promptTemplate: '判断下面这次请求的复杂度，只回答一个词：simple 或 complex。\n\n请求：${request.body}',
+      resultPath: 'route.complexity',
+      temperature: 0.2,
+      maxTokens: 32,
+      timeoutMilliseconds: PROMPT_TIMEOUT_DEFAULT,
+    },
+    {
+      id: 'complexity-condition',
+      kind: 'condition',
+      name: '复杂度判定',
+      enabled: true,
+      description: 'route.complexity 命中 [Cc]omplex 视为复杂请求；LLM 失败或回答认不出来时走「其余」。',
+      position: { x: 880, y: 300 },
+      cases: [complexCase],
+    },
+    {
+      id: 'model-complex',
+      kind: 'model-select',
+      name: '复杂请求落点',
+      enabled: true,
+      description: '复杂请求落到这个逻辑模型；占位 id，换成自己的高性能模型。',
+      position: { x: 1300, y: 140 },
+      source: 'fixed',
+      variablePath: '',
+      modelIds: ['high-effort'],
+      fallbackModelIds: [],
+    },
+    {
+      id: 'model-simple',
+      kind: 'model-select',
+      name: '其余请求落点',
+      enabled: true,
+      description: '简单请求落到这个逻辑模型；占位 id，换成自己的快而便宜的模型。',
+      position: { x: 1300, y: 460 },
+      source: 'fixed',
+      variablePath: '',
+      modelIds: ['fast-cheap'],
+      fallbackModelIds: [],
+    },
+    createOutputNode({ x: 1720, y: 300 }),
+  ]
+
+  const edges: WorkflowEdge[] = [
+    { id: 'edge-input-prompt', sourceNodeId: 'input', sourcePort: 'out', targetNodeId: 'complexity-prompt' },
+    { id: 'edge-prompt-condition', sourceNodeId: 'complexity-prompt', sourcePort: 'out', targetNodeId: 'complexity-condition' },
+    { id: 'edge-condition-complex', sourceNodeId: 'complexity-condition', sourcePort: complexCase.id, targetNodeId: 'model-complex' },
+    { id: 'edge-condition-simple', sourceNodeId: 'complexity-condition', sourcePort: 'else', targetNodeId: 'model-simple' },
+    { id: 'edge-complex-output', sourceNodeId: 'model-complex', sourcePort: 'out', targetNodeId: 'output' },
+    { id: 'edge-simple-output', sourceNodeId: 'model-simple', sourcePort: 'out', targetNodeId: 'output' },
+  ]
+
+  return { version: 1, nodes, edges }
+}
+
+/**
+ * JS 脚本分流模板：用一段沙箱脚本把请求规模算成分档，再按分档落到不同逻辑模型。
+ *
+ * 输入 → JS 脚本节点（算消息数 / 上下文字数 / 工具数，返回 simple 或 complex）
+ *        → 条件（route.complexity 等于 complex）
+ *          ├─ 复杂 → 逻辑模型选择（固定 high-effort）→ 出口
+ *          └─ 其余 → 逻辑模型选择（固定 fast-cheap）→ 出口
+ *
+ * 与 LLM 模板的分流骨架完全一致，差别只在「谁来判定」：
+ * 脚本的返回值是确定的字符串，所以这里用「等于」精确判定，不需要正则去容错。
+ * `console.log` 会进 trace 的「控制台」，打分过程可以在测试运行面板里直接核对。
+ */
+export function createScriptRoutingGraph(): WorkflowGraph {
+  const complexCase: ConditionCase = {
+    id: 'case-complex',
+    name: '复杂请求',
+    logicalOperator: 'and',
+    conditions: [
+      {
+        fieldPath: 'route.complexity',
+        valueType: 'string',
+        operator: 'equals',
+        valueSource: 'literal',
+        value: 'complex',
+      },
+    ],
+  }
+
+  const nodes: WorkflowNodeModel[] = [
+    createInputNode({ x: 80, y: 300 }),
+    {
+      id: 'complexity-script',
+      kind: 'script',
+      name: 'JS 计算请求复杂度',
+      enabled: true,
+      description: '按消息数 / 上下文字数 / 工具数打分，返回 simple 或 complex 写进 route.complexity。',
+      position: { x: 460, y: 300 },
+      code: `// payload 是本次运行数据的深拷贝；get(路径) 支持 a[*].b 通配投影。
+const messages = get('request.body.messages')
+const tools = get('request.body.tools')
+const messageCount = Array.isArray(messages) ? messages.length : 0
+const toolCount = Array.isArray(tools) ? tools.length : 0
+// 没有 messages 时退化成整个请求体的长度，至少还有个量级。
+const charCount = JSON.stringify(messages ?? get('request.body') ?? '').length
+
+// 三条里任意一条成立就算复杂请求，阈值按自己的业务调。
+const isComplex = toolCount > 0 || messageCount > 6 || charCount > 8_000
+console.log('复杂度判定', { messageCount, toolCount, charCount, isComplex })
+
+return isComplex ? 'complex' : 'simple'`,
+      resultPath: 'route.complexity',
+      timeoutMilliseconds: SCRIPT_TIMEOUT_DEFAULT,
+    },
+    {
+      id: 'complexity-condition',
+      kind: 'condition',
+      name: '复杂度判定',
+      enabled: true,
+      description: 'route.complexity 等于 complex 视为复杂请求；脚本失败时读不到值，走「其余」。',
+      position: { x: 880, y: 300 },
+      cases: [complexCase],
+    },
+    {
+      id: 'model-complex',
+      kind: 'model-select',
+      name: '复杂请求落点',
+      enabled: true,
+      description: '复杂请求落到这个逻辑模型；占位 id，换成自己的高性能模型。',
+      position: { x: 1300, y: 140 },
+      source: 'fixed',
+      variablePath: '',
+      modelIds: ['high-effort'],
+      fallbackModelIds: [],
+    },
+    {
+      id: 'model-simple',
+      kind: 'model-select',
+      name: '其余请求落点',
+      enabled: true,
+      description: '简单请求落到这个逻辑模型；占位 id，换成自己的快而便宜的模型。',
+      position: { x: 1300, y: 460 },
+      source: 'fixed',
+      variablePath: '',
+      modelIds: ['fast-cheap'],
+      fallbackModelIds: [],
+    },
+    createOutputNode({ x: 1720, y: 300 }),
+  ]
+
+  const edges: WorkflowEdge[] = [
+    { id: 'edge-input-script', sourceNodeId: 'input', sourcePort: 'out', targetNodeId: 'complexity-script' },
+    { id: 'edge-script-condition', sourceNodeId: 'complexity-script', sourcePort: 'out', targetNodeId: 'complexity-condition' },
+    { id: 'edge-condition-complex', sourceNodeId: 'complexity-condition', sourcePort: complexCase.id, targetNodeId: 'model-complex' },
+    { id: 'edge-condition-simple', sourceNodeId: 'complexity-condition', sourcePort: 'else', targetNodeId: 'model-simple' },
+    { id: 'edge-complex-output', sourceNodeId: 'model-complex', sourcePort: 'out', targetNodeId: 'output' },
+    { id: 'edge-simple-output', sourceNodeId: 'model-simple', sourcePort: 'out', targetNodeId: 'output' },
+  ]
+
+  return { version: 1, nodes, edges }
+}
+
 /** 策略预设：一键把画布换成某种内置规则，随时可切回默认策略。 */
 export const ROUTER_POLICY_PRESETS: RouterPolicyPreset[] = [
   {
     id: 'model-direct',
-    name: '默认策略：模型直达',
-    description: '请求模型命中逻辑模型列表就直连该模型，否则落到默认逻辑模型（条件 + 两次逻辑模型选择）。',
+    name: '逻辑模型命中',
+    description: '请求模型命中逻辑模型列表就直连它，否则落到默认逻辑模型（条件判定 + 两次逻辑模型选择）。',
     isDefault: true,
     createGraph: createDefaultPolicyGraph,
   },
   {
-    id: 'iteration-model-match',
-    name: '遍历匹配模板：命中请求模型',
-    description: '遍历 logicalModels 逐个比对 id，命中就直连它；整轮没命中则回落到默认逻辑模型。',
-    isDefault: false,
-    createGraph: createIterationMatchGraph,
-  },
-  {
     id: 'ua-source-routing',
-    name: 'UA 分流模板：按客户端来源',
-    description: '遍历 request.headers 识别客户端（Cursor / Claude CLI），分流到不同逻辑模型，其余来源回落默认。',
+    name: 'UA 区分来源',
+    description: '遍历请求头识别客户端（Cursor / Claude CLI），分流到不同逻辑模型，认不出的来源回落默认。',
     isDefault: false,
     createGraph: createUserAgentGraph,
   },
   {
-    id: 'protocol-then-condition',
-    name: '协议分流模板',
-    description: '先识别协议，再按条件分流，最后落到指定逻辑模型。',
+    id: 'llm-complexity-routing',
+    name: 'LLM 分析请求复杂度',
+    description: '让逻辑模型读一遍请求判断复杂度，复杂请求走高性能落点，其余走快而便宜的落点。',
     isDefault: false,
-    createGraph: createDefaultGraph,
+    createGraph: createLlmComplexityGraph,
   },
   {
-    id: 'iteration-first-enabled',
-    name: '遍历迭代模板：首个启用模型',
-    description: '遍历 logicalModels，逐项判断是否启用，首次命中即停止并把该模型作为落点。',
+    id: 'script-routing',
+    name: 'JS 脚本处理请求',
+    description: '用沙箱脚本按请求规模打分分档，再按分档分流到不同逻辑模型。',
     isDefault: false,
-    createGraph: createIterationGraph,
+    createGraph: createScriptRoutingGraph,
   },
 ]
 
