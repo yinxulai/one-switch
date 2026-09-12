@@ -4,6 +4,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { ToastProvider } from '@/components/ui/toast'
 import { ConfirmProvider } from '@/components/ui/confirm-dialog'
 import { AppLayout } from '@/components/layout'
+import { ErrorBoundary, ErrorFallback } from '@/components/error-boundary'
 import { AppSidebar, type PageKey, type Theme } from '@/components/app-sidebar'
 import { useAppUiStore } from '@/store/app-ui-store'
 import { useProxyStatus } from './features/proxy/hooks'
@@ -61,7 +62,25 @@ function App() {
               />
             )}
           >
-            <Outlet />
+            {/*
+             * 内层再兜一道：路由级错误会被这里拦截，侧栏与顶部导航继续可用，
+             * 用户切到别的页面就自动恢复（`resetKeys` 是当前路径）。
+             * `routing.tsx` 里的根路由 `errorComponent` 是外层保险，
+             * 作用于 App 自身（包括侧栏、各种 Provider）抛错的情况。
+             */}
+            <ErrorBoundary
+              resetKeys={[pathname]}
+              fallback={fallbackProps => (
+                <ErrorFallback
+                  {...fallbackProps}
+                  embedded
+                  title="页面出错了"
+                  description="当前页面的路由组件抛出了异常，已经被拦截下来，其它页面不受影响。"
+                />
+              )}
+            >
+              <Outlet />
+            </ErrorBoundary>
           </AppLayout>
         </TooltipProvider>
       </ConfirmProvider>

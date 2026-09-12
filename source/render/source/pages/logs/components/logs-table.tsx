@@ -9,11 +9,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { cn } from '@/lib/utils'
 
 const LEVEL_STYLE: Record<LogEntry['level'], string> = {
-  error: 'bg-red-500/15 text-red-600 dark:text-red-400',
-  warn: 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
-  info: 'bg-sky-500/15 text-sky-600 dark:text-sky-400',
-  log: 'bg-zinc-500/15 text-zinc-600 dark:text-zinc-400',
-  debug: 'bg-violet-500/15 text-violet-600 dark:text-violet-400',
+  error: 'bg-destructive/10 text-text-destructive',
+  warn: 'bg-warning/10 text-text-warning',
+  info: 'bg-info/10 text-info',
+  log: 'bg-inset text-text-tertiary',
+  debug: 'bg-inset text-text-quaternary',
 }
 const LEVEL_LABEL: Record<LogEntry['level'], string> = {
   error: 'ERROR',
@@ -73,15 +73,15 @@ function renderErrorRow(message: string, onRetry: () => void) {
 function renderLogRows(logs: LogEntry[]) {
   return logs.map(log => (
     <TableRow key={log.id} className={cn(tableRowClass, 'align-top')}>
-      <TableCell className={cn(tableCellClass, 'whitespace-nowrap font-mono text-muted-foreground')}>
+      <TableCell className={cn(tableCellClass, 'whitespace-nowrap font-mono text-text-quaternary')}>
         {formatTimestamp(log.timestamp)}
       </TableCell>
       <TableCell className={tableCellClass}>
-        <Badge variant="outline" className={cn('h-5 px-1.5 font-mono text-[10px]', LEVEL_STYLE[log.level])}>
+        <Badge variant="outline" className={cn('h-5 border-transparent px-1.5 font-mono system-2xs-medium', LEVEL_STYLE[log.level])}>
           {LEVEL_LABEL[log.level]}
         </Badge>
       </TableCell>
-      <TableCell className={cn(tableCellClass, 'whitespace-pre-wrap break-words font-mono leading-5')}>{log.message}</TableCell>
+      <TableCell className={cn(tableCellClass, 'whitespace-pre-wrap break-words font-mono text-text-secondary')}>{log.message}</TableCell>
     </TableRow>
   ))
 }

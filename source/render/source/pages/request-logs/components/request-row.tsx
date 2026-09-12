@@ -17,36 +17,36 @@ export function RequestRow(props: RequestRowProps) {
   const upstreamProtocol = lastAttempt?.upstreamProtocol
 
   return (
-    <div className="flex items-start gap-3 border-b border-border px-4 py-3 last:border-b-0">
+    <div className="flex items-start gap-3 border-b border-border/40 px-4 py-3 last:border-b-0">
       <div className="mt-0.5 shrink-0">
         {succeeded
-          ? <CheckCircle2 size={16} className="text-emerald-500" />
-          : <XCircle size={16} className="text-destructive" />}
+          ? <CheckCircle2 size={16} className="text-text-success" aria-hidden />
+          : <XCircle size={16} className="text-text-destructive" aria-hidden />}
       </div>
-      <div className="min-w-0 flex-1 space-y-1">
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="font-medium text-foreground">
+      <div className="min-w-0 flex-1 grid gap-1">
+        <div className="flex flex-wrap items-center gap-2 system-xs-regular">
+          <span className="system-xs-medium text-text-primary">
             {lastAttempt ? lastAttempt.providerName : log.logicalModelId}
           </span>
-          <span className="font-mono text-muted-foreground">
+          <span className="font-mono text-text-tertiary">
             {lastAttempt?.providerModelName ?? '—'}
           </span>
           <Badge variant={succeeded ? 'success' : 'destructive'}>
             {STATUS_LABEL[log.status] ?? log.status}
           </Badge>
-          <span className="text-muted-foreground">
+          <span className="text-text-tertiary">
             {log.clientProtocol === null ? '未识别' : PROTOCOL_LABEL[log.clientProtocol] ?? log.clientProtocol}
             {upstreamProtocol && upstreamProtocol !== log.clientProtocol && (
               <>
                 {' '}
-                <span className="text-muted-foreground/60">→</span>{' '}
-                <span className="text-amber-600 dark:text-amber-400">
+                <span className="text-text-quaternary">→</span>{' '}
+                <span className="text-text-warning">
                   {PROTOCOL_LABEL[upstreamProtocol] ?? upstreamProtocol}
                 </span>
               </>
             )}
           </span>
-          <span className="text-muted-foreground">{formatTime(log.createdTime)}</span>
+          <span className="text-text-quaternary">{formatTime(log.createdTime)}</span>
         </div>
         {log.attempts.length > 1 && (
           <div className="flex flex-wrap gap-1.5">
@@ -54,10 +54,10 @@ export function RequestRow(props: RequestRowProps) {
               <span
                 key={i}
                 className={cn(
-                  'rounded px-1.5 py-0.5 text-[11px]',
+                  'rounded-md px-1.5 py-0.5 system-2xs-regular',
                   attempt.status === 'success'
-                    ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-                    : 'bg-destructive/15 text-destructive',
+                    ? 'bg-success/10 text-text-success'
+                    : 'bg-destructive/10 text-text-destructive',
                 )}
                 title={attempt.errorMessage ?? undefined}
               >
@@ -68,7 +68,7 @@ export function RequestRow(props: RequestRowProps) {
           </div>
         )}
         {log.attempts.length === 1 && (
-          <div className="text-xs text-muted-foreground">
+          <div className="system-xs-regular text-text-tertiary">
             耗时 {formatDuration(log.totalDurationMilliseconds)}
             {log.totalTokens != null ? ` · ${log.totalTokens} tokens` : ''}
           </div>

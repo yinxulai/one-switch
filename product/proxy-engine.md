@@ -4,12 +4,11 @@
 
 本文描述 `source/server/proxy` 的目标结构。核心是一套**协议无关的透传内核**：默认只搬运字节与帧，不解析任何报文；「我们自己的功能」（请求/响应重写、协议转换、日志、用量、正文采集、健康冷却、路由策略）一律以插件形式挂在**观察接口**与**修改接口**上。
 
-传输方式（HTTP、WebSocket、未来的其他方式）与接口形态（`chat/completions`、`embeddings`、`messages`、`responses`……）都作为**数据声明**进入注册表，内核里不出现任何协议名或传输名。
+传输方式（HTTP、未来的其他方式）与接口形态（`chat/completions`、`embeddings`、`messages`、`responses`……）都作为**数据声明**进入注册表，内核里不出现任何协议名或传输名。
 
 与既有文档的关系：
 
 - [proxy.md](./proxy.md) 定义当前**行为契约**（协议识别、候选路由、自动切换、流式边界）。行为契约不变，本文改的是「这些行为住在哪里」。
-- [websocket-transport.md](./websocket-transport.md) 是 WS 传输的能力设计。本文的 `Transport` 抽象是它的落地载体：WS 不需要复制执行器。
 - [protocol-conversion.md](./protocol-conversion.md) 的转换矩阵，在本文里退化为 `ProtocolDescriptor.conversion` 声明 + 一个 `Modifier` 实现。
 - [outbound-proxy.md](./outbound-proxy.md) 不介入本文：出站代理属于 `infrastructure/network`，传输层直接复用。
 
@@ -60,7 +59,7 @@
 
 `URL`、`http.RequestOptions`、`IncomingHttpHeaders` 出现在执行器、`response/headers.ts`、`response/response-pipeline.ts` 中。响应管线的构造参数里有 `adapter.kind === 'conversion'` 判断——**内核在按协议模式分支**。
 
-这正是 WS 的风险点：按 [websocket-transport.md](./websocket-transport.md)，WS 需要「握手即路由、连接粒度的健康冷却、连接级观测、双向帧中继」。因为连接类型没有被抽象，这些逻辑只能**在 WS 里重写一遍**，与 HTTP 路径形成第二套执行器。
+这正是双向传输的风险点：握手即路由、连接粒度的健康冷却、连接级观测、双向帧中继——如果连接类型没有被抽象，这些逻辑只能**在传输实现里重写一遍**，与 HTTP 路径形成第二套执行器。
 
 > **进展**：S3b 已把 `http.IncomingMessage` / `http.RequestOptions` 关在 `transports/http.ts` 内部，`kernel/frame-pipe.ts` 只认 `Frame`；S5 把执行器里残留的 `node:url` / `http.RequestOptions` 一并迁出。
 
@@ -72,7 +71,7 @@
 
 #### 1.6.1 两根轴：插座 vs 交付方式（S7 后修正）
 
-原设计里 `streamingRequest` 这个名字把两件事压成了一个布尔：**「上游用什么插座」** 与 **「字节怎么交回客户端」**。WS 支持一落地就暴露了矛盾——一条 WebSocket 交换既没有「HTTP 请求体里的 `stream` 字段」可解析，也不存在「上游是不是回了 SSE」的问题，却必须写一个 `streamingRequest: true` 才能让下游逻辑按预期走。
+原设计里 `streamingRequest` 这个名字把两件事压成了一个布尔：**「上游用什么插座」** 与 **「字节怎么交回客户端」**。双向传输一旦出现就暴露了矛盾——一条长连接上既没有「HTTP 请求体里的 `stream` 字段」可解析，也不存在「上游是不是回了 SSE」的问题，却必须写一个 `streamingRequest: true` 才能让下游逻辑按预期走。
 
 现在这两件事各有各的名字，且互相正交（四种组合都合法）：
 
@@ -92,7 +91,7 @@
 2. **上游格式** → `isEventStreamResponse(headers)`，只读响应头；
 3. **出口行为** → `isStreamingDelivery(...)`，合成前两者。
 
-`Envelope.delivery` 返回**轴上的取值**而不是 `boolean`，调用方（HTTP 入口、WS 入口）不必各自把 `true` 翻译成 `'stream'`，也就不会有两处翻得不一样；WS 入口的 `'stream'` 现在是从封装描述取来的**事实陈述**，而不是入口凭印象写死的假设。
+`Envelope.delivery` 返回**轴上的取值**而不是 `boolean`，调用方（入口）不必自己把 `true` 翻译成 `'stream'`，也就不会有两处翻得不一样；入口拿到的 `'stream'` 是从封装描述取来的**事实陈述**，而不是凭印象写死的假设。
 
 落库字段另有约定：`request_logs.streaming` / `request_attempts.streaming` 是**布尔列**，改写规则试跑接口的 `testCase.streaming` 是**已持久化的字段**（改名要迁数据）。这两处保留旧名，在**写入点**做一次显式投影（`input.delivery === 'stream'`、`incrementalDelivery: input.testCase.streaming`），不让旧名渗回模块内部。
 
@@ -106,9 +105,9 @@
 - WS 握手（`GET` + `Upgrade: websocket`）无法匹配；
 - 本地端点（`/v1/models`）只能硬编码在 `runtime/proxy-runtime.ts` 的 `createServer` 里，无法成为可注册的插件。
 
-> **进展**：S2c 已改为方法感知匹配 + 声明式本地端点；S3a 把匹配键扩展为 `(method, path, transport)`，并在加载期拦住重复接口/重复入口声明；S6 补上了 WS 端点声明（`GET /v1/responses` + `responses-websocket` 端点 + `shared/websocket-envelope.ts`）。
+> **进展**：S2c 已改为方法感知匹配 + 声明式本地端点；S3a 把匹配键扩展为 `(method, path, transport)`，并在加载期拦住重复接口/重复入口声明。传输从此是匹配条件的一部分，即使当前只有 `http` 一种在用的取值。
 
-**已修（S2c）**：入口唯一匹配器是 `detectProtocolFromRequest(method, path)`，POST 专有的 `detectProtocolFromPath` 包装被删除而非留作 shim；本地端点改为声明式注册（`proxy/local/`），`createServer` 只剩「生命周期 + 边界错误处理」。WS 握手（S6）此时已具备匹配前提，握手帧的处理属于传输层。
+**已修（S2c）**：入口唯一匹配器是 `detectProtocolFromRequest(method, path)`，POST 专有的 `detectProtocolFromPath` 包装被删除而非留作 shim；本地端点改为声明式注册（`proxy/local/`），`createServer` 只剩「生命周期 + 边界错误处理」。升级类入口（`GET` + `Upgrade`）此时已具备匹配前提；当前没有这样的入口落地。
 
 `HttpRouter` 的 `[path: string]: any` Proxy 仍保留，但只服务于管理端路由的便捷写法；代理入口这条线上不再有代码依赖它取 handler。
 
@@ -144,7 +143,6 @@ flowchart TD
   end
   subgraph L1[适配层 adapters]
     A1[HttpTransport]
-    A2[WebSocketTransport]
     A3[openai-completions / openai-responses / anthropic-messages]
   end
   L4 -->|只依赖| C
@@ -152,7 +150,6 @@ flowchart TD
   L1 -->|只依赖| C
   K -.装配.- A3
   K -.装配.- A1
-  K -.装配.- A2
 ```
 
 依赖规则：**箭头单向向上**。`contracts` 不依赖任何实现；`kernel` 不 import `node:http`、不 import 任何具体协议、不 import 数据库；`features` 不互相 import。
@@ -163,12 +160,12 @@ flowchart TD
 | --- | --- | --- |
 | `Exchange` | 一次客户端交互的全部状态（请求、响应出口、协议、候选、尝试、扩展字段） | 取代 `RequestContext` + `request-entry` 的散装状态 |
 | `Frame` | 唯一的搬运单位（head / data / end / error / close） | 取代「Buffer + SSE 字符串 + 布尔 isStreaming」 |
-| `Transport` | 唯一的对外出口（HTTP 单工、WS 全双工） | 取代 `response/transport.ts` + WS 待建 |
+| `Transport` | 唯一的对外出口（HTTP 单工；双向由 `UpstreamConnection.outbound` 表达） | 取代 `response/transport.ts` |
 | `ProtocolDescriptor` | 协议的声明式元数据（匹配、信封、认证、用量、转换能力） | 取代 6 处协议矩阵 + `createAuthHeaders` switch |
 | `EndpointSpec` | **一个接口**的声明（如 `/v1/embeddings`） | 取代 `routes.ts` + `request-defaults.ts` |
 | `Observer` | 只读观察接口（逐帧、逐尝试、逐交换） | 取代 `observability/hooks.ts` |
 | `Modifier` | 读写修改接口（请求方向 / 响应方向，可选逐帧） | 取代重写规则、协议转换、认证注入、默认值注入 |
-| `AttemptPlanner` | 产出候选序列（含 WS 握手期路由） | 取代 `routing/router.ts` + `routing/routing.ts` |
+| `AttemptPlanner` | 产出候选序列（按传输能力筛选） | 取代 `routing/router.ts` + `routing/routing.ts` |
 | `LocalHandler` | 本地端点，不透传上游 | 取代 `proxy-runtime.ts` 里硬编码的 `/v1/models` |
 
 ### 2.3 两根正交轴：Protocol × Transport
@@ -183,7 +180,7 @@ ingress(protocol, transport) ──protocol→protocol 转换──► egress(pr
 
 这个形状能成立，靠的是三件已经落地的事实：
 
-1. **传输种类不进入接口身份**。`/v1/responses` 的 HTTP 与 WS 是**同一个接口**（`EndpointSpec.id = 'responses'`），只是在同一份声明里给出两个封装：`envelopes: { http, websocket }`。把传输写进 id（`responses` 与 `responses-websocket`）是错的——那会让「一个接口有两种传输方式」看起来像「两个接口」，于是每加一种传输就要复制一遍匹配、模型名位置、用量结构。
+1. **传输种类不进入接口身份**。一个接口可以在同一份声明里给出多种传输的封装（`envelopes`），它们仍然是**同一个接口**（`EndpointSpec.id` 不变）。把传输写进 id（如 `responses` 与 `responses-websocket`）是错的——那会让「一个接口有两种传输方式」看起来像「两个接口」，于是每加一种传输就要复制一遍匹配、模型名位置、用量结构。当前所有接口都只声明了 `http` 一种封装。
 2. **传输是匹配条件，不是匹配结果**。`RouteMatcher.transport` 与规划器的 `PlannerInput.transport` 都只是筛选条件；同一个 `(method, path)` 在不同传输下命中同一个接口、拿到不同的封装。
 3. **内核只搬运**。`kernel/**` 里没有任何传输概念：`pipeFrames` 拿到的只是一个 `AsyncIterable<Frame>`，双向与否只体现为「有没有 `outbound`」。
 
@@ -255,7 +252,7 @@ export interface Transport {
 
 要点：
 
-- **`connect` 是唯一需要实现的出口**。HTTP 实现返回没有 `outbound` 的连接，WS 实现返回带 `outbound` 的连接。内核不区分两者，只按「有没有 `outbound`」决定要不要跑反向管道。
+- **`connect` 是唯一需要实现的出口**。HTTP 实现返回没有 `outbound` 的连接；双向传输（当前未实现）返回带 `outbound` 的连接。内核不区分两者，只按「有没有 `outbound`」决定要不要跑反向管道。
 - `UpstreamTarget.transport` 是**三者一起被选出的一组事实**（§2.3）中的一元：规划器产出它，执行器用它在 `transports/registry.ts` 取实现。执行器没有权利自己选传输实现——那会把一个已声明的字段变成装饰。
 - 能力声明不在 `Transport` 上：规划器判断「这个候选能不能服务这条入口」用的是 `EndpointSpec.envelopes`（声明式），不是 `Transport.duplex`（实现式）。声明与实现分离，规划因此不需要实例化任何传输。
 - 出站代理（[outbound-proxy.md](./outbound-proxy.md)）、TLS、DNS、空闲超时全部收在传输实现内，内核不知道它们存在。
@@ -461,7 +458,7 @@ export interface PlanResult {
 ```
 
 - 传入 `manualModelId` 而不是让入口先去 `routing/router` 过滤：手动锁定是路由决策，不是请求解析。
-- 传入 `transport` 而不是让 WS 入口自己再 `find(findEndpoint)` 一遍：WS 因此顺带获得了「尊重手动锁定」的语义（之前没有）。
+- 传入 `transport` 而不是让入口自己去 `find(findEndpoint)` 一遍：入口因此不必知道「哪个传输下哪些端点合法」——那是注册表的职责，规划器只消费结论。将来的双向入口也走这一条，不需要自己复制一遍筛选。
 - `detail` 让「为什么没有候选」的措辞只有一处（入口原来自己拼 `configuredProtocols` 那段）。
 - 执行器不再接触 `ProviderModel/Provider`：`attempt-executor.ts` / `request-finalizer.ts` 全部改为消费 `UpstreamTarget`，`resolveAttemptSnapshot`（每次尝试投影）与 `resolveEndpointId`（模型端点标识）分别迁入 `observability/attempt-log-collector.ts` 的 `toAttemptSnapshot()` 与规划器。
 - `resolveUpstreamUrl` 从 `request/request.ts` 迁到 `routing/upstream-url.ts`；`routing/routing.ts` 与 `request/request.ts` 整体删除。
@@ -485,7 +482,7 @@ export interface LocalHandler {
 
 ```mermaid
 flowchart TD
-  A[Transport 入口<br/>HTTP request / WS upgrade] --> B[构建 Exchange<br/>读 body / 归一 egress]
+  A[Transport 入口<br/>HTTP request] --> B[构建 Exchange<br/>读 body / 归一 egress]
   B --> C{入口匹配}
   C -->|LocalHandler| D[本地端点处理]
   C -->|EndpointSpec| E[Observer.onExchangeStart<br/>落库观察者写请求行]
@@ -512,23 +509,19 @@ flowchart TD
 | 协议分叉 | `adapter.kind === 'conversion'` 判断渗透到响应管线 | 内核无协议分支；转换只是一个 Modifier |
 | 观察时机 | 仅在终点，且只在落库后 | 交换开始 / 尝试开始 / 每帧 / 尝试结束 / 交换结束 |
 | 拒绝收尾 | 入口 5 处 + 执行器 3 处手写 | 一个 `finalizeExchange(exchange, outcome)` |
-| WS | 需要在执行器之外重写一套搬运 | 换 `Transport`（`outbound` 存在即双向）+ 候选按 `transport` 过滤；**搬运**共用内核，**编排**各有一条 |
+| 双向传输（如 WS） | 需要在执行器之外重写一套搬运 | 换 `Transport`（`outbound` 存在即双向）+ 候选按 `transport` 过滤；**搬运**共用内核，同一条入口链可复用 |
 
-WS 与 HTTP 的对照（说明「同一内核」而不是「两套代码」）：
+双向传输的能力仍预留在内核里，但**没有实现，也不在当前计划内**：
 
-| 环节 | HTTP | WS |
+| 预留点 | 位置 | 说明 |
 | --- | --- | --- |
-| 入口匹配 | `POST /v1/responses` | `GET /v1/responses`（同一 `EndpointSpec`，`transport: 'websocket'`） |
-| 握手 | 上游响应头 | 上游 upgrade 结果 |
-| 帧 | `data*` → `end` | 双向持续，`close` 终止（连接有 `outbound`，内核自动跑反向管道） |
-| 候选解析时机 | 每次请求 | 每次连接（重连即重新规划） |
-| 失败切换粒度 | 单次尝试，候选序列由规划器给出 | 连接级，尝试数恒为 1；失败即回 426 让客户端重连/降级 |
-| 编排者 | `execution/attempt-executor.ts` | `request/websocket-entry.ts` |
-| 搬运 | `kernel/relay.ts` 的 `relayAttempt` | `kernel/relay.ts` 的 `relayConnected`（同一份收尾规则） |
-| 修改器 | 全部注册 | **内核已支持两个方向**（请求方向走 `inbound.modifiers`）；P1 入口不挂任何修改器，因为 P1 不解析帧内容 |
-| 观测 | 请求行 / 尝试行 / 正文 / 用量 | P1 只有连接级运行日志，不挂 `Observer`、不落库（见 [websocket-transport.md](./websocket-transport.md)） |
+| 传输轴取值 | `contracts/transport.ts` 的 `TransportKind` | `'websocket'` 是已声明的取值，但没有任何传输实现产出它 |
+| 双向插座 | `contracts/transport.ts` 的 `UpstreamConnection.outbound` | 存在即双向；HTTP 不提供，所以「HTTP 是单工」是类型事实而不是约定 |
+| 双向搬运与收尾 | `kernel/relay.ts` 的 `relayConnected` | 与单工的 `relayAttempt` 共用 `runRelay`，统一处理「谁先结束」（`firstEnded`）、反向摘要（`inbound`）与「上游只断一次」；当前没有生产调用者（测试在 `kernel/relay.test.ts`） |
+| 未实现传输的显式拒绝 | `transports/registry.ts` | `resolveTransport({ kind: 'websocket' })` 直接抛错，不静默回退到 HTTP——静默回退会拿一个 WS 地址去发 HTTP 请求 |
+| 升级请求的显式拒绝 | `runtime/proxy-runtime.ts` | `server.on('upgrade')` 回 501 `TRANSPORT_NOT_IMPLEMENTED`；不注册监听器会让 Node 直接销毁 socket，客户端只能看到「连接失败」 |
 
-**两条编排者共用内核是这套结构的重点**：收尾规则（谁先结束、上游只断一次、反向不挂观察者）只有一个实现。编排不同不是「两套代码」，而是「两种交换形态」——HTTP 是「候选序列上的单工尝试」，WS 是「一条连接上的双向交换」，把它们塞进同一个循环只会让两边都变形。
+保留这五处的代价只有注释与一个永不触发的分支；收益是将来真要加一条双向传输时，`proxy/kernel/**` 不需要改写搬运与收尾规则。
 
 ## 五、迁移计划
 
@@ -543,14 +536,14 @@ WS 与 HTTP 的对照（说明「同一内核」而不是「两套代码」）�
 | S2b | 完成 | `request-conversion.ts` / `response-conversion.ts` 的方向 `if/else` 收敛为 `protocols/shared/conversion-registry.ts`，并新增「注册表 ⇔ 可转换矩阵」一致性断言（§1.1 第 4、5 行） |
 | S2c | 完成 | 入口匹配改为方法感知（§1.7）；拒绝路径收敛为一次交换的统一收尾（§1.8）；`/v1/models` 从 `createServer` 硬编码改为声明式本地端点（§1.7 第三条推论） |
 | S3a | 完成 | 协议从「代码」变成「数据 + 声明」：描述符改为 `endpoints: ProtocolEndpointSpec[]`，每个接口按传输声明 `envelopes`；注册表改为 `(method, path, transport) → { protocol, endpointId, envelope }`；模型读取与流式判定从 `request.ts` 移入 `ProtocolEnvelope`（§1.2、§1.6 前半） |
-| S3b | 部分完成 | 传输层与搬运循环已落地（`transports/http.ts`、`kernel/frame-pipe.ts`，含 15 个新测试）。执行器改用帧循环、`response-pipeline.ts` 改造为 Modifier 链这一步与 S4 不可分割，合并为下一步（见下方说明） |
+| S3b | 完成（与 S4 合并交付） | 传输层与搬运循环已落地（`transports/http.ts`、`kernel/frame-pipe.ts`，含 15 个新测试）；原 `response/response-pipeline.ts` 已拆成请求侧与响应侧 Modifier 链，`isStreaming` 布尔随 S4 一并删除 |
 | S4 | 完成 | 六个修改器 + 观察者 + 执行器重写；`adapter.kind === 'conversion'` 分支与 `request-defaults.ts` 的适配器内嵌删除 |
 | S5 | 完成 | 观察能力落位为 Observer（`observers/`）；帧搬运下移到 `kernel/relay.ts`（72 行），`attempt-executor.ts` 瘦身到 269 行且只剩「逐个候选编排 + 收尾」（见下方偏差说明） |
-| S6 | 完成 | WS 传输落地：`transports/websocket.ts`（上游）、`transports/websocket-server-socket.ts`（客户端侧零依赖 RFC 6455）、`request/websocket-entry.ts`（升级入口）、`GET /v1/responses` 端点声明。内核零改动，验收见 [websocket-transport.md](./websocket-transport.md) |
+| S6 | 已取消 | ~~WS 传输落地~~——当前不计划实现 Responses API 的 WS 接口，其入口与传输实现（`transports/websocket.ts`、`transports/websocket-server-socket.ts`、`request/websocket-entry.ts`、`protocols/shared/websocket-envelope.ts`）已从代码库移除。内核侧的传输轴与双向搬运能力保留（见 §四末表） |
 | S7 | 完成 | 路由决策集中到唯一的 `planners/target-planner.ts`：入口只传「逻辑模型 + 客户端协议 + 手动锁定 + 传输」，拿回有序 `UpstreamTarget[]` 与「为什么没有候选」的 `reason`/`detail`。执行器、收尾器、观测与传输层从此只见 `UpstreamTarget`，不再回查端点。`resolveProxyTargets` / `resolveAttemptSnapshot` / `resolveEndpointId` 三个旧出口全部消失 |
-| S8 | 完成 | 接口身份与传输解耦：`RouteMatcher.transport?` 成为匹配条件，注册表按 `(method, path, transport)` 匹配并给出「该入口路由在哪几种传输上有效」；`openai-responses` 的 `responses` 与 `responses-websocket` 两个 endpoint **合并为一个** `responses`，声明 `envelopes: { http, websocket }`。声明了没有对应封装的传输会在加载期报错（§2.3 第 1 条） |
-| S9 | 完成 | 客户端传输成为显式的一等事实：`ExchangeView.transport`、`ModifierContext.transport`、`RequestContext.transport`，两个入口各自写入 `'http'` / `'websocket'`。修改器不必再从别处推断自己跑在哪条传输上（§2.3 第 3 条的反向补全） |
-| S10 | 完成 | 双向搬运收进唯一内核：`kernel/relay.ts` 提供 `relayAttempt`（单工尝试）与 `relayConnected`（已建连的双向交换），后者统一处理「谁先结束」（`firstEnded`）、反向摘要（`inbound`）与「上游只断一次」不变式。`websocket-entry.ts` 删掉自己的搬运循环与收尾判断，改为调用 `relayConnected` |
+| S8 | 完成 | 接口身份与传输解耦：`RouteMatcher.transport?` 成为匹配条件，注册表按 `(method, path, transport)` 匹配并给出「该入口路由在哪几种传输上有效」；`openai-responses` 的 `responses` 与 `responses-websocket` 两个 endpoint **合并为一个** `responses`（WS 实现移除后，它的 `envelopes` 只剩 `http`）。声明了没有对应封装的传输会在加载期报错（§2.3 第 1 条） |
+| S9 | 完成 | 客户端传输成为显式的一等事实：`ExchangeView.transport`、`ModifierContext.transport`、`RequestContext.transport`，入口写入 `'http'`。修改器不必再从别处推断自己跑在哪条传输上（§2.3 第 3 条的反向补全） |
+| S10 | 完成（能力保留） | 双向搬运收进唯一内核：`kernel/relay.ts` 提供 `relayAttempt`（单工尝试）与 `relayConnected`（已建连的双向交换），后者统一处理「谁先结束」（`firstEnded`）、反向摘要（`inbound`）与「上游只断一次」不变式。WS 入口移除后 `relayConnected` 暂无生产调用者，作为未来的双向传输能力保留 |
 | S11 | 完成 | 「传输种类 → 传输实现」收敛到唯一一处 `transports/registry.ts` 的 `resolveTransport`；执行器不再写死 `createHttpTransport`，而是按 `target.transport` 取实现。新增传输的代价因此固定为「实现 `Transport` + 加一个分支」（§2.3 末段） |
 
 #### S5 的两处偏差
@@ -560,16 +553,16 @@ WS 与 HTTP 的对照（说明「同一内核」而不是「两套代码」）�
 - **`kernel/relay.ts` 只负责一次 attempt**（建连 → 请求侧修改器 → `pipeFrames` → 结果归类），不知道候选、不知道重试。它放在 `kernel/` 是因为它就是「搬运」本身，不持有任何协议/传输知识。
 - **`attempt-executor.ts` 保留为编排层**（循环候选、调用传输、接入观察者与落库），放在 `execution/`。它的 269 行里绝大部分是“让下一次尝试发生”的判断（哪些错误能切换、何时该停下来）；把这些塞进 `kernel/` 反而会把候选决策漏进内核，与 _S7 要把候选决策集中到 `AttemptPlanner`_ 的方向相反。
 
-#### S3b 为什么与 S4 合并
+#### S3b 为什么与 S4 合并交付（回溯）
 
-`attempt-executor.ts` 现在把上游响应喂给 `ResponsePipeline`，而 `ResponsePipeline` 同时承担两件事：**协议转换**（`adapter.kind === 'conversion'` 分支）与**缓冲/转发**。
+合并交付前，`attempt-executor.ts` 把上游响应喂给 `ResponsePipeline`，而 `ResponsePipeline` 同时承担两件事：**协议转换**（`adapter.kind === 'conversion'` 分支）与**缓冲/转发**。
 只把传输换成帧循环、留下 `ResponsePipeline`，等于在帧管道的下游又接回一个协议相关的黑盒，`isStreaming` 布尔也删不掉——搬运层变了，但「谁解析报文」没变，等于白改一遍。
-因此下一步是**一次性**把 `response-pipeline.ts` 拆成：
+因此当时的选择是**一次性**把 `response-pipeline.ts` 拆成：
 
 - `buffered` 请求侧 Modifier：认证注入、模型改写、请求重写、接口默认值（现 `request-defaults.ts` 的适配器内嵌）
 - `buffered` / `frame` 响应侧 Modifier：响应重写、协议转换（SSE 流转换器与整包转换都落在这里）
 
-然后 `attempt-executor.ts` 的尝试循环改为：`transport.connect()` → 跑完请求侧 buffered Modifier → `pipeFrames(connection.frames, sink, { modifiers })`。
+然后执行器的尝试循环改为：`transport.connect()` → 跑完请求侧 buffered Modifier → `pipeFrames(connection.frames, sink, { modifiers })`。
 回归网是 `request-entry.test.ts`（63KB，40+ 调用点，逐字断言透传保真度与落库内容）。
 
 S2 的实际改动（`pnpm typecheck` / `pnpm lint` / 79 files 602 tests / `vite build` 全绿）：
@@ -632,7 +625,7 @@ S2c 的实际改动（`pnpm typecheck` / `pnpm lint` / 80 files 617 tests / `vit
 | S3 | 抽出 `kernel/frame-pipe.ts` 与 `transports/http.ts`；把 `response-pipeline.ts` 改造为帧上的 Modifier 链；内核里删除 `isStreaming` 布尔 | `response-pipeline.test.ts`、`transport.test.ts`、`response.test.ts` 全绿 |
 | S4 | 重写规则、协议转换、认证注入、接口默认值分别落位为 Modifier；删除 `adapter.kind` 分支与 `request-defaults.ts` 的适配器内嵌 | `conversion.test.ts`、`request-rewrite-engine.test.ts` 全绿 |
 | S5 | 观察能力落位为 Observer；`attempt-executor.ts` 瘦身为 `kernel/relay.ts`（目标 ≤200 行）；`request-entry.ts` 收敛为 `kernel/exchange-factory.ts` + 统一收尾 | `request-entry.test.ts`（63KB 回归网）全绿 |
-| S6 | 接入 `transports/websocket.ts` 与 `openai-responses` 的 WS 能力，复用全部 Modifier/Observer | [websocket-transport.md](./websocket-transport.md) 验收清单 |
+| S6 | ~~接入 WS 传输与 `openai-responses` 的 WS 封装~~ **已取消**：当前不计划实现 WS 接口，入口与传输实现已移除；内核的双向搬运能力保留 | — |
 | S7 | 路由工作台落位为 `AttemptPlanner`（`/v1/models` 已在 S2c 落位为本地端点） | 管理 API 测试 + 现有测试 |
 
 分层约束的可执行校验：`scripts/check-proxy-layers.mjs`（已实现，并挂在 `pnpm lint` 里）用静态 import 检查（而非 ESLint 规则，避免与 `peculiar/*` 规则纠缠）断言：
@@ -653,26 +646,24 @@ S2c 的实际改动（`pnpm typecheck` / `pnpm lint` / 80 files 617 tests / `vit
 
 - [x] `proxy/contracts/` 只含类型，`proxy/kernel/` 无 `node:http`、无协议名、无数据库依赖，`scripts/check-proxy-layers.mjs` 通过
 - [x] 新增一个协议只需新增 `protocols/<id>/descriptor.ts` 一个文件，不改内核、不改其他协议
-- [x] 新增一个接口只需在已有协议目录里新增一个 `EndpointSpec`（S6 的 `GET /v1/responses` 就是这条路）
-- [x] 新增一个传输只需实现 `Transport` 接口 + 在 `transports/registry.ts` 加一个分支，不改内核、不改任何 Modifier/Observer（S6 的 WS 就是这条路，`proxy/kernel/**` 零改动；S11 之前执行器还写死 HTTP，现已改为按 `target.transport` 取实现）
+- [x] 新增一个接口只需在已有协议目录里新增一个 `EndpointSpec`（注册表的匹配、封装查找与拒绝路径都由声明驱动，不需要改注册表代码）
+- [x] 新增一个传输只需实现 `Transport` 接口 + 在 `transports/registry.ts` 加一个分支，不改内核、不改任何 Modifier/Observer（S11 之前执行器还写死 `createHttpTransport`，现已改为按 `target.transport` 取实现）
 - [x] 新增一个观察能力只需注册 `Observer`，不改内核；观察者抛错不影响请求结果（`frame-pipe.test.ts` 覆盖）
 - [x] 新增一个修改能力只需注册 `Modifier`，不改内核；未匹配修改器时字节逐帧透传
 - [x] 无匹配的 `buffered` 修改器时，流式响应不做任何缓冲（与当前 `proxy.md` 行为一致）
 - [ ] `attempt-executor.ts` 删除——**判定为不再追求**：它保留为候选循环编排，帧搬运在 `kernel/relay.ts`，理由见 §5 的「S5 的两处偏差」
 - [x] HTTP 路径（`chat/completions`、`completions`、`embeddings`、`messages`、`responses`）行为与当前完全一致
-- [x] 一个接口可以有多种传输，而身份仍是一个：`openai-responses` 只有 `responses` 一个 endpoint，同一声明里的两个入口路由按 `transport` 区分（`registry.test.ts` 断言「一个接口两种传输」而不是「两个接口」）
-- [x] 传输是匹配条件：未声明该传输的入口路由不会被命中，且拒绝原因可与「路径不存在」区分（`matchProtocolEndpoint` 先匹配再判传输）
-- [x] 客户端传输是显式事实：`ExchangeView.transport` / `ModifierContext.transport` 由入口写入，HTTP 与 WS 各一条路径都断言过
-- [x] 双向交换与单工尝试共用同一份搬运与收尾：`relayAttempt` 与 `relayConnected` 共用 `runRelay`，上游只断一次是内核不变式（`websocket-entry.test.ts` 断言 abort 次数为 1）
-- [x] WS P1 在不修改 `proxy/kernel/**` 的前提下完成 [websocket-transport.md](./websocket-transport.md) 的验收清单
+- [x] 传输不进入接口身份：`openai-responses` 只有 `responses` 一个 endpoint（`match` 里两条入口路由各自声明 `transport`），不存在 `responses-websocket` 这样的 id（`registry.test.ts`）
+- [x] 传输是匹配条件：未声明该传输的入口路由不会被命中，且拒绝原因可与「路径不存在」区分（`matchProtocolEndpoint` 先匹配再判传输；今天没有任何接口声明 `websocket` 封装，所以每条路由在 websocket 上都必须为 `null`）
+- [x] 客户端传输是显式事实：`ExchangeView.transport` / `ModifierContext.transport` 由入口写入 `'http'`，`request-entry` 有断言
+- [x] 双向交换与单工尝试共用同一份搬运与收尾：`relayAttempt` 与 `relayConnected` 共用 `runRelay`，上游只断一次是内核不变式（`kernel/relay.test.ts` 断言 abort 次数为 1）
 - [x] `/v1/models` 由 `LocalHandler` 提供，`proxy-runtime.ts` 不再包含任何业务分支
 - [x] 路由决策只有一处：`planners/target-planner.ts` 是 `AttemptPlanner` 的唯一实现，入口只把规划结果翻成拒绝码；执行器与传输层只见 `UpstreamTarget`（`target-planner.test.ts` 14 例覆盖原生优先、HTTP 转换候选、WS 仅原生、三种空候选原因、字段映射与坏 URL 不下传抛错）
-- [x] 分层约束可执行：`scripts/check-proxy-layers.mjs` 通过（51 files，挂在 `pnpm lint` 里）
+- [x] 分层约束可执行：`scripts/check-proxy-layers.mjs` 通过（48 files，挂在 `pnpm lint` 里）
 
 ### 未兑现的声明（诚实清单）
 
-- **WS 不挂 `Observer`、不落库、不跑修改器**：`request/websocket-entry.ts` 传给 `relayConnected` 的 `modifiers` 与 `observers` 都是空数组。前者是 P1 的刻意取舍（不解析帧内容 ⇒ 没有匹配的修改器 ⇒ 原样透传）；后者意味着 WS 流量在日志页不可见，属于已知能力缺口，不是双轴结构的缺陷——内核两个方向都已支持修改器与观察者，填上的入口是按 `target.transport` 取编排器，而不是再写一套搬运。
-- **WS 没有候选循环**：一条连接只试第一个候选，失败即回 426。这是设计（连接内切换会破坏 `previous_response_id` 链式语义），不是未做完。
+- **WS 传输没有实现，也不在当前计划内**：入口与实现文件（`transports/websocket*.ts`、`request/websocket-entry.ts`、`protocols/shared/websocket-envelope.ts`）已从代码库移除，没有任何接口声明 `websocket` 封装。保留的是**能力形状**：`TransportKind` 的 `'websocket'` 取值、`UpstreamConnection.outbound`、`kernel/relay.ts` 的 `relayConnected`、`RouteMatcher.transport` 匹配条件，以及 `transports/registry.ts` / `proxy-runtime.ts` 对未实现传输的显式拒绝。因此本节标题成立：新增传输的代价仍然是「实现 `Transport` + 加一个分支」，只是这版没有这个消费者。
 
 ## 七、开放问题
 
@@ -680,5 +671,4 @@ S2c 的实际改动（`pnpm typecheck` / `pnpm lint` / 80 files 617 tests / `vit
 2. **修改器冲突语义**：两个同方向修改器改同一个字段时，是靠 `order` 后者胜，还是内核检测冲突并报错？倾向后者（显式），但需要确认重写规则与协议转换必然同时命中的场景。
 3. **`frame` 修改器的背压**：改写是否允许改变帧的节奏（如把 1 个上游帧展开成多个下游帧）？会直接影响 SSE 客户端的解析假设。
 4. **Exchange 状态的类型化**：观察者之间共享数据（如「请求行 ID」）用字符串键 `Map` 还是声明式扩展点？后者更安全但需要在契约里做泛型装配。
-5. **WS 帧级观测的粒度**：P1 只记连接级（见 [websocket-transport.md](./websocket-transport.md)）；连接内的 `response.create` / `response.completed` 切分是否需要现在就预留 Observer 事件位。
-6. **`EndpointSpec` 的粒度上限**：`embeddings`、`images`、`audio` 是否需要各自的 `usage` / `failure` 语义，还是统一走协议级默认。
+5. **`EndpointSpec` 的粒度上限**：`embeddings`、`images`、`audio` 是否需要各自的 `usage` / `failure` 语义，还是统一走协议级默认。

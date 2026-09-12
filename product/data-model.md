@@ -90,6 +90,9 @@ erDiagram
   request_attempts ||--o{ attempt_usages : produces
   request_attempts ||--o| attempt_contents : captures
   providers ||--o{ request_attempts : attempted_by
+  provider_models ||--o{ provider_model_request_rewrite_rules : enables
+  request_rewrite_rules ||--o{ provider_model_request_rewrite_rules : applied_by
+  request_logs ||--o{ request_attributes : annotates
 
   settings {
     text key PK
@@ -119,11 +122,13 @@ erDiagram
   scheduling_policies {
     text logicalModelId PK, FK
     text providerModelId PK, FK
+    text strategy
     integer priority
     integer weight
     boolean enabled
     integer createdTime
     integer updatedTime
+    integer deletedTime
   }
 
   provider_endpoints {
@@ -141,6 +146,7 @@ erDiagram
     text name UK
     text description
     boolean enabled
+    integer sortOrder
     integer createdTime
     integer updatedTime
     integer deletedTime
@@ -271,6 +277,57 @@ erDiagram
     text errorCode
     text errorMessage
     integer createdTime
+  }
+
+  request_attributes {
+    text requestId PK, FK
+    text key PK
+    text value
+    integer createdTime
+  }
+
+  runtime_logs {
+    integer id PK
+    text level
+    text message
+    integer timestamp
+  }
+
+  request_rewrite_rules {
+    text id PK
+    text name
+    text description
+    boolean enabled
+    text scope
+    integer schemaVersion
+    text source
+    text match
+    text actions
+    text testCases
+    integer createdTime
+    integer updatedTime
+    integer deletedTime
+  }
+
+  provider_model_request_rewrite_rules {
+    text providerModelId PK, FK
+    text requestRewriteRuleId PK, FK
+    integer priority
+    boolean enabled
+    integer createdTime
+    integer updatedTime
+    integer deletedTime
+  }
+
+  workflows {
+    text id PK
+    text type
+    integer version
+    text name
+    text definition
+    integer createdTime
+    integer updatedTime
+    integer deletedTime
   }
 ```
 
@@ -885,6 +942,110 @@ CREATE INDEX idx_request_attempts_created_time
 - `retryable`；
 - `errorCode`；
 - `createdTime`。
+
+### 3.13 `request_attributes`、`runtime_logs`、`request_rewrite_rules`、`provider_model_request_rewrite_rules` 与 `workflows`
+
+```sql
+CREATE TABLE request_attributes (
+  requestId TEXT NOT NULL,
+  key TEXT NOT NULL,
+  value TEXT NOT NULL,
+  createdTime INTEGER NOT NULL,
+
+  PRIMARY KEY (requestId, key),
+  FOREIGN KEY (requestId) REFERENCES request_logs(id)
+);
+
+CREATE INDEX idx_request_attributes_key_value
+  ON request_attributes(key, value);
+
+CREATE INDEX idx_request_attributes_created_time
+  ON request_attributes(createdTime);
+
+CREATE TABLE runtime_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  level TEXT NOT NULL,
+  message TEXT NOT NULL,
+  timestamp INTEGER NOT NULL
+);
+
+CREATE INDEX idx_runtime_logs_timestamp
+  ON runtime_logs(timestamp);
+
+CREATE INDEX idx_runtime_logs_level_timestamp
+  ON runtime_logs(level, timestamp);
+
+CREATE TABLE request_rewrite_rules (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+  scope TEXT NOT NULL DEFAULT 'model',
+  schemaVersion INTEGER NOT NULL DEFAULT 1,
+  source TEXT NOT NULL DEFAULT 'user',
+  match TEXT NOT NULL,
+  actions TEXT NOT NULL,
+  testCases TEXT NOT NULL DEFAULT '[]',
+  createdTime INTEGER NOT NULL,
+  updatedTime INTEGER NOT NULL,
+  deletedTime INTEGER
+);
+
+CREATE INDEX idx_request_rewrite_rules_enabled
+  ON request_rewrite_rules(enabled);
+
+CREATE INDEX idx_request_rewrite_rules_scope
+  ON request_rewrite_rules(scope);
+
+CREATE INDEX idx_request_rewrite_rules_deleted_time
+  ON request_rewrite_rules(deletedTime);
+
+CREATE TABLE provider_model_request_rewrite_rules (
+  providerModelId TEXT NOT NULL,
+  requestRewriteRuleId TEXT NOT NULL,
+  priority INTEGER NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+  createdTime INTEGER NOT NULL,
+  updatedTime INTEGER NOT NULL,
+  deletedTime INTEGER,
+
+  PRIMARY KEY (providerModelId, requestRewriteRuleId),
+  FOREIGN KEY (providerModelId) REFERENCES provider_models(id),
+  FOREIGN KEY (requestRewriteRuleId) REFERENCES request_rewrite_rules(id)
+);
+
+-- 同一 ProviderModel 下，同一个 priority 只能有一条生效绑定
+CREATE UNIQUE INDEX idx_provider_model_request_rewrite_rule_priority_active
+  ON provider_model_request_rewrite_rules(providerModelId, priority)
+  WHERE deletedTime IS NULL;
+
+CREATE INDEX idx_provider_model_request_rewrite_rules_deleted_time
+  ON provider_model_request_rewrite_rules(deletedTime);
+
+CREATE TABLE workflows (
+  id TEXT PRIMARY KEY,
+  type TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  definition TEXT NOT NULL,
+  createdTime INTEGER NOT NULL,
+  updatedTime INTEGER NOT NULL,
+  deletedTime INTEGER,
+
+  UNIQUE (type, version)
+);
+
+CREATE INDEX idx_workflows_type
+  ON workflows(type, deletedTime);
+
+CREATE INDEX idx_workflows_deleted_time
+  ON workflows(deletedTime);
+```
+
+- `request_attributes` 保存请求的客户端/网络属性（来源 UA、入口地址等）。值一律是字符串——采集侧只产出字符串，因此没有「值类型」维度。
+- `runtime_logs` 是应用运行时日志，与配置和请求生命周期无关，按 `timestamp` 保留和清理；日志级别与保留策略见 [observability.md](./observability.md)。
+- `request_rewrite_rules` 是可复用的规则定义，`match` 与 `actions` 是 JSON 文本；`provider_model_request_rewrite_rules` 把规则绑定到 ProviderModel，生效顺序由 `priority` 表达。匹配条件、动作语义与四阶段执行次序见 [request-rewrite-rules.md](./request-rewrite-rules.md)。
+- `workflows` 按 `type + version` 唯一保存工作流定义，`definition` 是 JSON 文本，`version` 即路由工作台策略图的版本号。图的节点与端口语义见 [route-design.md](./route-design.md)，执行模型见 [workflow-engine.md](./workflow-engine.md)。
 
 ## 4. JSON 文档版本
 

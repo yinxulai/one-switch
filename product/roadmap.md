@@ -4,12 +4,12 @@
 
 ## 一、设计定稿（已完成）
 
-以下设计文档已评审定稿，是后续实施的唯一依据。v0.3 已在 `main` 上按不兼容的新版本契约实施：17 表数据库基线、公共 Schema、分域 Store、关系模型管理、核心路由、协议适配器、请求观测和管理界面已经完成；当前主要收尾协议转换补充验收、跨平台和正式发布包端到端验证。
+以下设计文档已评审定稿，是后续实施的唯一依据。v0.3 已在 `main` 上按不兼容的新版本契约实施：22 张表数据库基线、公共 Schema、分域 Store、关系模型管理、核心路由、协议适配器、请求观测和管理界面已经完成；当前主要收尾协议转换补充验收、跨平台和正式发布包端到端验证。
 
 当前实现进度：Provider 默认端点已从 Provider JSON 完全迁移到 `provider_endpoints`；ProviderModel 通过端点绑定和 `scheduling_policies` 参与路由；Provider 与 ProviderModel 双层健康冷却已接入候选过滤和请求尝试。
 
-- [x] [data-model.md](./data-model.md)：22 张核心表基线，含 provider_settings、provider_endpoints、provider_model_endpoints、provider_model_health、scheduling_policies、protocol_converters、request_logs、request_attributes、request_usages、attempt_usages、request_attempts、request_contents、attempt_contents、runtime_logs；采用标准字段结构化列、多值关系表、受限 JSON 正文/协议详情、请求观测分层、软删除和 Unix 毫秒时间戳。
-- [x] [proxy.md](./proxy.md)：协议适配器（ProtocolAdapter）+ 共享骨架（请求入口/尝试编排 / transport I/O / hooks 观测订阅）的代理管线架构。
+- [x] [data-model.md](./data-model.md)：22 张核心表基线，含 provider_settings、provider_endpoints、provider_model_endpoints、provider_model_health、scheduling_policies、protocol_converters、request_rewrite_rules、provider_model_request_rewrite_rules、workflows、request_logs、request_attributes、request_usages、attempt_usages、request_attempts、request_contents、attempt_contents、runtime_logs；采用标准字段结构化列、多值关系表、受限 JSON 正文/协议详情、请求观测分层、软删除和 Unix 毫秒时间戳。
+- [x] [proxy.md](./proxy.md)（外部行为契约）、[proxy-engine.md](./proxy-engine.md)（分层引擎）：代理管线按入口 → 路由 → 尝试规划 → 尝试执行 → 协议/适配 → 传输 → 响应产出 → 观测分层。
 - [x] [protocol-conversion.md](./protocol-conversion.md)、[server-architecture.md](./server-architecture.md)、[tech-architecture.md](./tech-architecture.md)、[security-privacy.md](./security-privacy.md)、[observability.md](./observability.md)。
 
 ### 当前实现结论（2026-08-22）
@@ -17,7 +17,7 @@
 - v0.3 的数据库基线、关系模型、分域 Store、路由、协议适配器、请求观测分层、管理 API 和控制台主流程已落地。
 - 请求链路统一使用 `client*` / `upstream*` 边界：`clientProtocol` 表示客户端协议，`request_attempts.upstreamProtocol` 表示每次真实远端尝试；正文按视角拆为 `request_contents`（客户端）与 `attempt_contents`（上游），不再使用 `providerProtocol` 表示运行时链路。
 - 观测数据遵循两条硬约束：**一张表 = 一个视角**（列名不带视角前缀，用量同样拆为 `request_usages` / `attempt_usages`，不用可空列判别归属）；**事实永远写入、载荷才受开关控制**（协议转换由两侧协议对比得出而不单独建表，是否流式、TTFT、命中的改写规则 id 与尝试级原始 usage 写在 `request_attempts` 上，`captureRequestContent` 关闭时依然完整落库）。
-- 完整源码验证已通过：`node scripts/typecheck.mjs`、`node scripts/test.mjs`（72 个测试文件、456 个测试）、`node scripts/lint.mjs`；Vite bundling 也已通过。
+- 完整源码验证已通过：`pnpm typecheck`、`pnpm test`、`pnpm lint`；Vite bundling 也已通过。
 - Windows electron-builder 当前受符号链接权限限制，发布包安装验证仍未完成；该环境问题不改变源码验证结论。
 
 ### 产品与设计原则（摘要）
@@ -112,7 +112,7 @@
 
 ### MVP（P0）：代理管线收尾
 
-- [x] 抽出基础 `proxy/transport.ts`，隔离 Node.js HTTP/HTTPS 请求调用并覆盖基础测试
+- [x] 抽出基础传输层（现为 `proxy/transports/http.ts`），隔离 Node.js HTTP/HTTPS 请求调用并覆盖基础测试
 - [x] 建立共享 request context，统一请求 ID、协议、取消信号和生命周期数据
 - [x] 建立 ProtocolAdapter 类型、注册表与 OpenAI Completions、OpenAI Responses、Anthropic Messages 适配边界
 - [x] 将模型改写、usage 注入、请求/响应转换和流式转换迁移到 adapter 或转换器注册表
@@ -141,9 +141,8 @@
 - [x] 供应商包备份/恢复：按供应商导出/导入端点、模型与自定义设置，密钥仅存系统密钥环
 - [ ] Token 用量统计：按 `request_usages.type` 聚合展示今日/本周用量（基础指标已存在，产品口径与专用 UI 仍需确认）
 - [ ] 协议兼容转换器补充验收（详见 [protocol-conversion.md](./protocol-conversion.md)）：核心转换和 UI 已落地，转换候选故障切换、转换错误 400、流式转换异常及各方向发布包验收仍待补齐
-- [ ] Responses API WebSocket 传输（设计详见 [websocket-transport.md](./websocket-transport.md)）：`/v1/responses` 的 `upgrade` 握手、WS→WS 透传中继、上游不支持时回 426 由客户端降级 HTTP、连接级日志与健康冷却；WS↔HTTP/SSE 桥接为 P2 可选项
-- [ ] 代理引擎结构重构（设计详见 [proxy-engine.md](./proxy-engine.md)）：协议矩阵从 6 处收敛到单一描述符注册表，内核去掉协议与 HTTP 分支，把重写/转换/日志/用量/健康落位为 Modifier 与 Observer 插件，使 WS 传输与新增协议/接口无需改动内核（S1–S7 分阶段，每阶段独立可发布）
-- [ ] 上游出站代理设置（设计详见 [outbound-proxy.md](./outbound-proxy.md)）：HTTP/HTTPS/SOCKS 代理、绕过规则、草稿连接测试，覆盖模型请求与模型列表获取
+- [x] 代理引擎结构重构（设计详见 [proxy-engine.md](./proxy-engine.md)）：协议矩阵从 6 处收敛到单一描述符注册表，内核去掉协议与 HTTP 分支，把重写/转换/日志/用量/健康落位为 Modifier 与 Observer 插件；S1–S11 已完成（S6「WS 传输落地」已取消，内核侧传输轴与双向搬运能力保留）
+- [x] 上游出站代理设置（详见 [outbound-proxy.md](./outbound-proxy.md)）：HTTP/HTTPS/SOCKS 代理、绕过规则、草稿连接测试，覆盖模型请求与模型列表获取
 - Linux 打包与托盘体验完善
 - 更细粒度的错误切换策略配置
 - [x] 日志导出
@@ -152,15 +151,14 @@
 
 ### 请求重写模块
 
-设计文档：[request-rewrite-rules.md](./request-rewrite-rules.md)
+行为契约、实现状态与剩余项：[request-rewrite-rules.md](./request-rewrite-rules.md)（§12 分阶段实施状态）
 
-- [ ] 讨论并冻结规则模型：全局规则、ProviderModel 绑定、绑定顺序、启停和失败语义
-- [ ] 讨论请求/响应执行阶段，以及协议转换前后的字段形态
-- [ ] 讨论 `User-Agent`、Header、JSON Path 和 thinking/reasoning 的首期支持范围
-- [ ] 讨论流式响应规则的处理方式，不在当前实现中默认缓冲或改写 SSE
-- [ ] 设计 `request_rewrite_rules` 与 ProviderModel 规则关联表、迁移和规则独立的导入导出
-- [ ] 设计管理 API、规则管理菜单/编辑器和 ProviderModel 规则选择交互
-- [ ] 评审通过后再拆分数据库、代理执行引擎、管理 API、控制台和测试任务
+- [x] 规则模型已冻结并实现：全局规则与 ProviderModel 绑定、绑定顺序（`priority`）、启停，以及「失败即阻断当前 attempt」语义
+- [x] 请求阶段动作与非流式响应阶段动作已生效；`stage` 是动作级字段，不是匹配条件
+- [x] Header 动作、受限 JSON Path 动作与 `User-Agent` 场景已落地
+- [ ] 三种协议的 thinking/reasoning 字段矩阵，以及 OpenAI Responses、Anthropic Messages 的人工验收
+- [ ] 请求日志中的规则执行摘要与响应字段修改安全审计
+- [ ] 流式事件级规则（仅在独立设计评审通过后实施）
 
 ### 范围
 

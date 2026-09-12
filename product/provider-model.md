@@ -20,10 +20,10 @@
 
 | 协议 | 认证方式 | 说明 |
 |------|----------|------|
-| OpenAI | Bearer Token | `Authorization: Bearer <apiKey>` |
-| Anthropic | Header | `x-api-key: <apiKey>` |
-| Gemini | Header | `x-goog-api-key: <apiKey>` |
-| Custom | 由适配器决定 | 认证参数由具体协议适配器处理，不在 Provider 设置中持久化 |
+| OpenAI Completions / OpenAI Responses | Bearer Token | `Authorization: Bearer <apiKey>` |
+| Anthropic Messages | Header | `x-api-key: <apiKey>`，并附带协议版本头 |
+
+协议清单与认证预设以 `source/common/protocols.ts` 的 `PROTOCOL_AUTH_PRESETS` 为准；当前不支持 Gemini 或自定义协议，因此没有「由适配器自定认证」这类行。
 
 ### 健康状态（运行时）
 

@@ -33,7 +33,7 @@ export function OverviewPage(props: OverviewPageProps) {
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="rounded-lg bg-muted p-3">
+          <div key={i} className="rounded-lg bg-inset p-3">
             <Skeleton className="mb-2 h-3 w-16" />
             <Skeleton className="h-6 w-20" />
           </div>

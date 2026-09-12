@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Check, RotateCcw, Save } from 'lucide-react'
+import { Check, LoaderCircle, RotateCcw, Save } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -22,7 +22,7 @@ interface SettingsSectionProps {
 function SettingsSection(props: SettingsSectionProps) {
   return (
     <section className="space-y-2.5">
-      <h2 className="px-1 text-xs font-medium text-muted-foreground">{props.title}</h2>
+      <h2 className="px-1 system-xs-medium text-text-tertiary">{props.title}</h2>
       <div className="space-y-3">{props.children}</div>
     </section>
   )
@@ -34,9 +34,9 @@ export function RuntimeSettingsPage() {
   const setThemeMode = useAppUiStore(state => state.setThemeMode)
 
   return (
-    <PageLayout className="pb-20">
+    <PageLayout className="flex min-h-full flex-col">
       <PageHeader title="设置" description="管理应用行为、网络连接、故障恢复与本地数据" />
-      <PageContent className="space-y-6">
+      <PageContent>
         {service.loading || !service.settings ? (
           <div className="space-y-3">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -98,15 +98,14 @@ export function RuntimeSettingsPage() {
       </PageContent>
 
       {!service.loading && service.settings && (
-        <div className="fixed inset-x-0 bottom-0 z-20 ml-12 bg-background/90 backdrop-blur-md">
-          <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-6 py-3">
-            <p className="text-xs text-muted-foreground">
+        <div className="sticky bottom-0 z-20 -mx-6 -mb-5 mt-auto border-t border-border/50 bg-card/90 px-6 py-3 backdrop-blur-md">
+          <div className="flex items-center justify-between gap-4">
+            <p className="system-xs-regular text-text-tertiary">
               {service.saved ? '所有设置已保存' : service.isDirty ? '有尚未保存的更改' : '当前设置已同步'}
             </p>
             <div className="flex items-center gap-2">
               <Button
                 variant="ghost"
-                size="sm"
                 disabled={service.saving || !service.isDirty}
                 onClick={service.resetSettings}
               >
@@ -114,12 +113,11 @@ export function RuntimeSettingsPage() {
                 重置
               </Button>
               <Button
-                size="sm"
                 disabled={service.saving || !service.isDirty}
                 onClick={() => void service.saveSettings()}
               >
-                {service.saved ? <Check /> : <Save />}
-                {service.saving ? '保存中...' : service.saved ? '已保存' : '保存更改'}
+                {service.saving ? <LoaderCircle className="animate-spin" /> : service.saved ? <Check /> : <Save />}
+                {service.saving ? '保存中…' : service.saved ? '已保存' : '保存更改'}
               </Button>
             </div>
           </div>

@@ -2,9 +2,8 @@ import { useMemo, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { FORM_DIALOG_BODY_CLASSNAME, FormField, FormGroup, FormHint } from '@/components/form-kit'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
 import { FetchedModelPicker } from './fetched-model-picker'
 import { ModelProtocolEndpointCard } from './model-protocol-endpoint-card'
@@ -81,10 +80,9 @@ export function ModelDialog(props: ModelDialogProps) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="max-h-[65vh] space-y-4 overflow-y-auto px-1 py-2">
+        <div className={FORM_DIALOG_BODY_CLASSNAME}>
           {/* 模型 ID */}
-          <div className="space-y-1.5">
-            <Label htmlFor="model-id">模型 ID</Label>
+          <FormField label="模型 ID" htmlFor="model-id" hint="这是上游供应商识别的模型名称，请求会原样转发。">
             <div className="flex flex-col gap-2 sm:flex-row">
               <Input
                 id="model-id"
@@ -98,15 +96,12 @@ export function ModelDialog(props: ModelDialogProps) {
                 size="sm"
                 disabled={fetchingModels}
                 onClick={onFetchModels}
-                className="h-8 sm:self-start"
+                className="h-8 shrink-0"
               >
                 <RefreshCw size={13} className={cn(fetchingModels && 'animate-spin')} />
                 {fetchingModels ? '拉取中…' : '拉取模型'}
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground">
-              这是上游供应商识别的模型名称，请求会原样转发。
-            </p>
 
             <FetchedModelPicker
               modelId={modelId}
@@ -123,23 +118,15 @@ export function ModelDialog(props: ModelDialogProps) {
               filteredModels={filteredModels}
             />
             {!editingModel && selectedModelIds.length > 0 && (
-              <p className="text-xs text-muted-foreground">
-                已选择 {selectedModelIds.length} 个模型，保存后将批量添加。
-              </p>
+              <FormHint>已选择 {selectedModelIds.length} 个模型，保存后将批量添加。</FormHint>
             )}
-          </div>
-
-          <Separator />
+          </FormField>
 
           {/* 协议端点 */}
-          <div className="space-y-3">
-            <div>
-              <Label className="text-sm">协议端点</Label>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                至少启用一个协议；默认使用供应商级别的接口地址，也可以单独覆盖。
-              </p>
-            </div>
-
+          <FormGroup
+            title="协议端点"
+            description="至少启用一个协议；默认使用供应商级别的接口地址，也可以单独覆盖。"
+          >
             {protocolEntries.map((entry, index) => (
               <ModelProtocolEndpointCard
                 key={entry.protocol}
@@ -148,7 +135,7 @@ export function ModelDialog(props: ModelDialogProps) {
                 updateProtocolEntry={updateProtocolEntry}
               />
             ))}
-          </div>
+          </FormGroup>
 
           {editingModel && <ProviderRuleBindings providerModelId={editingModel.id} embedded />}
         </div>

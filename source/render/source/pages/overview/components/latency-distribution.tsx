@@ -30,11 +30,11 @@ function LatencyTooltip(props: LatencyTooltipProps) {
   if (!bucket) return null
 
   return (
-    <div className="rounded-lg bg-muted px-3 py-2 text-xs">
-      <div className="font-medium">TTFT {bucket.range}</div>
+    <div className="rounded-lg border-[0.5px] border-components-panel-border bg-components-panel-bg-blur px-3 py-2 system-xs-regular backdrop-blur-[5px]">
+      <div className="system-xs-medium text-text-primary">TTFT {bucket.range}</div>
       <div className="mt-1.5 flex items-center justify-between gap-6">
-        <span className="text-muted-foreground">请求数</span>
-        <span className="font-mono font-medium tabular-nums">
+        <span className="text-text-tertiary">请求数</span>
+        <span className="font-mono system-xs-medium tabular-nums text-text-primary">
           {bucket.count}（{bucket.percent}%）
         </span>
       </div>
@@ -50,7 +50,7 @@ export function LatencyDistribution(props: LatencyDistributionProps) {
       <CardSectionHeader title="TTFT 分布" description="按 p95 均分区间" compact />
       <CardContent className="pt-1">
         {buckets.length === 0 ? (
-          <div className="flex min-h-44 items-center justify-center text-xs text-muted-foreground">
+          <div className="flex min-h-44 items-center justify-center system-xs-regular text-text-tertiary">
             暂无 TTFT 数据
           </div>
         ) : (

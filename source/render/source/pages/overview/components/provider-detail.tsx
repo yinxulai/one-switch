@@ -19,7 +19,7 @@ export function ProviderDetail(props: ProviderDetailProps) {
   const hasSuccessfulCalls = summary.success > 0
 
   return (
-    <div className="space-y-4">
+    <div className="grid gap-4">
       <MetricGrid className="sm:grid-cols-5" items={[
         { label: '尝试数', value: summary.attempts.toLocaleString(), Icon: BarChart3 },
         { label: '尝试成功率', value: `${(summary.successRate * 100).toFixed(1)}%`, Icon: CheckCircle2 },
@@ -32,17 +32,17 @@ export function ProviderDetail(props: ProviderDetailProps) {
         <CardSectionHeader title="模型表现" description="按调用量排序 · 用于定位具体模型的质量与缓存差异" compact />
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-xs">
-              <thead className="bg-muted/40 text-muted-foreground"><tr><th className="px-4 py-2 text-left font-medium">模型</th><th className="px-3 py-2 text-right font-medium">尝试数</th><th className="px-3 py-2 text-right font-medium">平均延迟</th><th className="px-3 py-2 text-right font-medium">平均 TTFT</th><th className="px-3 py-2 text-right font-medium">平均 TPS</th><th className="px-3 py-2 text-right font-medium">缓存命中率</th><th className="px-4 py-2 text-right font-medium">成功率</th></tr></thead>
-              <tbody>{providerModels.length === 0 ? <tr><td colSpan={7} className="py-8 text-center text-muted-foreground">暂无模型数据</td></tr> : providerModels.map(model => (
-                <tr key={model.providerModelId} className="border-t border-border/50">
-                  <td className="max-w-52 truncate px-4 py-2.5 font-medium">{model.providerModelName}</td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">{model.attempts.toLocaleString()}</td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">{model.success > 0 ? formatLatency(model.avgLatencyMs) : '—'}</td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">{model.avgTtftMs == null ? '—' : formatLatency(model.avgTtftMs)}</td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">{model.avgTps == null ? '—' : model.avgTps.toFixed(1)}</td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">{model.cacheHitRate == null ? '—' : `${(model.cacheHitRate * 100).toFixed(1)}%`}</td>
-                  <td className="px-4 py-2.5 text-right"><Badge variant={model.successRate >= 0.95 ? 'success' : model.successRate >= 0.8 ? 'warning' : 'destructive'} className="h-5 px-1.5 text-[11px] font-normal">{(model.successRate * 100).toFixed(1)}%</Badge></td>
+            <table className="w-full min-w-[720px] system-xs-regular">
+              <thead className="bg-inset text-text-tertiary"><tr><th className="px-4 py-2 text-left system-2xs-medium">模型</th><th className="px-3 py-2 text-right system-2xs-medium">尝试数</th><th className="px-3 py-2 text-right system-2xs-medium">平均延迟</th><th className="px-3 py-2 text-right system-2xs-medium">平均 TTFT</th><th className="px-3 py-2 text-right system-2xs-medium">平均 TPS</th><th className="px-3 py-2 text-right system-2xs-medium">缓存命中率</th><th className="px-4 py-2 text-right system-2xs-medium">成功率</th></tr></thead>
+              <tbody>{providerModels.length === 0 ? <tr><td colSpan={7} className="py-8 text-center text-text-tertiary">暂无模型数据</td></tr> : providerModels.map(model => (
+                <tr key={model.providerModelId} className="border-t border-border/40 transition-colors hover:bg-state-base-hover">
+                  <td className="max-w-52 truncate px-4 py-2.5 system-xs-medium text-text-primary">{model.providerModelName}</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums text-text-secondary">{model.attempts.toLocaleString()}</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums text-text-secondary">{model.success > 0 ? formatLatency(model.avgLatencyMs) : '—'}</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums text-text-secondary">{model.avgTtftMs == null ? '—' : formatLatency(model.avgTtftMs)}</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums text-text-secondary">{model.avgTps == null ? '—' : model.avgTps.toFixed(1)}</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums text-text-secondary">{model.cacheHitRate == null ? '—' : `${(model.cacheHitRate * 100).toFixed(1)}%`}</td>
+                  <td className="px-4 py-2.5 text-right"><Badge variant={model.successRate >= 0.95 ? 'success' : model.successRate >= 0.8 ? 'warning' : 'destructive'} className="h-5 px-1.5 font-mono">{(model.successRate * 100).toFixed(1)}%</Badge></td>
                 </tr>
               ))}</tbody>
             </table>

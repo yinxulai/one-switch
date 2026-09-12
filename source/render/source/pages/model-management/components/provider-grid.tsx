@@ -38,15 +38,15 @@ export function ProviderGrid(props: ProviderGridProps) {
         key={item.id}
         onClick={item.onSelect}
         className={cn(
-          'flex w-full items-center justify-between gap-2 rounded-md px-2 py-2 text-left transition-colors',
+          'flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left transition-colors',
           active
-            ? 'bg-accent text-foreground'
-            : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground',
+            ? 'bg-accent text-text-primary'
+            : 'text-text-secondary hover:bg-state-base-hover hover:text-text-primary',
         )}
       >
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
           <span
-            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md"
+            className="flex size-6 shrink-0 items-center justify-center rounded-lg"
             style={{
               color: iconColor ?? 'var(--primary)',
               backgroundColor: iconColor ? `${iconColor}14` : 'color-mix(in srgb, var(--primary) 10%, transparent)',
@@ -55,12 +55,12 @@ export function ProviderGrid(props: ProviderGridProps) {
             <ProviderIcon name={item.name} size={21} />
           </span>
           <div className="flex min-w-0 flex-1 items-baseline gap-1">
-            <span className="min-w-0 truncate text-[12px] font-medium">{item.name}</span>
-            <span className="shrink-0 text-[11px] text-muted-foreground">{item.modelCount} 个模型</span>
+            <span className="min-w-0 truncate system-xs-medium text-text-primary">{item.name}</span>
+            <span className="shrink-0 system-2xs-regular text-text-tertiary">{item.modelCount} 个模型</span>
           </div>
         </div>
         {!item.enabled && (
-          <Badge variant="muted" className="shrink-0 text-[10px]">
+          <Badge variant="muted" className="shrink-0 system-2xs-medium">
             停用
           </Badge>
         )}

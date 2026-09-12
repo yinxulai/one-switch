@@ -1,3 +1,5 @@
+import type { RequestLogEntryAttempt } from '@common/schemas'
+
 export const PROTOCOL_LABEL: Record<string, string> = {
   'openai-responses': 'OpenAI Responses',
   'openai-completions': 'OpenAI Completions',
@@ -37,4 +39,39 @@ export function formatTPS(outputTokens: number | null | undefined, totalMs: numb
   if (outputTokens == null || outputTokens <= 0 || totalMs <= 0) return '—'
   const tps = (outputTokens / totalMs) * 1000
   return tps >= 10 ? `${Math.round(tps)}` : tps.toFixed(1)
+}
+
+/**
+ * 一次尝试的结果标签。
+ *
+ * HTTP 状态就是结果本身：有状态码时「失败」「可重试」这类词都只是它的同义反复；
+ * 没有状态码才说明上游一个字节都没回。
+ */
+export function formatAttemptOutcome(attempt: RequestLogEntryAttempt): string {
+  return attempt.httpStatus === null ? '未收到响应' : `HTTP ${attempt.httpStatus}`
+}
+
+/**
+ * 只保留真正独立的错误码。
+ *
+ * 上游 HTTP 非 2xx 时落库的 `Status_401` 是 HTTP 状态的副本，与结果标签完全重复；
+ * 只有像 `UPSTREAM_TIMEOUT` 这种在状态码之外另有信息量的错误码才值得单独展示。
+ */
+export function distinctAttemptErrorCode(attempt: RequestLogEntryAttempt): string | null {
+  if (!attempt.errorCode) return null
+  if (attempt.httpStatus !== null && attempt.errorCode === `Status_${attempt.httpStatus}`) return null
+  return attempt.errorCode
+}
+
+/**
+ * 只保留真正补充了信息的错误信息。
+ *
+ * 上游非 2xx 时落库的「上游返回 401」与结果标签 `HTTP 401` 完全同义，
+ * 展示它等于把同一个事实说第二遍；只有 TLS 断开这类额外说明才值得占一行。
+ */
+export function distinctAttemptErrorMessage(attempt: RequestLogEntryAttempt): string | null {
+  if (!attempt.errorMessage) return null
+  const restatesStatus = attempt.httpStatus !== null
+    && attempt.errorMessage.trim() === `上游返回 ${attempt.httpStatus}`
+  return restatesStatus ? null : attempt.errorMessage
 }

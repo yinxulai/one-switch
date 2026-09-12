@@ -47,18 +47,18 @@ function formatModelSummary(log: RequestLogEntry) {
 
 export function CachedTokensCell(props: CachedTokensCellProps) {
   if (props.value === null) {
-    return <span className="text-muted-foreground/60">—</span>
+    return <span className="text-text-quaternary">—</span>
   }
 
   if (props.value > 0) {
     return (
-      <Badge className="h-5 bg-foreground/10 px-1.5 text-[10px] text-foreground">
+      <Badge variant="secondary" className="h-5 px-1.5 font-mono system-2xs-medium">
         {formatNumber(props.value)}
       </Badge>
     )
   }
 
-  return <span className="font-medium text-foreground/70">MISS</span>
+  return <span className="system-2xs-medium text-text-quaternary">MISS</span>
 }
 
 function RequestLogsTableHeader() {
@@ -144,17 +144,17 @@ function RequestLogTableRow(props: RequestLogTableRowProps) {
       <tr
         onClick={() => props.toggleExpand(props.log.id)}
         className={cn(
-          'cursor-pointer border-b border-border/60 transition-colors last:border-b-0 hover:bg-muted/20',
-          props.expanded && 'bg-muted/20',
+          'cursor-pointer border-b border-border/40 transition-colors last:border-b-0 hover:bg-state-base-hover',
+          props.expanded && 'bg-inset',
         )}
       >
-        <td className={cn(tableCellClass, 'text-foreground/70')}>
-          {props.expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <td className={cn(tableCellClass, 'text-text-quaternary')}>
+          {props.expanded ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
         </td>
         <td className={tableCellClass}>
           <RequestStatusBadge status={props.log.status} />
         </td>
-        <td className={cn(tableCellClass, 'whitespace-nowrap font-mono text-foreground/75')}>
+        <td className={cn(tableCellClass, 'whitespace-nowrap font-mono text-text-tertiary')}>
           {formatTime(props.log.createdTime)}
         </td>
         <td className={cn(tableCellClass, 'max-w-40')}>
@@ -162,9 +162,9 @@ function RequestLogTableRow(props: RequestLogTableRowProps) {
             const { label, extraCount } = formatModelSummary(props.log)
             return (
               <div className="flex min-w-0 items-center gap-2">
-                <span className="min-w-0 truncate font-medium">{label}</span>
+                <span className="min-w-0 truncate system-xs-medium text-text-primary">{label}</span>
                 {extraCount > 0 && (
-                  <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                  <span className="shrink-0 rounded-md bg-components-input-bg-normal px-1.5 py-0.5 font-mono system-2xs-medium text-text-tertiary">
                     +{extraCount}
                   </span>
                 )}
@@ -173,7 +173,7 @@ function RequestLogTableRow(props: RequestLogTableRowProps) {
           })()}
         </td>
         <td className={cn(tableCellClass, 'text-center font-mono')}>
-          <span className={cn(props.log.inputTokens != null && 'text-foreground')}>
+          <span className={cn(props.log.inputTokens != null && 'text-text-primary')}>
             {formatNumber(props.log.inputTokens)}
           </span>
         </td>
@@ -181,7 +181,7 @@ function RequestLogTableRow(props: RequestLogTableRowProps) {
           <CachedTokensCell value={props.log.cachedInputTokens} />
         </td>
         <td className={cn(tableCellClass, 'text-center font-mono')}>
-          <span className={cn(props.log.outputTokens != null && 'text-foreground')}>
+          <span className={cn(props.log.outputTokens != null && 'text-text-primary')}>
             {formatNumber(props.log.outputTokens)}
           </span>
         </td>

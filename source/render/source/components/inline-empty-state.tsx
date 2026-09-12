@@ -15,8 +15,8 @@ export function InlineEmptyState(props: InlineEmptyStateProps) {
   return (
     <div className={cn('flex flex-col items-center gap-1.5 px-5 py-10 text-center', props.className)}>
       {Icon ? <Icon size={20} strokeWidth={1.5} aria-hidden className="mb-0.5 text-text-quaternary" /> : null}
-      <p className="system-xs-medium text-foreground">{props.title}</p>
-      {props.description ? <p className="system-xs-regular text-muted-foreground">{props.description}</p> : null}
+      <p className="system-xs-medium text-text-primary">{props.title}</p>
+      {props.description ? <p className="system-xs-regular text-text-tertiary">{props.description}</p> : null}
     </div>
   )
 }

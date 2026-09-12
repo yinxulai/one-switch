@@ -99,9 +99,9 @@
 
 ### 日志策略
 
-- 默认保留最近 N 条请求（如 1000 条），可配置
-- 支持设置保留天数，自动清理指定天数之前的请求日志；也支持在设置页立即执行清理
-- 默认保存完整请求体和响应体；用户可显式关闭“记录请求内容”，关闭后不再采集新正文
+- 按天数保留：`logRetentionDays` 控制自动清理多少天之前的请求日志，默认 30 天，设置页可修改并可立即执行一次清理
+- 没有「保留最近 N 条」的条数上限：清理口径只有一个，即时间窗
+- 默认保存完整请求体和响应体；用户可显式关闭“记录请求内容”（`captureRequestContent`），关闭后不再采集新正文
 - 记录客户端原始请求与最终响应（`request_contents`），以及每次 upstream 尝试的请求/响应（`attempt_contents`）。
 - 协议转换不单独存储：展示时直接比较 `request_logs.clientProtocol` 与 `request_attempts.upstreamProtocol`，是否流式读 `request_attempts.streaming`，耗时读 `request_attempts.durationMilliseconds`。转换前后的 Header 与正文分别由 `request_contents`（客户端侧）与 `attempt_contents`（上游侧）唯一提供。upstream 可以是供应商，也可以是协议转换器所在的中间目标。
 - **被拒的请求同样落库。** 协议无法识别、model 非法、没有可用逻辑模型、手动模型不可用、找不到上游目标、客户端中断——这些分支在建立执行上下文之前就返回了，但它们是用户真实发出的请求。不写日志会让「日志里查不到」被误读成「没发过这个请求」。
@@ -183,7 +183,9 @@ WHERE a.createdTime >= ? GROUP BY a.providerId
 
 结果：分析页一次完整加载从 1403 ms 降到 550 ms（7 天）、从 3088 ms 降到 1479 ms（30 天）；供应商详情页 30 天从 744 ms 降到 206 ms。
 
-### 额度处理（P1）
+### 额度处理（未实现，规划项）
+
+当前没有任何「额度」概念：路由候选过滤只依据启用开关与两层健康冷却，供应商与逻辑模型上都没有周期请求数或额度字段，代码里也不存在相关的降级分支。以下内容仅仅是尚未开始的规划。
 
 - 支持"手动额度阈值"：用户可为供应商设置周期请求数上限
 - 支持手动标记额度耗尽
@@ -192,27 +194,10 @@ WHERE a.createdTime >= ? GROUP BY a.providerId
 
 ## 健康状态与冷却
 
-### 健康状态
+Provider 与 ProviderModel 两层健康状态的字段定义、索引与保留规则见 [data-model.md](./data-model.md) §3.8；两层冷却如何参与候选过滤与故障转移见 [proxy-engine.md](./proxy-engine.md)。
 
-每个 Provider 和每个 ProviderModel 都维护独立的运行时健康状态。路由时必须同时检查两层冷却。
-
-Provider 维护：
-
-- 连续失败次数
-- 冷却截止时间
-- 最近成功时间
-- 最近失败时间
-
-### 冷却规则
-
-- 连续失败达到阈值后进入短期冷却
-- 默认冷却时间：30 秒 ~ 5 分钟，可按错误类型区分
+- 连续失败达到 `consecutiveFailureThreshold`（默认 3）后进入冷却
+- 冷却从 `cooldownBaseSeconds`（默认 30 秒）起算，上限 `cooldownMaxSeconds`（默认 300 秒）
 - Provider 冷却期间跳过该 Provider 下的所有 ProviderModel；ProviderModel 冷却期间只跳过对应模型
-- 冷却结束后允许下一次真实请求探测恢复
-- 成功请求后连续失败计数重置
-
-### 恢复策略
-
-- MVP 不做主动健康探测
-- 使用真实流量驱动状态恢复（冷却结束后的第一次请求作为探测）
-- P2 可加入主动健康探测
+- 冷却结束后允许下一次真实请求探测恢复；成功后连续失败计数重置
+- MVP 不做主动健康探测，用真实流量驱动状态恢复

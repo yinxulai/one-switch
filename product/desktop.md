@@ -2,7 +2,7 @@
 
 ## 技术栈
 
-Electron + Node + TypeScript + React/Vite
+Electron + Node + TypeScript + React/Vite，选型理由与版本要求见 [tech-architecture.md](./tech-architecture.md)。
 
 ## 主要入口
 
@@ -33,22 +33,19 @@ Electron + Node + TypeScript + React/Vite
 
 ## 控制台页面
 
-### 概览页
+侧边栏分组与页面清单以 `source/render/source/components/app-sidebar.tsx` 为准：
 
-- 服务状态（运行中 / 已暂停 / 异常）
-- 今日请求数、失败切换次数
-- **当前项**：显示当前正在使用的模型项，一键手动切换到其他候选模型
-- 各供应商健康状态（连续失败、冷却状态、最近成功）
-- 快捷操作：复制 Base URL、暂停/恢复
-
-> 手动切换是核心特性：切换后新请求立即使用新的 ProviderModel，正在进行的请求不中断。
-
-### 供应商页
-
-- Provider 列表（名称、状态、连续失败、冷却状态）
-- 新增 / 编辑 / 删除 / 启用禁用 Provider
-- 配置空闲超时时间（两次数据间隔，流式不超时）
-- 导入 / 导出供应商包：单个供应商详情可导出，列表页可导入或导出全部；导入前展示包内供应商、将被覆盖的同名供应商数量和明文 API Key 条数，详见 [provider-model.md](./provider-model.md)
+| 分组 | 页面 | 说明 |
+|------|------|------|
+| 主要 | 智能路由 | 路由工作台：编辑代理实际执行的那张节点图，页头可套用策略预设或载入历史版本 |
+| 主要 | 逻辑模型 | 每个逻辑模型的自动切换候选列表 |
+| 主要 | 模型管理 | Provider 与 ProviderModel 的增删改、端点绑定、连通性测试 |
+| 数据 | 统计分析 | 请求量、成功率、耗时分布、token 趋势，可按时间范围与单个供应商下钻 |
+| 数据 | 请求记录 | 请求级与尝试级明细，含客户端/上游正文对比 |
+| 高级 | 请求重写 | 可复用重写规则的集中管理，见 [request-rewrite-rules.md](./request-rewrite-rules.md) |
+| 系统 | 接入配置 | 本地 Base URL 与各协议接入地址的展示与快捷复制 |
+| 系统 | 运行日志 | 应用运行时日志（`runtime_logs`） |
+| 系统 | 设置 | 监听、自启、出站代理、日志与数据维护 |
 
 ### 逻辑模型页
 
@@ -58,26 +55,39 @@ Electron + Node + TypeScript + React/Vite
 - **当前使用标识**：高亮显示当前正在使用的列表项
 - 新增 / 编辑 / 删除列表项
 - 拖拽调整候选顺序（优先级）
-- 顶部显示逻辑模型总览：总数量 / 可用 / 冷却 / 禁用
+- 顶部指标卡汇总该逻辑模型的关键指标（请求成功率、平均响应耗时等）
 
-> v0.3 MVP 只有一个名为 `default` 的兜底逻辑模型和一个全局 ProviderModel 候选池。所有未匹配的非空客户端模型名都由它处理。多逻辑模型及独立候选池属于后续版本；当前 UI 不提供逻辑模型增删改。
+> v0.3 MVP 只有一个名为 `default` 的兜底逻辑模型和一个全局 ProviderModel 候选池。所有未匹配的非空客户端模型名都由它处理。多逻辑模型及独立候选池属于后续版本；当前 UI 不提供逻辑模型增删改。详见 [data-model.md](./data-model.md) 与 [roadmap.md](./roadmap.md)。
 
-### 请求日志页
+### 模型管理页
+
+- Provider 列表（名称、状态、连续失败、冷却状态）
+- 新增 / 编辑 / 删除 / 启用禁用 Provider，并管理其下的 ProviderModel 与端点绑定
+- 配置空闲超时时间（两次数据间隔，流式不超时）
+- 连通性测试：复用真实模型请求链路验证密钥与端点
+- 导入 / 导出供应商包：单个供应商详情可导出，列表页可导入或导出全部；导入前展示包内供应商、将被覆盖的同名供应商数量和明文 API Key 条数，详见 [provider-model.md](./provider-model.md)
+
+### 请求记录页
 
 - 最近请求列表（时间、逻辑模型、协议、最终供应商、状态码、耗时）
 - 查看某次请求的详细尝试过程（每个候选 ProviderModel 的结果）
 - 查看完整客户端请求/响应和每次 Provider 尝试内容
 - 有协议转换时查看转换前后的请求/响应内容
-- 使用 Drawer 或 Dialog 打开详情，支持格式化、复制和折叠
+- 使用抽屉或对话框打开详情，支持格式化、复制和折叠
 - 筛选：按模型、协议、供应商、状态、时间范围
+- 日志字段、采集开关与保留策略见 [observability.md](./observability.md) 与 [data-model.md](./data-model.md)
 
 ### 设置页
 
 - 监听地址与端口
 - 开机自启
-- 日志保留条数和保留天数
-- 按天数立即清理历史日志
+- 上游出站代理（三态模式、绕过规则与连接测试见 [outbound-proxy.md](./outbound-proxy.md)）
+- 日志保留天数与「按天数立即清理」
 - 关于
+
+### 智能路由（路由工作台）
+
+节点图的编辑与试跑。产品口径、节点设计与默认策略见 [route-design.md](./route-design.md)；图模型、控制流与持久化见 [workflow-engine.md](./workflow-engine.md)。
 
 ## 用户流程
 
@@ -98,303 +108,12 @@ Electron + Node + TypeScript + React/Vite
 3. 临时禁用某个供应商或调整优先级
 4. 查看请求日志了解每次请求经过了哪些供应商、在哪里失败、最终由谁成功
 
-## 路由编排产品方案（最少通用节点）
+## 路由与工作台
 
-本方案目标是：用尽量少、可复用的节点表达主要业务路由能力，同时保持运营可读性和灰度可控性。
+路由工作台是代理策略本体的编辑入口：请求怎么被识别、怎么判定、落到哪个逻辑模型，全部表达为一张节点图，而代理运行时执行的就是这张图。这些内容各自只有一个权威落点，本文不再重复：
 
-### 设计目标
+- **产品语义**（`route` 输出契约、路径取值与比较操作符、默认「模型直达」策略、四个策略预设）：见 [route-design.md](./route-design.md) §2
+- **引擎与图模型**（节点/边结构、控制流与端口、迭代、脚本与 LLM 能力注入、图的加载与保存）：见 [workflow-engine.md](./workflow-engine.md)
+- **画布交互与节点面板**：见 [route-workbench.md](./route-workbench.md)
 
-- 用最少节点覆盖 5 类能力：Header 来源分流、模型信息分流、LLM 动态决策分流、控制输入开关、默认路由规则。
-- 节点能力通用化，避免为每个场景新增专用节点。
-- 默认行为稳定：不开启高级能力时仍可按基础规则运行。
-- 可观测、可回放：每次分流决策在日志中可解释。
-
-### 节点最小集合
-
-固定节点（系统自动存在）：
-
-- `input`：请求入口，负责标准化请求上下文。
-- `output`：路由结果出口，输出最终逻辑模型集合和命中原因。
-
-可配置通用节点（建议仅保留 3 类）：
-
-- `control-input`：运行时可切换参数，不改图结构。
-- `condition`：统一条件分流节点，用于 Header / model / LLM 输出等所有判定。
-- `model-select`：逻辑模型选择节点，按固定逻辑模型列表或上游字段取值决定一个或多个落点逻辑模型。
-
-> 结论：完整能力仅需 `input + control-input + condition + model-select + output`，不再扩展更多专用节点。
-
-### 节点能力边界
-
-#### 1) control-input（行为开关层）
-
-定位：路由“策略开关面板”，支持运营快速调参，不改图。
-
-建议首期控制项：
-
-- `enableHeaderRouting`（bool，默认 true）：是否启用 Header 来源分流。
-- `enableModelRouting`（bool，默认 true）：是否启用客户端 model 分流。
-- `enableLlmRouting`（bool，默认 false）：是否启用 LLM 动态决策分流（feature）。
-- `llmRoutingMode`（enum：`shadow` / `enforce`，默认 `shadow`）：LLM 决策仅观测或强制生效。
-- `llmRouterModelId`（string，默认 `default`）：执行 LLM 路由判断时使用的逻辑模型。
-- `defaultModelId`（string，默认 `default`）：兜底逻辑模型。
-
-输出端口：
-
-- 每个控制项对应一个同名输出端口（用于图上可视化关联）。
-- 标准 `out` 端口用于继续主控制流。
-
-#### 2) condition（统一规则判定层）
-
-定位：所有“判断并分支”的唯一通用节点。
-
-支持判定源：
-
-- `request.header`：如 `x-client-source`、`x-team`。
-- `request.model`：客户端传入模型名、前缀、标签。
-- `request.context`：运行时上下文（包括 LLM 决策输出）。
-
-支持运算符（首期）：
-
-- `equals`
-- `in`
-- `contains`
-- `startsWith`
-- `regex`
-
-分支语义：
-
-- 命中第一个 case 即出分支（first-match-wins）。
-- 未命中走 `else`。
-
-#### 3) model-select（目标逻辑模型层）
-
-定位：将上游分支映射为一个或多个逻辑模型 ID。
-
-行为：
-
-- 支持多选逻辑模型输出（有序集合）。
-- 去重并保持用户配置顺序。
-- 取值为空时**不自动兜底**：运行会产出 `success: false` 的 trace，输出节点报「没有可用逻辑模型」；需要兜底时在图上显式加一条分支（默认策略就是这么拼的）。
-
-### 统一规则编排（默认优先级）
-
-为满足你的 5 条业务诉求，推荐固定优先级如下：
-
-1. 模型直达规则（默认 Router 规则）
-2. Header 来源规则
-3. 客户端 model/标签规则
-4. LLM 动态决策规则（可开关，默认 shadow）
-5. 默认逻辑模型回退
-
-#### 规则 1：模型直达规则（必须内建）
-
-规则定义：若请求中的 `modelId` 命中逻辑模型映射，则直接路由到指定逻辑模型；否则进入默认逻辑模型。
-
-示例：
-
-- `gpt-4o-mini` -> `fast-lane`
-- `claude-sonnet-*` -> `reasoning-lane`
-- 其他 -> `default`
-
-这条规则是系统默认规则，开箱即用。在路由工作台里它以**默认策略预设**的形式内建，并且完全由基础节点组合而成：`input → condition(route.requestedModel in logicalModels[*].id) → model-select(变量取值 route.requestedModel) / model-select(落点) → output`。命中判断由条件节点的「字段取值」比较完成，引擎不预计算布尔结果。不需要逐条维护模型映射表，逻辑模型增减时规则自动生效。页头的「策略」下拉可随时切回该默认策略，详见 [route-design.md](./route-design.md) §2.7。
-
-两个 `model-select` 的落点都在生成预设时按当前逻辑模型列表定好：直连分支由变量取值决定，回落分支取内建默认逻辑模型，因此套用后直接能跑。
-
-这套规则在代理链路里**只有这一份图**：HTTP 与 WS 入口都先把请求交给当前生效的路由图（`resolveRoute()`），再拿图算出的落点去问规划器要候选。请求模型命中已启用逻辑模型的 id 或 name 就直连，否则走兜底落点；图选不出落点时按入口给错（HTTP 503、WS 426）。一版图都没保存过时代理就用 `createDefaultPolicyGraph()` 现场生成的内建默认策略，因此「开箱即用」与「用户保存的图」走同一段执行路径。
-
-#### 规则 2：Header 来源分流
-
-目标：通过 Header 区分请求来源并分配逻辑模型。
-
-典型字段：
-
-- `x-client-source`（如 `web`, `sdk`, `batch`）
-- `x-product-line`
-
-示例策略：
-
-- `x-client-source = batch` -> `low-priority-batch`
-- `x-client-source in [vip-app, vip-sdk]` -> `premium-lane`
-
-#### 规则 3：客户端 model 信息分流
-
-目标：按客户端声明的模型、模型族或标签路由到不同渠道。
-
-示例策略：
-
-- `model startsWith gpt-4` -> `openai-main`
-- `model contains claude` -> `anthropic-main`
-- `model in [deepseek-chat, deepseek-reasoner]` -> `deepseek-main`
-
-##### 通用自动化方案：新增渠道免改工作流
-
-核心思路：工作流只保留一个通用的 `condition(client-model)` + `model-select(model)`，具体“哪些 model 归属哪个渠道”不再写死在图里，而是放到可热更新的渠道注册表中。
-
-配置层拆分：
-
-- `channelProfiles`（渠道档案）：描述渠道能力和匹配规则。
-- `modelRoutingPolicy`（分流策略）：定义冲突优先级、回退和严格模式。
-
-`channelProfiles` 建议字段：
-
-- `channelId`：渠道标识（如 `openai-main`）。
-- `modelIds`：该渠道对应逻辑模型（可多个）。
-- `modelMatchers`：模型匹配器数组（`exact` / `prefix` / `regex` / `keyword`）。
-- `capabilities`：能力标签（如 `reasoning`, `vision`, `low-cost`, `high-throughput`）。
-- `priority`：渠道优先级（用于冲突决策）。
-- `enabled`：开关。
-
-`modelRoutingPolicy` 建议字段：
-
-- `mode`：`auto` / `manual`（默认 `auto`）。
-- `conflictStrategy`：`highest-priority` / `most-specific`（默认 `most-specific`）。
-- `fallbackModelId`：未命中时回退逻辑模型（默认 `default`）。
-- `strict`：严格模式（true 时未命中直接按策略拒绝或告警，false 时回退）。
-
-自动命中算法（建议）：
-
-1. 收集所有 `enabled` 渠道中命中的 `modelMatchers`。
-2. 先按匹配精度排序：`exact > prefix > keyword > regex`。
-3. 同精度按 `priority` 排序。
-4. 取第一名渠道输出其 `modelIds`。
-5. 无命中时走 `fallbackModelId`。
-
-这样做的效果：新增渠道时只需新增或启用一个 `channelProfile`，无需改工作流结构、无需改节点连线。
-
-推荐配套机制：
-
-- 渠道模板：预置 OpenAI/Anthropic/DeepSeek 模板，一键导入常见 matcher。
-- 命中预览：在配置页输入 `model` 即时显示将命中的渠道和原因。
-- 灰度发布：新增渠道先 `enabled=false`，观察后再开启。
-- 版本化：`channelProfiles` 变更记录版本号，可回滚。
-
-#### 规则 4：LLM 动态决策分流（feature）
-
-目标：让 LLM 作为通用路由决策器，不只判断复杂度，还可以输出意图、风险、任务类型和建议渠道。
-
-执行模型指定逻辑模型：
-
-- LLM 路由判断请求固定发往 `llmRouterModelId` 指定逻辑模型。
-- 该逻辑模型可独立于业务请求落点，便于控制成本和稳定性。
-- 当 `llmRouterModelId` 不可用时，按控制项回退到 `defaultModelId` 或进入 `shadow` 旁路模式。
-
-执行模式：
-
-- `shadow`：仅记录 LLM 决策和建议落点，不实际改路由。
-- `enforce`：LLM 决策参与正式分流。
-
-LLM 动态输出（建议结构）：
-
-- `routeIntent`：如 `qa` / `coding` / `analysis` / `agent`。
-- `complexity`：`low` / `medium` / `high`。
-- `riskLevel`：`low` / `medium` / `high`。
-- `recommendedModelIds`：建议逻辑模型数组（有序）。
-- `reason`：决策说明（审计可读）。
-- `confidence`：0-1 置信度。
-
-示例策略：
-
-- `routeIntent = coding` 且 `riskLevel = high` -> `secure-reasoning`
-- `routeIntent = qa` 且 `complexity = low` -> `cheap-fast`
-- `confidence < 0.6` -> 忽略 LLM 建议，回退常规规则
-
-LLM 决策与静态规则冲突处理：
-
-- `shadow` 模式下，LLM 仅产出建议，不改变静态规则结果。
-- `enforce` 模式下，若 `recommendedModelIds` 非空且 `confidence` 达阈值，优先采用 LLM 结果。
-- 若 LLM 建议为空、置信度不足或包含不可用逻辑模型，回退到静态规则链（Header/model/default）。
-
-LLM 调用失败语义：
-
-- 超时/5xx/429：记录 `llmDecision.status=failed`，按静态规则继续，不阻塞主请求。
-- 返回结构不合法：记录 `llmDecision.status=invalid_output`，按静态规则继续。
-- 连续失败触发熔断：暂时关闭 `enableLlmRouting`（自动降级），由控制输入面板提示。
-
-### 控制输入与规则联动（不改图快速切换）
-
-通过 `control-input` 实现运营快捷控制：
-
-- 一键关闭 Header 分流，立即回退到 model/default 路径。
-- 将 LLM 决策从 `enforce` 切到 `shadow`，仅观测不生效。
-- 临时切换默认逻辑模型，处理上游抖动或紧急降级。
-
-生效语义：
-
-- 配置变更对新请求立即生效。
-- 已开始请求保持原路由。
-
-### 建议图模板（标准化）
-
-```mermaid
-flowchart LR
-	I[input]
-	C[control-input]
-	R1[condition: model-hit]
-	R2[condition: header-source]
-	R3[condition: client-model]
-	R4[condition: llm-decision]
-	Q1[model-select: direct]
-	Q2[model-select: source]
-	Q3[model-select: model]
-	Q4[model-select: llm]
-	QD[model-select: default]
-	O[output]
-
-	I --> C --> R1
-	R1 -->|hit| Q1 --> O
-	R1 -->|else| R2
-	R2 -->|hit| Q2 --> O
-	R2 -->|else| R3
-	R3 -->|hit| Q3 --> O
-	R3 -->|else| R4
-	R4 -->|hit| Q4 --> O
-	R4 -->|else| QD --> O
-```
-
-### 运行时数据契约（产品口径）
-
-建议在每次请求日志中至少记录：
-
-- `matchedRuleId`
-- `matchedRuleType`（`model-hit` / `header` / `client-model` / `llm-decision` / `default`）
-- `selectedModelIds`
-- `llmDecision`（若启用，记录 mode、llmRouterModelId、intent、complexity、risk、confidence）
-- `controlSnapshot`（本次请求生效的控制输入快照）
-
-这样可以实现“为什么进这个逻辑模型”的可追溯解释。
-
-### 管理台交互细化
-
-路由编辑页建议拆成 3 个区域：
-
-- 图编排区：只展示最少节点，避免画布膨胀。
-- 规则配置区：按规则类型编辑条件和目标逻辑模型。
-- 控制输入区：提供开关、模式和默认逻辑模型的实时切换。
-
-运营体验目标：
-
-- 常见调整可在控制输入区完成，不进入复杂画布编辑。
-- LLM 决策规则默认 shadow，先观察命中率和成本影响再放量。
-
-### 上线策略（产品化）
-
-分三阶段：
-
-1. Phase A：仅启用模型直达 + 默认回退（稳定基线）
-2. Phase B：开启 Header / model 分流
-3. Phase C：LLM 动态决策先 shadow，再 enforce 灰度
-
-每阶段看板关注：
-
-- 命中率变化
-- 平均成本/延迟变化
-- 错误率和降级率
-
-### 验收标准（对应 5 项诉求）
-
-- [ ] 支持 Header 到逻辑模型映射，并可通过开关实时启停。
-- [ ] 支持客户端 model 信息到渠道映射，且可配置优先级。
-- [ ] 支持 LLM 指定处理逻辑模型，并输出动态决策结果用于分流（不限于复杂度），含 shadow/enforce 两种模式。
-- [ ] 支持控制输入节点在不改图情况下切换行为并立即作用于新请求。
-- [ ] 系统内建默认 Router 规则：命中逻辑模型则直达，否则回退默认逻辑模型。
+> **此处曾有一版「最少通用节点」方案，已废弃。** 该方案主张 `input + control-input + condition + model-select + output` 五节点覆盖全部路由能力，并额外设计 `channelProfiles` / `modelRoutingPolicy` 渠道注册表。其中「不再扩展更多专用节点」的判断与实现不符——迭代、脚本、LLM、协议发现节点都已落地；`channelProfiles` / `modelRoutingPolicy` / `enableLlmRouting` / `llmRouterModelId` 这套注册表方案没有被实现；`matchedRuleId` / `matchedRuleType` / `selectedModelIds` / `llmDecision` / `controlSnapshot` 等运行时字段也不存在于请求日志模型中。实际契约以 `source/common/router/types.ts` 与 `source/server/database/schema.ts` 为准。

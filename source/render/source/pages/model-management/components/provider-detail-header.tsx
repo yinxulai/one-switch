@@ -23,7 +23,7 @@ export function ProviderDetailHeader(props: ProviderDetailHeaderProps) {
     <CardHeader className="flex-row justify-between gap-3 pb-2">
       <div className="flex min-w-0 items-start gap-3">
         <div
-          className="flex h-9 w-9 items-center justify-center rounded-md"
+          className="flex size-9 items-center justify-center rounded-lg"
           style={{
             color: iconColor ?? 'var(--primary)',
             backgroundColor: iconColor ? `${iconColor}14` : 'color-mix(in srgb, var(--primary) 10%, transparent)',
@@ -58,7 +58,7 @@ export function ProviderDetailHeader(props: ProviderDetailHeaderProps) {
         <Button
           variant="ghost"
           size="icon"
-          className="text-destructive"
+          className="text-text-destructive"
           title="删除供应商"
           onClick={onRemoveProvider}
         >

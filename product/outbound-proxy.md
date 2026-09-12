@@ -2,7 +2,7 @@
 
 ## 文档状态
 
-本文定义 One Switch 访问模型供应商时使用指定网络代理的产品与技术契约。功能尚未实现，技术选型已确定使用 `proxy-agent`，本文作为后续开发和验收依据。
+本文定义 One Switch 访问模型供应商时使用指定网络代理的产品与技术契约。功能已实现（`source/server/infrastructure/network/outbound-connector.ts` 基于 `proxy-agent`，管理 API 提供 `/api/outbound-proxy/test`，设置页有对应卡片），本文同时作为行为契约与验收依据。
 
 ## 背景与目标
 
@@ -47,7 +47,7 @@
 - 不在应用内编辑或托管 PAC 脚本；
 - 不为正在进行的请求动态切换代理；
 - 不将代理失败直接解释为 Provider 或 ProviderModel 故障并触发健康冷却；
-- WebSocket 上游传输尚未实现，因此首版不包含 WS 验收；未来实现时必须复用本文的代理选择结果和共享出站连接器。
+- WebSocket 上游传输不在当前计划内；若将来实现，必须复用本文的代理选择结果与共享出站连接器。
 
 ## 产品交互
 
@@ -207,7 +207,7 @@ network/
 | --- | --- | --- |
 | `outbound-proxy.ts` | 解析配置、判断目标直连或代理、生成脱敏描述 | 不发起网络请求 |
 | `outbound-connector.ts` | 持有共享出站连接器，为目标 URL 生成底层请求选项 | 不解析模型协议报文 |
-| `proxy/response/transport.ts` | 执行 HTTP I/O、超时、中止、响应生命周期 | 不决定业务路由或保存设置 |
+| `proxy/transports/http.ts` | 执行 HTTP I/O、超时、中止、响应生命周期 | 不决定业务路由或保存设置 |
 | Management 测试路由 | 校验输入、调用共享出站连接器、映射测试结果 | 不修改全局配置 |
 
 业务代码、配置字段、日志与 UI 统一使用“出站连接器”“代理模式”“代理策略”等名称，不使用 `agent` 命名；`Agent` 仅限第三方库类型和 Node.js 底层 API 边界。
@@ -305,16 +305,6 @@ POST /api/outbound-proxy/test
 
 真实模型请求沿用当前“不自动跟随重定向”的行为。代理测试也不自动跟随重定向，直接返回 3xx 状态码，确保测试结果对应用户填写的目标。
 
-### WebSocket 扩展
-
-未来实现 [websocket-transport.md](./websocket-transport.md) 时：
-
-- WS/WSS 握手必须使用同一代理策略和 bypass 规则；
-- WS 客户端复用共享出站连接器提供的底层连接能力；
-- 一条已建立连接在生命周期内固定使用创建时代理；
-- 代理设置变化只影响后续新连接；
-- WS 连接失败同样需要区分代理阶段与上游阶段。
-
 ## 配置生效流程
 
 ```mermaid
@@ -351,8 +341,8 @@ sequenceDiagram
 ### 服务端网络与管理 API
 
 - 新增共享出站网络基础设施模块；
-- `source/server/proxy/response/transport.ts`
-- `source/server/proxy/execution/attempt-executor.ts`
+- `source/server/proxy/transports/http.ts`
+- `source/server/proxy/execution/`
 - `source/server/management/routes/diagnostics/provider-models-fetch.ts`
 - 新增代理测试路由并挂载到 Management router；
 - `source/server/errors.ts` 增加稳定错误映射。

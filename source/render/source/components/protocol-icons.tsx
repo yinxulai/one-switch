@@ -25,8 +25,8 @@ export function ProtocolIcons(props: ProtocolIconsProps) {
           return (
             <Tooltip key={endpoint.protocol}>
               <TooltipTrigger asChild>
-                <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-muted/50 text-muted-foreground" aria-label={meta.label}>
-                  <ProtocolIcon size={11} />
+                <span className="inline-flex size-5 items-center justify-center rounded-md bg-inset text-text-tertiary" aria-label={meta.label}>
+                  <ProtocolIcon size={11} aria-hidden />
                 </span>
               </TooltipTrigger>
               <TooltipContent>{meta.label}</TooltipContent>
@@ -44,11 +44,11 @@ export function ProtocolIcons(props: ProtocolIconsProps) {
                 <Tooltip key={`conv-${endpoint.protocol}-${from}`}>
                   <TooltipTrigger asChild>
                     <span
-                      className="inline-flex h-5 w-5 items-center justify-center rounded border border-dashed border-amber-500/60 text-amber-600 dark:text-amber-400"
+                      className="inline-flex size-5 items-center justify-center rounded-md bg-warning/10 text-text-warning"
                       aria-label={`${meta.label}（经协议转换支持）`}
                     >
-                      <ProtocolIcon size={9} className="m-0.5" />
-                      <Repeat size={7} className="-ml-1.5 -mb-1.5" />
+                      <ProtocolIcon size={9} aria-hidden className="m-0.5" />
+                      <Repeat size={7} aria-hidden className="-ml-1.5 -mb-1.5" />
                     </span>
                   </TooltipTrigger>
                   <TooltipContent>{meta.label} · 经协议转换支持（转换为 {PROTOCOL_META[endpoint.protocol].label}）</TooltipContent>
