@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo } from 'react'
 
 import { Input } from '@/components/ui/input'
 import {
@@ -8,9 +8,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
 import type { NodePanelProps } from '../node-data'
 import { SCRIPT_TIMEOUT_LIMIT, type ScriptNode } from '@common/router/types'
+import { PanelCodeEditor } from './panel-code-editor'
 import {
   NodePanelField,
   NodePanelHint,
@@ -30,8 +30,6 @@ export function ScriptPanel(props: NodePanelProps) {
   const code = node?.code ?? ''
   const resultPath = node?.resultPath ?? ''
   const timeoutMilliseconds = node?.timeoutMilliseconds ?? 2_000
-  // 插入字段是一次性动作，插入后必须把选择器清空，否则连续选同一字段不会再触发。
-  const [insertedPath, setInsertedPath] = useState<string | undefined>(undefined)
 
   const patch = useCallback((patchValue: Partial<ScriptNode>) => {
     update(current => current.kind === 'script' ? { ...current, ...patchValue } : current)
@@ -42,6 +40,8 @@ export function ScriptPanel(props: NodePanelProps) {
     () => conditionFieldHints.filter(field => field.valueType !== 'object'),
     [conditionFieldHints],
   )
+
+  const handleCodeChange = useCallback((next: string) => patch({ code: next }), [patch])
 
   /** 写回候选：脚本结果类型未知，任何字段路径都可以作为落点。 */
   const resultFields = useMemo(() => conditionFieldHints, [conditionFieldHints])
@@ -64,35 +64,28 @@ export function ScriptPanel(props: NodePanelProps) {
         {' '}
         <span className="font-mono">return</span>
         {' '}
-        交回结果，写入下方路径。
+        交回结果，写入下方路径。代码框内输入
+        {' '}
+        <span className="font-mono">{"get('"}</span>
+        {' '}
+        或按
+        {' '}
+        <span className="font-mono">Ctrl/⌘ + Space</span>
+        {' '}
+        唤出字段候选。
         没有 require / import / 网络 / 文件系统，超时会中断。
       </NodePanelHint>
 
       <NodePanelField label="脚本">
-        <Textarea
-          className="min-h-[160px] font-mono text-xs leading-5"
+        <PanelCodeEditor
+          language="javascript"
+          fields={sourceFields}
           value={code}
+          minHeight={160}
+          maxHeight={360}
           placeholder={'// 例：把可用逻辑模型过滤一遍\nconst models = get(\'logicalModels[*].id\') || []\nreturn models.filter(id => !id.startsWith(\'test-\'))'}
-          onChange={event => patch({ code: event.target.value })}
+          onChange={handleCodeChange}
         />
-        {sourceFields.length > 0 && (
-          <Select
-            value={insertedPath}
-            onValueChange={(value) => {
-              patch({ code: `${code}${code.trim() ? '\n' : ''}get('${value}')` })
-              setInsertedPath(undefined)
-            }}
-          >
-            <SelectTrigger className="w-full"><SelectValue placeholder="插入字段取值 get('路径')" /></SelectTrigger>
-            <SelectContent className={PANEL_POPUP_SURFACE_CLASSNAME}>
-              {sourceFields.map(field => (
-                <SelectItem className={PANEL_POPUP_ITEM_CLASSNAME} key={field.path} value={field.path}>
-                  {field.path} · {field.valueType}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
       </NodePanelField>
 
       {!code.trim() && <NodePanelHint tone="warning">脚本为空，运行时不会产出任何结果。</NodePanelHint>}

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo } from 'react'
 
 import { Input } from '@/components/ui/input'
 import {
@@ -8,9 +8,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
 import type { NodePanelProps } from '../node-data'
 import { PROMPT_TIMEOUT_LIMIT, type PromptNode } from '@common/router/types'
+import { PanelCodeEditor } from './panel-code-editor'
 import {
   NodePanelField,
   NodePanelHint,
@@ -34,8 +34,6 @@ export function PromptPanel(props: NodePanelProps) {
   const temperature = node?.temperature ?? 0.7
   const maxTokens = node?.maxTokens ?? 1_024
   const timeoutMilliseconds = node?.timeoutMilliseconds ?? 60_000
-  // 插入变量是一次性动作，插入后必须把选择器清空，否则连续选同一字段不会再触发。
-  const [insertedPath, setInsertedPath] = useState<string | undefined>(undefined)
 
   const patch = useCallback((patchValue: Partial<PromptNode>) => {
     update(current => current.kind === 'prompt' ? { ...current, ...patchValue } : current)
@@ -52,11 +50,8 @@ export function PromptPanel(props: NodePanelProps) {
     [logicalModels, logicalModelId],
   )
 
-  const appendTemplate = useCallback((path: string) => {
-    update(current => current.kind === 'prompt'
-      ? { ...current, promptTemplate: `${current.promptTemplate}\${${path}}` }
-      : current)
-  }, [update])
+  const handleSystemPromptChange = useCallback((next: string) => patch({ systemPrompt: next }), [patch])
+  const handlePromptChange = useCallback((next: string) => patch({ promptTemplate: next }), [patch])
 
   if (!node) return null
 
@@ -68,7 +63,11 @@ export function PromptPanel(props: NodePanelProps) {
         {' '}
         <span className="font-mono">{'${路径}'}</span>
         {' '}
-        会在执行前替换成本次运行的数据。
+        会在执行前替换成本次运行的数据；输入
+        {' '}
+        <span className="font-mono">{'${'}</span>
+        {' '}
+        即可从上游字段里挑一个。
       </NodePanelHint>
 
       <NodePanelField label="逻辑模型">
@@ -93,39 +92,27 @@ export function PromptPanel(props: NodePanelProps) {
       )}
 
       <NodePanelField label="系统提示词">
-        <Textarea
-          className="min-h-[64px] text-xs leading-5"
+        <PanelCodeEditor
+          language="template"
+          fields={templateFields}
           value={systemPrompt}
+          minHeight={64}
+          maxHeight={200}
           placeholder="可选，例如：你是一个严谨的接口路由助手。"
-          onChange={event => patch({ systemPrompt: event.target.value })}
+          onChange={handleSystemPromptChange}
         />
       </NodePanelField>
 
       <NodePanelField label="提示词">
-        <Textarea
-          className="min-h-[120px] text-xs leading-5"
+        <PanelCodeEditor
+          language="template"
+          fields={templateFields}
           value={promptTemplate}
+          minHeight={120}
+          maxHeight={360}
           placeholder={'例如：请从 ${logicalModels[*].id} 里挑一个最合适的，只回答 id。'}
-          onChange={event => patch({ promptTemplate: event.target.value })}
+          onChange={handlePromptChange}
         />
-        {templateFields.length > 0 && (
-          <Select
-            value={insertedPath}
-            onValueChange={(value) => {
-              appendTemplate(value)
-              setInsertedPath(undefined)
-            }}
-          >
-            <SelectTrigger className="w-full"><SelectValue placeholder="插入字段 ${路径}" /></SelectTrigger>
-            <SelectContent className={PANEL_POPUP_SURFACE_CLASSNAME}>
-              {templateFields.map(field => (
-                <SelectItem className={PANEL_POPUP_ITEM_CLASSNAME} key={field.path} value={field.path}>
-                  {field.path} · {field.valueType}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
       </NodePanelField>
 
       {!promptTemplate.trim() && <NodePanelHint tone="warning">提示词为空，节点会直接发出一个空消息。</NodePanelHint>}
