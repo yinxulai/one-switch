@@ -1,14 +1,6 @@
-import { describe, expect, it, vi } from 'vitest'
-import type { ServerResponse } from 'node:http'
+import { describe, expect, it } from 'vitest'
 import { applyManagementRequestGuards } from './core/request-guards'
-
-function mockResponse(): ServerResponse {
-  return {
-    statusCode: 0,
-    setHeader: vi.fn(),
-    end: vi.fn(),
-  } as unknown as ServerResponse
-}
+import { mockResponse } from './test-support'
 
 describe('management request guards', () => {
   it('handles CORS preflight without authentication', async () => {

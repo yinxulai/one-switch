@@ -30,14 +30,17 @@ export function useRequestLogsService() {
       .map(model => ({ id: model.id, name: `${providerNameById.get(model.providerId) ?? model.providerId} / ${model.modelName}` }))
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [providerModelsQuery.data, providerNameById])
-  const getModelName = useCallback((id: string) => logicalModels.find(model => model.id === id)?.name ?? id, [logicalModels])
+  const getModelName = useCallback((id: string | null) => id === null ? '—' : logicalModels.find(model => model.id === id)?.name ?? id, [logicalModels])
   const refresh = useCallback((targetPage = page) => queryClient.invalidateQueries({ queryKey: ['request-logs', filter, targetPage] }), [filter, page, queryClient])
   const setFilter = useCallback((next: Partial<RequestLogFilter>) => { setFilterState(next) }, [setFilterState])
   const goToPage = useCallback((targetPage: number) => setPage(targetPage), [setPage])
+  const error = logsQuery.error === null ? null : logsQuery.error instanceof Error ? logsQuery.error.message : String(logsQuery.error)
+  const filtered = Object.values(filter).some(value => value !== 'all' && value !== null)
 
   return {
     logs: logsQuery.data?.logs ?? [], total: logsQuery.data?.total ?? 0,
     loading: logsQuery.isPending, refreshing: logsQuery.isFetching && !logsQuery.isPending,
+    error, filtered,
     page, expandedId, filter, providers, logicalModels, providerOptions, providerModelOptions, getModelName,
     details: detailQuery.data && expandedId ? { [expandedId]: detailQuery.data } : {},
     detailLoadingIds: expandedId && detailQuery.isFetching ? { [expandedId]: true } : {},

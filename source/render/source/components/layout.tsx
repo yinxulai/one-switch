@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { ChevronRight } from 'lucide-react'
 import { DotPattern } from '@/components/ui/dot-pattern'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/i18n/provider'
 
 interface PageLayoutProps {
   children: ReactNode
@@ -53,6 +54,7 @@ export function PageLayout(props: PageLayoutProps) {
 
 export function PageHeader(props: PageHeaderProps) {
   const { title, description, actions, breadcrumbs, className } = props
+  const t = useTranslation()
   return (
     <header
       className={cn(
@@ -62,32 +64,26 @@ export function PageHeader(props: PageHeaderProps) {
     >
       <div className="min-w-0">
         {breadcrumbs && breadcrumbs.length > 0 && (
-          <nav aria-label="面包屑" className="mb-2 flex items-center gap-1 text-xs text-muted-foreground">
+          <nav aria-label={t('nav.breadcrumb')} className="mb-2 flex items-center gap-1 system-xs-regular text-text-tertiary">
             {breadcrumbs.map((breadcrumb, index) => (
               <span key={`${breadcrumb.label}-${index}`} className="flex items-center gap-1">
                 {index > 0 && <ChevronRight className="size-3" aria-hidden="true" />}
                 {breadcrumb.onClick ? (
-                  <button type="button" className="rounded-sm hover:text-foreground" onClick={breadcrumb.onClick}>{breadcrumb.label}</button>
+                  <button type="button" className="rounded-sm hover:text-text-secondary" onClick={breadcrumb.onClick}>{breadcrumb.label}</button>
                 ) : <span>{breadcrumb.label}</span>}
               </span>
             ))}
           </nav>
         )}
-        <h1 className="text-[15px] font-semibold leading-none">{title}</h1>
-        {description && <p className="mt-1 text-xs text-muted-foreground/80">{description}</p>}
+        <h1 className="system-xl-semibold text-text-primary">{title}</h1>
+        {description && <p className="mt-1 system-xs-regular text-text-tertiary">{description}</p>}
       </div>
-      {actions && (
-        <div
-          className="shrink-0 [&_[data-slot=button][data-size=sm]]:h-8 [&_[data-slot=button][data-size=sm]]:rounded-lg [&_[data-slot=button][data-size=sm]]:gap-1.5 [&_[data-slot=button][data-size=sm]]:px-2.5 [&_[data-slot=button][data-size=sm]]:text-sm [&_[data-slot=button][data-size=sm]_svg:not([class*='size-'])]:size-4"
-        >
-          {actions}
-        </div>
-      )}
+      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
     </header>
   )
 }
 
 export function PageContent(props: PageContentProps) {
   const { children, className } = props
-  return <section className={cn('space-y-4', className)}>{children}</section>
+  return <section className={cn('grid gap-4', className)}>{children}</section>
 }

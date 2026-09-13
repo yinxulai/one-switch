@@ -1,10 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { handleApiRequest } from './router'
-
-function mockResponse() {
-  return { statusCode: 0, writableEnded: false, setHeader: vi.fn(), end: vi.fn() } as unknown as ServerResponse
-}
+import { mockResponse } from './test-support'
 
 function responsePayload(response: ServerResponse): Record<string, unknown> {
   return JSON.parse(String(vi.mocked(response.end).mock.calls[0]?.[0])) as Record<string, unknown>
@@ -27,7 +24,7 @@ describe('management router', () => {
   it('hides development-only paths outside development', async () => {
     const response = mockResponse()
 
-    await handleApiRequest(request('/api/config/seed-development'), response, 'production')
+    await handleApiRequest(request('/api/development/seed'), response, 'production')
 
     expect(response.statusCode).toBe(404)
     expect(responsePayload(response)).toMatchObject({ success: false, errorCode: 'NOT_FOUND' })

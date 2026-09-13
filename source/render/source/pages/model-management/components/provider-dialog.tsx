@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Label } from '@/components/ui/label'
-import { Separator } from '@/components/ui/separator'
+import { FORM_DIALOG_BODY_CLASSNAME, FormGroup } from '@/components/form-kit'
+import { useTranslation } from '@/i18n/provider'
 import { ProviderEndpointCard } from './provider-endpoint-card'
 import { ProviderFields } from './provider-fields'
 import type { ProviderEndpointEntry } from '../hooks/types'
@@ -41,6 +41,7 @@ export function ProviderDialog(props: ProviderDialogProps) {
     onSave,
   } = props
 
+  const t = useTranslation()
   const canSave = Boolean(providerName.trim())
 
   return (
@@ -50,12 +51,11 @@ export function ProviderDialog(props: ProviderDialogProps) {
         onPointerDownOutside={event => event.preventDefault()}
       >
         <DialogHeader>
-          <DialogTitle>{editingProviderId ? '编辑供应商' : '新建供应商'}</DialogTitle>
-          <DialogDescription>API Key 可选；本地或测试集群等无需鉴权的上游可以留空。</DialogDescription>
+          <DialogTitle>{editingProviderId ? t('providers.dialog.editTitle') : t('providers.dialog.createTitle')}</DialogTitle>
+          <DialogDescription>{t('providers.dialog.apiKeyHint')}</DialogDescription>
         </DialogHeader>
 
-        <div className="max-h-[65vh] space-y-4 overflow-y-auto px-1 py-2">
-
+        <div className={FORM_DIALOG_BODY_CLASSNAME}>
           <ProviderFields
             editingProviderId={editingProviderId}
             providerName={providerName}
@@ -66,17 +66,11 @@ export function ProviderDialog(props: ProviderDialogProps) {
             setTimeout={setTimeout}
           />
 
-          <Separator />
-
           {/* 协议默认地址 */}
-          <div className="space-y-3">
-            <div>
-              <Label className="text-sm">支持的协议默认接口地址</Label>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">
-                开启某个协议并填入默认地址；添加模型选择该协议时如不覆盖则沿用此地址。
-              </p>
-            </div>
-
+          <FormGroup
+            title={t('providers.dialog.endpointsTitle')}
+            description={t('providers.dialog.endpointsDescription')}
+          >
             {endpointEntries.map((entry, index) => (
               <ProviderEndpointCard
                 key={entry.protocol}
@@ -85,13 +79,13 @@ export function ProviderDialog(props: ProviderDialogProps) {
                 updateEndpointEntry={updateEndpointEntry}
               />
             ))}
-          </div>
+          </FormGroup>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onCancel}>取消</Button>
+          <Button variant="outline" onClick={onCancel}>{t('common.action.cancel')}</Button>
           <Button disabled={saving || !canSave} onClick={onSave}>
-            {saving ? '保存中...' : editingProviderId ? '保存修改' : '创建供应商'}
+            {saving ? t('common.action.saving') : editingProviderId ? t('providers.dialog.save') : t('providers.dialog.submit')}
           </Button>
         </DialogFooter>
       </DialogContent>

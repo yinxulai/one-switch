@@ -6,6 +6,7 @@ import {
   deleteLogicalModel,
   getLogicalModel,
   listLogicalModels,
+  reorderLogicalModels,
   updateLogicalModel,
 } from '@server/database/logical-model-store'
 import type { ManagementHandler } from '../../core/response'
@@ -17,6 +18,7 @@ export const modelRoutes = new HttpRouter<ManagementHandler>()
   .post('/api/logical-model/get', handleGetLogicalModel)
   .post('/api/logical-model/create', handleCreateLogicalModel)
   .post('/api/logical-model/update', handleUpdateLogicalModel)
+  .post('/api/logical-model/reorder', handleReorderLogicalModels)
   .post('/api/logical-model/delete', handleDeleteLogicalModel)
 
 async function handleListLogicalModels(_req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -28,22 +30,24 @@ async function handleGetLogicalModel(_req: IncomingMessage, res: ServerResponse,
   const { id } = GetLogicalModelSchema.parse(body)
   const model = await getLogicalModel(id)
   if (!model) {
-    sendError(res, 'NOT_FOUND', '逻辑模型不存在', 404)
+    sendError(res, 'NOT_FOUND', 'Logical model not found', 404)
     return
   }
   sendSuccess(res, model)
 }
 
 const CreateLogicalModelSchema = LogicalModelSchema.pick({
+  id: true,
   name: true,
   description: true,
   enabled: true,
-}).partial({ description: true, enabled: true })
+}).partial({ name: true, description: true, enabled: true })
 
 async function handleCreateLogicalModel(_req: IncomingMessage, res: ServerResponse, body: unknown): Promise<void> {
   const input = CreateLogicalModelSchema.parse(body)
   sendSuccess(res, await createLogicalModel({
-    name: input.name,
+    id: input.id,
+    name: input.name ?? input.id,
     description: input.description ?? '',
     enabled: input.enabled ?? true,
   }))
@@ -60,4 +64,10 @@ async function handleDeleteLogicalModel(_req: IncomingMessage, res: ServerRespon
   const { id } = DeleteLogicalModelSchema.parse(body)
   await deleteLogicalModel(id)
   sendSuccess(res, { id })
+}
+
+const ReorderLogicalModelsSchema = z.object({ ids: z.array(z.string().min(1)).min(1) })
+async function handleReorderLogicalModels(_req: IncomingMessage, res: ServerResponse, body: unknown): Promise<void> {
+  const { ids } = ReorderLogicalModelsSchema.parse(body)
+  sendSuccess(res, await reorderLogicalModels(ids))
 }

@@ -1,22 +1,31 @@
 import { useCallback } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { configApi } from '@/api/tools'
+import { developmentApi } from '@/api/tools'
 import { unwrap } from '@/api/unwrap'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import { useToast } from '@/components/ui/toast'
+import { useTranslation } from '@/i18n/provider'
 
 export function useDevelopmentSeed(reload: () => Promise<void>) {
   const toast = useToast()
+  const t = useTranslation()
   const confirm = useConfirm()
-  const mutation = useMutation({ mutationFn: () => unwrap(configApi.seedDevelopment()), onSuccess: async data => { toast.success(data.inserted ? '测试数据已插入' : '测试数据已存在'); await reload() }, onError: error => toast.error(`插入失败：${error.message}`) })
+  const mutation = useMutation({
+    mutationFn: () => unwrap(developmentApi.seed()),
+    onSuccess: async data => {
+      toast.success(data.inserted ? t('settings.development.seedInserted') : t('settings.development.seedExisting'))
+      await reload()
+    },
+    onError: error => toast.error(t('settings.development.seedFailed', { message: error.message })),
+  })
   const seedDevelopmentData = useCallback(async () => {
     const confirmed = await confirm({
-      title: '插入开发测试数据？',
-      description: '将补充缺失的测试配置，已有配置不会被覆盖。',
-      confirmLabel: '插入数据',
+      title: t('settings.development.seedTitle'),
+      description: t('settings.development.seedConfirmDescription'),
+      confirmLabel: t('settings.development.seedConfirm'),
     })
     if (!confirmed) return
     await mutation.mutateAsync().catch(() => undefined)
-  }, [confirm, mutation])
+  }, [confirm, mutation, t])
   return { seedDevelopmentData }
 }

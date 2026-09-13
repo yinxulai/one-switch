@@ -4,6 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { closeDatabase, initDatabase } from './database'
+import { TEST_DATABASE_FILE_NAME } from './database/test-support'
 import { updateSettings } from './database/settings-store'
 import { startServer, stopServer } from './index'
 import { getProxyServerStatus, startProxyServer, stopProxyServer } from './proxy/runtime/server'
@@ -32,7 +33,7 @@ afterEach(async () => {
 describe('server lifecycle', () => {
   it('reports the port actually bound by the proxy server', async () => {
     const proxyPort = await getAvailablePort()
-    await initDatabase(temporaryDirectory)
+    await initDatabase(temporaryDirectory, TEST_DATABASE_FILE_NAME)
     await updateSettings({ listenHost: '127.0.0.1', listenPort: 9300 })
 
     try {
@@ -50,11 +51,12 @@ describe('server lifecycle', () => {
 
   it('keeps management available while the proxy is stopped and restarted', async () => {
     const [managementPort, proxyPort] = await Promise.all([getAvailablePort(), getAvailablePort()])
-    await initDatabase(temporaryDirectory)
+    await initDatabase(temporaryDirectory, TEST_DATABASE_FILE_NAME)
     await updateSettings({ listenHost: '127.0.0.1', listenPort: proxyPort })
     await closeDatabase()
     await startServer({
       dataDir: temporaryDirectory,
+      databaseFileName: TEST_DATABASE_FILE_NAME,
       secretStore,
       runtimeProfile: createTestRuntimeProfile(proxyPort, managementPort),
     })
@@ -105,55 +107,56 @@ describe('server lifecycle', () => {
     expect((await fetch(`http://127.0.0.1:${newProxyPort}/v1/models`)).status).toBe(200)
   })
 
-  it('isolates manual queue selection by logical model through the management API', async () => {
+  it('isolates manual selection by logical model through the management API', async () => {
     const [managementPort, proxyPort] = await Promise.all([getAvailablePort(), getAvailablePort()])
-    await initDatabase(temporaryDirectory)
+    await initDatabase(temporaryDirectory, TEST_DATABASE_FILE_NAME)
     await updateSettings({ listenHost: '127.0.0.1', listenPort: proxyPort })
     await closeDatabase()
     const runtimeOptions = {
       dataDir: temporaryDirectory,
+      databaseFileName: TEST_DATABASE_FILE_NAME,
       secretStore,
       runtimeProfile: createTestRuntimeProfile(proxyPort, managementPort),
     }
     await startServer(runtimeOptions)
-    const queueUrl = `http://127.0.0.1:${managementPort}/api/queue`
+    const logicalModelUrl = `http://127.0.0.1:${managementPort}/api/logical-model`
 
-    expect(await post(`${queueUrl}/switch`, { logicalModelId: 'default', modelId: 'model_auto' })).toMatchObject({
+    expect(await post(`${logicalModelUrl}/switch`, { logicalModelId: 'default', modelId: 'model_auto' })).toMatchObject({
       success: true,
       data: { logicalModelId: 'default', modelId: 'model_auto' },
     })
-    expect(await post(`${queueUrl}/switch`, { logicalModelId: 'secondary', modelId: 'model_secondary' })).toMatchObject({
+    expect(await post(`${logicalModelUrl}/switch`, { logicalModelId: 'secondary', modelId: 'model_secondary' })).toMatchObject({
       success: true,
       data: { logicalModelId: 'secondary', modelId: 'model_secondary' },
     })
-    expect(await post(`${queueUrl}/status`, { logicalModelId: 'default' })).toMatchObject({
+    expect(await post(`${logicalModelUrl}/status`, { logicalModelId: 'default' })).toMatchObject({
       success: true,
       data: { logicalModelId: 'default', manualModelId: 'model_auto' },
     })
-    expect(await post(`${queueUrl}/status`, { logicalModelId: 'secondary' })).toMatchObject({
+    expect(await post(`${logicalModelUrl}/status`, { logicalModelId: 'secondary' })).toMatchObject({
       success: true,
       data: { logicalModelId: 'secondary', manualModelId: 'model_secondary' },
     })
 
     await post(`http://127.0.0.1:${managementPort}/api/proxy/restart`)
-    expect(await post(`${queueUrl}/status`, { logicalModelId: 'secondary' })).toMatchObject({
+    expect(await post(`${logicalModelUrl}/status`, { logicalModelId: 'secondary' })).toMatchObject({
       success: true,
       data: { logicalModelId: 'secondary', manualModelId: 'model_secondary' },
     })
 
-    await post(`${queueUrl}/switch`, { logicalModelId: 'default', modelId: null })
-    expect(await post(`${queueUrl}/status`, { logicalModelId: 'secondary' })).toMatchObject({
+    await post(`${logicalModelUrl}/switch`, { logicalModelId: 'default', modelId: null })
+    expect(await post(`${logicalModelUrl}/status`, { logicalModelId: 'secondary' })).toMatchObject({
       success: true,
       data: { logicalModelId: 'secondary', manualModelId: 'model_secondary' },
     })
 
     await stopServer()
     await startServer(runtimeOptions)
-    expect(await post(`${queueUrl}/status`, { logicalModelId: 'default' })).toMatchObject({
+    expect(await post(`${logicalModelUrl}/status`, { logicalModelId: 'default' })).toMatchObject({
       success: true,
       data: { logicalModelId: 'default', manualModelId: null },
     })
-    expect(await post(`${queueUrl}/status`, { logicalModelId: 'secondary' })).toMatchObject({
+    expect(await post(`${logicalModelUrl}/status`, { logicalModelId: 'secondary' })).toMatchObject({
       success: true,
       data: { logicalModelId: 'secondary', manualModelId: null },
     })

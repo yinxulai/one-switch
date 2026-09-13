@@ -61,20 +61,22 @@ async function handleAnalyticsSummary(_req: IncomingMessage, res: ServerResponse
     getRequestSourceStats(sinceMs),
   ])
 
-  const totalRequests = summary.totalRequests
-  const totalProviderAttempts = providerStats.reduce((total, provider) => total + provider.requests, 0)
+  const totalProviderAttempts = providerStats.reduce((total, provider) => total + provider.attempts, 0)
   const totalFailures = summary.failedCount
 
   const providerStatsWithPercent = providerStats.map(p => ({
     ...p,
-    percent: totalProviderAttempts > 0 ? Math.round((p.requests / totalProviderAttempts) * 100) : 0,
+    percent: totalProviderAttempts > 0 ? Math.round((p.attempts / totalProviderAttempts) * 100) : 0,
   }))
 
   const modelStatsWithRate = modelStats.map(mapModelStat)
 
+  // 延迟分布的口径是「成功的上游尝试」，因此分母必须是分布自身的样本总数，
+  // 而不是请求数：一个请求可能贡献多次尝试，拿请求数当分母会让占比超过 100%。
+  const latencySamples = latencyDistribution.reduce((total, bucket) => total + bucket.count, 0)
   const latencyWithPercent = latencyDistribution.map(l => ({
     ...l,
-    percent: totalRequests > 0 ? Math.round((l.count / totalRequests) * 100) : 0,
+    percent: latencySamples > 0 ? Math.round((l.count / latencySamples) * 100) : 0,
   }))
 
   const failureWithPercent = failureReasons.map(f => ({
@@ -100,7 +102,7 @@ async function handleProviderAnalyticsDetail(_req: IncomingMessage, res: ServerR
   const sinceMs = resolveSinceMs(range)
   const provider = await getProviderStat(providerId, sinceMs)
   if (!provider) {
-    sendError(res, 'RESOURCE_NOT_FOUND', `当前时间范围内没有供应商统计数据 ${providerId}`, 404)
+    sendError(res, 'RESOURCE_NOT_FOUND', `No provider statistics in the requested time range: ${providerId}`, 404, { providerId })
     return
   }
 
@@ -115,7 +117,7 @@ async function handleProviderAnalyticsDetail(_req: IncomingMessage, res: ServerR
   const response: ProviderAnalyticsDetail = {
     summary: {
       ...provider,
-      successRate: provider.requests > 0 ? provider.success / provider.requests : 0,
+      successRate: provider.attempts > 0 ? provider.success / provider.attempts : 0,
       totalTokens: trend.totalTokens,
     },
     requestTrend: trend.requestTrend,
@@ -139,12 +141,15 @@ function mapModelStat(model: DatabaseModelStat): ModelStat {
     providerModelName: model.providerModelName,
     providerId: model.providerId,
     providerName: model.providerName,
-    requests: model.requests,
+    attempts: model.attempts,
     success: model.success,
     avgLatencyMs: model.avgLatencyMs,
     avgTtftMs: model.avgTtftMs,
+    // 分子与分母同口径：都只统计成功的尝试；分母已经扣掉首字延迟，
+    // 是真正在产出 token 的那段时间，因此这里算出来的是生成速率。
     avgTps: model.successGenerationDurationMs > 0 && model.outputTokens > 0 ? model.outputTokens / (model.successGenerationDurationMs / 1000) : null,
-    successRate: model.requests > 0 ? model.success / model.requests : 0,
+    successRate: model.attempts > 0 ? model.success / model.attempts : 0,
+    // 缓存读取量本就是输入量的一部分，同口径相除才是命中率。
     cacheHitRate: model.inputTokens > 0 ? model.cachedInputTokens / model.inputTokens : null,
   }
 }

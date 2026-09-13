@@ -24,7 +24,7 @@ export function DotPattern({
     <svg
       aria-hidden="true"
       className={cn(
-        'pointer-events-none absolute right-0 top-0 h-80 w-130 text-muted-foreground/20 mask-[radial-gradient(ellipse_at_top_right,black_0%,black_34%,transparent_78%)]',
+        'pointer-events-none absolute right-0 top-0 h-80 w-130 text-text-quaternary/60 mask-[radial-gradient(ellipse_at_top_right,black_0%,black_34%,transparent_78%)]',
         className
       )}
       fill="none"

@@ -9,10 +9,11 @@ import {
   providerModels,
   providerSettings,
   providers,
+  attemptContents,
+  attemptUsages,
   requestAttempts,
   requestContents,
   requestLogs,
-  requestMetrics,
   requestUsages,
   schedulingPolicies,
 } from './schema'
@@ -41,7 +42,9 @@ const PROVIDER_FIXTURES = [
   },
   {
     id: 'prov_dev_ark',
-    name: '火山方舟',
+    name: 'Volcengine Ark',
+    // `legacyName` 用于按 id 就地重命名：库里同一 id 的行可能仍带着这个名字，
+    // 匹配得上才能就地升级，否则会多出一行。
     legacyName: '火山方舟（开发示例）',
     apiKeyReference: 'key_dev_ark',
     apiKey: 'development-ark-key',
@@ -62,7 +65,8 @@ const PROVIDER_FIXTURES = [
   },
   {
     id: 'prov_dev_all_protocols',
-    name: '协议实验室',
+    name: 'Protocol Lab',
+    // 同上：按 id 匹配的重命名字面量，不改。
     legacyName: '协议实验室（开发示例）',
     apiKeyReference: 'key_dev_all_protocols',
     apiKey: 'sk-development-all-protocols',
@@ -129,7 +133,7 @@ export async function seedDevelopmentData(secretStore: KeychainApi, options: Dev
     if (providersToInsert.length > 0) transaction.insert(providers).values(providersToInsert.map(provider => ({
       id: provider.id,
       name: provider.name,
-      description: '开发示例供应商',
+      description: 'Development sample provider',
       enabled: true,
       createdTime: timestamp,
       updatedTime: timestamp,
@@ -203,9 +207,9 @@ export async function seedDevelopmentData(secretStore: KeychainApi, options: Dev
         cachedInputTokens: failed ? null : index % 3 === 0 ? 256 : 0,
         cacheCreationInputTokens: failed ? null : index % 5 === 0 ? 128 : 0,
         promptCacheHit: failed ? null : index % 3 === 0,
-        rawUsage: null,
         ttftMilliseconds: failed ? null : 110 + (index * 31) % 420,
-        cacheHit: failed ? null : index % 3 === 0,
+        // 客户端跳声明的形态：请求体里就有这个事实。
+        transport: index % 4 === 0 ? 'http-stream' as const : 'http' as const,
         createdTime: timestamp - index * 6 * 3_600_000,
         provider,
         index,
@@ -217,30 +221,31 @@ export async function seedDevelopmentData(secretStore: KeychainApi, options: Dev
       id: request.id,
       logicalModelId: request.logicalModelId,
       clientProtocol: request.protocol,
-      upstreamProtocol: null,
+      transport: request.transport,
       status: request.status,
-      metadata: JSON.stringify({ source: 'development-seed', batchId, requestIndex: request.index, stream: false, temperature: 0.7 }),
+      totalDurationMilliseconds: request.totalDurationMilliseconds,
       createdTime: request.createdTime,
     }))).run()
-    transaction.insert(requestMetrics).values(sampleRequests.flatMap(request => [
-      { requestId: request.id, key: 'durationMilliseconds', value: request.totalDurationMilliseconds, unit: 'milliseconds', updatedTime: timestamp },
-      { requestId: request.id, key: 'ttftMilliseconds', value: request.ttftMilliseconds ?? request.totalDurationMilliseconds, unit: 'milliseconds', updatedTime: timestamp },
-      { requestId: request.id, key: 'httpStatus', value: request.failed ? 504 : 200, unit: 'status', updatedTime: timestamp },
-      { requestId: request.id, key: 'cacheHit', value: request.cacheHit ? 1 : 0, unit: 'boolean', updatedTime: timestamp },
-    ])).run()
     const usages: Array<typeof requestUsages.$inferInsert> = sampleRequests.flatMap(request => request.totalTokens == null ? [] : [
-      { id: `usage_dev_${request.id}_input`, requestId: request.id, attemptId: null, type: 'inputTokens', value: request.inputTokens!, unit: 'tokens', createdTime: request.createdTime },
-      { id: `usage_dev_${request.id}_output`, requestId: request.id, attemptId: null, type: 'outputTokens', value: request.outputTokens!, unit: 'tokens', createdTime: request.createdTime },
-      { id: `usage_dev_${request.id}_cached`, requestId: request.id, attemptId: null, type: 'cachedInputTokens', value: request.cachedInputTokens!, unit: 'tokens', createdTime: request.createdTime },
-      ...(request.index % 4 === 0 ? [{ id: `usage_dev_${request.id}_cache_creation`, requestId: request.id, attemptId: null, type: 'cacheCreationInputTokens', value: request.cacheCreationInputTokens!, unit: 'tokens', createdTime: request.createdTime }] : []),
-      { id: `usage_dev_${request.id}_total`, requestId: request.id, attemptId: null, type: 'totalTokens', value: request.totalTokens!, unit: 'tokens', createdTime: request.createdTime },
-      { id: `usage_dev_${request.id}_cost`, requestId: request.id, attemptId: null, type: 'estimatedCost', value: Number((request.totalTokens * (request.index % 3 === 0 ? 0.000003 : 0.000002)).toFixed(6)), unit: 'USD', rawValue: JSON.stringify({ currency: 'USD', source: 'development-seed' }), createdTime: request.createdTime },
-      { id: `usage_dev_${request.id}_raw`, requestId: request.id, attemptId: null, type: 'raw', value: 0, unit: 'string', rawValue: JSON.stringify({ prompt_tokens: request.inputTokens, completion_tokens: request.outputTokens, total_tokens: request.totalTokens, prompt_tokens_details: { cached_tokens: request.cachedInputTokens } }), createdTime: request.createdTime },
+      { requestId: request.id, type: 'inputTokens', value: request.inputTokens!, createdTime: request.createdTime },
+      { requestId: request.id, type: 'outputTokens', value: request.outputTokens!, createdTime: request.createdTime },
+      { requestId: request.id, type: 'cachedInputTokens', value: request.cachedInputTokens!, createdTime: request.createdTime },
+      ...(request.index % 4 === 0 ? [{ requestId: request.id, type: 'cacheCreationInputTokens', value: request.cacheCreationInputTokens!, createdTime: request.createdTime }] : []),
+      // 原始 usage 报文没有数值，作为 `raw` 类型的行与其他用量并存。
+      {
+        requestId: request.id,
+        type: 'raw',
+        value: null,
+        rawValue: JSON.stringify({ prompt_tokens: request.inputTokens, completion_tokens: request.outputTokens, total_tokens: request.totalTokens, prompt_tokens_details: { cached_tokens: request.cachedInputTokens } }),
+        createdTime: request.createdTime,
+      },
     ])
     if (usages.length > 0) transaction.insert(requestUsages).values(usages).run()
     transaction.insert(requestAttempts).values(sampleRequests.flatMap(request => {
       const fixture = PROVIDER_MODEL_FIXTURES[request.index % PROVIDER_MODEL_FIXTURES.length]
       const providerModelId = `model_dev_provider_${request.index % PROVIDER_MODEL_FIXTURES.length + 1}`
+      // 开发示例：客户端跳要增量时，上游跳也以 SSE 返回（忠诚转发的典型情形）。
+      const upstreamTransport = request.transport === 'http-stream' ? 'http-stream' as const : 'http' as const
       const attempt = {
         id: `att_dev_${request.id}`,
         requestId: request.id,
@@ -255,42 +260,78 @@ export async function seedDevelopmentData(secretStore: KeychainApi, options: Dev
         httpStatus: request.failed ? 504 : 200,
         retryable: request.failed,
         attemptIndex: 0,
+        // 上游跳实际是什么形态。本行最终失败的尝试根本没等到响应，因此无从判断。
+        upstreamTransport: request.failed ? null : upstreamTransport,
         errorCode: request.failed ? 'UPSTREAM_TIMEOUT' : null,
-        errorMessage: request.failed ? '开发示例：上游请求超时' : null,
+        errorMessage: request.failed ? 'Development sample: upstream request timed out' : null,
         durationMilliseconds: request.totalDurationMilliseconds,
+        ttftMilliseconds: request.ttftMilliseconds,
+        // 事实总是写入，与是否采集正文无关。
+        requestRewriteRuleIds: JSON.stringify([]),
+        responseRewriteRuleIds: JSON.stringify([]),
         createdTime: request.createdTime,
       }
       if (!request.failed) return [attempt]
       return [
-        { ...attempt, id: `att_dev_${request.id}_retry`, status: 'success', httpStatus: 200, retryable: false, attemptIndex: 1, errorCode: null, errorMessage: null, durationMilliseconds: request.totalDurationMilliseconds + 640 },
+        { ...attempt, id: `att_dev_${request.id}_retry`, status: 'success', httpStatus: 200, retryable: false, attemptIndex: 1, upstreamTransport, errorCode: null, errorMessage: null, durationMilliseconds: request.totalDurationMilliseconds + 640 },
         { ...attempt, attemptIndex: 0 },
       ]
     })).run()
+    // 尝试级用量：归属由 attemptId 唯一确定，请求级用量在另一张表里。
+    const attemptUsageRows: Array<typeof attemptUsages.$inferInsert> = sampleRequests.flatMap(request => request.totalTokens == null ? [] : [
+      { attemptId: `att_dev_${request.id}${request.failed ? '_retry' : ''}`, type: 'inputTokens', value: request.inputTokens!, createdTime: request.createdTime },
+      { attemptId: `att_dev_${request.id}${request.failed ? '_retry' : ''}`, type: 'outputTokens', value: request.outputTokens!, createdTime: request.createdTime },
+      { attemptId: `att_dev_${request.id}${request.failed ? '_retry' : ''}`, type: 'cachedInputTokens', value: request.cachedInputTokens!, createdTime: request.createdTime },
+      {
+        attemptId: `att_dev_${request.id}${request.failed ? '_retry' : ''}`,
+        type: 'raw',
+        value: null,
+        rawValue: JSON.stringify({ prompt_tokens: request.inputTokens, completion_tokens: request.outputTokens, total_tokens: request.totalTokens }),
+        createdTime: request.createdTime,
+      },
+    ])
+    if (attemptUsageRows.length > 0) transaction.insert(attemptUsages).values(attemptUsageRows).run()
     transaction.insert(requestContents).values(sampleRequests.flatMap(request => {
       const responseBody = request.failed
-        ? JSON.stringify({ error: { type: 'upstream_timeout', message: '开发示例：上游请求超时' } })
-        : JSON.stringify({ id: `chatcmpl-dev-${request.id}`, object: 'chat.completion', model: request.provider.name, choices: [{ index: 0, message: { role: 'assistant', content: '这是开发环境生成的示例响应。' }, finish_reason: 'stop' }], usage: { prompt_tokens: request.inputTokens, completion_tokens: request.outputTokens, total_tokens: request.totalTokens } })
-      const requestContent = {
+        ? JSON.stringify({ error: { type: 'upstream_timeout', message: 'Development sample: upstream request timed out' } })
+        : JSON.stringify({ id: `chatcmpl-dev-${request.id}`, object: 'chat.completion', model: request.provider.name, choices: [{ index: 0, message: { role: 'assistant', content: 'This is a sample response generated by the development seeder.' }, finish_reason: 'stop' }], usage: { prompt_tokens: request.inputTokens, completion_tokens: request.outputTokens, total_tokens: request.totalTokens } })
+      const requestBody = JSON.stringify({ model: request.provider.name, messages: [{ role: 'user', content: request.index % 3 === 0 ? 'Summarize this development sample content.' : 'Write a short development sample reply.' }], temperature: request.index % 2 === 0 ? 0.7 : 0.2, stream: request.index % 4 === 0 })
+      const captureStatus = request.failed
+        ? 'partial'
+        : request.index % 11 === 0
+          ? 'partial'
+          : request.index % 7 === 0
+            ? 'partial'
+            : 'captured'
+      // 客户端视角：每个请求一行，只描述客户端看到的内容。
+      return [{
         id: `content_dev_${request.id}`,
         requestId: request.id,
-        attemptId: null,
-        captureStatus: request.failed ? 'partial' : request.index % 7 === 0 ? 'headers-only' : request.index % 5 === 0 ? 'truncated' : 'captured',
+        captureStatus,
         requestMethod: 'POST',
         requestPath: request.protocol === 'anthropic-messages' ? '/v1/messages' : '/v1/chat/completions',
         requestHeaders: JSON.stringify({ 'content-type': 'application/json', authorization: '[REDACTED]', 'x-development-batch': request.index % 2 === 0 ? 'standard' : 'extended' }),
-        requestBody: JSON.stringify({ model: request.provider.name, messages: [{ role: 'user', content: request.index % 3 === 0 ? '请总结这段开发环境示例内容。' : '请生成一段开发环境示例回复。' }], temperature: request.index % 2 === 0 ? 0.7 : 0.2, stream: request.index % 4 === 0 }),
+        requestBody,
         responseStatus: request.failed ? 504 : 200,
         responseHeaders: JSON.stringify({ 'content-type': 'application/json', 'x-request-id': `req-${request.id}` }),
         responseBody,
-        conversions: request.protocol === 'anthropic-messages' ? JSON.stringify([{ direction: 'request', from: 'anthropic-messages', to: 'openai-completions' }, { direction: 'response', from: 'openai-completions', to: 'anthropic-messages' }]) : null,
         createdTime: request.createdTime,
         updatedTime: request.createdTime,
-      }
-      const attemptContents = request.index % 4 === 0
-        ? [{ ...requestContent, id: `content_dev_${request.id}_attempt`, attemptId: `att_dev_${request.id}${request.failed ? '_retry' : ''}`, captureStatus: request.failed ? 'captured' : 'partial', requestBody: JSON.stringify({ model: request.provider.name, messages: [{ role: 'user', content: '这是上游 attempt 级请求正文。' }], stream: true }), responseBody: JSON.stringify({ id: `attempt-${request.id}`, object: 'chat.completion', choices: [{ index: 0, message: { role: 'assistant', content: '这是 attempt 级响应。' } }] }) }]
-        : []
-      return [requestContent, ...attemptContents]
+      }]
     }).flat()).run()
+    transaction.insert(attemptContents).values(sampleRequests.filter(request => request.index % 4 === 0).map(request => ({
+      // 上游视角：每次尝试一行，只描述真正发给供应商 / 由供应商返回的内容。
+      id: `attempt_content_dev_${request.id}`,
+      attemptId: `att_dev_${request.id}${request.failed ? '_retry' : ''}`,
+      captureStatus: request.failed ? 'captured' : 'partial',
+      requestHeaders: JSON.stringify({ 'content-type': 'application/json', authorization: '[REDACTED]', 'x-upstream-attempt': 'development-seed' }),
+      requestBody: JSON.stringify({ model: request.provider.name, messages: [{ role: 'user', content: 'This is an attempt-level request body.' }], stream: true }),
+      responseStatus: request.failed ? 504 : 200,
+      responseHeaders: JSON.stringify({ 'content-type': 'application/json', 'x-upstream-request-id': `upstream-${request.id}` }),
+      responseBody: JSON.stringify({ id: `attempt-${request.id}`, object: 'chat.completion', choices: [{ index: 0, message: { role: 'assistant', content: 'This is an attempt-level response.' } }] }),
+      createdTime: request.createdTime,
+      updatedTime: request.createdTime,
+    }))).run()
   })
 
   return true

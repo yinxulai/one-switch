@@ -4,7 +4,7 @@ import { ProtocolSchema, type Protocol } from '@common/schemas'
 import { getProvider, listProviderEndpoints } from '@server/database/provider-store'
 import { getSecretStore } from '@server/infrastructure/secrets/secret-store'
 import { coreNetworkClient } from '@server/infrastructure/network/core-network'
-import { createAuthHeaders } from '../../../proxy/upstream/auth'
+import { createProtocolAuthHeaders } from '@common/protocols'
 import { HttpRouter } from '@server/http-router'
 import type { ManagementHandler } from '../../core/response'
 import { sendError, sendSuccess } from '../../core/response'
@@ -34,7 +34,7 @@ const FetchProviderModelsSchema = z.object({
   baseUrl: z.string().trim().min(1).optional(),
   apiKey: z.string().optional(),
 }).refine(input => Boolean(input.providerId || input.baseUrl), {
-  message: 'providerId 与 baseUrl 至少提供一个',
+  message: 'Either providerId or baseUrl must be provided',
 })
 
 async function handleFetchProviderModels(req: IncomingMessage, res: ServerResponse, body: unknown): Promise<void> {
@@ -50,7 +50,7 @@ async function handleFetchProviderModels(req: IncomingMessage, res: ServerRespon
   if (input.providerId) {
     const provider = await getProvider(input.providerId)
     if (!provider) {
-      sendError(res, 'NOT_FOUND', 'Provider 不存在', 404)
+      sendError(res, 'NOT_FOUND', `Provider not found: ${input.providerId}`, 404, { providerId: input.providerId })
       return
     }
     if (!baseUrl) {
@@ -62,7 +62,7 @@ async function handleFetchProviderModels(req: IncomingMessage, res: ServerRespon
   }
 
   if (!baseUrl) {
-    sendError(res, 'VALIDATION_ERROR', '未提供可用的上游地址', 400)
+    sendError(res, 'VALIDATION_ERROR', 'No usable upstream base URL was resolved', 400)
     return
   }
 
@@ -84,8 +84,8 @@ async function handleFetchProviderModels(req: IncomingMessage, res: ServerRespon
     res,
     authFailed ? 'UPSTREAM_AUTH_FAILED' : 'UPSTREAM_MODELS_UNAVAILABLE',
     authFailed
-      ? '上游拒绝了认证，请检查 API Key 是否正确'
-      : '无法从上游获取模型列表，请检查地址与协议是否匹配，或手动填写模型 ID',
+      ? 'The upstream rejected the credentials'
+      : 'Could not fetch the model list from the upstream, check the base URL and protocol match',
     502,
   )
 }
@@ -146,7 +146,7 @@ async function fetchModelList(urlPath: string, protocol: Protocol, apiKey: strin
       port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
       path: parsed.pathname + parsed.search,
       method: 'GET',
-      headers: { ...createAuthHeaders(protocol, apiKey, null), Accept: 'application/json' },
+      headers: { ...createProtocolAuthHeaders(protocol, apiKey, null), Accept: 'application/json' },
       timeout,
       signal,
     }, Buffer.alloc(0))
@@ -154,9 +154,9 @@ async function fetchModelList(urlPath: string, protocol: Protocol, apiKey: strin
       return { ok: false, statusCode: response.statusCode, models: [] }
     }
     const models = parseModelListResponse(response.body)
-    return { ok: models !== null, statusCode: response.statusCode, error: models === null ? '响应不是有效的模型列表 JSON' : undefined, models: models ?? [] }
+    return { ok: models !== null, statusCode: response.statusCode, error: models === null ? 'Response is not a valid model list JSON payload' : undefined, models: models ?? [] }
   } catch (error) {
-    return { ok: false, error: signal.aborted ? '客户端已取消请求' : (error as Error).message, models: [] }
+    return { ok: false, error: signal.aborted ? 'The client cancelled the request' : (error as Error).message, models: [] }
   }
 }
 

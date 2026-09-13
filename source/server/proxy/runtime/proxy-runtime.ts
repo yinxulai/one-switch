@@ -1,6 +1,7 @@
 import type { Server } from 'node:http'
 import http from 'node:http'
 import { handleProxyRequest } from '@server/proxy/request/request-entry'
+import { matchLocalEndpoint } from '@server/proxy/local/registry'
 import { getErrorResponseMessage, isErrorCode, normalizeError } from '@server/errors'
 
 export interface ProxyEndpoint {
@@ -35,7 +36,7 @@ export class ProxyRuntime {
   }
 
   start(endpoint = this.endpoint): Promise<void> {
-    return this.enqueue(async () => {
+    return this.runSerialized(async () => {
       if (this.state === 'running') {
         console.debug('[proxy-lifecycle] start skipped reason=already-running')
         return
@@ -60,7 +61,7 @@ export class ProxyRuntime {
   }
 
   stop(): Promise<void> {
-    return this.enqueue(async () => {
+    return this.runSerialized(async () => {
       if (this.state === 'stopped') {
         console.debug('[proxy-lifecycle] stop skipped reason=already-stopped')
         return
@@ -83,7 +84,7 @@ export class ProxyRuntime {
   }
 
   restart(endpoint = this.endpoint): Promise<void> {
-    return this.enqueue(async () => {
+    return this.runSerialized(async () => {
       const startedAt = Date.now()
       console.info(`[proxy-lifecycle] restart requested host=${endpoint.host} port=${endpoint.port}`)
       if (this.state === 'running' || this.state === 'starting') {
@@ -110,21 +111,23 @@ export class ProxyRuntime {
     })
   }
 
-  private enqueue(operation: () => Promise<void>): Promise<void> {
+  private runSerialized(operation: () => Promise<void>): Promise<void> {
     const result = this.operation.then(operation, operation)
     this.operation = result.catch(() => undefined)
     return result
   }
 
   private createServer(): Server {
-    return http.createServer(async (req, res) => {
+    const server = http.createServer(async (req, res) => {
       try {
         const url = new URL(req.url!, 'http://localhost')
-        if (url.pathname === '/v1/models') {
-          writeModelsResponse(res)
+        const localEndpoint = matchLocalEndpoint(req.method, url.pathname)
+        if (localEndpoint) {
+          await localEndpoint.handle({ request: req, response: res })
           return
         }
-        await handleProxyRequest(req, res, 'default')
+        // 代理入口不需要指定逻辑模型：请求自己带的模型名决定落到哪个逻辑模型。
+        await handleProxyRequest(req, res)
       } catch (error) {
         const normalized = normalizeError(error)
         if (isErrorCode(normalized, 'CLIENT_REQUEST_ABORTED')) {
@@ -136,11 +139,41 @@ export class ProxyRuntime {
           res.destroy(normalized)
           return
         }
-        writeJsonError(res, normalized.statusCode, normalized.code, getErrorResponseMessage(normalized, '代理处理失败'))
+        writeJsonError(res, normalized.statusCode, normalized.code, getErrorResponseMessage(normalized, 'Proxy request failed'))
       }
     })
+    server.on('upgrade', (_req, socket) => socket.end(UNSUPPORTED_TRANSPORT_RESPONSE))
+    return server
   }
 }
+
+/**
+ * 未实现的传输形态必须显式拒绝，而不是假装没这回事。
+ *
+ * `TransportKind` 里保留着 `'websocket'`（见 `@common/schemas`），说明这套架构承认这种形态；
+ * 但这一版没有任何 WS 实现。两端都不能走：不注册 `upgrade` 监听器的话，Node 会直接把
+ * socket 销毁，客户端只看到「连接莫名断开」，而这从代理一侧完全查不出来；反过来真去接 WS，就得
+ * 手写 RFC 6455 的分帧与握手——那是真正的过度实现。
+ *
+ * 因此这里只做一件事：回一个带可读原因的响应，然后关闭。**不含任何 WebSocket 协议细节**，
+ * 所以将来实现 WS 时，这个处理函数是被替换掉的第一个东西，而不是被扩写的第一个东西。
+ */
+const UNSUPPORTED_TRANSPORT_RESPONSE = (() => {
+  const body = JSON.stringify({
+    error: {
+      code: 'TRANSPORT_NOT_IMPLEMENTED',
+      message: 'WebSocket transport is not implemented yet, use the HTTP endpoints instead',
+    },
+  })
+  return [
+    'HTTP/1.1 501 Not Implemented',
+    'Content-Type: application/json; charset=utf-8',
+    `Content-Length: ${Buffer.byteLength(body)}`,
+    'Connection: close',
+    '',
+    body,
+  ].join('\r\n')
+})()
 
 function listen(server: Server, endpoint: ProxyEndpoint): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -163,12 +196,6 @@ function close(server: Server | null): Promise<void> {
   server.closeIdleConnections?.()
   server.closeAllConnections?.()
   return new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
-}
-
-function writeModelsResponse(res: http.ServerResponse): void {
-  res.statusCode = 200
-  res.setHeader('Content-Type', 'application/json')
-  res.end(JSON.stringify({ object: 'list', data: [{ id: 'default', object: 'model', created: 0, owned_by: 'one-switch' }] }))
 }
 
 function writeJsonError(res: http.ServerResponse, statusCode: number, errorCode: string, errorMessage: string): void {

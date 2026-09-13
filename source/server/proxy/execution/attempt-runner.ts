@@ -6,7 +6,8 @@ export interface AttemptRunnerResult {
 
 export interface AttemptRunnerOptions<T, O extends AttemptRunnerResult> {
   signal: AbortSignal
-  targets: T[]
+  /** 依次尝试的目标，顺序即优先级；执行器只读，不改这个数组。 */
+  targets: readonly T[]
   attempt(target: T, attemptIndex: number): Promise<O>
   onSuccess(target: T, outcome: O, attemptIndex: number): Promise<void>
   onTerminal(target: T, outcome: O, attemptIndex: number): Promise<void>
@@ -16,7 +17,7 @@ export interface AttemptRunnerOptions<T, O extends AttemptRunnerResult> {
   onExhausted(lastError: Error | null): Promise<void>
 }
 
-export async function runAttemptQueue<T, O extends AttemptRunnerResult>(options: AttemptRunnerOptions<T, O>): Promise<void> {
+export async function runAttempts<T, O extends AttemptRunnerResult>(options: AttemptRunnerOptions<T, O>): Promise<void> {
   let attemptIndex = 0
   let lastError: Error | null = null
 

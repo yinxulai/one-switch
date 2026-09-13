@@ -24,7 +24,7 @@ export function EmptyState(props: EmptyStateProps) {
     )}>
       <EmptyHeader>
         <EmptyMedia variant="default" className={cn(
-          'mb-0 text-muted-foreground/60 [&_svg:not([class*="size-"])]:size-auto',
+          'mb-0 text-text-quaternary [&_svg:not([class*="size-"])]:size-auto',
           embedded ? 'size-8' : 'size-9',
         )}>
           <Icon size={embedded ? 24 : 30} strokeWidth={1.5} />

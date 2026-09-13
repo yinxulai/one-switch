@@ -25,7 +25,7 @@
 
 代理服务和管理服务各自使用一个原生 `http.createServer` 实例，不引入 Hono/Fastify/Express：
 
-- 管理 API 端点不多（配置 CRUD、日志、健康状态，约十几个接口），原生路由足够
+- 管理 API 端点不多（配置 CRUD、日志、健康状态、路由工作台、重写规则），原生路由足够
 - 代理透传层需要完全掌控请求/响应流，框架反而增加抽象成本
 - 两个监听器共享应用级数据库和密钥存储，但生命周期独立；停止或重启代理不会中断管理 API
 - 减少依赖，降低打包体积和安全面
@@ -34,13 +34,13 @@
 ### 为什么用 Zod 做 Schema
 
 - **单一真相源**：配置模型、API 请求/响应、数据库行都用 Zod schema 定义，TypeScript 类型从中推导
-- **运行时校验**：管理 API 的入参出参、配置导入导出、数据库读写都在边界处校验，保证数据一致性
+- **运行时校验**：管理 API 的入参出参、供应商包导入导出、数据库读写都在边界处校验，保证数据一致性
 - **边界明确**：当前使用 Zod 做运行时校验和共享契约；未来若接入 OpenAPI，必须以现有 Schema/路由为基础，不能反向虚构已生成的类型或接口文件
 - **零依赖膨胀**：Zod 体积小，不引入额外运行时
 
 ### 为什么用统一 POST 风格 API
 
-管理 API 全部使用 POST 方法，路径格式为 `/api/资源/动作`，不依赖 HTTP 方法和状态码语义。以下是 v0.3 当前契约；旧版 `/api/upstream-model/*` 路径已删除，不提供兼容别名。实际注册路由以 `source/server/management/router.ts` 为准：
+管理 API 全部使用 POST 方法，路径格式为 `/api/资源/动作`，不依赖 HTTP 方法和状态码语义。以下是当前契约，不提供兼容别名；实际注册路由以 `source/server/management/router.ts` 为准：
 
 - **简单一致**：前端调用统一用 POST，不需要区分 GET/POST/PUT/DELETE，不需要处理不同状态码
 - **结构化错误**：错误通过 body 中的 `success`、`errorCode`、`errorMessage` 表达，类型安全，前端可统一处理
@@ -56,7 +56,7 @@ OpenAPI 目前未接入，项目没有 OpenAPI 文档、生成类型或 `openapi
 - **查询能力**：日志筛选、分页、统计用 SQL 比遍历 JSONL 高效得多
 - **事务一致性**：配置变更（如删除 Provider 级联禁用 Provider 模型）用事务保证原子性
 - **迁移可控**：首发前只保留最终基线，首发后冻结基线并追加事务化版本迁移
-- **单文件部署**：SQLite 是单个文件，和 JSON 一样便携，备份/导入导出都方便
+- **单文件部署**：SQLite 是单个文件，和 JSON 一样便携，备份/供应商包导入导出都方便
 - **Drizzle ORM**：提供类型安全的同步数据访问，SQLite 查询集中在 database store 边界；基于 Node 22.5+ 内置 `node:sqlite`，零原生依赖、无 ABI 问题
 
 ## 项目结构
@@ -73,8 +73,8 @@ one-switch/
 │   ├── server/                     # 核心主体：runtime + management + proxy + database
 │   │   ├── index.ts                # 外部生命周期入口
 │   │   ├── runtime/server-runtime.ts # ServerRuntime 启动/停止编排
-│   │   ├── management/             # 管理 HTTP 服务、API route modules、auth/config/guards
-│   │   ├── proxy/                  # request-entry、routing、attempt、protocols、conversion、transport
+│   │   ├── management/             # 管理 HTTP 服务，routes/ 下按域分组注册
+│   │   ├── proxy/                  # 分层代理链路，见 proxy-engine.md
 │   │   ├── database/               # SQLite + Drizzle 持久化层及按领域拆分的 *-store.ts
 │   │   ├── infrastructure/secrets/ # 系统密钥环适配
 │   │   └── security/               # Host validation
@@ -88,6 +88,7 @@ one-switch/
 │   │
 │   ├── common/                     # server / command / render 共享
 │   │   ├── schemas.ts              # Zod schema（可被 server、command 和 render 引用）
+│   │   └── i18n/                   # i18n 核心与语言目录，见 i18n.md
 │   │
 │   └── render/                     # UI 入口：React 渲染进程
 │       ├── index.html
@@ -104,166 +105,78 @@ one-switch/
 └── resources/                      # 静态资源：图标、托盘图标等
 ```
 
-## 核心模块设计
+## 模块地图
 
-> 下方模块说明以当前源码为准。协议适配器、request context、协议转换、请求观测和管理 API 路由已经有实际实现；OpenAPI 定义和代码生成尚未接入。
+模块职责只在这里定位，细节各有权威文档，不再逐文件重述：
 
-### 1. 核心服务（`source/server/`）
+| 模块 | 职责 | 权威文档 |
+| --- | --- | --- |
+| `source/server/runtime` | 进程级组装与生命周期：启动/停止 management 与 proxy，失败回滚 | [server-architecture.md](./server-architecture.md) |
+| `source/server/management` | 配置管理与管理 API（含路由工作台、重写规则、诊断） | [server-architecture.md](./server-architecture.md) |
+| `source/server/proxy` | 代理请求链路：入口、路由、规划、执行、协议、修饰、观测 | [proxy-engine.md](./proxy-engine.md) |
+| `source/server/database` | SQLite + Drizzle 持久化层与按域拆分的 `*-store.ts` | [data-model.md](./data-model.md) |
+| `source/server/infrastructure`、`source/server/security` | 密钥环适配、Host 校验 | [security-privacy.md](./security-privacy.md) |
+| `source/common` | server / command / render 共享契约（Zod schema、协议表、路由类型、i18n 核心与语言目录） | 各自主题文档、[i18n.md](./i18n.md) |
+| `source/command` | Electron 主进程：窗口、托盘、开机自启、自动更新、密钥存储 | [desktop.md](./desktop.md) |
+| `source/render` | React 控制台 | [desktop.md](./desktop.md) |
 
-核心主体包含共享运行时、管理服务、代理服务和 SQLite 持久化层。核心逻辑不依赖 Electron，可由 Electron 主进程和测试复用；当前没有独立的 CLI 产品入口。
+代理服务与管理服务是两个独立监听器：代理可单独停止、重启而不影响管理服务，两者都由 `ServerRuntime` 持有。协议范围以 `source/common/protocols.ts` 为准，当前不支持 Gemini 或 Custom 协议。
 
-**`index.ts`** — 外部服务生命周期入口
-- 对外提供 `startServer` / `stopServer`
-- 管理唯一的 `ServerRuntime` 实例，不承载具体启动编排
+### 管理 API 契约
 
-**`runtime/server-runtime.ts`** — ServerRuntime 编排
-- 配置密钥存储、日志捕获和数据库
-- 按顺序启动/停止 management 与 proxy，并在失败时回滚资源
-- 持有运行状态和管理服务实例
+管理 API 挂在独立管理服务的 `/api` 前缀（默认 `127.0.0.1:9301`），React UI 与未来的 CLI 复用同一套接口。
 
-**`proxy/`** — 代理透传层（纯 Node，无 Electron 依赖）
+设计原则：
 
-**`proxy/server.ts`** — 代理服务生命周期
-- 按设置中的 `listenHost`、`listenPort` 独立监听
-- 提供幂等的启动、停止、重启和状态查询
-- 重启时重新读取监听配置，不影响管理服务
-
-**`proxy/router.ts` 与 `proxy/protocols/registry.ts`** — 协议识别与适配
-- `router.ts` 根据 path 识别当前支持的协议：OpenAI Completions、OpenAI Responses、Anthropic Messages
-- `protocols/registry.ts` 注册直连和已实现的协议转换方向；未注册方向拒绝
-- `auth.ts` 按 OpenAI/Anthropic 协议注入认证与版本头
-- 当前不支持 Gemini 或 Custom 协议
-
-**`proxy/router.ts`** — 路由引擎
-- 输入：clientProtocol + 客户端 `model`；v0.3 MVP 将任意非空模型名解析为 `default`
-- 输出：候选 Provider 模型列表（按优先级排序，过滤禁用/冷却/额度耗尽）
-- 切换时取下一个 Provider 模型
-- 处理"该协议下无可用端点自动跳过"逻辑
-
-**`proxy/transport.ts`** — 上游透传
-- 封装 `http.request` / `https.request`
-- 根据协议默认认证方式注入认证头
-- 超时控制：连接超时 + 空闲超时（两次数据到达的最大间隔，流式持续返回不超时）
-- 错误分类：network / timeout / 4xx / 5xx
-- 返回 `Attempt` 结果
-
-**`proxy/response-pipeline.ts` 与 `proxy/response.ts`** — 流式响应边界
-- 跟踪响应头是否已发出
-- 响应头发出前：失败可切换
-- 响应头发出后：失败不切换，直接透传或转换错误
-- 管理客户端响应流的写入时机
-
-**`proxy/health.ts`** — 健康状态与冷却
-- 维护每个 Provider 的连续失败计数、冷却截止时间
-- 成功/失败回调更新状态
-- 提供 `isAvailable(providerId): boolean`
-
-**`proxy/manual-routing.ts`** — 当前逻辑模型手动指定的 ProviderModel 状态
-- 维护当前用户手动指定的 Provider 模型 ID（运行时状态，不持久化）
-- 新请求从当前 ProviderModel 开始尝试，失败后仍按队列顺序自动切换
-- 进行中的请求持有自己的 ProviderModel 引用，不受外部切换影响
-
-`proxy/server.ts` 内置 `/v1/models` 本地接口，仅返回当前 `default` 逻辑模型可见的模型信息。
-
-### 2. 管理 API（目标模块 `source/server/management/`）
-
-统一 POST 风格 API，挂载到独立管理服务的 `/api` 前缀。管理服务默认监听 `127.0.0.1:9301`，React UI 通过轻量 HTTP client 调用。当前实现位于 `source/server/management/`，并已按该路径迁移；下方接口表保留为契约摘要，具体路由以源码注册表为准。
-
-**设计原则：**
-- 所有接口统一使用 `POST` 方法，不依赖 HTTP 方法语义
-- 路径格式：`/api/资源/动作`，如 `/api/provider/list`、`/api/provider/create`
-- 代理生命周期：`/api/proxy/status`、`/api/proxy/start`、`/api/proxy/stop`、`/api/proxy/restart`
-- 所有响应通过结构化 body 返回，HTTP 状态码始终为 200（除非网络层错误）
-- 错误信息通过响应体中的 `success`、`errorCode`、`errorMessage` 字段表达
-
-**统一响应格式：**
+- 统一 `POST`，不依赖 HTTP 方法语义；路径格式为 `/api/资源/动作`
+- HTTP 状态码始终 200，业务结果由 body 表达
 
 ```ts
-// 成功响应
-{
-  success: true,
-  data: { ... }
-}
+// 成功
+{ success: true, data: { ... } }
 
-// 失败响应
-{
-  success: false,
-  errorCode: "PROVIDER_NOT_FOUND",
-  errorMessage: "供应商不存在"
-}
+// 失败
+{ success: false, errorCode: "PROVIDER_NOT_FOUND", errorMessage: "供应商不存在" }
 ```
 
-**接口列表（以 `source/server/management/router.ts` 注册表为准）：**
+接口清单不在文档里维护，按域查阅 `source/server/management/router.ts` 与 `management/routes/`：
 
-| 路径 | 说明 |
-|------|------|
-| `/api/provider/list`、`/api/provider/get`、`/api/provider/endpoints` | Provider 列表、详情、端点列表 |
-| `/api/provider/create`、`/api/provider/update`、`/api/provider/delete` | Provider 配置变更 |
-| `/api/provider/reset-health`、`/api/provider/fetch-models` | 重置健康状态、从 Provider 获取模型 |
-| `/api/logical-model/list`、`/api/logical-model/get` | 逻辑模型列表、详情 |
-| `/api/logical-model/create`、`/api/logical-model/update`、`/api/logical-model/delete` | 逻辑模型配置变更 |
-| `/api/provider-model/list`、`/api/provider-model/queue`、`/api/provider-model/get` | Provider 模型列表、队列和详情 |
-| `/api/provider-model/create`、`/api/provider-model/update`、`/api/provider-model/delete` | Provider 模型配置变更 |
-| `/api/scheduling-policy/list`、`/api/scheduling-policy/update`、`/api/scheduling-policy/delete` | 调度策略查询与变更 |
-| `/api/relation/provider-setting/*` | Provider 设置的 list/get/upsert/delete |
-| `/api/relation/provider-endpoint/*` | Provider 端点的 list/get/create/update/delete |
-| `/api/relation/provider-model-endpoint/*` | Provider 模型端点的 list/get/create/update/delete |
-| `/api/relation/protocol-converter/*` | 协议转换器的 list/get/create/update/delete |
-| `/api/settings/get`、`/api/settings/update` | 全局设置查询与更新 |
-| `/api/queue/status`、`/api/queue/switch` | 队列状态与手动切换 |
-| `/api/health/list` | Provider/模型健康状态列表 |
-| `/api/proxy/status`、`/api/proxy/start`、`/api/proxy/stop`、`/api/proxy/restart` | 代理服务生命周期控制 |
-| `/api/logs/list`、`/api/logs/export`、`/api/logs/clear` | 实时运行日志查询、导出、清空 |
-| `/api/request-log/list`、`/api/request-log/detail`、`/api/request-log/prune` | 请求日志列表、详情、清理 |
-| `/api/analytics/summary` | 统计分析汇总 |
-| `/api/model-test/run` | 模型测试 |
-| `/api/config/export`、`/api/config/import`、`/api/config/seed-development` | 配置导出、导入、开发数据种子 |
+| 域 | 源码位置 |
+| --- | --- |
+| Provider / ProviderModel / 端点 / 调度关系 | `management/routes/catalog/` |
+| ProviderModel 绑定关系、请求重写规则 | `management/routes/relations/` |
+| 设置、代理生命周期、开发种子 | `management/routes/operations/` |
+| 运行日志、请求日志、统计分析 | `management/routes/observability/` |
+| 路由工作台（策略图与试跑） | `management/routes/router/` |
+| 模型测试、协议发现、出站代理测试 | `management/routes/diagnostics/` |
+| 供应商包导入导出 | `management/provider-transfer/` |
 
-通配符 `*` 表示表中同一资源下实际存在的 `list`、`get`、`create`、`update`、`delete` 或 `upsert` 路径；所有路由均由 `router.ts` 合并注册，未提供旧版兼容别名。
+所有路由由同一个注册表合并，不提供兼容别名。
 
-### 3. 数据存储（`source/server/database/`）
+### 数据存储
 
-使用 SQLite（`node:sqlite` + Drizzle ORM），配置和日志都存在本地数据库文件中。该目录就是当前 Server 的明确持久化层，不再描述为 `source/server/infrastructure/database/`。
+SQLite（`node:sqlite` + Drizzle ORM）承载配置与日志，表结构与字段定义见 [data-model.md](./data-model.md)，Drizzle 定义以 `source/server/database/schema.ts` 为准。
 
-**`index.ts`** — 数据库连接
-- 初始化数据库连接（`node:sqlite` `DatabaseSync` → Drizzle 实例）
-- 幂等创建首发目标表和索引；首发前不携带内部迭代的兼容逻辑
-- 提供数据库实例（`getDb`）
+- 首发基线：`drizzle/` 只保留一份 `initial_schema` 基线迁移与快照，`pnpm db:generate` 生成新迁移
+- 首发后冻结基线，只追加后续迁移，不改写已发布历史
+- API Key 等敏感信息存在系统密钥环中，数据库只存引用 ID
 
-**`schema.ts`** — Drizzle 表定义
-- 新版本 v0.3 16 张核心表（包含 `request_usages`）的 `sqliteTable` 定义；其中 `scheduling_policies` 是 LogicalModel-ProviderModel 调度绑定表；这是实施目标，不代表当前源码已完成迁移。
-- `settings` 按命名空间 key 逐项保存全局配置，标量按类型保存，数组/对象才使用 JSON 编码
-- `request_contents` 独立保存可选的请求/响应正文，避免大字段影响日志列表查询
-- 从表定义推导行类型（`$inferSelect`）
+### 运行环境与 profile
 
-**`*-store.ts`** — 按领域拆分的数据访问层
-- `provider-store.ts`、`model-store.ts`、`logical-model-store.ts` 负责 Provider、ProviderModel、端点和逻辑模型/调度关系
-- `settings-store.ts`、`health-store.ts`、`request-log-store.ts`、`analytics-store.ts` 分别负责设置、健康、请求观测和统计
-- 使用 Drizzle 类型化查询（`select`/`insert`/`update`），映射到领域模型；不存在跨领域 `store.ts` 单体或兼容 re-export
+开发版与正式版通过 `source/common/runtime-profile.ts` 的显式 profile 区分，profile 统一定义应用数据目录、代理端口、管理端口与管理 API 地址，Electron、服务端与 renderer 共用同一配置源。
 
-**`drizzle/`** — Drizzle-kit 迁移
-- `pnpm db:generate` 根据 schema.ts 生成迁移 SQL
-- 正式版发布前只保留一份 `initial_schema` 基线迁移和对应快照
-- 首发后冻结基线，只追加后续版本迁移，不改写已发布历史
+| profile | 数据目录 | 代理端口 / 管理端口 |
+| --- | --- | --- |
+| 开发 | `One Switch Development` | 19300 / 19301 |
+| 正式 | `One Switch` | 9300 / 9301 |
 
-> API Key 等敏感信息仍存储在系统密钥环中，数据库仅存引用 ID。
+数据库文件、`secrets.json` 与监听端口三者完整隔离。
 
-开发版和正式版通过 `source/common/runtime-profile.ts` 中的显式 profile 区分。profile 统一定义应用数据目录、代理端口、管理端口和管理 API 地址，Electron、服务端与 renderer 共用同一配置源。开发版使用 `One Switch Development` 数据目录和 `19300/19301`，正式版使用 `One Switch` 数据目录和 `9300/9301`；数据库、`secrets.json` 与监听端口均完整隔离。
+### 渲染进程
 
-### 4. 主进程与入口（`source/command/`）
+React 18 + TypeScript + shadcn/ui + Tailwind。页面通过 `source/render/source/api/*.ts` 调用管理 API，领域状态按 `features/*` 与页面 hooks 组织，`infrastructure/polling-manager.ts` 提供共享轮询，`store/create-store.ts` 提供轻量外部 store。
 
-`source/command/` 是当前 Electron 主进程和桌面生命周期入口，包含 `index.ts`、`preload.ts`、托盘、开机自启、更新和密钥存储适配。`preload.ts` 是当前实际文件，不存在虚构的 `electron/` 或 `preload/` 目录。当前没有独立的无头 CLI 产品入口；服务核心仍由 `source/server/` 提供给 Electron 与测试使用。
-
-### 5. 渲染进程（`source/render/`）
-
-React 18 + TypeScript + shadcn/ui + Tailwind。渲染层通过 `source/render/source/api/*.ts` 调用管理 API，按 `features/*` 和页面 hooks 组织领域状态；`infrastructure/polling-manager.ts` 提供共享轮询能力，`store/create-store.ts` 提供轻量外部 store 基础设施。当前没有单体 `app-service` 或 API 聚合出口。
-
-- **概览页**：服务状态、今日统计、供应商健康卡片
-- **供应商页**：列表、增删改查、测试连接、健康状态
-- **模型路由页**：Provider 模型列表、端点管理、拖拽排序
-- **请求日志页**：列表、筛选、详情（尝试过程时间线）
-- **请求内容查看器**：使用 Drawer 或 Dialog 查看完整请求/响应，协议转换时展示转换前后内容
-- **设置页**：端口、开机自启、日志保留条数、日志保留天数、按天立即清理、请求内容记录、导入导出、关于
+侧边栏分组与页面清单以 `source/render/source/components/app-sidebar.tsx` 为准，各页面职责见 [desktop.md](./desktop.md) 的控制台页面表。
 
 ## 构建与打包
 
@@ -294,11 +207,11 @@ React 18 + TypeScript + shadcn/ui + Tailwind。渲染层通过 `source/render/so
 5. `pnpm test:server` — 运行 Server/Vitest 测试
 6. `pnpm release:win`、`pnpm release:mac`、`pnpm release:linux` — 构建对应平台发布包
 
-## 关键技术决策
+## 决策回顾
 
 1. **代理服务纯 Node 化**：不依赖 Electron，可独立测试、未来抽 CLI
 2. **管理 API 走 HTTP**：React UI 和未来 CLI/Web 控制台复用同一套 API
 3. **原生 http 不引入框架**：减少依赖、完全控制流式行为
-4. **轻量外部 Store 管理共享状态**：集中缓存 Provider、健康状态、`default` 队列和设置，避免页面重复请求与轮询闪烁
+4. **轻量外部 Store 管理共享状态**：集中缓存 Provider、健康状态、`default` 逻辑模型和设置，避免页面重复请求与轮询闪烁
 5. **shadcn/ui + Tailwind**：组件按需复制、体积小、定制灵活
 6. **Vite 统一构建**：一套配置管三个进程，开发体验好

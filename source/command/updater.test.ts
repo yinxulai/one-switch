@@ -201,7 +201,7 @@ describe('UpdaterManager', () => {
     emit('error', new Error('network unavailable'))
     expect(manager.getState()).toMatchObject({
       status: 'error',
-      errorMessage: '开发环境无法检查更新：network unavailable',
+      errorMessage: 'Cannot check for updates in development: network unavailable',
       downloadProgress: null,
     })
 
@@ -246,7 +246,7 @@ describe('UpdaterManager', () => {
 
     await manager.checkForUpdates()
 
-    expect(manager.getState().errorMessage).toBe('开发环境无法检查更新：provider error')
+    expect(manager.getState().errorMessage).toBe('Cannot check for updates in development: provider error')
   })
 
   it('downloads an available update and reports success', async () => {
@@ -269,7 +269,7 @@ describe('UpdaterManager', () => {
     await expect(manager.downloadUpdate()).resolves.toBe(false)
     expect(manager.getState()).toMatchObject({
       status: 'error',
-      errorMessage: '当前没有可下载的更新',
+      errorMessage: 'There is no downloadable update right now',
     })
 
     emit('download-progress', { percent: 10 })

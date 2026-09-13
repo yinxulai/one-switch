@@ -1,10 +1,11 @@
-import { Filter, Search, SlidersHorizontal } from 'lucide-react'
+import { Filter, Search, SearchX, SlidersHorizontal } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { InlineEmptyState } from '@/components/inline-empty-state'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/i18n/provider'
 import type { RequestRewriteRule, RuleStatusFilter } from '../types'
 
 interface RuleLibraryProps {
@@ -18,44 +19,47 @@ interface RuleLibraryProps {
 }
 
 export function RuleLibrary(props: RuleLibraryProps) {
+  const t = useTranslation()
   return (
     <Card className="h-fit overflow-hidden">
-      <CardHeader className="space-y-3 pb-3">
+        <CardHeader className="grid gap-3 pb-3">
         <div className="flex items-center justify-between gap-2">
-          <CardTitle>规则库</CardTitle>
-          <Badge variant="muted" className="font-normal">{props.rules.length} 条</Badge>
+          <CardTitle>{t('rules.library.title')}</CardTitle>
+          <Badge variant="muted" className="font-normal">{t('rules.library.count', { count: props.rules.length })}</Badge>
         </div>
-        <div className="space-y-2">
+        <div className="grid gap-2">
           <div className="relative">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-text-tertiary" />
             <Input
               value={props.search}
               onChange={event => props.onSearchChange(event.target.value)}
-              placeholder="搜索名称或动作"
-              className="h-8 pl-8 text-xs"
-              aria-label="搜索请求重写规则"
+              placeholder={t('rules.library.searchPlaceholder')}
+              className="pl-9"
+              aria-label={t('rules.library.searchAria')}
             />
           </div>
           <Select value={props.statusFilter} onValueChange={value => props.onStatusFilterChange(value as RuleStatusFilter)}>
-            <SelectTrigger className="h-8 text-xs" aria-label="筛选规则状态">
+            <SelectTrigger aria-label={t('rules.filter.statusAria')} className="w-full">
               <span className="flex items-center gap-2">
-                <Filter className="size-3.5 text-muted-foreground" />
+                <Filter className="size-3.5 text-text-tertiary" />
                 <SelectValue />
               </span>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">全部状态</SelectItem>
-              <SelectItem value="enabled">仅启用</SelectItem>
-              <SelectItem value="disabled">仅停用</SelectItem>
+              <SelectItem value="all">{t('rules.filter.statusAll')}</SelectItem>
+              <SelectItem value="enabled">{t('rules.filter.statusEnabled')}</SelectItem>
+              <SelectItem value="disabled">{t('rules.filter.statusDisabled')}</SelectItem>
             </SelectContent>
           </Select>
         </div>
       </CardHeader>
       <CardContent className="p-0">
         {props.rules.length > 0 ? (
-          <div className="space-y-0.5 px-2 pb-2">
+          <div className="grid gap-0.5 px-2 pb-2">
             {props.rules.map(rule => {
               const active = props.selectedRuleId === rule.id
+              const hasRequest = rule.actions.some(action => action.stage === 'request')
+              const hasResponse = rule.actions.some(action => action.stage === 'response')
               return (
                 <button
                   key={rule.id}
@@ -63,28 +67,28 @@ export function RuleLibrary(props: RuleLibraryProps) {
                   onClick={() => props.onSelect(rule.id)}
                   aria-current={active ? 'true' : undefined}
                   className={cn(
-                    'w-full rounded-md px-2.5 py-2.5 text-left transition-colors',
-                    active ? 'bg-accent text-foreground' : 'hover:bg-muted/40',
+                    'w-full rounded-lg px-2.5 py-2.5 text-left transition-colors',
+                    active ? 'bg-accent text-text-primary' : 'hover:bg-state-base-hover',
                   )}
                 >
                   <div className="flex items-start gap-2.5">
                     <span className={cn(
-                      'mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md',
-                      rule.actions.some(action => action.stage === 'request') ? 'bg-info/12 text-info' : 'bg-warning/12 text-warning',
+                      'mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-lg',
+                      hasRequest ? 'bg-info/15 text-info' : 'bg-warning/15 text-text-warning',
                     )}>
                       <SlidersHorizontal className="size-3.5" />
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-1.5">
-                        <span className="truncate text-xs font-medium">{rule.name}</span>
-                        {!rule.enabled && <Badge variant="muted" className="px-1.5 py-0 text-[9px]">停用</Badge>}
+                        <span className="truncate system-xs-medium">{rule.name}</span>
+                        {!rule.enabled && <Badge variant="muted" className="px-1.5 py-0 system-2xs-medium">{t('rules.status.disabled')}</Badge>}
                       </span>
-                      <span className="mt-1 flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                        <span>{rule.actions.some(action => action.stage === 'request') ? '请求' : ''}{rule.actions.some(action => action.stage === 'request') && rule.actions.some(action => action.stage === 'response') ? ' / ' : ''}{rule.actions.some(action => action.stage === 'response') ? '响应' : ''}</span>
+                      <span className="mt-1 flex items-center gap-1.5 system-2xs-regular text-text-tertiary">
+                        <span>{[hasRequest && t('rules.stage.request'), hasResponse && t('rules.stage.response')].filter(Boolean).join(' / ')}</span>
                         <span>·</span>
-                        <span>{rule.actions.length} 个动作</span>
+                        <span>{t('rules.library.actionCount', { count: rule.actions.length })}</span>
                         <span>·</span>
-                        <span>{rule.global ? '全局' : `${rule.boundProviders} 个供应商`}</span>
+                        <span>{rule.global ? t('rules.scope.global') : t('rules.boundProviders', { count: rule.boundProviders })}</span>
                       </span>
                     </span>
                   </div>
@@ -93,7 +97,7 @@ export function RuleLibrary(props: RuleLibraryProps) {
             })}
           </div>
         ) : (
-          <InlineEmptyState title="没有匹配的规则" description="尝试调整搜索词或状态筛选。" />
+          <InlineEmptyState icon={SearchX} title={t('rules.filter.empty.title')} description={t('rules.filter.empty.description')} />
         )}
       </CardContent>
     </Card>

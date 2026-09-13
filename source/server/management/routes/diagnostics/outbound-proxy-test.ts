@@ -36,7 +36,7 @@ async function handleOutboundProxyTest(req: IncomingMessage, res: ServerResponse
   const input = OutboundProxyTestSchema.parse(body)
   const target = new URL(input.targetUrl)
   if (target.protocol !== 'http:' && target.protocol !== 'https:') {
-    throw new AppError('VALIDATION_ERROR', 400, '测试地址仅支持 HTTP 或 HTTPS')
+    throw new AppError('VALIDATION_ERROR', 400, 'The test target must use HTTP or HTTPS')
   }
 
   const connector = createOutboundConnector(() => ({
@@ -48,7 +48,7 @@ async function handleOutboundProxyTest(req: IncomingMessage, res: ServerResponse
   const networkClient = createCoreNetworkClient(connector)
   const startedAt = Date.now()
   let activeRequest: ReturnType<typeof networkClient.requestHttp> | null = null
-  const onClientAbort = () => activeRequest?.destroy(new AppError('CLIENT_REQUEST_ABORTED', 499, '客户端已取消请求'))
+  const onClientAbort = () => activeRequest?.destroy(new AppError('CLIENT_REQUEST_ABORTED', 499, 'The client cancelled the request'))
   req.once('aborted', onClientAbort)
 
   try {
@@ -70,7 +70,7 @@ async function handleOutboundProxyTest(req: IncomingMessage, res: ServerResponse
           })
         },
         onError: error => reject(classifyConnectionError(error)),
-        onTimeout: request => request.destroy(new AppError('UPSTREAM_TIMEOUT', 504, '代理连接测试超时')),
+        onTimeout: request => request.destroy(new AppError('UPSTREAM_TIMEOUT', 504, 'The outbound proxy connection test timed out')),
       })
     })
     sendSuccess(res, result)
@@ -84,10 +84,10 @@ function classifyConnectionError(error: Error): AppError {
   if (error instanceof AppError) return error
   const message = error.message.toLowerCase()
   if (message.includes('407') || message.includes('proxy authentication')) {
-    return new AppError('OUTBOUND_PROXY_AUTH_REQUIRED', 502, '代理服务器要求认证，请检查账号密码', { cause: error })
+    return new AppError('OUTBOUND_PROXY_AUTH_REQUIRED', 502, 'The outbound proxy requires authentication, check the credentials', { cause: error })
   }
   if (message.includes('tunnel') || message.includes('connect response')) {
-    return new AppError('OUTBOUND_PROXY_TUNNEL_REJECTED', 502, '代理服务器拒绝建立隧道', { cause: error })
+    return new AppError('OUTBOUND_PROXY_TUNNEL_REJECTED', 502, 'The outbound proxy rejected the tunnel', { cause: error })
   }
-  return new AppError('OUTBOUND_PROXY_UNREACHABLE', 502, '无法通过当前设置连接目标地址', { cause: error })
+  return new AppError('OUTBOUND_PROXY_UNREACHABLE', 502, 'Could not reach the target through the current settings', { cause: error })
 }

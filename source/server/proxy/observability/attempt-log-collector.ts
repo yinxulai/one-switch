@@ -1,110 +1,100 @@
-import type { RequestStatus } from '@common/schemas'
 import {
+  createAttemptContent,
   createRequestAttempt,
-  createRequestContent,
-  createRequestConversion,
-  replaceRequestUsage,
+  recordAttemptUsage,
 } from '@server/database/request-log-store'
-import type { AttemptContentInput, AttemptLoggingInput, AttemptUsageInput, RequestLogger } from '@server/proxy/observability/logging-types'
-import { redactHeaders } from '@server/proxy/response/headers'
+import type { AttemptFinalizationInput, AttemptLogSnapshot, AttemptLogger, AttemptLoggingInput, UpstreamContentInput } from '@server/proxy/observability/logging-types'
+import type { UpstreamTarget } from '@server/proxy/contracts'
+import { redactHeaders, serializeCapturedHeaders } from '@server/proxy/response/headers'
 
-export function createAttemptLogger(input: AttemptLoggingInput): Pick<RequestLogger, 'recordAttempt' | 'recordAttemptContent'> {
-  const recordAttempt = async (status: RequestStatus, httpStatus: number | null, retryable: boolean, errorCode?: string, errorMessage?: string, upstreamRequestId?: string | null, usage?: AttemptUsageInput) => {
+/** 从规划结果里挑出要落库的上游事实。字段名不一样（`protocol` / `upstreamProtocol`）是故意的：显式投影而不是整体透传。 */
+function toAttemptSnapshot(target: UpstreamTarget): AttemptLogSnapshot {
+  return {
+    providerId: target.providerId,
+    providerModelId: target.providerModelId,
+    providerName: target.providerName,
+    providerModelName: target.providerModelName,
+    upstreamProtocol: target.protocol,
+    url: target.url,
+  }
+}
+
+/**
+ * 尝试级日志器。
+ *
+ * 一次尝试的全部事实（状态、耗时、TTFT、流式、命中的改写规则、用量、
+ * 原始 usage）都在 {@link AttemptLogger.finalizeAttempt} 里一次性写入
+ * `request_attempts`；只有「上游视角正文」受 `captureRequestContent`
+ * 开关控制。这样即使正文采集关掉，事实依然完整可查。
+ */
+export function createAttemptLogger(input: AttemptLoggingInput): AttemptLogger {
+  /**
+   * 写入上游视角的正文记录。列名不带 `upstream` 前缀——表本身就代表上游视角。
+   */
+  const recordUpstreamContent = async (attemptId: string, content: UpstreamContentInput) => {
+    if (!input.captureRequestContent) return
     try {
+      await createAttemptContent({
+        attemptId,
+        captureStatus: content.captureStatus,
+        requestHeaders: JSON.stringify(redactHeaders(input.upstreamRequestHeaders, input.customAuthHeader ? [input.customAuthHeader] : [])),
+        requestBody: input.upstreamRequestBody.toString('utf8'),
+        responseStatus: content.responseStatus,
+        responseHeaders: serializeCapturedHeaders(content.responseHeaders),
+        responseBody: content.responseBody,
+      })
+      await input.hooks.onContentCaptured?.({ requestId: input.requestId, perspective: 'upstream' })
+    } catch (error) {
+      console.error(`[proxy] failed to write the request body: ${(error as Error).message}`)
+    }
+  }
+
+  /**
+   * 一次性写入尝试记录与上游视角正文。
+   *
+   * 正文写入依赖 attemptId，因此必须等待尝试落库成功后再写。
+   */
+  const finalizeAttempt = async (finalization: AttemptFinalizationInput) => {
+    try {
+      const usage = finalization.usage
       const attempt = await createRequestAttempt({
         requestId: input.requestId,
-        ...input.snapshot,
+        ...toAttemptSnapshot(input.target),
         attemptIndex: input.attemptIndex,
-        status,
-        httpStatus,
-        retryable,
-        errorCode: errorCode ?? null,
-        errorMessage: errorMessage ?? null,
-        upstreamRequestId: upstreamRequestId ?? null,
-        upstreamProtocol: input.snapshot.upstreamProtocol,
+        status: finalization.status,
+        httpStatus: finalization.httpStatus,
+        retryable: finalization.retryable,
+        upstreamTransport: finalization.upstreamTransport,
+        errorCode: finalization.errorCode ?? null,
+        errorMessage: finalization.errorMessage ?? null,
+        upstreamRequestId: finalization.upstreamRequestId ?? null,
+        upstreamProtocol: input.target.protocol,
         durationMilliseconds: Date.now() - input.startedAt,
+        ttftMilliseconds: finalization.ttftMilliseconds ?? null,
+        requestRewriteRuleIds: input.requestRewriteRuleIds ?? [],
+        responseRewriteRuleIds: finalization.responseRewriteRuleIds ?? [],
       })
-      const hasTokens = usage?.inputTokens != null && usage?.outputTokens != null
-      await replaceRequestUsage({
-        requestId: input.requestId,
+      // 这次尝试已经落库：后到的是更弱的事实（取消），不能覆盖已落库的用量与正文。
+      if (!attempt) {
+        console.debug(`[proxy] attempt record already exists, skipping duplicate write requestId=${input.requestId} attemptIndex=${input.attemptIndex}`)
+        return
+      }
+      await recordAttemptUsage({
         attemptId: attempt.id,
+        servesRequest: finalization.servesRequest,
         inputTokens: usage?.inputTokens ?? null,
         outputTokens: usage?.outputTokens ?? null,
         reasoningTokens: usage?.reasoningTokens ?? null,
-        totalTokens: hasTokens ? usage!.inputTokens! + usage!.outputTokens! : null,
         cachedInputTokens: usage?.cachedInputTokens ?? null,
         cacheCreationInputTokens: usage?.cacheCreationInputTokens ?? null,
         rawUsage: usage?.rawUsage ?? null,
       })
-      await input.hooks.onAttemptRecorded?.({
-        requestId: input.requestId,
-        attemptIndex: input.attemptIndex,
-        status,
-        httpStatus,
-        retryable,
-        providerId: input.snapshot.providerId,
-        providerModelId: input.snapshot.providerModelId,
-        upstreamProtocol: input.snapshot.upstreamProtocol,
-        durationMilliseconds: Date.now() - input.startedAt,
-        usage: {
-          reasoningTokens: usage?.reasoningTokens ?? null,
-          inputTokens: usage?.inputTokens ?? null,
-          outputTokens: usage?.outputTokens ?? null,
-          cachedInputTokens: usage?.cachedInputTokens ?? null,
-          cacheCreationInputTokens: usage?.cacheCreationInputTokens ?? null,
-          rawUsage: usage?.rawUsage ?? null,
-        },
-      })
-      return attempt
+      await input.hooks.onAttemptRecorded?.({ requestId: input.requestId, attemptId: attempt.id })
+      if (finalization.upstreamContent) await recordUpstreamContent(attempt.id, finalization.upstreamContent)
     } catch (error) {
-      console.error(`[proxy] 写入请求尝试日志失败: ${(error as Error).message}`)
-      return null
+      console.error(`[proxy] failed to write the request attempt log: ${(error as Error).message}`)
     }
   }
 
-  const recordAttemptContent = async (content: AttemptContentInput) => {
-    if (!input.captureRequestContent || !content.attemptId) return
-    try {
-      await createRequestContent({
-        requestId: input.requestId,
-        attemptId: content.attemptId,
-        captureStatus: content.captureStatus,
-        requestMethod: input.method,
-        requestPath: input.path,
-        requestHeaders: JSON.stringify(redactHeaders(input.upstreamRequestHeaders, input.customAuthHeader ? [input.customAuthHeader] : [])),
-        requestBody: input.upstreamRequestBody.toString('utf8'),
-        requestRewriteRuleIds: input.requestRewriteRuleIds ?? [],
-        responseStatus: content.responseStatus,
-        responseHeaders: content.clientResponseHeaders ? JSON.stringify(redactHeaders(content.clientResponseHeaders)) : null,
-        responseBody: content.responseBody,
-      })
-      if (input.requiresResponseConversion && content.attemptId) {
-        await createRequestConversion({
-          requestId: input.requestId,
-          attemptId: content.attemptId,
-          clientProtocol: input.clientProtocol,
-          upstreamProtocol: input.upstreamProtocol,
-          clientRequestHeaders: JSON.stringify(redactHeaders(input.requestHeaders)),
-          upstreamRequestHeaders: JSON.stringify(redactHeaders(input.upstreamRequestHeaders, input.customAuthHeader ? [input.customAuthHeader] : [])),
-          upstreamResponseHeaders: content.upstreamResponseHeaders ? JSON.stringify(redactHeaders(content.upstreamResponseHeaders)) : null,
-          clientResponseHeaders: content.clientResponseHeaders ? JSON.stringify(redactHeaders(content.clientResponseHeaders)) : null,
-          requestBody: input.upstreamRequestBody.toString('utf8'),
-          responseBody: content.convertedResponseBody ?? null,
-          streaming: content.streaming ?? false,
-          durationMilliseconds: Date.now() - input.startedAt,
-        })
-      }
-      await input.hooks.onContentCaptured?.({
-        requestId: input.requestId,
-        attemptId: content.attemptId,
-        captureStatus: content.captureStatus,
-        responseStatus: content.responseStatus ?? null,
-        responseBody: content.responseBody ?? null,
-      })
-    } catch (error) {
-      console.error(`[proxy] 写入请求正文失败: ${(error as Error).message}`)
-    }
-  }
-
-  return { recordAttempt, recordAttemptContent }
+  return { finalizeAttempt }
 }

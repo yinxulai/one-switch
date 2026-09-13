@@ -9,6 +9,9 @@ import { useModelManagementUiStore } from '../store'
 
 export const modelKeys = { all: ['provider-models'] as const }
 
+/** 数据未就绪时复用的空数组，避免 `?? []` 每次渲染都产生新引用。 */
+const EMPTY_MODELS: ProviderModelRoute[] = []
+
 function loadProviderModels(): Promise<ProviderModelRoute[]> {
   return unwrap(providerModelApi.list()).then(data => data.map(model => ({ id: model.id, providerId: model.providerId, modelName: model.modelName, endpoints: model.endpoints.map(endpoint => ({ protocol: endpoint.protocol, endpointUrl: endpoint.url ?? '', customAuthHeader: null, protocolConversionEnabled: endpoint.conversions.some(conversion => conversion.enabled) })), priority: 0, enabled: model.enabled, createdTime: model.createdTime, updatedTime: model.updatedTime, deletedTime: model.deletedTime })))
 }
@@ -23,7 +26,7 @@ export function useModelData() {
   const selectedProviderId = useModelManagementUiStore(state => state.selectedProviderId)
   const setSelectedProviderId = useModelManagementUiStore(state => state.setSelectedProviderId)
   const query = useQuery({ queryKey: modelKeys.all, queryFn: loadProviderModels, refetchInterval: 30_000 })
-  const models = query.data ?? []
+  const models = query.data ?? EMPTY_MODELS
   const setModels = useCallback((next: ProviderModelRoute[] | ((current: ProviderModelRoute[]) => ProviderModelRoute[])) => client.setQueryData<ProviderModelRoute[]>(modelKeys.all, current => typeof next === 'function' ? next(current ?? []) : next), [client])
   const loadModels = useCallback(async () => { const result = await query.refetch(); return !result.isError }, [query])
   const reload = useCallback(async () => { refreshProviders(); refreshHealth(); await loadModels() }, [loadModels, refreshHealth, refreshProviders])

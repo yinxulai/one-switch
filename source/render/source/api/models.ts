@@ -1,7 +1,7 @@
 import type { LogicalModel, Protocol, ProviderModel, ProviderModelRequestRewriteRule, ProviderModelRoute, ProviderModelRouteEndpoint, RequestRewriteRuleTestCase, RequestRewriteRule, SchedulingPolicy } from '@common/schemas'
 import { request } from './client'
 
-type CreateLogicalModelInput = { name: string; description?: string; enabled?: boolean }
+type CreateLogicalModelInput = { id: string; description?: string; name?: string; enabled?: boolean }
 type ProviderModelEndpointView = { id: string; url: string | null; enabled: boolean; protocol: Protocol; providerModelId: string; providerEndpointId: string; conversions: Array<{ id: string; clientProtocol: Protocol; enabled: boolean }> }
 type ProviderModelView = ProviderModel & { endpoints: ProviderModelEndpointView[] }
 type ProviderModelUpdateInput = { logicalModelId?: string; modelName?: string; enabled?: boolean; priority?: number; endpoints?: ProviderModelRouteEndpoint[] }
@@ -23,6 +23,7 @@ export const logicalModelApi = {
   get: (id: string) => request<LogicalModel>('/logical-model/get', { id }),
   create: (data: CreateLogicalModelInput) => request<LogicalModel>('/logical-model/create', data),
   update: (id: string, updates: Partial<LogicalModel>) => request<LogicalModel>('/logical-model/update', { id, ...updates }),
+  reorder: (ids: string[]) => request<LogicalModel[]>('/logical-model/reorder', { ids }),
   remove: (id: string) => request<{ id: string }>('/logical-model/delete', { id }),
 }
 
@@ -31,7 +32,7 @@ export const providerModelApi = {
   get: (id: string) => request<ProviderModelView>('/provider-model/get', { id }),
   create: (data: ProviderModelCreateInput) => request<ProviderModelView>('/provider-model/create', data),
   update: (id: string, updates: ProviderModelUpdateInput) => request<ProviderModelView>('/provider-model/update', { id, ...updates }),
-  queue: (logicalModelId = 'default') => request<ProviderModelRoute[]>('/provider-model/queue', { logicalModelId }),
+  listByLogicalModel: (logicalModelId = 'default') => request<ProviderModelRoute[]>('/provider-model/list-by-logical-model', { logicalModelId }),
   remove: (id: string) => request<{ id: string }>('/provider-model/delete', { id }),
   requestRewriteRules: (providerModelId: string) => request<ProviderModelRequestRewriteRule[]>('/request-rewrite-rule/bindings', { providerModelId }),
   replaceRequestRewriteRules: (providerModelId: string, bindings: RequestRewriteRuleBindingInput[]) => request<ProviderModelRequestRewriteRule[]>('/request-rewrite-rule/replace-bindings', { providerModelId, bindings }),

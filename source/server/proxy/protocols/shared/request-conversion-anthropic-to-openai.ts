@@ -1,53 +1,87 @@
-type Json = Record<string, unknown>
+import { asArray, asNumber, asObject, asString, type Json } from './conversion-utils'
 
-function asObject(value: unknown): Json | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Json)
-    : null
+/**
+ * Anthropic Messages 请求 → OpenAI Chat Completions 请求。
+ *
+ * 字段映射遵循「保守转换」原则：无法映射的字段（top_k、document、thinking、
+ * service_tier 等）直接丢弃，不报错也不伪造语义。
+ * 关键映射：
+ * - `system` ↔ 首条 `role: system` 消息；带 cache_control 时保留缓存断点
+ * - `messages[].content` 的 text / image block ↔ OpenAI content parts
+ * - assistant `tool_use` ↔ OpenAI `tool_calls`
+ * - user `tool_result` ↔ OpenAI `role: tool` 消息，且保持对话顺序
+ */
+
+const CACHE_BREAKPOINT: Json = { mode: 'explicit' }
+
+function cacheBreakpointFrom(cacheControl: unknown): Json | undefined {
+  return asObject(cacheControl) ? CACHE_BREAKPOINT : undefined
 }
 
-function asArray(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : []
-}
-
-function asString(value: unknown): string | undefined {
-  return typeof value === 'string' ? value : undefined
-}
-
-function asNumber(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
-}
-
-function contentToOpenAiText(content: unknown): string {
-  if (typeof content === 'string') return content
-  return asArray(content)
-    .map(block => {
-      const record = asObject(block)
-      if (!record) return ''
-      if (record.type === 'text') return asString(record.text) ?? ''
-      return ''
-    })
-    .join('')
-}
-
-function contentToOpenAiParts(content: unknown): Json[] {
+/** Anthropic content block 数组 → OpenAI content parts（text / image_url）。 */
+function blocksToOpenAiParts(content: unknown): Json[] {
   if (typeof content === 'string') return content ? [{ type: 'text', text: content }] : []
   const parts: Json[] = []
-  for (const block of asArray(content)) {
-    const record = asObject(block)
-    if (!record) continue
-    if (record.type === 'text') {
-      const text = asString(record.text)
-      if (text) parts.push({ type: 'text', text, ...(record.cache_control ? { prompt_cache_breakpoint: { mode: 'explicit' } } : {}) })
-    } else if (record.type === 'image' && asObject(record.source)) {
-      const source = record.source as Json
-      if (source.type === 'base64' && asString(source.media_type) && asString(source.data)) {
-        parts.push({ type: 'image_url', image_url: { url: `data:${source.media_type};base64,${source.data}` } })
-      } else if (source.type === 'url' && asString(source.url)) {
-        parts.push({ type: 'image_url', image_url: { url: source.url } })
+  for (const raw of asArray(content)) {
+    const block = asObject(raw)
+    if (!block) continue
+    if (block.type === 'text') {
+      const text = asString(block.text)
+      if (text === undefined) continue
+      const breakpoint = cacheBreakpointFrom(block.cache_control)
+      parts.push({ type: 'text', text, ...(breakpoint ? { prompt_cache_breakpoint: breakpoint } : {}) })
+    } else if (block.type === 'image') {
+      const source = asObject(block.source)
+      if (!source) continue
+      if (source.type === 'base64') {
+        const mediaType = asString(source.media_type)
+        const data = asString(source.data)
+        if (mediaType && data) parts.push({ type: 'image_url', image_url: { url: `data:${mediaType};base64,${data}` } })
+      } else if (source.type === 'url') {
+        const url = asString(source.url)
+        if (url) parts.push({ type: 'image_url', image_url: { url } })
       }
+      // source.type === 'file'（上传文件引用）无法在 OpenAI 侧复用，丢弃
     }
   }
+  return parts
+}
+
+/** content parts → OpenAI message content（单段纯文本折叠为字符串）。 */
+function partsToMessageContent(parts: Json[]): string | Json[] | null {
+  if (parts.length === 0) return null
+  if (parts.length === 1 && parts[0].type === 'text' && parts[0].prompt_cache_breakpoint === undefined) {
+    return parts[0].text as string
+  }
+  return parts
+}
+
+/** assistant content 中的 tool_use blocks → OpenAI tool_calls。 */
+function toolUsesToOpenAiToolCalls(content: unknown): Json[] {
+  const calls: Json[] = []
+  for (const raw of asArray(content)) {
+    const block = asObject(raw)
+    if (block?.type !== 'tool_use') continue
+    const name = asString(block.name)
+    if (!name) continue
+    calls.push({
+      id: asString(block.id) ?? '',
+      type: 'function',
+      function: { name, arguments: JSON.stringify(asObject(block.input) ?? {}) },
+    })
+  }
+  return calls
+}
+
+/**
+ * user content 中的 tool_result blocks → OpenAI tool 消息内容。
+ * 纯文本折叠为字符串，含图片时保留为 content parts。
+ */
+function toolResultToOpenAiContent(content: unknown): string | Json[] {
+  if (typeof content === 'string') return content
+  const parts = blocksToOpenAiParts(content)
+  const textOnly = parts.every(part => part.type === 'text')
+  if (textOnly) return parts.map(part => asString(part.text) ?? '').join('')
   return parts
 }
 
@@ -56,49 +90,82 @@ function anthropicToolToOpenAi(tool: Json): Json | null {
   if (!name) return null
   return {
     type: 'function',
-    function: { name, description: asString(tool.description) ?? '', parameters: asObject(tool.input_schema) ?? { type: 'object', properties: {} } },
+    function: {
+      name,
+      description: asString(tool.description) ?? '',
+      parameters: asObject(tool.input_schema) ?? { type: 'object', properties: {} },
+    },
+  }
+}
+
+function anthropicToolChoiceToOpenAi(choice: unknown): unknown {
+  const record = asObject(choice)
+  if (!record) return undefined
+  switch (record.type) {
+    case 'auto': return 'auto'
+    case 'any': return 'required'
+    case 'none': return 'none'
+    case 'tool':
+      return asString(record.name) ? { type: 'function', function: { name: record.name } } : undefined
+    default: return undefined
   }
 }
 
 export function anthropicToOpenAiRequest(body: Json, model: string): Json {
-  const system = asString(body.system)
-  const systemParts = contentToOpenAiParts(body.system)
   const messages: Json[] = []
-  if (system) messages.push({ role: 'system', content: system })
-  else if (systemParts.length === 1 && systemParts[0].type === 'text' && !systemParts[0].prompt_cache_breakpoint) messages.push({ role: 'system', content: systemParts[0].text })
-  else if (systemParts.length > 0) messages.push({ role: 'system', content: systemParts })
+
+  // system：字符串或 TextBlockParam 数组
+  if (typeof body.system === 'string') {
+    if (body.system) messages.push({ role: 'system', content: body.system })
+  } else if (Array.isArray(body.system)) {
+    const parts = blocksToOpenAiParts(body.system)
+    if (parts.length > 0) messages.push({ role: 'system', content: partsToMessageContent(parts) })
+  }
 
   for (const raw of asArray(body.messages)) {
     const message = asObject(raw)
     if (!message) continue
-    const role = asString(message.role) === 'assistant' ? 'assistant' : 'user'
-    const parts = contentToOpenAiParts(message.content)
-    const toolCalls = parts.length === 0 ? asArray(message.content).flatMap(block => {
-      const record = asObject(block)
-      if (record?.type !== 'tool_use' || !asString(record.name)) return []
-      return [{ id: asString(record.id) ?? '', type: 'function', function: { name: record.name, arguments: JSON.stringify(asObject(record.input) ?? {}) } }]
-    }) : []
-    if (toolCalls.length > 0) messages.push({ role: 'assistant', content: null, tool_calls: toolCalls })
-    else if (parts.length === 1 && parts[0].type === 'text' && !parts[0].prompt_cache_breakpoint) messages.push({ role, content: parts[0].text })
-    else if (parts.length > 0) messages.push({ role, content: parts })
-  }
-
-  for (const raw of asArray(body.messages)) {
-    const message = asObject(raw)
-    if (!message || message.role !== 'user') continue
-    for (const block of asArray(message.content)) {
-      const record = asObject(block)
-      if (record?.type === 'tool_result') messages.push({ role: 'tool', tool_call_id: asString(record.tool_use_id) ?? '', content: contentToOpenAiText(record.content) })
+    const role = asString(message.role)
+    if (role === 'assistant') {
+      const parts = blocksToOpenAiParts(message.content)
+      const toolCalls = toolUsesToOpenAiToolCalls(message.content)
+      if (toolCalls.length > 0) {
+        messages.push({ role: 'assistant', content: partsToMessageContent(parts), tool_calls: toolCalls })
+      } else {
+        messages.push({ role: 'assistant', content: partsToMessageContent(parts) ?? '' })
+      }
+      continue
     }
+
+    // user：tool_result 必须先于普通内容输出（OpenAI 要求 tool 消息紧随 assistant.tool_calls），
+    // 因此同一条 user 消息内先发 tool 消息，再把剩余的 text/image block 合并成一条 user 消息。
+    const toolMessages = asArray(message.content)
+      .map(part => asObject(part))
+      .filter((block): block is Json => block?.type === 'tool_result')
+      .map(block => ({
+        role: 'tool',
+        tool_call_id: asString(block.tool_use_id) ?? '',
+        content: toolResultToOpenAiContent(block.content),
+      }))
+    for (const toolMessage of toolMessages) messages.push(toolMessage)
+
+    const parts = blocksToOpenAiParts(message.content)
+    if (parts.length > 0) messages.push({ role: 'user', content: partsToMessageContent(parts) })
   }
 
   const result: Json = { model, messages }
+
   if (body.cache_control !== undefined) result.prompt_cache_options = { mode: 'implicit' }
-  const tools = asArray(body.tools).map(tool => anthropicToolToOpenAi(asObject(tool) ?? {})).filter((tool): tool is Json => tool !== null)
+
+  const tools = asArray(body.tools)
+    .map(raw => anthropicToolToOpenAi(asObject(raw) ?? {}))
+    .filter((tool): tool is Json => tool !== null)
   if (tools.length > 0) result.tools = tools
-  const choice = asObject(body.tool_choice)
-  if (choice?.type === 'auto' || choice?.type === 'any') result.tool_choice = choice.type === 'any' ? 'required' : 'auto'
-  else if (choice?.type === 'tool' && asString(choice.name)) result.tool_choice = { type: 'function', function: { name: choice.name } }
+
+  const toolChoice = anthropicToolChoiceToOpenAi(body.tool_choice)
+  if (toolChoice !== undefined) result.tool_choice = toolChoice
+  // Anthropic 的 disable_parallel_tool_use 只在 auto/any/tool 变体上出现，语义等价于 OpenAI 的 parallel_tool_calls: false
+  if (asObject(body.tool_choice)?.disable_parallel_tool_use === true) result.parallel_tool_calls = false
 
   const maxTokens = asNumber(body.max_tokens)
   if (maxTokens !== undefined) result.max_tokens = maxTokens
@@ -107,7 +174,10 @@ export function anthropicToOpenAiRequest(body: Json, model: string): Json {
   const topP = asNumber(body.top_p)
   if (topP !== undefined) result.top_p = topP
   if (body.stream === true) result.stream = true
-  if (body.stop_sequences) result.stop = body.stop_sequences
+  if (body.stop_sequences !== undefined) result.stop = body.stop_sequences
+
+  const userId = asString(asObject(body.metadata)?.user_id)
+  if (userId) result.user = userId
 
   return result
 }

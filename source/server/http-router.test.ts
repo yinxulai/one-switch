@@ -64,6 +64,6 @@ describe('HttpRouter method matching', () => {
   it('rejects invocation of a missing route', async () => {
     const router = new HttpRouter<() => void>()
 
-    await expect(router.invoke('/missing', {} as ServerResponse)).rejects.toThrow('测试路由不存在: POST /missing')
+    await expect(router.invoke('/missing', {} as ServerResponse)).rejects.toThrow('Test route not found: POST /missing')
   })
 })

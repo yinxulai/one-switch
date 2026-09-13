@@ -2,7 +2,7 @@
 
 ## 文档状态
 
-本文定义 One Switch 访问模型供应商时使用指定网络代理的产品与技术契约。功能尚未实现，技术选型已确定使用 `proxy-agent`，本文作为后续开发和验收依据。
+本文定义 One Switch 访问模型供应商时使用指定网络代理的产品与技术契约。功能已实现（`source/server/infrastructure/network/outbound-connector.ts` 基于 `proxy-agent`，管理 API 提供 `/api/outbound-proxy/test`，设置页有对应卡片），本文同时作为行为契约与验收依据。
 
 ## 背景与目标
 
@@ -47,7 +47,7 @@
 - 不在应用内编辑或托管 PAC 脚本；
 - 不为正在进行的请求动态切换代理；
 - 不将代理失败直接解释为 Provider 或 ProviderModel 故障并触发健康冷却；
-- WebSocket 上游传输尚未实现，因此首版不包含 WS 验收；未来实现时必须复用本文的代理选择结果和共享出站连接器。
+- WebSocket 上游传输不在当前计划内；若将来实现，必须复用本文的代理选择结果与共享出站连接器。
 
 ## 产品交互
 
@@ -128,17 +128,15 @@ outboundProxyBypass: string
 - 首版支持精确主机、域名后缀和可选端口，例如 `localhost`、`.example.com`、`api.example.com:8443`；
 - 首版不支持 CIDR、通配路径或正则表达式。
 
-### 持久化与导入导出
+### 持久化与导出边界
 
 设置继续使用现有通用 `settings` 键值表，不新增数据库表或迁移。新增字段必须同步到：
 
 - `SettingsSchema` 与 `Settings` 类型；
 - 设置更新接口；
-- 配置文档 `ConfigSettingsSchema`；
-- 配置导出和导入流程；
 - 设置页草稿与保存请求。
 
-旧配置文件缺少新字段时使用默认值，保持 schema version 3 的向后兼容。配置导入导出完整保留代理模式、自定义代理 URL 和绕过规则，包括 URL 中的账号密码。
+上游代理是全局设置，**不进入供应商包**：`/api/provider/export` 只携带单个供应商的端点、模型、自定义设置和可选的明文 API Key（详见 [provider-model.md](./provider-model.md)）。跨机器迁移代理配置需要在新环境的设置页重新填写。preview 阶段不提供旧配置/旧库的兼容升级路径，缺少新字段时按 `SettingsSchema` 的默认值处理。
 
 ## 安全与隐私
 
@@ -147,11 +145,11 @@ outboundProxyBypass: string
 自定义代理 URL 允许直接携带用户名和密码，例如 `http://user:password@127.0.0.1:7890`。按本功能契约，该完整 URL：
 
 - 作为普通设置值保存在本地 SQLite；
-- 随配置导出和导入，不替换为密钥引用；
+- 不随供应商包导出，也不替换为密钥引用；
 - 在设置表单中可编辑；
 - 交给 `proxy-agent` 生成代理认证信息。
 
-这意味着数据库和导出文件可能包含明文代理凭据。导出操作应提示文件可能包含代理账号密码，用户负责保管。运行日志、请求日志、错误消息、测试结果和诊断信息不得输出完整 URL userinfo；显示代理地址时统一脱敏为 `scheme://***:***@host:port`。不得把 `Proxy-Authorization` 转发给目标服务器。
+这意味着数据库可能包含明文代理凭据。设置页对代理地址输入应给出相应提示，用户负责保管。运行日志、请求日志、错误消息、测试结果和诊断信息不得输出完整 URL userinfo；显示代理地址时统一脱敏为 `scheme://***:***@host:port`。不得把 `Proxy-Authorization` 转发给目标服务器。
 
 ### 请求可见性
 
@@ -209,7 +207,7 @@ network/
 | --- | --- | --- |
 | `outbound-proxy.ts` | 解析配置、判断目标直连或代理、生成脱敏描述 | 不发起网络请求 |
 | `outbound-connector.ts` | 持有共享出站连接器，为目标 URL 生成底层请求选项 | 不解析模型协议报文 |
-| `proxy/response/transport.ts` | 执行 HTTP I/O、超时、中止、响应生命周期 | 不决定业务路由或保存设置 |
+| `proxy/transports/http.ts` | 执行 HTTP I/O、超时、中止、响应生命周期 | 不决定业务路由或保存设置 |
 | Management 测试路由 | 校验输入、调用共享出站连接器、映射测试结果 | 不修改全局配置 |
 
 业务代码、配置字段、日志与 UI 统一使用“出站连接器”“代理模式”“代理策略”等名称，不使用 `agent` 命名；`Agent` 仅限第三方库类型和 Node.js 底层 API 边界。
@@ -307,16 +305,6 @@ POST /api/outbound-proxy/test
 
 真实模型请求沿用当前“不自动跟随重定向”的行为。代理测试也不自动跟随重定向，直接返回 3xx 状态码，确保测试结果对应用户填写的目标。
 
-### WebSocket 扩展
-
-未来实现 [websocket-transport.md](./websocket-transport.md) 时：
-
-- WS/WSS 握手必须使用同一代理策略和 bypass 规则；
-- WS 客户端复用共享出站连接器提供的底层连接能力；
-- 一条已建立连接在生命周期内固定使用创建时代理；
-- 代理设置变化只影响后续新连接；
-- WS 连接失败同样需要区分代理阶段与上游阶段。
-
 ## 配置生效流程
 
 ```mermaid
@@ -348,15 +336,13 @@ sequenceDiagram
 ### 公共模型与持久化
 
 - `source/common/schemas.ts`
-- `source/common/config-schemas.ts`
 - `source/server/database/settings-store.ts` 及测试
-- `source/server/management/config/export-config.ts` 及配置导入导出测试
 
 ### 服务端网络与管理 API
 
 - 新增共享出站网络基础设施模块；
-- `source/server/proxy/response/transport.ts`
-- `source/server/proxy/execution/attempt-executor.ts`
+- `source/server/proxy/transports/http.ts`
+- `source/server/proxy/execution/`
 - `source/server/management/routes/diagnostics/provider-models-fetch.ts`
 - 新增代理测试路由并挂载到 Management router；
 - `source/server/errors.ts` 增加稳定错误映射。
@@ -379,8 +365,8 @@ sequenceDiagram
 - `getProxyForUrl` 在 direct、system、custom bypass 和 custom proxy 状态下返回正确结果；
 - Chromium `DIRECT`、`PROXY`、`HTTPS`、`SOCKS`、`SOCKS4` 规则转换及未知规则错误；
 - 配置变化后新请求读取最新值，测试草稿实例销毁且不修改运行配置；
-- 带账号密码的代理 URL 完整持久化及导入导出，日志和错误仍保持脱敏；
-- 配置默认值、持久化、监听通知和旧配置导入。
+- 带账号密码的代理 URL 完整持久化，日志和错误仍保持脱敏；
+- 配置默认值、持久化和监听通知。
 
 ### 传输集成测试
 
@@ -420,6 +406,6 @@ sequenceDiagram
 - [ ] 代理阶段失败不会错误冷却单个 Provider 或 ProviderModel
 - [ ] 保存代理设置后新请求立即生效，无需重启本地监听服务
 - [ ] 修改监听地址或端口时仍按现有流程重启本地代理服务
-- [ ] 配置导入导出完整保留代理模式、自定义 URL、账号密码和绕过规则，旧 schema version 3 配置仍可导入
+- [ ] 代理配置只存在于本地设置，不进入供应商包；跨机器迁移需在设置页重新配置
 - [ ] 运行日志、请求日志、错误消息和测试结果不出现代理认证凭据
 - [ ] `pnpm typecheck`、`pnpm lint` 和完整测试通过

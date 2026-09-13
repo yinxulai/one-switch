@@ -1,5 +1,6 @@
 import { app, Tray, Menu, BrowserWindow } from 'electron'
 import { generateTrayIcon, type TrayIconStatus } from './tray-icon'
+import { nativeTranslator, onNativeLocaleChanged } from './i18n'
 import {
   getProxyServerStatus,
   startProxyServer,
@@ -15,6 +16,7 @@ export class TrayManager {
   private statusPoller: NodeJS.Timeout | null = null
   private isQuitting = false
   private statusReadFailed = false
+  private unsubscribeLocale: (() => void) | null = null
 
   constructor() {}
 
@@ -23,12 +25,18 @@ export class TrayManager {
     console.info('[tray] initialization started')
 
     // 创建初始托盘图标
-    const icon = generateTrayIcon('stopped')
+    const icon = generateTrayIcon()
     this.tray = new Tray(icon)
     this.tray.setToolTip('One Switch')
 
     // 初始菜单
     void this.updateMenu()
+
+    // 语言变了要重建菜单：菜单文案是构建期快照，不会自己跟着走。
+    this.unsubscribeLocale = onNativeLocaleChanged(() => {
+      void this.updateMenu()
+      this.refreshTooltip()
+    })
 
     // macOS 会直接展示关联菜单；其他平台也允许左键打开菜单。
     if (process.platform !== 'darwin') {
@@ -52,6 +60,8 @@ export class TrayManager {
   }
 
   destroy(): void {
+    this.unsubscribeLocale?.()
+    this.unsubscribeLocale = null
     if (this.statusPoller) {
       clearInterval(this.statusPoller)
       this.statusPoller = null
@@ -82,28 +92,29 @@ export class TrayManager {
 
     const isRunning = proxyStatus?.running ?? false
     const port = proxyStatus?.port ?? 0
+    const t = nativeTranslator()
 
     const template: Electron.MenuItemConstructorOptions[] = [
       {
-        label: isRunning ? `代理服务运行中 · 端口 ${port}` : '代理服务已停止',
+        label: isRunning ? t('native.tray.proxyRunning', { port }) : t('native.tray.proxyStopped'),
         enabled: false,
       },
       { type: 'separator' },
       {
-        label: '打开主界面',
+        label: t('native.tray.openWindow'),
         click: () => {
           void this.showWindow()
         },
       },
       {
-        label: isRunning ? '停止代理服务' : '启动代理服务',
+        label: isRunning ? t('native.tray.stopProxy') : t('native.tray.startProxy'),
         click: () => {
           void this.toggleProxy()
         },
       },
       { type: 'separator' },
       {
-        label: '退出 One Switch',
+        label: t('native.tray.quit'),
         click: () => {
           this.quitApp()
         },
@@ -182,13 +193,8 @@ export class TrayManager {
         console.info(`[tray] proxy status changed status=${newStatus} port=${status.port}`)
         this.status = newStatus
         this.statusPort = status.port
-        const icon = generateTrayIcon(newStatus)
-        this.tray.setImage(icon)
-        this.tray.setToolTip(
-          status.running
-            ? `One Switch · 代理运行中 (端口 ${status.port})`
-            : 'One Switch · 代理已停止',
-        )
+        // 图标本身不随状态变化（统一全白），状态体现在 tooltip 与菜单文案上。
+        this.refreshTooltip()
         await this.updateMenu()
       }
     } catch (error) {
@@ -197,5 +203,16 @@ export class TrayManager {
         console.warn('[tray] proxy status polling failed; repeated failures will be suppressed', error)
       }
     }
+  }
+
+  /** tooltip 只读缓存里的状态，语言切换时也能直接重算。 */
+  private refreshTooltip(): void {
+    if (!this.tray) return
+    const t = nativeTranslator()
+    if (this.status === 'running') {
+      this.tray.setToolTip(t('native.tray.tooltipRunning', { port: this.statusPort ?? 0 }))
+      return
+    }
+    this.tray.setToolTip(t('native.tray.tooltipStopped'))
   }
 }

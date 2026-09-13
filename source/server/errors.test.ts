@@ -3,11 +3,11 @@ import { AppError, getErrorResponseMessage, normalizeError } from './errors'
 
 describe('server errors', () => {
   it('normalizes validation errors without losing client-facing details', () => {
-    const normalized = normalizeError(new AppError('VALIDATION_ERROR', 400, '字段无效'))
+    const normalized = normalizeError(new AppError('VALIDATION_ERROR', 400, 'Invalid field'))
 
     expect(normalized.code).toBe('VALIDATION_ERROR')
     expect(normalized.statusCode).toBe(400)
-    expect(getErrorResponseMessage(normalized, '服务器内部错误')).toBe('字段无效')
+    expect(getErrorResponseMessage(normalized, 'Internal server error')).toBe('Invalid field')
   })
 
   it('hides unknown internal error messages from clients', () => {
@@ -15,7 +15,7 @@ describe('server errors', () => {
 
     expect(normalized.code).toBe('INTERNAL_ERROR')
     expect(normalized.statusCode).toBe(500)
-    expect(getErrorResponseMessage(normalized, '服务器内部错误')).toBe('服务器内部错误')
+    expect(getErrorResponseMessage(normalized, 'Internal server error')).toBe('Internal server error')
     expect(normalized.cause).toBeInstanceOf(Error)
   })
 

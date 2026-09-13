@@ -1,13 +1,16 @@
 import * as React from 'react'
-import { AlertCircle, ChevronDown, LoaderCircle, Search } from 'lucide-react'
-import type { AppliedRequestRewriteRule, RequestContent, RequestConversion, RequestLogEntryAttempt } from '@common/schemas'
+import { AlertCircle, Check, ChevronDown, ChevronUp, Copy, LoaderCircle, Search } from 'lucide-react'
+import type { AppliedRequestRewriteRule, AttemptContent, RequestContent, RequestLogEntryAttempt } from '@common/schemas'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { useToast } from '@/components/ui/toast'
+import { useLocale, useTranslation, type AppTranslator } from '@/i18n/provider'
 import { cn } from '@/lib/utils'
-import { formatContent } from '../lib/format-content'
-import { PROTOCOL_LABEL } from '../lib/format'
+import { searchBlocks, type ContentSearchResult, type SectionHighlight } from '../lib/content-search'
+import { formatContent, isLocalFailureBody } from '../lib/format-content'
+import { PROTOCOL_LABEL, distinctAttemptErrorCode, distinctAttemptErrorMessage, formatAttemptOutcome, formatTransport } from '../lib/format'
 
 interface ContentSectionProps {
   id: string
@@ -15,6 +18,17 @@ interface ContentSectionProps {
   value: string
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** 命中高亮；没有搜索词时为 `null`，此时整段按普通文本渲染。 */
+  highlight: SectionHighlight | null
+  /** 当前激活的命中序号（全局），用于定位与强调。 */
+  activeMatchIndex: number | null
+}
+
+interface CopyButtonProps {
+  value: string
+  /** 可访问名，例如「复制请求 Body」。 */
+  label: string
+  className?: string
 }
 
 interface RequestStageSection {
@@ -25,10 +39,23 @@ interface RequestStageSection {
 
 interface RequestStageProps {
   title: string
+  /** 已经本地化的协议名。 */
   protocol: string
+  /** 该阶段的响应状态；`null` 表示该阶段没有可展示的状态（如尚未拿到正文）。 */
+  statusLabel: string | null
   sections: RequestStageSection[]
   sectionStates: Record<string, boolean>
   onSectionOpenChange: (id: string, open: boolean) => void
+  search: ContentSearchResult
+  /** 当前激活的命中序号（全局）；没有搜索词时为 `null`。 */
+  activeMatchIndex: number | null
+  /**
+   * 正文整体缺失（被保留策略清掉，或采集开关当时是关的）。
+   *
+   * 此时四个阶段全部没有任何可展示的正文。不再整块隐藏——那会让人以为界面坏了，
+   * 而且和「有正文的请求」长得完全不一样；改成照旧画出来，里面用 `—` 占位。
+   */
+  empty: boolean
 }
 
 interface AppliedRulesProps {
@@ -41,11 +68,14 @@ interface AttemptErrorProps {
 }
 
 interface RequestContentsSheetProps {
+  /** 客户端视角正文；每个请求至多一行。 */
   contents: RequestContent[] | null
-  conversions: RequestConversion[] | null
+  /** 上游视角正文；每次尝试至多一行。 */
+  attemptContents: AttemptContent[] | null
   attempts: RequestLogEntryAttempt[]
   requestRewriteRules: AppliedRequestRewriteRule[] | null
-  clientProtocol: string
+  /** 客户端协议；`null` 表示该请求连 API 路径都未识别。 */
+  clientProtocol: string | null
   upstreamProtocol?: string | null
   loading: boolean
   error: string | null
@@ -57,34 +87,232 @@ function sectionKey(title: string, label: string) {
   return `${title}::${label}`
 }
 
-function ContentSection(props: ContentSectionProps) {
-  const content = formatContent(props.value)
+/** 协议枚举值转展示名；`null` 表示这次请求根本没识别出该协议。 */
+function protocolLabel(t: AppTranslator, protocol: string | null): string {
+  if (protocol === null) return t('requestLogs.contents.unknownProtocol')
+  return PROTOCOL_LABEL[protocol] ?? protocol
+}
+
+interface AttemptFactsProps {
+  attempt: RequestLogEntryAttempt
+}
+
+interface FactItem {
+  label: string
+  value: string
+  /** 内部 id、URL、规则 id 这类只在深挖时才看的事实，默认收进「更多事实」。 */
+  advanced?: boolean
+}
+
+/** 时间戳是事实本身，展示时才变成可读时间；格式化跟随界面语言。 */
+function formatCreatedTime(locale: string, time: number): string {
+  const date = new Date(time)
+  return Number.isNaN(date.getTime()) ? String(time) : date.toLocaleString(locale, { hour12: false })
+}
+
+/**
+ * 尝试级事实。
+ *
+ * 前面几项是排障第一眼就要看的结论与性能；内部 id、URL、规则 id 是回头查库才用到的，
+ * 列为「更多事实」，默认收起。错误码/错误信息也放在收起区：它们已经由顶部横幅预告过一次，
+ * 这里只是为了让「复制本次尝试事实」拿到完整记录。
+ *
+ * 不再列「结果」：`SheetTitle` 里的结果 chip 就紧挨在上面，写两遍只是同义反复。
+ */
+function factsOf(t: AppTranslator, locale: string, attempt: RequestLogEntryAttempt): FactItem[] {
+  const errorCode = distinctAttemptErrorCode(attempt)
+  const errorMessage = distinctAttemptErrorMessage(attempt)
+
+  return [
+    { label: t('requestLogs.contents.fact.provider'), value: attempt.providerName },
+    { label: t('requestLogs.contents.fact.providerModel'), value: attempt.providerModelName },
+    { label: t('requestLogs.contents.fact.upstreamProtocol'), value: attempt.upstreamProtocol ?? t('requestLogs.contents.fact.unrecognized') },
+    { label: t('requestLogs.contents.fact.upstreamTransport'), value: formatTransport(t, attempt.upstreamTransport) },
+    { label: t('requestLogs.contents.fact.ttft'), value: attempt.ttftMilliseconds === null ? t('requestLogs.contents.fact.noOutput') : `${attempt.ttftMilliseconds} ms` },
+    { label: t('requestLogs.contents.fact.duration'), value: `${attempt.durationMilliseconds} ms` },
+    { label: t('requestLogs.contents.fact.retryable'), value: attempt.retryable ? t('common.state.yes') : t('common.state.no') },
+    ...(errorCode ? [{ label: t('requestLogs.contents.fact.errorCode'), value: errorCode, advanced: true }] : []),
+    ...(errorMessage ? [{ label: t('requestLogs.contents.fact.errorMessage'), value: errorMessage, advanced: true }] : []),
+    { label: t('requestLogs.contents.fact.attemptIndex'), value: String(attempt.attemptIndex + 1), advanced: true },
+    { label: t('requestLogs.contents.fact.attemptId'), value: attempt.id, advanced: true },
+    { label: t('requestLogs.contents.fact.providerId'), value: attempt.providerId, advanced: true },
+    { label: t('requestLogs.contents.fact.providerModelId'), value: attempt.providerModelId, advanced: true },
+    { label: t('requestLogs.contents.fact.upstreamRequestId'), value: attempt.upstreamRequestId ?? t('common.state.none'), advanced: true },
+    { label: t('requestLogs.contents.fact.upstreamUrl'), value: attempt.url, advanced: true },
+    { label: t('requestLogs.contents.fact.requestRewriteRules'), value: attempt.requestRewriteRuleIds.join(', ') || t('common.state.none'), advanced: true },
+    { label: t('requestLogs.contents.fact.responseRewriteRules'), value: attempt.responseRewriteRuleIds.join(', ') || t('common.state.none'), advanced: true },
+    { label: t('requestLogs.contents.fact.createdTime'), value: formatCreatedTime(locale, attempt.createdTime), advanced: true },
+  ]
+}
+
+/**
+ * 复制按钮。
+ *
+ * 每个内容块自带一个，只复制该块展示出来的文本：用户看到什么就拿到什么，
+ * 不需要自己去拼上下文。复制成功的反馈放在按钮上，不再弹 toast 干扰排障视线。
+ */
+function CopyButton(props: CopyButtonProps) {
+  const t = useTranslation()
+  const toast = useToast()
+  const [copied, setCopied] = React.useState(false)
+  const timerRef = React.useRef<number | null>(null)
+
+  React.useEffect(() => () => {
+    if (timerRef.current !== null) window.clearTimeout(timerRef.current)
+  }, [])
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(props.value)
+      setCopied(true)
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current)
+      timerRef.current = window.setTimeout(() => setCopied(false), 1500)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t('common.action.copyFailed'))
+    }
+  }
 
   return (
-    <Collapsible open={props.open} onOpenChange={props.onOpenChange} className="overflow-hidden rounded-md bg-inset">
-      <CollapsibleTrigger className="flex w-full items-center justify-between gap-3 bg-muted/30 px-3 py-2.5 text-left text-xs font-medium hover:bg-muted/50">
-        <span className="flex min-w-0 items-center gap-2">
+    <button
+      type="button"
+      aria-label={copied ? t('common.action.copied') : props.label}
+      title={copied ? t('common.action.copied') : props.label}
+      className={cn(
+        'inline-flex size-6 shrink-0 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-state-base-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-state-accent-solid',
+        copied && 'text-text-success',
+        props.className,
+      )}
+      onClick={event => {
+        // 这个按钮可能与可折叠标题相邻，避免顺带触发展开 / 收起。
+        event.stopPropagation()
+        void copy()
+      }}
+    >
+      {copied ? <Check size={12} /> : <Copy size={12} />}
+    </button>
+  )
+}
+
+/**
+ * 尝试级的事实清单。
+ *
+ * 这些字段单独看都很小，但排障时缺任何一个都会让人回头去查库，因此整体列出：
+ * 只是把「第一眼要看的」与「回头查库才用的」分成两档，后者默认收起。
+ */
+function AttemptFacts(props: AttemptFactsProps) {
+  const t = useTranslation()
+  const locale = useLocale()
+  const facts = factsOf(t, locale, props.attempt)
+  const [expanded, setExpanded] = React.useState(false)
+  const primary = facts.filter(fact => !fact.advanced)
+  const advanced = facts.filter(fact => fact.advanced)
+  const visible = expanded ? [...primary, ...advanced] : primary
+
+  // 换一次尝试就收起来，免得上一条的展开状态串到下一条。
+  React.useEffect(() => setExpanded(false), [props.attempt.id])
+
+  return (
+    <section className="overflow-hidden rounded-lg border border-module-border">
+      <div className="flex items-center gap-2 border-b border-border/50 px-3 py-2.5">
+        <span className="system-sm-medium text-text-primary">{t('requestLogs.contents.attemptFacts.title')}</span>
+        <CopyButton
+          className="ml-auto"
+          label={t('requestLogs.contents.attemptFacts.copy')}
+          value={facts.map(fact => t('requestLogs.contents.attemptFacts.line', { label: fact.label, value: fact.value })).join('\n')}
+        />
+      </div>
+      <dl className="grid gap-x-4 gap-y-1.5 px-3 py-3 md:grid-cols-2">
+        {visible.map(fact => (
+          <div key={fact.label} className="flex min-w-0 items-baseline gap-2 system-2xs-regular">
+            <dt className="shrink-0 text-text-tertiary">{fact.label}</dt>
+            <dd className="min-w-0 wrap-break-word font-mono text-text-secondary">{fact.value}</dd>
+          </div>
+        ))}
+      </dl>
+      {advanced.length > 0 && (
+        <div className="border-t border-border/50 px-3 py-2">
+          <button
+            type="button"
+            aria-expanded={expanded}
+            className="inline-flex items-center gap-1 system-2xs-regular text-text-tertiary transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-state-accent-solid"
+            onClick={() => setExpanded(value => !value)}
+          >
+            <ChevronDown size={12} aria-hidden className={cn('transition-transform', !expanded && '-rotate-90')} />
+            {expanded ? t('requestLogs.contents.attemptFacts.collapse') : t('requestLogs.contents.attemptFacts.expand', { count: advanced.length })}
+          </button>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function ContentSection(props: ContentSectionProps) {
+  const t = useTranslation()
+  const content = formatContent(t, props.value)
+  const segments = props.highlight?.segments ?? [{ text: content.value, matchIndex: null }]
+  const matchCount = props.highlight?.count ?? 0
+
+  // 内容块自身不再给底色：它已经是「阶段外壳」里的一个分节，再套一层白底
+  // 就会在白色 Sheet 上变成看不见的白块。分节靠外壳的 border 与父级 divide-y 划分，
+  // 整条链路只保留代码正文这一层凹槽（bg-inset）。
+  return (
+    <Collapsible open={props.open} onOpenChange={props.onOpenChange}>
+      {/* 标题行拆成「折叠触发器 + 复制按钮」两个兄弟节点：按钮嵌在按钮里不合法，
+          而拆开后拖动复制不会顺带折叠这块正文。 */}
+      <div className="flex items-center transition-colors hover:bg-state-base-hover">
+        <CollapsibleTrigger className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2.5 text-left system-xs-medium text-text-primary">
           <span className="truncate">{props.label}</span>
-          {content.isJson && <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] font-normal text-muted-foreground">JSON</span>}
-        </span>
-        <ChevronDown size={15} className={cn('shrink-0 text-muted-foreground transition-transform', !props.open && '-rotate-90')} />
-      </CollapsibleTrigger>
+          {content.isJson && <span className="shrink-0 rounded-md bg-inset px-1.5 py-0.5 font-mono system-2xs-regular text-text-tertiary">JSON</span>}
+          {matchCount > 0 && (
+            <span className="shrink-0 rounded-md bg-amber-300/70 px-1.5 py-0.5 font-mono system-2xs-regular text-text-primary dark:bg-amber-400/25">
+              {t('requestLogs.contents.matchCount', { count: matchCount })}
+            </span>
+          )}
+          <ChevronDown size={15} aria-hidden className={cn('ml-auto shrink-0 text-text-quaternary transition-transform', !props.open && '-rotate-90')} />
+        </CollapsibleTrigger>
+        <CopyButton className="mr-1.5" label={t('requestLogs.contents.copyLabel', { label: props.label })} value={content.value} />
+      </div>
       <CollapsibleContent>
-        <pre className="whitespace-pre-wrap break-all bg-inset p-3 font-mono text-xs leading-5 text-foreground/90">{content.value}</pre>
+        <pre className="mx-3 mb-3 whitespace-pre-wrap break-all rounded-md bg-inset p-3 font-mono text-xs leading-5 text-text-secondary">
+          {segments.map((segment, index) => segment.matchIndex === null
+            ? <React.Fragment key={index}>{segment.text}</React.Fragment>
+            : (
+              <mark
+                key={index}
+                data-search-match={segment.matchIndex}
+                className={cn(
+                  'rounded-sm',
+                  segment.matchIndex === props.activeMatchIndex
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-amber-300/70 text-text-primary dark:bg-amber-400/30',
+                )}
+              >
+                {segment.text}
+              </mark>
+            ))}
+        </pre>
       </CollapsibleContent>
     </Collapsible>
   )
 }
 
 function AppliedRules(props: AppliedRulesProps) {
+  const t = useTranslation()
   if (props.ruleIds.length === 0) return null
   const ruleNames = new Map(props.rules?.map(rule => [rule.id, rule.name]) ?? [])
+  // 规则名可能重复，因此展示按 id 去重、复制按名字拼接。
+  const appliedRules = props.ruleIds.map(id => ({ id, name: ruleNames.get(id) ?? id }))
 
+  // `bg-info/8` 在亮色下叠白后几乎不可见，因此和 `AttemptFacts` 一样补一圈模块边框，
+  // 让「已应用修改器」明确成块。
   return (
-    <section className="rounded-lg bg-info/8 px-3 py-2.5">
-      <div className="text-xs font-medium">已应用修改器</div>
+    <section className="rounded-lg border border-module-border bg-info/8 px-3 py-2.5">
+      <div className="flex items-center gap-2">
+        <span className="system-xs-medium text-text-primary">{t('requestLogs.contents.appliedRules.title')}</span>
+        <CopyButton className="ml-auto" label={t('requestLogs.contents.appliedRules.copy')} value={appliedRules.map(rule => rule.name).join('\n')} />
+      </div>
       <div className="mt-1 flex flex-wrap gap-1.5">
-        {props.ruleIds.map(id => <span key={id} className="rounded bg-info/15 px-1.5 py-0.5 text-[10px] text-info">{ruleNames.get(id) ?? id}</span>)}
+        {appliedRules.map(rule => <span key={rule.id} className="rounded-md bg-info/15 px-1.5 py-0.5 system-2xs-medium text-info">{rule.name}</span>)}
       </div>
     </section>
   )
@@ -92,169 +320,312 @@ function AppliedRules(props: AppliedRulesProps) {
 
 function RequestStage(props: RequestStageProps) {
   const sections = props.sections.filter(section => section.value)
-  if (sections.length === 0) return null
+  // 正文整体缺失时仍然把阶段画出来（见 `empty`），其余情况没有内容就不占版面。
+  if (sections.length === 0 && !props.empty) return null
 
+  // 阶段是这条链路上唯一的一层「外壳」：只留边框，不再铺灰底。
+  // 铺灰底会和 Sheet 的 bg-card 形成「白 → 灰 → 白 → 灰」的交替填充，
+  // 而白 100% 与灰 92% 只差 8 点明度，边界几乎看不见，整屏就糊成一片。
   return (
-    <section className="overflow-hidden rounded-lg border border-border/70 bg-muted/20">
-      <div className="flex items-center gap-2 border-b border-border/70 px-3 py-2.5 text-sm font-medium">
+    <section className="overflow-hidden rounded-lg border border-module-border">
+      <div className="flex items-center gap-2 border-b border-border/50 px-3 py-2.5 system-sm-medium text-text-primary">
         <span>{props.title}</span>
-        <span className="font-mono text-xs text-muted-foreground">· {PROTOCOL_LABEL[props.protocol] ?? props.protocol}</span>
+        <span className="font-mono system-xs-regular text-text-tertiary">· {props.protocol}</span>
+        {props.statusLabel && (
+          <span className="ml-auto rounded-md bg-inset px-1.5 py-0.5 font-mono system-2xs-regular text-text-tertiary">
+            {props.statusLabel}
+          </span>
+        )}
       </div>
-      <div className="space-y-2 px-2 pb-2 pt-2">
-        {sections.map(section => (
-          <ContentSection
-            key={section.id}
-            id={section.id}
-            label={section.label}
-            value={section.value!}
-            open={props.sectionStates[section.id] ?? true}
-            onOpenChange={open => props.onSectionOpenChange(section.id, open)}
-          />
-        ))}
+      <div className="divide-y divide-border/50">
+        {sections.length === 0
+          ? props.sections.map(section => (
+            <div key={section.id} className="flex items-center gap-2 px-3 py-2.5 system-xs-regular">
+              <span className="text-text-tertiary">{section.label}</span>
+              <span className="ml-auto font-mono text-text-quaternary">—</span>
+            </div>
+          ))
+          : sections.map(section => (
+            <ContentSection
+              key={section.id}
+              id={section.id}
+              label={section.label}
+              value={section.value!}
+              open={props.sectionStates[section.id] ?? true}
+              onOpenChange={open => props.onSectionOpenChange(section.id, open)}
+              highlight={props.search.highlights.get(section.id) ?? null}
+              activeMatchIndex={props.activeMatchIndex}
+            />
+          ))}
       </div>
     </section>
   )
 }
 
 function AttemptError(props: AttemptErrorProps) {
+  const t = useTranslation()
   const { attempt } = props
-  if (!attempt.errorCode && !attempt.errorMessage) return null
+  // 只有真正多出信息量的错误码/错误信息才值得这条横幅：
+  // HTTP 状态已经写在标题栏和「结果」里各一次，横幅再报一遍就只是重复。
+  const code = distinctAttemptErrorCode(attempt)
+  const message = distinctAttemptErrorMessage(attempt)
+  if (!code && !message) return null
+
+  const errorText = [
+    attempt.httpStatus !== null ? `HTTP ${attempt.httpStatus}` : t('requestLogs.contents.errorBanner.title'),
+    code,
+    message,
+  ].filter(Boolean).join('\n')
 
   return (
-    <section className="rounded-lg bg-red-500/8 px-3 py-2.5 text-xs">
-      <div className="flex flex-wrap items-center gap-2 font-medium text-red-700 dark:text-red-300">
-        <AlertCircle size={14} />
-        <span>{attempt.httpStatus !== null ? `HTTP ${attempt.httpStatus}` : '上游请求失败'}</span>
-        {attempt.errorCode && <span className="font-mono text-[10px] font-normal">{attempt.errorCode}</span>}
+    <section className="rounded-lg border border-module-border bg-destructive/8 px-3 py-2.5 system-xs-regular">
+      <div className="flex flex-wrap items-center gap-2 system-xs-medium text-text-destructive">
+        <AlertCircle size={14} aria-hidden />
+        {/* 有状态码时状态码已经在标题栏里，这里只补状态码之外的东西。 */}
+        {attempt.httpStatus === null && <span>{t('requestLogs.contents.errorBanner.title')}</span>}
+        {code && <span className="font-mono system-2xs-regular">{code}</span>}
+        <CopyButton
+          className="ml-auto text-text-destructive hover:text-text-destructive"
+          label={t('requestLogs.contents.errorBanner.copy')}
+          value={errorText}
+        />
       </div>
-      {attempt.errorMessage && <div className="mt-1 wrap-break-word text-red-700/90 dark:text-red-300/90">{attempt.errorMessage}</div>}
+      {message && <div className="mt-1 wrap-break-word text-text-destructive">{message}</div>}
     </section>
   )
 }
 
-type RequestStageData = Omit<RequestStageProps, 'sectionStates' | 'onSectionOpenChange'>
+type RequestStageData = Omit<RequestStageProps, 'sectionStates' | 'onSectionOpenChange' | 'search' | 'activeMatchIndex' | 'empty'>
 
 type RequestStageBuilderInput = {
+  /** 客户端视角正文。 */
   clientContent: RequestContent | null
-  selectedContent: RequestContent | null
-  conversion: RequestConversion | null
-  clientProtocol: string
-  upstreamProtocol: string
+  /** 选中尝试对应的上游视角正文。 */
+  attemptContent: AttemptContent | null
+  /** 本次尝试的客户端协议；未知时为 `null`。 */
+  clientProtocol: string | null
+  /** 本次尝试实际发往上游的协议。 */
+  upstreamProtocol: string | null
+  /** 客户端协议与上游协议不一致，即发生过协议转换。 */
+  converted: boolean
 }
 
-function buildRequestStages(input: RequestStageBuilderInput): RequestStageData[] {
-  const { clientContent, selectedContent, conversion, clientProtocol, upstreamProtocol } = input
-  const clientLabel = PROTOCOL_LABEL[clientProtocol] ?? clientProtocol
-  const upstreamLabel = PROTOCOL_LABEL[upstreamProtocol] ?? upstreamProtocol
-  const converted = Boolean(conversion && conversion.clientProtocol !== conversion.upstreamProtocol)
-  const upstreamRequestTitle = converted ? '协议转换后的上游请求' : '发送到真实供应商的请求'
-  const clientResponseTitle = converted ? '协议转换后的客户端响应' : '返回客户端的响应'
+function buildRequestStages(t: AppTranslator, input: RequestStageBuilderInput): RequestStageData[] {
+  const { clientContent, attemptContent, clientProtocol, upstreamProtocol, converted } = input
+  const clientLabel = protocolLabel(t, clientProtocol)
+  const upstreamLabel = protocolLabel(t, upstreamProtocol)
+  const clientRequestTitle = t('requestLogs.contents.stage.clientRequest')
+  const upstreamRequestTitle = t(converted ? 'requestLogs.contents.stage.upstreamRequestConverted' : 'requestLogs.contents.stage.upstreamRequest')
+  const upstreamResponseTitle = t('requestLogs.contents.stage.upstreamResponse')
+  const clientResponseTitle = t(converted ? 'requestLogs.contents.stage.clientResponseConverted' : 'requestLogs.contents.stage.clientResponse')
+  // 本地失败时上游一个字节都没回。这条正文记的是本地观察到的失败原因，
+  // 叫它「上游响应」会让人以为是上游回的内容。
+  const upstreamResponseBodyIsLocalFailure = isLocalFailureBody(attemptContent?.responseBody ?? null)
 
+  // 四个阶段的取值直接来自它所属的表：
+  //   客户端原始请求 / 返回客户端的响应 -> request_contents（客户端视角）
+  //   发送到供应商的请求 / 供应商响应   -> attempt_contents（上游视角）
   return [
     {
-      title: '客户端原始请求',
-      protocol: clientProtocol,
+      title: clientRequestTitle,
+      protocol: clientLabel,
+      statusLabel: null,
       sections: [
-        { id: sectionKey('客户端原始请求', `请求头 · ${clientLabel}`), label: `请求头 · ${clientLabel}`, value: conversion?.clientRequestHeaders ?? clientContent?.requestHeaders ?? null },
-        { id: sectionKey('客户端原始请求', `请求 Body · ${clientLabel}`), label: `请求 Body · ${clientLabel}`, value: clientContent?.requestBody ?? null },
+        { id: sectionKey(clientRequestTitle, t('requestLogs.contents.section.requestHeader', { protocol: clientLabel })), label: t('requestLogs.contents.section.requestHeader', { protocol: clientLabel }), value: clientContent?.requestHeaders ?? null },
+        { id: sectionKey(clientRequestTitle, t('requestLogs.contents.section.requestBody', { protocol: clientLabel })), label: t('requestLogs.contents.section.requestBody', { protocol: clientLabel }), value: clientContent?.requestBody ?? null },
       ],
     },
     {
       title: upstreamRequestTitle,
-      protocol: upstreamProtocol,
+      protocol: upstreamLabel,
+      statusLabel: null,
       sections: [
-        { id: sectionKey(upstreamRequestTitle, `请求头 · ${upstreamLabel}`), label: `请求头 · ${upstreamLabel}`, value: conversion?.upstreamRequestHeaders ?? selectedContent?.requestHeaders ?? null },
-        { id: sectionKey(upstreamRequestTitle, `请求 Body · ${upstreamLabel}`), label: `请求 Body · ${upstreamLabel}`, value: conversion?.requestBody ?? selectedContent?.requestBody ?? null },
+        { id: sectionKey(upstreamRequestTitle, t('requestLogs.contents.section.requestHeader', { protocol: upstreamLabel })), label: t('requestLogs.contents.section.requestHeader', { protocol: upstreamLabel }), value: attemptContent?.requestHeaders ?? null },
+        { id: sectionKey(upstreamRequestTitle, t('requestLogs.contents.section.requestBody', { protocol: upstreamLabel })), label: t('requestLogs.contents.section.requestBody', { protocol: upstreamLabel }), value: attemptContent?.requestBody ?? null },
       ],
     },
     {
-      title: '真实供应商响应',
-      protocol: upstreamProtocol,
+      title: upstreamResponseTitle,
+      protocol: upstreamLabel,
+      statusLabel: attemptContent
+        ? (attemptContent.responseStatus === null ? t('requestLogs.contents.status.upstreamNoResponse') : `HTTP ${attemptContent.responseStatus}`)
+        : null,
       sections: [
-        { id: sectionKey('真实供应商响应', `响应头 · ${upstreamLabel}`), label: `响应头 · ${upstreamLabel}`, value: conversion?.upstreamResponseHeaders ?? selectedContent?.responseHeaders ?? null },
-        { id: sectionKey('真实供应商响应', `响应 Body · ${upstreamLabel}`), label: `响应 Body · ${upstreamLabel}`, value: selectedContent?.responseBody ?? null },
+        { id: sectionKey(upstreamResponseTitle, t('requestLogs.contents.section.responseHeader', { protocol: upstreamLabel })), label: t('requestLogs.contents.section.responseHeader', { protocol: upstreamLabel }), value: attemptContent?.responseHeaders ?? null },
+        {
+          id: sectionKey(upstreamResponseTitle, t('requestLogs.contents.section.responseBody', { protocol: upstreamLabel })),
+          label: upstreamResponseBodyIsLocalFailure
+            ? t('requestLogs.contents.section.localFailure')
+            : t('requestLogs.contents.section.responseBody', { protocol: upstreamLabel }),
+          value: attemptContent?.responseBody ?? null,
+        },
       ],
     },
     {
       title: clientResponseTitle,
-      protocol: clientProtocol,
+      protocol: clientLabel,
+      statusLabel: clientContent
+        ? (clientContent.responseStatus === null ? t('requestLogs.contents.status.noResponse') : `HTTP ${clientContent.responseStatus}`)
+        : null,
       sections: [
-        { id: sectionKey(clientResponseTitle, `响应头 · ${clientLabel}`), label: `响应头 · ${clientLabel}`, value: conversion?.clientResponseHeaders ?? selectedContent?.responseHeaders ?? null },
-        { id: sectionKey(clientResponseTitle, `响应 Body · ${clientLabel}`), label: `响应 Body · ${clientLabel}`, value: conversion?.responseBody ?? selectedContent?.responseBody ?? null },
+        { id: sectionKey(clientResponseTitle, t('requestLogs.contents.section.responseHeader', { protocol: clientLabel })), label: t('requestLogs.contents.section.responseHeader', { protocol: clientLabel }), value: clientContent?.responseHeaders ?? null },
+        { id: sectionKey(clientResponseTitle, t('requestLogs.contents.section.responseBody', { protocol: clientLabel })), label: t('requestLogs.contents.section.responseBody', { protocol: clientLabel }), value: clientContent?.responseBody ?? null },
       ],
     },
   ]
 }
 
 export function RequestContentsSheet(props: RequestContentsSheetProps) {
+  const t = useTranslation()
   const selectedAttempt = props.attempts.find(attempt => attempt.id === props.selectedAttemptId) ?? null
-  const selectedContent = props.contents?.find(content => content.attemptId === props.selectedAttemptId) ?? null
-  const clientContent = props.contents?.find(content => content.attemptId === null) ?? null
-  const conversion = props.conversions?.find(item => item.attemptId === props.selectedAttemptId) ?? null
+  const attemptContent = props.attemptContents?.find(content => content.attemptId === props.selectedAttemptId) ?? null
+  // 客户端视角每个请求只有一行，不需要按 attemptId 筛选。
+  const clientContent = props.contents?.[0] ?? null
   const [search, setSearch] = React.useState('')
   const [sectionStates, setSectionStates] = React.useState<Record<string, boolean>>({})
+  const [activeMatchIndex, setActiveMatchIndex] = React.useState(0)
+  const contentRef = React.useRef<HTMLDivElement | null>(null)
 
-  const clientProtocol = conversion?.clientProtocol ?? props.clientProtocol
-  const upstreamProtocol = conversion?.upstreamProtocol ?? props.upstreamProtocol ?? clientProtocol
+  // 「发生过协议转换」不是独立事实：客户端协议与本次尝试的上游协议不同即为转换。
+  const clientProtocol = props.clientProtocol
+  const upstreamProtocol = selectedAttempt?.upstreamProtocol ?? null
+  const converted = clientProtocol !== null && upstreamProtocol !== null && clientProtocol !== upstreamProtocol
 
-  React.useEffect(() => {
-    setSearch('')
-    setSectionStates({})
-  }, [props.selectedAttemptId])
-
-  const stages: RequestStageProps[] = buildRequestStages({
+  const stages = React.useMemo<RequestStageData[]>(() => buildRequestStages(t, {
     clientContent,
-    selectedContent,
-    conversion,
+    attemptContent,
     clientProtocol,
     upstreamProtocol,
-  }).map(stage => ({
-    ...stage,
-    sectionStates,
-    onSectionOpenChange: (id, open) => setSectionStates(current => ({ ...current, [id]: open })),
-  }))
+    converted,
+  }), [t, clientContent, attemptContent, clientProtocol, upstreamProtocol, converted])
 
-  const normalizedSearch = search.trim().toLowerCase()
-  const filteredStages = normalizedSearch
-    ? stages
-        .map(stage => ({
-          ...stage,
-          sections: stage.sections.filter(section => `${section.label} ${section.value ?? ''}`.toLowerCase().includes(normalizedSearch)),
-        }))
-        .filter(stage => stage.sections.length > 0)
-    : stages
-  const visibleSectionIds = filteredStages.flatMap(stage => stage.sections.map(section => section.id))
+  const sections = React.useMemo(
+    () => stages.flatMap(stage => stage.sections).filter(section => section.value !== null),
+    [stages],
+  )
+
+  // 搜索的是「界面上真正展示的那段文本」，而 JSON 展开、流式拼回都会改变正文，
+  // 所以先过一遍 formatContent，确保高亮位置和渲染出来的字符一一对应。
+  const searchResult = React.useMemo(
+    () => searchBlocks(sections.map(section => ({ id: section.id, text: formatContent(t, section.value!).value })), search),
+    [t, sections, search],
+  )
+  const totalMatches = searchResult.matches.length
+  const searchQuery = search.trim()
+
+  React.useEffect(() => {
+    // 切换 attempt 就清空搜索与展开态。两个 setter 都先比对再写：
+    // 写 `{}` 这种新对象即使内容一样也会被判定为新 state，白白多一轮重渲染。
+    setSearch(current => (current === '' ? current : ''))
+    setSectionStates(current => (Object.keys(current).length === 0 ? current : {}))
+  }, [props.selectedAttemptId])
+
+  // 换一个搜索词就回到第一条命中，并把有命中的块展开；
+  // 否则高亮会藏在折叠标题底下，而用户看不到任何反应。
+  React.useEffect(() => {
+    setActiveMatchIndex(current => (current === 0 ? current : 0))
+    const matchedIds = new Set(searchResult.matches.map(match => match.sectionId))
+    if (matchedIds.size === 0) return
+    setSectionStates(current => {
+      let changed = false
+      const next = { ...current }
+      matchedIds.forEach(id => {
+        if (!next[id]) {
+          next[id] = true
+          changed = true
+        }
+      })
+      return changed ? next : current
+    })
+  }, [searchResult])
+
+  // 命中所在的块可能刚刚被展开才挂到 DOM 上，因此 sectionStates 变化也要重新定位。
+  React.useEffect(() => {
+    if (totalMatches === 0) return
+    contentRef.current
+      ?.querySelector<HTMLElement>(`[data-search-match="${activeMatchIndex}"]`)
+      ?.scrollIntoView({ block: 'center' })
+  }, [activeMatchIndex, totalMatches, sectionStates])
+
+  const jumpToMatch = (delta: number) => {
+    if (totalMatches === 0) return
+    const next = (activeMatchIndex + delta + totalMatches) % totalMatches
+    const sectionId = searchResult.matches[next]?.sectionId
+    // 手动折叠过的块，定位到它时要先展开。
+    if (sectionId) setSectionStates(current => (current[sectionId] ? current : { ...current, [sectionId]: true }))
+    setActiveMatchIndex(next)
+  }
+
+  const visibleSectionIds = sections.map(section => section.id)
+  // 一条正文都没有：被保留策略清掉了，或采集正文的开关一直是关的。
+  // 这两种情况在数据上无法区分（都是「没有行」），因此只说事实、不猜原因。
+  const bodiesMissing = sections.length === 0
 
   let state: React.ReactNode
   if (props.loading) {
     state = (
-      <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
-        <LoaderCircle size={15} className="animate-spin" />
-        正在加载正文
+      <div className="flex items-center justify-center gap-2 py-8 system-sm-regular text-text-tertiary">
+        <LoaderCircle size={15} aria-hidden className="animate-spin" />
+        {t('requestLogs.contents.loading')}
       </div>
     )
   } else if (props.error) {
     state = (
-      <div className="flex items-center justify-center gap-2 py-8 text-sm text-red-600 dark:text-red-400">
-        <AlertCircle size={15} />
+      <div className="flex items-center justify-center gap-2 py-8 system-sm-regular text-text-destructive">
+        <AlertCircle size={15} aria-hidden />
         {props.error}
       </div>
     )
   } else if (selectedAttempt || clientContent) {
     state = (
       <div className="flex h-full min-h-0 flex-col">
-        <div className="sticky top-0 z-10 border-b border-border/60 bg-card/95 px-4 py-3 backdrop-blur">
+        <div className="sticky top-0 z-10 bg-card/95 px-4 py-3 backdrop-blur">
           <div className="flex items-center gap-2">
             <div className="relative min-w-0 flex-1">
-              <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" aria-hidden />
               <Input
-                aria-label="搜索请求详情内容"
+                aria-label={t('requestLogs.contents.searchAria')}
                 value={search}
                 onChange={event => setSearch(event.target.value)}
-                placeholder="搜索内容"
-                className="h-8 pl-8 text-xs"
+                onKeyDown={event => {
+                  if (event.key !== 'Enter') return
+                  event.preventDefault()
+                  jumpToMatch(event.shiftKey ? -1 : 1)
+                }}
+                placeholder={t('requestLogs.contents.searchPlaceholder')}
+                className="pl-9"
               />
             </div>
+            {searchQuery && (
+              <span
+                aria-live="polite"
+                className="shrink-0 font-mono system-2xs-regular tabular-nums text-text-tertiary"
+              >
+                {totalMatches === 0 ? t('requestLogs.contents.noMatch') : `${activeMatchIndex + 1}/${totalMatches}`}
+              </span>
+            )}
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              aria-label={t('requestLogs.contents.previousMatch')}
+              title={t('requestLogs.contents.previousMatchTitle')}
+              disabled={totalMatches === 0}
+              onClick={() => jumpToMatch(-1)}
+            >
+              <ChevronUp size={14} />
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              aria-label={t('requestLogs.contents.nextMatch')}
+              title={t('requestLogs.contents.nextMatchTitle')}
+              disabled={totalMatches === 0}
+              onClick={() => jumpToMatch(1)}
+            >
+              <ChevronDown size={14} />
+            </Button>
             <Button
               type="button"
               variant="outline"
@@ -267,7 +638,7 @@ export function RequestContentsSheet(props: RequestContentsSheetProps) {
                 return next
               })}
             >
-              全展开
+              {t('requestLogs.contents.expandAll')}
             </Button>
             <Button
               type="button"
@@ -281,23 +652,40 @@ export function RequestContentsSheet(props: RequestContentsSheetProps) {
                 return next
               })}
             >
-              全折叠
+              {t('requestLogs.contents.collapseAll')}
             </Button>
           </div>
         </div>
-        <div className="min-h-0 flex-1 space-y-3 overflow-auto px-4 pb-4 pt-3">
+        <div ref={contentRef} className="min-h-0 flex-1 space-y-3 overflow-auto px-4 pb-4 pt-3">
           {selectedAttempt && <AttemptError attempt={selectedAttempt} />}
-          <AppliedRules ruleIds={selectedContent?.requestRewriteRuleIds ?? []} rules={props.requestRewriteRules} />
-          {filteredStages.length > 0 ? (
-            filteredStages.map(stage => <RequestStage key={stage.title} {...stage} />)
-          ) : (
-            <div className="py-8 text-center text-sm text-muted-foreground">未找到匹配内容</div>
+          {selectedAttempt && <AttemptFacts attempt={selectedAttempt} />}
+          <AppliedRules ruleIds={selectedAttempt ? [...selectedAttempt.requestRewriteRuleIds, ...selectedAttempt.responseRewriteRuleIds] : []} rules={props.requestRewriteRules} />
+          {searchQuery && totalMatches === 0 && (
+            <div className="rounded-md border border-module-border bg-inset px-3 py-2 system-xs-regular text-text-tertiary">
+              {t('requestLogs.contents.noMatchHint', { query: searchQuery })}
+            </div>
           )}
+          {bodiesMissing && (
+            <div className="rounded-md border border-dashed border-module-border px-3 py-2 system-xs-regular text-text-tertiary">
+              {t('requestLogs.contents.pruned')}
+            </div>
+          )}
+          {stages.map(stage => (
+            <RequestStage
+              key={stage.title}
+              {...stage}
+              sectionStates={sectionStates}
+              onSectionOpenChange={(id, open) => setSectionStates(current => ({ ...current, [id]: open }))}
+              search={searchResult}
+              activeMatchIndex={searchQuery && totalMatches > 0 ? activeMatchIndex : null}
+              empty={bodiesMissing}
+            />
+          ))}
         </div>
       </div>
     )
   } else if (props.selectedAttemptId) {
-    state = <div className="py-8 text-center text-sm text-muted-foreground">该尝试没有可查看的记录</div>
+    state = <div className="py-8 text-center system-xs-regular text-text-tertiary">{t('requestLogs.contents.noRecord')}</div>
   } else {
     state = null
   }
@@ -305,9 +693,26 @@ export function RequestContentsSheet(props: RequestContentsSheetProps) {
   return (
     <Sheet open={Boolean(props.selectedAttemptId)} onOpenChange={open => !open && props.onClose()}>
       <SheetContent side="right" className="flex h-full w-full max-w-3xl! flex-col gap-0 border-0 bg-card p-0 shadow-none" onOpenAutoFocus={event => event.preventDefault()}>
-        <SheetHeader className="shrink-0 px-4 py-3.5 pr-12">
-          <SheetTitle className="text-sm">请求详情</SheetTitle>
-          <SheetDescription className="text-xs">按请求链路和采集时的原始字符串展示</SheetDescription>
+        <SheetHeader className="shrink-0 border-b border-border/50 px-4 py-3.5 pr-12">
+          <SheetTitle className="flex flex-wrap items-center gap-2">
+            <span>{selectedAttempt ? t('requestLogs.contents.title', { index: selectedAttempt.attemptIndex + 1, total: props.attempts.length }) : t('requestLogs.contents.titleFallback')}</span>
+            {/* 结果就是 HTTP 状态，与列表行用同一套徽标，Sheet 里不再另说一遍。 */}
+            {selectedAttempt && (
+              <span className={cn(
+                'rounded-sm px-1.5 py-0.5 font-mono system-2xs-medium',
+                selectedAttempt.status === 'success'
+                  ? 'bg-success/10 text-text-success'
+                  : 'bg-destructive/10 text-text-destructive',
+              )}>
+                {formatAttemptOutcome(t, selectedAttempt)}
+              </span>
+            )}
+          </SheetTitle>
+          <SheetDescription>
+            {selectedAttempt
+              ? `${selectedAttempt.providerName} / ${selectedAttempt.providerModelName}`
+              : t('requestLogs.contents.description')}
+          </SheetDescription>
         </SheetHeader>
         <div className="flex-1 overflow-hidden">{state}</div>
       </SheetContent>

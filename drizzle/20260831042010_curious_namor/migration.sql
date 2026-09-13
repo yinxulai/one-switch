@@ -1,1 +1,0 @@
-ALTER TABLE `request_attempts` DROP COLUMN `details`;

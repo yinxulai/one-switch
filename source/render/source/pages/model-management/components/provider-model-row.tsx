@@ -1,13 +1,18 @@
-import { GripVertical, KeyRound, Pencil, Timer, Trash2 } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { GripVertical, Pencil, Trash2 } from 'lucide-react'
+import { requestRewriteRuleApi, providerModelApi } from '@/api/models'
+import { useHealth } from '@/features/health/hooks'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Switch } from '@/components/ui/switch'
 import { ProtocolIcons } from '@/components/protocol-icons'
+import { useTranslation } from '@/i18n/provider'
 import { SortableProviderModel } from './sortable-provider-model'
-import type { Provider, ProviderModelRoute } from '@common/schemas'
+import type { ProviderModelRoute } from '@common/schemas'
 
 interface ProviderModelRowProps {
-  provider: Provider
+
   model: ProviderModelRoute
   selected: boolean
   onSelectedChange: (checked: boolean) => void
@@ -17,16 +22,34 @@ interface ProviderModelRowProps {
 }
 
 export function ProviderModelRow(props: ProviderModelRowProps) {
-  const { provider, model, selected, onSelectedChange, onEditModel, onToggleModelEnabled, onRemoveModel } = props
+  const { model, selected, onSelectedChange, onEditModel, onToggleModelEnabled, onRemoveModel } = props
+  const t = useTranslation()
+  const [ruleNames, setRuleNames] = useState<string[]>([])
+  const { providerModels } = useHealth()
+  const modelHealth = providerModels[model.id]
+
+  useEffect(() => {
+    let cancelled = false
+    void Promise.all([requestRewriteRuleApi.list(), providerModelApi.requestRewriteRules(model.id)])
+      .then(([allResponse, bindingsResponse]) => {
+        if (cancelled || !allResponse.success || !bindingsResponse.success) return
+        const allRules = allResponse.data
+        const names = bindingsResponse.data
+          .map(binding => allRules.find(rule => rule.id === binding.ruleId)?.name)
+          .filter((name): name is string => Boolean(name))
+        setRuleNames(names)
+      })
+    return () => { cancelled = true }
+  }, [model.id])
 
   return (
     <SortableProviderModel id={model.id}>
       {(handleProps, dragging) => (
-        <div className={'px-3 py-2.5 ' + (dragging ? 'bg-muted/60' : '')}>
+        <div className={'px-3 py-2.5 ' + (dragging ? 'bg-state-base-hover' : '')}>
           <div className="flex items-center gap-2">
           <button
-            aria-label={`拖动 ${model.modelName}`}
-            className="cursor-grab touch-none text-muted-foreground/50"
+            aria-label={t('models.row.dragAria', { name: model.modelName })}
+            className="cursor-grab touch-none text-text-quaternary transition-colors hover:text-text-primary"
             {...handleProps}
           >
             <GripVertical size={14} />
@@ -34,33 +57,39 @@ export function ProviderModelRow(props: ProviderModelRowProps) {
           <Checkbox
             checked={selected}
             onCheckedChange={value => onSelectedChange(value === true)}
-            aria-label={`选择模型 ${model.modelName}`}
+            aria-label={t('models.picker.selectAria', { name: model.modelName })}
           />
-          <div className="flex h-5 w-5 items-center justify-center rounded-sm bg-muted text-[10px] font-medium text-muted-foreground">
-            {model.priority}
-          </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
-              <span className="truncate text-xs font-medium">{model.modelName}</span>
-              <ProtocolIcons endpoints={model.endpoints} />
+              <span className="truncate system-xs-medium text-text-primary">{model.modelName}</span>
             </div>
-            <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-              <KeyRound size={10} />
-              密钥已安全配置
-              <span className="text-muted-foreground/70">·</span>
-              <Timer size={10} />
-              超时 {provider.timeoutMilliseconds / 1000} 秒
+            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 system-2xs-regular text-text-tertiary">
+              <ProtocolIcons endpoints={model.endpoints} />
+              {modelHealth?.consecutiveFailures ? (
+                <Badge variant="destructive" className="px-1.5 py-0 system-2xs-medium">{t('models.row.consecutiveFailures', { count: modelHealth.consecutiveFailures })}</Badge>
+              ) : modelHealth?.lastSuccessTime ? (
+                <span className="inline-flex items-center gap-1 text-text-success">
+                  <span className="size-1.5 rounded-full bg-success" />
+                  {t('models.row.lastSuccess')}
+                </span>
+              ) : (
+                <span className="text-text-quaternary">{t('models.row.noRequests')}</span>
+              )}
+              {ruleNames.length > 0 && <>
+                <span className="text-text-quaternary">·</span>
+                {ruleNames.map(name => <Badge key={name} variant="muted" className="max-w-40 truncate px-1.5 py-0 system-2xs-medium">{name}</Badge>)}
+              </>}
             </div>
           </div>
           <Switch
             checked={model.enabled}
             onCheckedChange={enabled => onToggleModelEnabled(model, enabled)}
-            aria-label={`${model.modelName} 启用状态`}
+            aria-label={t('models.row.enabledState', { name: model.modelName })}
           />
           <Button
             variant="ghost"
             size="icon-sm"
-            title="编辑模型"
+            title={t('models.row.edit')}
             onClick={() => onEditModel(model)}
           >
             <Pencil size={13} />
@@ -68,8 +97,8 @@ export function ProviderModelRow(props: ProviderModelRowProps) {
           <Button
             variant="ghost"
             size="icon-sm"
-            className="text-destructive"
-            title="删除模型"
+            className="text-text-tertiary hover:text-text-destructive"
+            title={t('models.row.delete')}
             onClick={() => onRemoveModel(model)}
           >
             <Trash2 size={13} />

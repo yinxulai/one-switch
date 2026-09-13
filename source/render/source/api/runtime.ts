@@ -23,9 +23,9 @@ export const outboundProxyApi = {
   test: (input: OutboundProxyTestInput, signal?: AbortSignal) => request<OutboundProxyTestResult>('/outbound-proxy/test', input, { signal }),
 }
 
-export const queueApi = {
-  status: (logicalModelId: string) => request<{ logicalModelId: string; manualModelId: string | null }>('/queue/status', { logicalModelId }),
-  switch: (logicalModelId: string, modelId: string | null) => request<{ logicalModelId: string; modelId: string | null }>('/queue/switch', { logicalModelId, modelId }),
+export const logicalModelRoutingApi = {
+  status: (logicalModelId: string) => request<{ logicalModelId: string; manualModelId: string | null }>('/logical-model/status', { logicalModelId }),
+  switch: (logicalModelId: string, modelId: string | null) => request<{ logicalModelId: string; modelId: string | null }>('/logical-model/switch', { logicalModelId, modelId }),
 }
 
 export const healthApi = { list: () => request<HealthSnapshot>('/health/list') }

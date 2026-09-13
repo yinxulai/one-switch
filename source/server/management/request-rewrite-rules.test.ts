@@ -4,14 +4,12 @@ import path from 'node:path'
 import type { ServerResponse } from 'node:http'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { closeDatabase, initDatabase } from '../database'
+import { TEST_DATABASE_FILE_NAME } from '../database/test-support'
 import { createProvider } from '@server/database/provider-store'
 import { createProviderModelRoute } from '@server/database/model-store'
 import { createRequestRewriteRule } from '@server/database/request-rewrite-rule-store'
 import { requestRewriteRuleRoutes } from './routes/relations/request-rewrite-rules'
-
-function mockResponse() {
-  return { statusCode: 0, headersSent: false, writableEnded: false, setHeader: vi.fn(), end: vi.fn() } as unknown as ServerResponse
-}
+import { mockResponse } from './test-support'
 
 function responseData(response: ServerResponse): Record<string, unknown> {
   const body = vi.mocked(response.end).mock.calls[0]?.[0]
@@ -22,7 +20,7 @@ let temporaryDirectory: string
 
 beforeEach(async () => {
   temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-rewrite-rules-'))
-  await initDatabase(temporaryDirectory)
+  await initDatabase(temporaryDirectory, TEST_DATABASE_FILE_NAME)
 })
 
 afterEach(async () => {
@@ -97,7 +95,7 @@ describe('request rewrite rule routes', () => {
         headers: '{"authorization":"Bearer token"}',
         clientProtocol: 'openai-responses',
         upstreamProtocol: 'openai-responses',
-        streaming: false,
+        transport: 'http',
       },
     })
     expect(responseData(testRes).data).toMatchObject({ body: '{"hello":"world"}' })

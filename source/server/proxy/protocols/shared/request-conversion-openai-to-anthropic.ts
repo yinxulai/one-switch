@@ -1,112 +1,166 @@
-type Json = Record<string, unknown>
+import { asArray, asNumber, asObject, asString, safeJsonParse, type Json } from './conversion-utils'
 
-function asObject(value: unknown): Json | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Json)
-    : null
-}
+/**
+ * OpenAI Chat Completions 请求 → Anthropic Messages 请求。
+ *
+ * 关键差异：OpenAI 用独立的 `role: tool` 消息承载工具结果，Anthropic 要求
+ * `tool_result` block 出现在紧随 assistant `tool_use` 的用户消息中，因此连续的
+ * tool 消息必须合并为同一个 user 消息的多个 block，而不是各占一条 user 消息。
+ */
 
-function asArray(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : []
-}
+const CACHE_CONTROL: Json = { type: 'ephemeral' }
+const DEFAULT_MAX_TOKENS = 4096
 
-function asString(value: unknown): string | undefined {
-  return typeof value === 'string' ? value : undefined
-}
-
-function asNumber(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
-}
-
-function toAnthropicCacheControl(value: unknown): Json | undefined {
-  const marker = asObject(value)
+function anthropicCacheControlFrom(promptCacheBreakpoint: unknown): Json | undefined {
+  const marker = asObject(promptCacheBreakpoint)
   if (!marker || (marker.mode !== undefined && marker.mode !== 'explicit')) return undefined
-  return { type: 'ephemeral' }
+  return CACHE_CONTROL
+}
+
+/** OpenAI content → Anthropic content blocks（text / image）。 */
+function contentToAnthropicBlocks(content: unknown): Json[] {
+  if (typeof content === 'string') return content ? [{ type: 'text', text: content }] : []
+  const blocks: Json[] = []
+  for (const raw of asArray(content)) {
+    const part = asObject(raw)
+    if (!part) continue
+    if (part.type === 'text') {
+      const text = asString(part.text)
+      if (text === undefined) continue
+      const cacheControl = anthropicCacheControlFrom(part.prompt_cache_breakpoint)
+      blocks.push({ type: 'text', text, ...(cacheControl ? { cache_control: cacheControl } : {}) })
+    } else if (part.type === 'image_url') {
+      const url = asString(asObject(part.image_url)?.url) ?? ''
+      const match = /^data:([^;,]+);base64,(.+)$/.exec(url)
+      if (match) blocks.push({ type: 'image', source: { type: 'base64', media_type: match[1], data: match[2] } })
+      else if (url) blocks.push({ type: 'image', source: { type: 'url', url } })
+    }
+    // refusal / input_audio 等无对应能力，丢弃
+  }
+  return blocks
+}
+
+/** OpenAI tool 消息内容 → Anthropic tool_result 的 content。 */
+function toolContentToAnthropic(content: unknown): string | Json[] {
+  if (typeof content === 'string') return content
+  const blocks = contentToAnthropicBlocks(content)
+  const textOnly = blocks.every(block => block.type === 'text')
+  if (textOnly) return blocks.map(block => asString(block.text) ?? '').join('')
+  return blocks
+}
+
+function openAiToolCallsToAnthropicBlocks(toolCalls: unknown): Json[] {
+  const blocks: Json[] = []
+  for (const raw of asArray(toolCalls)) {
+    const call = asObject(raw)
+    const fn = asObject(call?.function)
+    const name = asString(fn?.name)
+    if (!call || !fn || !name) continue
+    blocks.push({ type: 'tool_use', id: asString(call.id) ?? '', name, input: safeJsonParse(asString(fn.arguments), {}) })
+  }
+  return blocks
+}
+
+function openAiToolsToAnthropic(tools: unknown): Json[] {
+  const result: Json[] = []
+  for (const raw of asArray(tools)) {
+    const fn = asObject(asObject(raw)?.function)
+    const name = asString(fn?.name)
+    if (!fn || !name) continue
+    result.push({
+      name,
+      description: asString(fn.description) ?? '',
+      input_schema: asObject(fn.parameters) ?? { type: 'object', properties: {} },
+    })
+  }
+  return result
+}
+
+function openAiToolChoiceToAnthropic(choice: unknown, disableParallel: boolean): Json | undefined {
+  const withParallel = (value: Json): Json => (disableParallel ? { ...value, disable_parallel_tool_use: true } : value)
+  if (choice === 'auto') return withParallel({ type: 'auto' })
+  if (choice === 'required') return withParallel({ type: 'any' })
+  if (choice === 'none') return { type: 'none' }
+  const record = asObject(choice)
+  const name = asString(asObject(record?.function)?.name)
+  if (record?.type === 'function' && name) return withParallel({ type: 'tool', name })
+  if (disableParallel) return { type: 'auto', disable_parallel_tool_use: true }
+  return undefined
 }
 
 export function openAiToAnthropicRequest(body: Json, model: string): Json {
   const system: Json[] = []
   const messages: Json[] = []
+  let pendingToolResults: Json[] = []
+
+  const flushToolResults = () => {
+    if (pendingToolResults.length === 0) return
+    messages.push({ role: 'user', content: pendingToolResults })
+    pendingToolResults = []
+  }
 
   for (const raw of asArray(body.messages)) {
     const message = asObject(raw)
     if (!message) continue
     const role = asString(message.role) ?? 'user'
 
-    if (role === 'system' || role === 'developer') {
-      if (typeof message.content === 'string') {
-        if (message.content) system.push({ type: 'text', text: message.content })
-      } else {
-        for (const rawPart of asArray(message.content)) {
-          const part = asObject(rawPart)
-          const text = asString(part?.text)
-          if (!text) continue
-          const cacheControl = toAnthropicCacheControl(part?.prompt_cache_breakpoint)
-          system.push({ type: 'text', text, ...(cacheControl ? { cache_control: cacheControl } : {}) })
-        }
-      }
-      continue
-    }
-
-    const content: Json[] = []
-    for (const rawCall of asArray(message.tool_calls)) {
-      const call = asObject(rawCall)
-      const fn = asObject(call?.function)
-      if (fn && asString(fn.name)) content.push({ type: 'tool_use', id: asString(call?.id) ?? '', name: fn.name, input: (() => { try { return JSON.parse(asString(fn.arguments) ?? '{}') } catch { return {} } })() })
-    }
     if (role === 'tool') {
-      messages.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: asString(message.tool_call_id) ?? '', content: asString(message.content) ?? '' }] })
+      pendingToolResults.push({
+        type: 'tool_result',
+        tool_use_id: asString(message.tool_call_id) ?? '',
+        content: toolContentToAnthropic(message.content),
+      })
       continue
     }
-    if (typeof message.content === 'string') {
-      if (message.content) content.push({ type: 'text', text: message.content })
-    } else {
-      for (const part of asArray(message.content)) {
-        const record = asObject(part)
-        if (!record) continue
-        if (record.type === 'text') {
-          const text = asString(record.text)
-          const cacheControl = toAnthropicCacheControl(record.prompt_cache_breakpoint)
-          if (text) content.push({ type: 'text', text, ...(cacheControl ? { cache_control: cacheControl } : {}) })
-        } else if (record.type === 'image_url' && asObject(record.image_url)) {
-          const url = asString((record.image_url as Json).url) ?? ''
-          const match = /^data:([^;]+);base64,(.+)$/.exec(url)
-          if (match) content.push({ type: 'image', source: { type: 'base64', media_type: match[1], data: match[2] } })
-          else if (url) content.push({ type: 'image', source: { type: 'url', url } })
-        }
-      }
+
+    flushToolResults()
+
+    if (role === 'system' || role === 'developer') {
+      system.push(...contentToAnthropicBlocks(message.content))
+      continue
     }
 
-    messages.push({ role: role === 'assistant' ? 'assistant' : 'user', content })
+    if (role === 'assistant') {
+      const content = [...contentToAnthropicBlocks(message.content), ...openAiToolCallsToAnthropicBlocks(message.tool_calls)]
+      if (content.length > 0) messages.push({ role: 'assistant', content })
+      continue
+    }
+
+    const content = contentToAnthropicBlocks(message.content)
+    if (content.length > 0) messages.push({ role: 'user', content })
   }
+  flushToolResults()
 
   const result: Json = {
     model,
     messages,
-    max_tokens: asNumber(body.max_tokens) ?? 4096,
+    max_tokens: asNumber(body.max_tokens) ?? DEFAULT_MAX_TOKENS,
   }
+
   if (system.length > 0) {
     const hasCacheControl = system.some(block => block.cache_control !== undefined)
     result.system = hasCacheControl ? system : system.map(block => asString(block.text) ?? '').join('\n\n')
   }
-  if (asObject(body.prompt_cache_options)?.mode === 'implicit') result.cache_control = { type: 'ephemeral' }
+
+  if (asObject(body.prompt_cache_options)?.mode === 'implicit') result.cache_control = CACHE_CONTROL
+
   const temperature = asNumber(body.temperature)
   if (temperature !== undefined) result.temperature = temperature
   const topP = asNumber(body.top_p)
   if (topP !== undefined) result.top_p = topP
   if (body.stream === true) result.stream = true
-  if (body.stop) result.stop_sequences = body.stop
-  const tools: Json[] = asArray(body.tools).map(raw => {
-    const tool = asObject(raw)
-    const fn = asObject(tool?.function)
-    if (!fn || !asString(fn.name)) return null
-    return { name: fn.name, description: asString(fn.description) ?? '', input_schema: asObject(fn.parameters) ?? { type: 'object', properties: {} } }
-  }).filter(tool => tool !== null)
+  if (body.stop !== undefined) {
+    result.stop_sequences = typeof body.stop === 'string' ? [body.stop] : asArray(body.stop)
+  }
+
+  const tools = openAiToolsToAnthropic(body.tools)
   if (tools.length > 0) result.tools = tools
-  const choice = body.tool_choice
-  if (choice === 'auto' || choice === 'none') result.tool_choice = { type: choice === 'none' ? 'none' : 'auto' }
-  else if (choice === 'required') result.tool_choice = { type: 'any' }
-  else if (asObject(choice)?.type === 'function' && asString(asObject(asObject(choice)?.function)?.name)) result.tool_choice = { type: 'tool', name: asString(asObject(asObject(choice)?.function)?.name) }
+
+  const toolChoice = openAiToolChoiceToAnthropic(body.tool_choice, body.parallel_tool_calls === false)
+  if (toolChoice !== undefined) result.tool_choice = toolChoice
+
+  const userId = asString(body.user)
+  if (userId) result.metadata = { user_id: userId }
 
   return result
 }

@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { closeDatabase, initDatabase } from './index'
+import { TEST_DATABASE_FILE_NAME } from './test-support'
 import {
   createProviderModelEndpoint,
   createProviderModelRoute,
@@ -19,7 +20,7 @@ let temporaryDirectory: string
 
 beforeEach(async () => {
   temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-model-store-'))
-  await initDatabase(temporaryDirectory)
+  await initDatabase(temporaryDirectory, TEST_DATABASE_FILE_NAME)
 })
 
 afterEach(async () => {
@@ -90,7 +91,7 @@ describe('model store', () => {
     })
     expect(converter).toMatchObject({ providerModelEndpointId: extraEndpoint.id, clientProtocol: 'openai-responses', enabled: true })
 
-    const logicalModel = await createLogicalModel({ name: 'model-routing', description: 'route test' })
+    const logicalModel = await createLogicalModel({ id: 'model-routing', name: 'model-routing', description: 'route test' })
     await upsertSchedulingPolicy({
       logicalModelId: logicalModel.id,
       providerModelId: route.id,

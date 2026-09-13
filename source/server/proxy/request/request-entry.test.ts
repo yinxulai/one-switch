@@ -15,12 +15,14 @@ const mocks = vi.hoisted(() => ({
   markProviderModelSuccess: vi.fn(),
   createRequestLog: vi.fn(async (input: Record<string, unknown>) => ({ id: 'req_test', ...input })),
   createRequestAttempt: vi.fn(async (input: Record<string, unknown>) => ({ id: 'att_test', ...input })),
-  createRequestContent: vi.fn(async (input: Record<string, unknown>) => ({ id: input.attemptId ? 'content_attempt' : 'content_request', ...input })),
-  createRequestConversion: vi.fn(),
+  createRequestContent: vi.fn(async (input: Record<string, unknown>) => ({ id: 'content_request', ...input })),
+  createAttemptContent: vi.fn(async (input: Record<string, unknown>) => ({ id: 'content_attempt', ...input })),
   updateRequestContent: vi.fn(),
+  updateAttemptContent: vi.fn(),
   updateRequestLogStatus: vi.fn(),
-  replaceRequestUsage: vi.fn(),
+  recordAttemptUsage: vi.fn(),
   pruneRequestLogs: vi.fn(),
+  pruneRequestContents: vi.fn(),
 }))
 
 vi.mock('@server/proxy/routing/router', async importOriginal => {
@@ -41,7 +43,7 @@ vi.mock('@server/proxy/upstream/health', () => ({
 }))
 
 vi.mock('@server/database/settings-store', () => ({
-  getSettings: async () => ({ idleTimeoutMilliseconds: 1_000, logRetentionDays: 7, captureRequestContent: mocks.captureRequestContent }),
+  getSettings: async () => ({ idleTimeoutMilliseconds: 1_000, requestLogRetentionDays: 7, contentRetentionDays: 7, captureRequestLogs: true, captureRequestContent: mocks.captureRequestContent }),
 }))
 
 vi.mock('@server/database/logical-model-store', () => ({
@@ -51,15 +53,38 @@ vi.mock('@server/database/logical-model-store', () => ({
   ],
 }))
 
+/**
+ * 代理入口的落点由当前生效的**工作流图**决定，而图存在数据库里。
+ *
+ * 这个文件测的是入口自身的流程（拒绝、日志、流式搬运），不是图的执行，因此这里不去初始化
+ * 数据库，而是用内建默认策略当场生成一张图——它对应的正是「一版图都没保存过」这个真实运行状态，
+ * 行为与用户开箱得到的路由完全一致。
+ */
+vi.mock('@server/database/router-graph-store', async () => {
+  const { createDefaultPolicyGraph } = await import('@common/router/presets')
+  return {
+    resolveRouterGraph: async () => ({
+      graph: createDefaultPolicyGraph([
+        { id: 'default', name: 'default', enabled: true },
+        { id: 'secondary', name: 'secondary', enabled: true },
+      ]),
+      version: 0,
+      savedAt: 0,
+    }),
+  }
+})
+
 vi.mock('@server/database/request-log-store', () => ({
   createRequestLog: mocks.createRequestLog,
   createRequestAttempt: mocks.createRequestAttempt,
   createRequestContent: mocks.createRequestContent,
-  createRequestConversion: mocks.createRequestConversion,
+  createAttemptContent: mocks.createAttemptContent,
   updateRequestContent: mocks.updateRequestContent,
+  updateAttemptContent: mocks.updateAttemptContent,
   updateRequestLogStatus: mocks.updateRequestLogStatus,
-  replaceRequestUsage: mocks.replaceRequestUsage,
+  recordAttemptUsage: mocks.recordAttemptUsage,
   pruneRequestLogs: mocks.pruneRequestLogs,
+  pruneRequestContents: mocks.pruneRequestContents,
 }))
 
 vi.mock('@server/database/request-rewrite-rule-store', () => ({
@@ -103,6 +128,26 @@ async function waitFor(condition: () => boolean, timeoutMilliseconds = 1_000): P
     if (Date.now() >= deadline) throw new Error('Timed out waiting for condition')
     await new Promise(resolve => setTimeout(resolve, 10))
   }
+}
+
+/**
+ * 被拒的请求同样是用户真实发出的请求。
+ *
+ * 这些分支在建立请求上下文之前就返回了，但如果它们不落库，「日志里查不到」
+ * 就会被误读成「这个请求从来没发生过」。
+ */
+type RejectionRecordExpectation = { clientProtocol: string | null; logicalModelId: string | null }
+
+async function expectRejectionRecorded(input: RejectionRecordExpectation): Promise<void> {
+  await waitFor(() => mocks.updateRequestLogStatus.mock.calls.length > 0)
+  expect(mocks.createRequestLog).toHaveBeenCalledTimes(1)
+  expect(mocks.createRequestLog).toHaveBeenCalledWith(expect.objectContaining({
+    status: 'pending',
+    clientProtocol: input.clientProtocol,
+    logicalModelId: input.logicalModelId,
+  }))
+  expect(mocks.updateRequestLogStatus).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ status: 'failed' }))
+  expect(mocks.createRequestAttempt).not.toHaveBeenCalled()
 }
 
 function model(id: string, providerId: string, upstreamUrl: string, upstreamModelId: string, protocol: ModelWithProvider['model']['endpoints'][number]['protocol'] = 'openai-completions'): ModelWithProvider {
@@ -151,9 +196,9 @@ describe('handleProxyRequest', () => {
     expect(getManualModel('secondary')).toBe('model_secondary')
   })
 
-  it('rejects unknown api paths before creating a request log', async () => {
+  it('records a rejected request even when the api path is unknown', async () => {
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/unknown`, {
@@ -166,9 +211,10 @@ describe('handleProxyRequest', () => {
     expect(await response.json()).toEqual({
       success: false,
       errorCode: 'UNKNOWN_API_PATH',
-      errorMessage: '无法识别的 API 路径',
+      errorMessage: 'Unrecognized API path',
     })
-    expect(mocks.createRequestLog).not.toHaveBeenCalled()
+    // 连协议都识别不出来，因此客户端协议为 null。
+    await expectRejectionRecorded({ clientProtocol: null, logicalModelId: null })
   })
 
   it('rejects requests without any supported upstream target', async () => {
@@ -176,7 +222,7 @@ describe('handleProxyRequest', () => {
       model('model_text', 'prov_text', 'https://example.com/v1/completions', 'text-model', 'openai-completions'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/messages`, {
@@ -189,9 +235,9 @@ describe('handleProxyRequest', () => {
     expect(await response.json()).toEqual({
       success: false,
       errorCode: 'NO_AVAILABLE_PROVIDER',
-      errorMessage: expect.stringContaining('没有可用的上游 Provider'),
+      errorMessage: expect.stringContaining('No available upstream provider'),
     })
-    expect(mocks.createRequestLog).not.toHaveBeenCalled()
+    await expectRejectionRecorded({ clientProtocol: 'anthropic-messages', logicalModelId: 'default' })
   })
 
   it('starts routing from the manually selected provider model', async () => {
@@ -216,7 +262,7 @@ describe('handleProxyRequest', () => {
     ]
     setManualModel('default', 'model_second')
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/chat/completions`, {
@@ -259,7 +305,7 @@ describe('handleProxyRequest', () => {
     ]
     setManualModel('default', 'model_second')
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/chat/completions`, {
@@ -294,7 +340,7 @@ describe('handleProxyRequest', () => {
     })
     mocks.models = [model('model_shared', 'prov_shared', `${upstream.url}/v1/completions`, 'shared-model')]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const responses = await Promise.all(Array.from({ length: 8 }, async (_, index) => {
@@ -346,7 +392,7 @@ describe('handleProxyRequest', () => {
       model('model_second', 'prov_second', `${second.url}/v1/completions`, 'second-model'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const firstResponse = await fetch(`${proxy.url}/v1/completions`, {
@@ -382,7 +428,7 @@ describe('handleProxyRequest', () => {
     ]
     setManualModel('default', 'model_anthropic')
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/chat/completions`, {
@@ -395,10 +441,10 @@ describe('handleProxyRequest', () => {
     expect(await response.json()).toEqual({
       success: false,
       errorCode: 'MANUAL_MODEL_UNAVAILABLE',
-      errorMessage: '手动指定的 ProviderModel 当前不可用于该协议',
+      errorMessage: 'The manually selected ProviderModel is not available for this protocol',
     })
     expect(upstreamHandler).not.toHaveBeenCalled()
-    expect(mocks.createRequestLog).not.toHaveBeenCalled()
+    await expectRejectionRecorded({ clientProtocol: 'openai-completions', logicalModelId: 'default' })
   })
 
   it('routes an unmatched client model through the default logical model', async () => {
@@ -414,7 +460,7 @@ describe('handleProxyRequest', () => {
     const upstream = await listen(upstreamHandler)
     mocks.models = [model('model_first', 'prov_first', `${upstream.url}/v1/chat/completions`, 'first-model')]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/chat/completions`, {
@@ -429,15 +475,15 @@ describe('handleProxyRequest', () => {
   })
 
   it.each([
-    [{ messages: [] }, '缺少 model 字段'],
-    [{ model: '', messages: [] }, 'model 必须为非空字符串'],
-    [{ model: 123, messages: [] }, 'model 必须为非空字符串'],
+    [{ messages: [] }, 'Missing the model field'],
+    [{ model: '', messages: [] }, 'The model field must be a non-empty string'],
+    [{ model: 123, messages: [] }, 'The model field must be a non-empty string'],
   ])('rejects invalid model input before contacting upstream: %s', async (body, expectedMessage) => {
     const upstreamHandler = vi.fn((_req: http.IncomingMessage, res: http.ServerResponse) => res.end())
     const upstream = await listen(upstreamHandler)
     mocks.models = [model('model_first', 'prov_first', `${upstream.url}/v1/chat/completions`, 'first-model')]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/chat/completions`, {
@@ -453,10 +499,11 @@ describe('handleProxyRequest', () => {
       errorMessage: expectedMessage,
     })
     expect(upstreamHandler).not.toHaveBeenCalled()
-    expect(mocks.createRequestLog).not.toHaveBeenCalled()
+    await expectRejectionRecorded({ clientProtocol: 'openai-completions', logicalModelId: null })
   })
 
   it('rejects request rewrite failures before any upstream attempt', async () => {
+    mocks.captureRequestContent = true
     mocks.listRulesForProviderModel.mockResolvedValue([
       {
         id: 'rule_protected_header',
@@ -483,7 +530,7 @@ describe('handleProxyRequest', () => {
     const upstream = await listen(upstreamHandler)
     mocks.models = [model('model_rewrite', 'prov_rewrite', `${upstream.url}/v1/completions`, 'rewrite-model')]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/completions`, {
@@ -496,11 +543,22 @@ describe('handleProxyRequest', () => {
     expect(await response.json()).toEqual({
       success: false,
       errorCode: 'REQUEST_REWRITE_RULE_FAILED',
-      errorMessage: '禁止修改受保护 Header: Authorization',
+      errorMessage: 'Modifying a protected header is not allowed: Authorization',
     })
     expect(upstreamHandler).not.toHaveBeenCalled()
     expect(mocks.createRequestAttempt).not.toHaveBeenCalled()
     expect(mocks.updateRequestLogStatus).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ status: 'failed' }))
+    // 我们确实回了客户端一个 422。客户端拿到的响应必须留证，否则记录里只剩一个
+    // 「failed」，看不到失败原因，也不知道客户端收到了什么。
+    expect(mocks.updateRequestContent).toHaveBeenCalledWith('content_request', expect.objectContaining({
+      captureStatus: 'captured',
+      responseStatus: 422,
+      responseBody: JSON.stringify({
+        success: false,
+        errorCode: 'REQUEST_REWRITE_RULE_FAILED',
+        errorMessage: 'Modifying a protected header is not allowed: Authorization',
+      }),
+    }))
   })
 
   it('discards a retryable response before forwarding the next successful response', async () => {
@@ -529,7 +587,7 @@ describe('handleProxyRequest', () => {
     ]
 
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
     const response = await fetch(`${proxy.url}/v1/completions?client=value`, {
       method: 'POST',
@@ -549,6 +607,7 @@ describe('handleProxyRequest', () => {
     expect(mocks.markProviderSuccess).toHaveBeenCalledWith('prov_second')
     expect(mocks.markProviderModelSuccess).toHaveBeenCalledWith('model_second')
     expect(mocks.createRequestContent).not.toHaveBeenCalled()
+    expect(mocks.createAttemptContent).not.toHaveBeenCalled()
     expect(mocks.updateRequestContent).not.toHaveBeenCalled()
     expect(mocks.createRequestAttempt).toHaveBeenNthCalledWith(1, expect.objectContaining({
       providerId: 'prov_first',
@@ -599,7 +658,7 @@ describe('handleProxyRequest', () => {
       model('model_second', 'prov_second', `${second.url}/v1/completions`, 'second-model'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/completions`, {
@@ -649,7 +708,7 @@ describe('handleProxyRequest', () => {
       model('model_second', 'prov_second', `${second.url}/v1/completions`, 'second-model'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/completions`, {
@@ -668,12 +727,17 @@ describe('handleProxyRequest', () => {
       status: 'failed',
       errorCode: 'UPSTREAM_ERROR',
     }))
-    expect(mocks.createRequestContent).toHaveBeenCalledWith(expect.objectContaining({
+    // 连接层失败时上游一个字节都没回：状态码与响应头留空。但「请求确实发出去了」和
+    // 「为什么失败」都必须留证，否则这次尝试在记录里只剩一个空壳。
+    expect(mocks.createAttemptContent).toHaveBeenCalledWith(expect.objectContaining({
       attemptId: 'att_test',
       captureStatus: 'partial',
       responseStatus: null,
       responseHeaders: null,
-      responseBody: null,
+      responseBody: expect.stringContaining('"localFailure":true'),
+      requestBody: expect.stringContaining('"model":"failed-model"'),
+      // 出站请求头带着鉴权头，因此落库前必须脱敏。
+      requestHeaders: expect.stringContaining('"authorization":"[REDACTED]"'),
     }))
     expect(mocks.markProviderFailure).toHaveBeenCalledWith('prov_failed')
     expect(mocks.markProviderModelFailure).not.toHaveBeenCalledWith('model_failed')
@@ -699,7 +763,7 @@ describe('handleProxyRequest', () => {
       model('model_second', 'prov_second', `${second.url}/v1/completions`, 'second-model'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/completions`, {
@@ -755,7 +819,7 @@ describe('handleProxyRequest', () => {
       model('model_second', 'prov_second', `${second.url}/v1/completions`, 'second-model'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/completions`, {
@@ -796,7 +860,7 @@ describe('handleProxyRequest', () => {
       model('model_failed', 'prov_failed', `${upstream.url}/v1/completions`, 'failed-model'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/completions`, {
@@ -810,7 +874,7 @@ describe('handleProxyRequest', () => {
     expect(JSON.parse(responseBody)).toEqual({
       success: false,
       errorCode: 'ALL_PROVIDERS_FAILED',
-      errorMessage: '所有 Provider 都失败了',
+      errorMessage: 'All providers failed',
     })
     expect(mocks.updateRequestContent).toHaveBeenCalledWith('content_request', expect.objectContaining({
       captureStatus: 'captured',
@@ -842,7 +906,7 @@ describe('handleProxyRequest', () => {
       model('model_retry_success', 'prov_retry_success', `${second.url}/v1/completions`, 'retry-success-model'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/completions`, {
@@ -858,8 +922,13 @@ describe('handleProxyRequest', () => {
       retryable: true,
       errorCode: 'UPSTREAM_STREAM_ERROR',
     }))
-    const attemptContent = mocks.createRequestContent.mock.calls.find(([input]) => input.responseStatus === 503)?.[0]
+    // 本次尝试中止后重试：503 响应只存在于上游视角，客户端尚未收到任何内容。
+    const attemptContent = mocks.createAttemptContent.mock.calls.find(([input]) => input.responseStatus === 503)?.[0]
     expect(attemptContent).toEqual(expect.objectContaining({ captureStatus: 'partial', responseBody: firstChunk }))
+    expect(mocks.updateRequestContent).toHaveBeenCalledWith('content_request', expect.objectContaining({
+      captureStatus: 'captured',
+      responseStatus: 200,
+    }))
   })
 
   it('does not fail over after downstream streaming has already started', async () => {
@@ -885,7 +954,7 @@ describe('handleProxyRequest', () => {
       model('model_fallback_stream', 'prov_fallback_stream', `${second.url}/v1/responses`, 'fallback-stream-model', 'openai-responses'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/responses`, {
@@ -934,7 +1003,7 @@ describe('handleProxyRequest', () => {
       model('model_retry_body_fallback', 'prov_retry_body_fallback', `${fallback.url}/v1/completions`, 'retry-body-fallback-model'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/completions`, {
@@ -944,13 +1013,14 @@ describe('handleProxyRequest', () => {
     })
 
     expect(response.status).toBe(200)
-    const attemptContent = mocks.createRequestContent.mock.calls.find(([input]) => input.responseStatus === 429)?.[0]
+    const attemptContent = mocks.createAttemptContent.mock.calls.find(([input]) => input.responseStatus === 429)?.[0]
     expect(attemptContent).toEqual(expect.objectContaining({
       attemptId: 'att_test',
       captureStatus: 'captured',
       responseStatus: 429,
-      responseHeaders: null,
       responseBody: errorBody,
+      // 429 判定为 failover，此次尝试没有写出客户端响应，只有上游响应头。
+      responseHeaders: expect.stringContaining('x-request-id'),
     }))
   })
 
@@ -974,7 +1044,7 @@ describe('handleProxyRequest', () => {
       ),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/messages?beta=true`, {
@@ -1010,7 +1080,7 @@ describe('handleProxyRequest', () => {
       model('model_chat', 'prov_chat', `${upstream.url}/v1/chat/completions`, 'chat-model'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/chat/completions`, {
@@ -1020,28 +1090,20 @@ describe('handleProxyRequest', () => {
     })
     await response.json()
 
-    expect(mocks.updateRequestLogStatus).toHaveBeenLastCalledWith(
-      expect.any(String),
-      expect.objectContaining({
-        totalTokens: 1620,
-        inputTokens: 1500,
-        outputTokens: 120,
-        cachedInputTokens: 900,
-        cacheCreationInputTokens: null,
-        promptCacheHit: true,
-        rawUsage: {
-          prompt_tokens: 1500,
-          prompt_tokens_details: { cached_tokens: 900 },
-          completion_tokens: 120,
-        },
-      }),
-    )
-    expect(mocks.replaceRequestUsage).toHaveBeenCalledWith(expect.objectContaining({
+    // 用量只有一个写入点：服务该请求的那次尝试。请求级数值是它的镜像，
+    // 因此这里断言的是尝试级入参，`servesRequest` 为真才说明会镜像到请求级。
+    expect(mocks.recordAttemptUsage).toHaveBeenCalledWith(expect.objectContaining({
       attemptId: 'att_test',
+      servesRequest: true,
       inputTokens: 1500,
       outputTokens: 120,
-      totalTokens: 1620,
       cachedInputTokens: 900,
+      cacheCreationInputTokens: null,
+      rawUsage: {
+        prompt_tokens: 1500,
+        prompt_tokens_details: { cached_tokens: 900 },
+        completion_tokens: 120,
+      },
     }))
   })
 
@@ -1070,7 +1132,7 @@ describe('handleProxyRequest', () => {
       model('model_anthropic_usage', 'prov_anthropic_usage', `${upstream.url}/v1/messages`, 'claude-model', 'anthropic-messages'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/messages`, {
@@ -1080,26 +1142,23 @@ describe('handleProxyRequest', () => {
     })
     await response.json()
 
-    expect(mocks.updateRequestLogStatus).toHaveBeenLastCalledWith(
-      expect.any(String),
-      expect.objectContaining({
-        totalTokens: 3375,
-        inputTokens: 3300,
-        outputTokens: 75,
-        cachedInputTokens: 1000,
-        cacheCreationInputTokens: 500,
-        promptCacheHit: true,
-        rawUsage: {
-          input_tokens: 1800,
-          output_tokens: 75,
-          cache_read_input_tokens: 1000,
-          cache_creation: {
-            ephemeral_5m_input_tokens: 200,
-            ephemeral_1h_input_tokens: 300,
-          },
+    expect(mocks.recordAttemptUsage).toHaveBeenCalledWith(expect.objectContaining({
+      attemptId: 'att_test',
+      servesRequest: true,
+      inputTokens: 3300,
+      outputTokens: 75,
+      cachedInputTokens: 1000,
+      cacheCreationInputTokens: 500,
+      rawUsage: {
+        input_tokens: 1800,
+        output_tokens: 75,
+        cache_read_input_tokens: 1000,
+        cache_creation: {
+          ephemeral_5m_input_tokens: 200,
+          ephemeral_1h_input_tokens: 300,
         },
-      }),
-    )
+      },
+    }))
   })
 
   it('records standardized prompt cache usage from the final SSE event without a trailing newline', async () => {
@@ -1117,7 +1176,7 @@ describe('handleProxyRequest', () => {
       model('model_responses', 'prov_responses', `${upstream.url}/v1/responses`, 'responses-model', 'openai-responses'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/responses`, {
@@ -1127,22 +1186,19 @@ describe('handleProxyRequest', () => {
     })
     await response.text()
 
-    expect(mocks.updateRequestLogStatus).toHaveBeenLastCalledWith(
-      expect.any(String),
-      expect.objectContaining({
-        totalTokens: 1280,
-        inputTokens: 1200,
-        outputTokens: 80,
-        cachedInputTokens: 1024,
-        cacheCreationInputTokens: null,
-        promptCacheHit: true,
-        rawUsage: {
-          input_tokens: 1200,
-          input_tokens_details: { cached_tokens: 1024 },
-          output_tokens: 80,
-        },
-      }),
-    )
+    expect(mocks.recordAttemptUsage).toHaveBeenCalledWith(expect.objectContaining({
+      attemptId: 'att_test',
+      servesRequest: true,
+      inputTokens: 1200,
+      outputTokens: 80,
+      cachedInputTokens: 1024,
+      cacheCreationInputTokens: null,
+      rawUsage: {
+        input_tokens: 1200,
+        input_tokens_details: { cached_tokens: 1024 },
+        output_tokens: 80,
+      },
+    }))
   })
 
   it('converts an anthropic request to an openai-completions endpoint and back', async () => {
@@ -1169,7 +1225,7 @@ describe('handleProxyRequest', () => {
       convertibleModel('model_conv', 'prov_conv', `${upstream.url}/v1/chat/completions`, 'upstream-model', 'openai-completions'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/messages`, {
@@ -1185,10 +1241,10 @@ describe('handleProxyRequest', () => {
     expect(payload.content).toEqual([{ type: 'text', text: 'converted' }])
     expect(payload.stop_reason).toBe('end_turn')
     expect(payload.usage).toEqual({ input_tokens: 5, output_tokens: 2 })
-    expect(mocks.updateRequestLogStatus).toHaveBeenLastCalledWith(
-      expect.any(String),
-      expect.objectContaining({ upstreamProtocol: 'openai-completions' }),
-    )
+    // 协议转换是这次尝试的事实：客户端协议与上游协议都记在尝试行上。
+    expect(mocks.createRequestAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      upstreamProtocol: 'openai-completions',
+    }))
   })
 
   it('rejects when no native or conversion-enabled endpoint exists', async () => {
@@ -1205,7 +1261,7 @@ describe('handleProxyRequest', () => {
       model('model_native', 'prov_native', `${upstream.url}/v1/chat/completions`, 'native-model', 'openai-completions'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/messages`, {
@@ -1216,8 +1272,8 @@ describe('handleProxyRequest', () => {
 
     expect(response.status).toBe(503)
     const payload = await response.json()
-    expect(payload.errorMessage).toContain('未配置')
-    expect(payload.errorMessage).toContain('协议转换')
+    expect(payload.errorMessage).toContain('protocol conversion')
+    expect(payload.errorMessage).toContain('No available upstream provider')
   })
 
   it('prefers the native endpoint over a conversion-enabled endpoint', async () => {
@@ -1238,7 +1294,7 @@ describe('handleProxyRequest', () => {
     entry.model.endpoints.push({ protocol: 'anthropic-messages', endpointUrl: `${native.url}/v1/messages`, customAuthHeader: null, protocolConversionEnabled: false })
     mocks.models = [entry]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/messages`, {
@@ -1251,10 +1307,10 @@ describe('handleProxyRequest', () => {
     const payload = await response.json()
     expect(payload.id).toBe('msg_native')
     expect(payload.content).toEqual([{ type: 'text', text: 'native' }])
-    expect(mocks.updateRequestLogStatus).toHaveBeenLastCalledWith(
-      expect.any(String),
-      expect.objectContaining({ upstreamProtocol: null }),
-    )
+    // 原生端点：客户端协议与上游协议一致，没有发生转换。
+    expect(mocks.createRequestAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      upstreamProtocol: 'anthropic-messages',
+    }))
   })
 
   it('streams a converted SSE response with a trailing DONE marker', async () => {
@@ -1274,7 +1330,7 @@ describe('handleProxyRequest', () => {
       convertibleModel('model_stream_conv', 'prov_stream_conv', `${upstream.url}/v1/chat/completions`, 'stream-model', 'openai-completions'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const response = await fetch(`${proxy.url}/v1/messages`, {
@@ -1300,13 +1356,11 @@ describe('handleProxyRequest', () => {
     expect(parsed[3]).toMatchObject({ type: 'content_block_delta', delta: { type: 'text_delta', text: 'y' } })
     expect(parsed[5]).toMatchObject({ type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { input_tokens: 3, output_tokens: 2 } })
     expect(text.trimEnd().endsWith('data: [DONE]')).toBe(false)
-    expect(mocks.updateRequestLogStatus).toHaveBeenLastCalledWith(
-      expect.any(String),
-      expect.objectContaining({ upstreamProtocol: 'openai-completions' }),
-    )
-    const requestContent = mocks.createRequestContent.mock.calls.find(([input]) => input.attemptId == null)?.[0]
+    const requestContent = mocks.createRequestContent.mock.calls[0]?.[0]
     expect(requestContent).toEqual(expect.objectContaining({
       captureStatus: 'partial',
+      requestMethod: 'POST',
+      requestPath: '/v1/messages',
       requestHeaders: expect.any(String),
       requestBody: JSON.stringify({ model: 'default', messages: [], max_tokens: 16, stream: true }),
     }))
@@ -1316,16 +1370,16 @@ describe('handleProxyRequest', () => {
       'content-type': 'application/json',
     }))
 
-    const attemptContent = mocks.createRequestContent.mock.calls.find(([input]) => input.attemptId === 'att_test')?.[0]
+    const attemptContent = mocks.createAttemptContent.mock.calls[0]?.[0]
     expect(attemptContent).toEqual(expect.objectContaining({
+      attemptId: 'att_test',
       captureStatus: 'captured',
       responseStatus: 200,
     }))
-    expect(mocks.createRequestConversion).toHaveBeenCalledWith(expect.objectContaining({
-      clientProtocol: 'anthropic-messages',
+    // 转换事实（双方协议与上游跳形态）现在是尝试行上的列，不再单独建表。
+    expect(mocks.createRequestAttempt).toHaveBeenCalledWith(expect.objectContaining({
       upstreamProtocol: 'openai-completions',
-      requestBody: expect.stringContaining('stream-model'),
-      responseBody: expect.stringContaining('content_block_delta'),
+      upstreamTransport: 'http-stream',
     }))
     expect(JSON.parse(String(attemptContent?.responseBody))).toEqual({
       schemaVersion: 1,
@@ -1371,7 +1425,7 @@ describe('handleProxyRequest', () => {
       model('model_fallback', 'prov_fallback', `${fallback.url}/v1/responses`, 'fallback-model', 'openai-responses'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     await fetch(`${proxy.url}/v1/responses`, {
@@ -1389,13 +1443,14 @@ describe('handleProxyRequest', () => {
       errorCode: 'UPSTREAM_STREAM_ERROR',
     }))
     expect(fallbackHandler).not.toHaveBeenCalled()
-    const attemptContent = mocks.createRequestContent.mock.calls.find(([input]) => input.attemptId === 'att_test')?.[0]
+    const attemptContent = mocks.createAttemptContent.mock.calls.find(([input]) => input.attemptId === 'att_test')?.[0]
     expect(attemptContent).toEqual(expect.objectContaining({ captureStatus: 'partial', responseStatus: 200 }))
     expect(JSON.parse(String(attemptContent?.responseBody))).toEqual({ schemaVersion: 1, chunks: [firstChunk] })
+    // 流已开始写出，因此客户端视角保存的是真正下发过的内容。
     expect(mocks.updateRequestContent).toHaveBeenCalledWith('content_request', expect.objectContaining({
       captureStatus: 'partial',
       responseStatus: 200,
-      responseBody: JSON.stringify({ schemaVersion: 1, chunks: [firstChunk] }),
+      responseBody: expect.any(String),
     }))
   })
 
@@ -1421,7 +1476,7 @@ describe('handleProxyRequest', () => {
       model('model_cancel', 'prov_cancel', `${upstream.url}/v1/responses`, 'cancel-model', 'openai-responses'),
     ]
     const proxy = await listen((req, res) => {
-      void handleProxyRequest(req, res, 'default')
+      void handleProxyRequest(req, res)
     })
 
     const client = http.request(`${proxy.url}/v1/responses`, {
@@ -1446,5 +1501,33 @@ describe('handleProxyRequest', () => {
       'content_request',
       expect.objectContaining({ captureStatus: 'captured' }),
     )
+  })
+
+  it('records a request whose body never finished arriving', async () => {
+    mocks.models = []
+    const proxy = await listen((req, res) => {
+      void handleProxyRequest(req, res)
+    })
+
+    const client = http.request(`${proxy.url}/v1/completions`, {
+      method: 'POST',
+      // 声明了 100 字节却只发一部分，然后断开：这就是「读到一半客户端没了」。
+      headers: { 'content-type': 'application/json', 'content-length': '100' },
+    })
+    client.on('error', () => undefined)
+    client.write('{"model":"default",')
+    await new Promise(resolve => setTimeout(resolve, 50))
+    client.destroy()
+
+    // 请求已经到达代理，就必须留下记录；什么都没记等于这次失败从未发生。
+    await waitFor(() => mocks.updateRequestLogStatus.mock.calls.some(([, input]) => (
+      (input as { status?: string }).status === 'cancelled'
+    )))
+    expect(mocks.createRequestLog).toHaveBeenCalledTimes(1)
+    expect(mocks.createRequestLog).toHaveBeenCalledWith(expect.objectContaining({
+      clientProtocol: 'openai-completions',
+      status: 'pending',
+    }))
+    expect(mocks.updateRequestContent).not.toHaveBeenCalled()
   })
 })

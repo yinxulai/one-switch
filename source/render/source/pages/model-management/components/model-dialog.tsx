@@ -2,10 +2,10 @@ import { useMemo, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { FORM_DIALOG_BODY_CLASSNAME, FormField, FormGroup, FormHint } from '@/components/form-kit'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/i18n/provider'
 import { FetchedModelPicker } from './fetched-model-picker'
 import { ModelProtocolEndpointCard } from './model-protocol-endpoint-card'
 import { ProviderRuleBindings } from './provider-rule-bindings'
@@ -57,6 +57,7 @@ export function ModelDialog(props: ModelDialogProps) {
     onSave,
   } = props
 
+  const t = useTranslation()
   const canSave = (editingModel ? modelId.trim() : selectedModelIds.length > 0 || modelId.trim()) && protocolEntries.some(entry => entry.enabled)
 
   const [modelSearch, setModelSearch] = useState('')
@@ -75,22 +76,21 @@ export function ModelDialog(props: ModelDialogProps) {
         onPointerDownOutside={event => event.preventDefault()}
       >
         <DialogHeader>
-          <DialogTitle>{editingModel ? '编辑供应商模型' : '添加供应商模型'}</DialogTitle>
+          <DialogTitle>{editingModel ? t('models.dialog.editTitle') : t('models.dialog.addTitle')}</DialogTitle>
           <DialogDescription>
-            模型属于供应商 <span className="font-medium">{providerName}</span>，可配置多个协议接口。
+            {t('models.dialog.descriptionPrefix')}<span className="font-medium">{providerName}</span>{t('models.dialog.descriptionSuffix')}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="max-h-[65vh] space-y-4 overflow-y-auto px-1 py-2">
+        <div className={FORM_DIALOG_BODY_CLASSNAME}>
           {/* 模型 ID */}
-          <div className="space-y-1.5">
-            <Label htmlFor="model-id">模型 ID</Label>
+          <FormField label={t('models.dialog.modelIdLabel')} htmlFor="model-id" hint={t('models.dialog.modelIdHint')}>
             <div className="flex flex-col gap-2 sm:flex-row">
               <Input
                 id="model-id"
                 value={modelId}
                 onChange={event => setModelId(event.target.value)}
-                placeholder="例如：gpt-4o / claude-3-5-sonnet-20241022"
+                placeholder={t('models.dialog.modelIdPlaceholder')}
               />
               <Button
                 type="button"
@@ -98,15 +98,12 @@ export function ModelDialog(props: ModelDialogProps) {
                 size="sm"
                 disabled={fetchingModels}
                 onClick={onFetchModels}
-                className="h-8 sm:self-start"
+                className="h-8 shrink-0"
               >
                 <RefreshCw size={13} className={cn(fetchingModels && 'animate-spin')} />
-                {fetchingModels ? '拉取中…' : '拉取模型'}
+                {fetchingModels ? t('models.dialog.fetching') : t('models.dialog.fetch')}
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground">
-              这是上游供应商识别的模型名称，请求会原样转发。
-            </p>
 
             <FetchedModelPicker
               modelId={modelId}
@@ -123,23 +120,15 @@ export function ModelDialog(props: ModelDialogProps) {
               filteredModels={filteredModels}
             />
             {!editingModel && selectedModelIds.length > 0 && (
-              <p className="text-xs text-muted-foreground">
-                已选择 {selectedModelIds.length} 个模型，保存后将批量添加。
-              </p>
+              <FormHint>{t('models.dialog.selectedHint', { count: selectedModelIds.length })}</FormHint>
             )}
-          </div>
-
-          <Separator />
+          </FormField>
 
           {/* 协议端点 */}
-          <div className="space-y-3">
-            <div>
-              <Label className="text-sm">协议端点</Label>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                至少启用一个协议；默认使用供应商级别的接口地址，也可以单独覆盖。
-              </p>
-            </div>
-
+          <FormGroup
+            title={t('models.dialog.endpointsTitle')}
+            description={t('models.dialog.endpointsDescription')}
+          >
             {protocolEntries.map((entry, index) => (
               <ModelProtocolEndpointCard
                 key={entry.protocol}
@@ -148,15 +137,15 @@ export function ModelDialog(props: ModelDialogProps) {
                 updateProtocolEntry={updateProtocolEntry}
               />
             ))}
-          </div>
+          </FormGroup>
 
           {editingModel && <ProviderRuleBindings providerModelId={editingModel.id} embedded />}
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onCancel}>取消</Button>
+          <Button variant="outline" onClick={onCancel}>{t('common.action.cancel')}</Button>
           <Button disabled={saving || !canSave} onClick={onSave}>
-            {saving ? '保存中...' : editingModel ? '保存修改' : selectedModelIds.length > 0 ? `批量添加 ${selectedModelIds.length} 个模型` : '添加模型'}
+            {saving ? t('common.action.saving') : editingModel ? t('models.dialog.save') : selectedModelIds.length > 0 ? t('models.dialog.submitBulk', { count: selectedModelIds.length }) : t('models.dialog.submit')}
           </Button>
         </DialogFooter>
       </DialogContent>

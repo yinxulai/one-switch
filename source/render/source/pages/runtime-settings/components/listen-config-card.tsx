@@ -1,10 +1,10 @@
 import { RadioTower } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import { SettingsCardHeader } from './settings-card-header'
+import { SettingsCardHeader } from '@/components/settings-card-header'
 import { Card, CardContent } from '@/components/ui/card'
+import { FormRow } from '@/components/form-kit'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import type { Settings } from '@common/schemas'
+import { useTranslation } from '@/i18n/provider'
 
 interface ListenConfigCardProps {
   listenHost: string
@@ -16,45 +16,53 @@ interface ListenConfigCardProps {
 
 export function ListenConfigCard(props: ListenConfigCardProps) {
   const { listenHost, listenPort, proxyRunning, onHostChange, onPortChange } = props
+  const t = useTranslation()
 
   return (
     <Card>
       <SettingsCardHeader
         icon={<RadioTower />}
-        title="监听服务"
-        description="设置本地代理的访问地址"
-        actions={<Badge variant={proxyRunning ? 'success' : 'muted'}>{proxyRunning ? '运行中' : '已停止'}</Badge>}
+        title={t('settings.listen.title')}
+        description={t('settings.listen.description')}
+        actions={(
+          <Badge variant={proxyRunning ? 'success' : 'muted'}>
+            {proxyRunning ? t('common.state.running') : t('common.state.stopped')}
+          </Badge>
+        )}
       />
-      <CardContent className="grid gap-4 px-4 py-4 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label htmlFor="listen-host" className="text-sm">监听地址</Label>
-          <Input
-            id="listen-host"
-            className="font-mono"
-            value={listenHost}
-            onChange={event => onHostChange(event.target.value)}
-            placeholder="例如：127.0.0.1"
-            aria-describedby="listen-host-description"
-          />
-          <p id="listen-host-description" className="text-xs leading-4 text-muted-foreground">
-            推荐 127.0.0.1，仅允许本机访问
-          </p>
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="listen-port" className="text-sm">监听端口</Label>
-          <Input
-            id="listen-port"
-            type="number"
-            min={1}
-            max={65535}
-            value={listenPort}
-            onChange={event => onPortChange(Number(event.target.value))}
-            placeholder="例如：9300"
-          />
-        </div>
+      <CardContent className="divide-y divide-border/50 px-4">
+        <FormRow
+          title={t('settings.listen.host')}
+          description={t('settings.listen.hostDescription')}
+          control={(
+            <Input
+              id="listen-host"
+              aria-label={t('settings.listen.hostAria')}
+              className="w-56 font-mono"
+              placeholder="127.0.0.1"
+              value={listenHost}
+              onChange={event => onHostChange(event.target.value)}
+            />
+          )}
+        />
+        <FormRow
+          title={t('settings.listen.port')}
+          description={t('settings.listen.portDescription')}
+          control={(
+            <Input
+              id="listen-port"
+              aria-label={t('settings.listen.portAria')}
+              className="w-24 text-right"
+              max={65535}
+              min={1}
+              placeholder="9300"
+              type="number"
+              value={listenPort}
+              onChange={event => onPortChange(Number(event.target.value))}
+            />
+          )}
+        />
       </CardContent>
     </Card>
   )
 }
-
-export type SettingsType = Settings

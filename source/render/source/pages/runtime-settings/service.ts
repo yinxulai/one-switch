@@ -1,13 +1,13 @@
-import { useConfigTransfer } from './hooks/use-config-transfer'
 import { useDevelopmentSeed } from './hooks/use-development-seed'
 import { useRequestLogRetention } from './hooks/use-request-log-retention'
+import { useRuntimeDataReload } from './hooks/use-runtime-data-reload'
 import { useSettingsForm } from './hooks/use-settings-form'
 
 export function useRuntimeSettingsService() {
   const form = useSettingsForm()
   const retention = useRequestLogRetention()
-  const transfer = useConfigTransfer({ hydrateSettings: form.hydrate })
-  const development = useDevelopmentSeed(transfer.reload)
+  const reload = useRuntimeDataReload()
+  const development = useDevelopmentSeed(reload)
 
   return {
     settings: form.settings,
@@ -20,9 +20,7 @@ export function useRuntimeSettingsService() {
     resetSettings: form.resetSettings,
     saveSettings: form.saveSettings,
     pruneLogs: retention.pruneLogs,
-    reload: transfer.reload,
-    exportConfig: transfer.exportConfig,
-    importConfig: transfer.importConfig,
+    reload,
     seedDevelopmentData: development.seedDevelopmentData,
   }
 }

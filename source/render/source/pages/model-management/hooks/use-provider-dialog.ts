@@ -3,6 +3,7 @@ import { useMutation } from '@tanstack/react-query'
 import { providerApi } from '@/api/providers'
 import { unwrap } from '@/api/unwrap'
 import { useToast } from '@/components/ui/toast'
+import { useTranslation } from '@/i18n/provider'
 import type { Provider } from '@common/schemas'
 import { PROTOCOL_OPTIONS } from '../lib/protocols'
 import type { ProviderPreset } from '../lib/provider-presets'
@@ -16,6 +17,7 @@ interface UseProviderDialogOptions {
 export function useProviderDialog(options: UseProviderDialogOptions) {
   const { reload, selectProvider } = options
   const toast = useToast()
+  const t = useTranslation()
   const [providerDialogOpen, setProviderDialogOpen] = useState(false)
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null)
   const [providerName, setProviderName] = useState('')
@@ -65,11 +67,11 @@ export function useProviderDialog(options: UseProviderDialogOptions) {
   }, [])
 
   const saveMutation = useMutation({ mutationFn: async () => {
-    if (!providerName.trim()) throw new Error('请输入供应商名称')
+    if (!providerName.trim()) throw new Error(t('providers.error.nameRequired'))
     const endpoints: Record<string, string> = Object.fromEntries(providerEndpointEntries.filter(entry => entry.enabled).map(entry => [entry.protocol, entry.url.trim()]).filter(([, value]) => value))
     const payload = { name: providerName.trim(), timeoutMilliseconds: Number(timeout), endpoints, ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}) }
     return editingProviderId ? unwrap(providerApi.update(editingProviderId, payload)) : unwrap(providerApi.create(payload))
-  }, onSuccess: async provider => { setProviderDialogOpen(false); selectProvider(provider.id); toast.success(editingProviderId ? '供应商已更新' : '供应商已添加'); await reload() }, onError: error => toast.error(error.message) })
+  }, onSuccess: async provider => { setProviderDialogOpen(false); selectProvider(provider.id); toast.success(editingProviderId ? t('providers.toast.updated') : t('providers.toast.added')); await reload() }, onError: error => toast.error(error.message) })
   const saveProvider = useCallback(async () => { await saveMutation.mutateAsync().catch(() => undefined) }, [saveMutation])
 
   return {

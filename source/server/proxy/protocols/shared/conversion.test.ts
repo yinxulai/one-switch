@@ -94,7 +94,7 @@ describe('convertRequestBody', () => {
   it('rejects unsupported directions', () => {
     expect(() =>
       convertRequestBody('openai-responses', 'anthropic-messages', Buffer.from('{}'), 'm'),
-    ).toThrow(/不支持的协议转换方向/)
+    ).toThrow(/Unsupported protocol conversion direction/)
   })
 
   it('rejects native passthrough requests in conversion module', () => {
@@ -105,7 +105,7 @@ describe('convertRequestBody', () => {
         request('openai-completions', { model: 'client-model', messages: [{ role: 'user', content: 'hi' }], extra: true }),
         'upstream-model',
       ),
-    ).toThrow(/同协议请求不应进入转换路径/)
+    ).toThrow(/Same-protocol requests must not enter the conversion path/)
   })
 
   it('converts anthropic image blocks to openai image_url parts', () => {
@@ -342,7 +342,7 @@ describe('convertResponseBody', () => {
     expect(parsed.object).toBe('chat.completion')
     expect(parsed.choices[0].message.content).toBe('answer')
     expect(parsed.choices[0].finish_reason).toBe('stop')
-    expect(parsed.usage).toEqual({ prompt_tokens: 7, completion_tokens: 4 })
+    expect(parsed.usage).toEqual({ prompt_tokens: 7, completion_tokens: 4, total_tokens: 11 })
   })
 
   it('aggregates Anthropic cache read and write into OpenAI total input', () => {
@@ -357,6 +357,7 @@ describe('convertResponseBody', () => {
     expect(parsed.usage).toEqual({
       prompt_tokens: 20,
       completion_tokens: 4,
+      total_tokens: 24,
       prompt_tokens_details: { cached_tokens: 7, cache_write_tokens: 5 },
     })
   })
@@ -376,11 +377,13 @@ describe('convertResponseBody', () => {
     expect(parsed.object).toBe('response')
     expect(parsed.status).toBe('completed')
     expect(parsed.output).toEqual([{
+      id: 'chatcmpl_2_msg',
       type: 'message',
+      status: 'completed',
       role: 'assistant',
-      content: [{ type: 'output_text', text: 'answer' }],
+      content: [{ type: 'output_text', text: 'answer', annotations: [] }],
     }])
-    expect(parsed.usage).toEqual({ input_tokens: 3, output_tokens: 2 })
+    expect(parsed.usage).toEqual({ input_tokens: 3, output_tokens: 2, total_tokens: 5 })
   })
 
   it('maps Responses cache usage details', () => {
@@ -395,6 +398,7 @@ describe('convertResponseBody', () => {
     expect(parsed.usage).toEqual({
       input_tokens: 20,
       output_tokens: 4,
+      total_tokens: 24,
       input_tokens_details: { cached_tokens: 7, cache_write_tokens: 5 },
     })
   })
@@ -425,13 +429,13 @@ describe('convertResponseBody', () => {
 
   it('rejects native passthrough responses in conversion module', () => {
     const body = Buffer.from('{"a":1}')
-    expect(() => convertResponseBody('openai-completions', 'openai-completions', body)).toThrow(/同协议响应不应进入转换路径/)
+    expect(() => convertResponseBody('openai-completions', 'openai-completions', body)).toThrow(/Same-protocol responses must not enter the conversion path/)
   })
 
   it('rejects unsupported directions', () => {
     expect(() =>
       convertResponseBody('anthropic-messages', 'openai-responses', Buffer.from('{}')),
-    ).toThrow(/不支持的响应转换方向/)
+    ).toThrow(/Unsupported response conversion direction/)
   })
 })
 
@@ -523,11 +527,12 @@ describe('SSE conversion', () => {
     expect(events.at(-1).usage).toEqual({
       prompt_tokens: 20,
       completion_tokens: 4,
+      total_tokens: 24,
       prompt_tokens_details: { cached_tokens: 7, cache_write_tokens: 5 },
     })
   })
   it('rejects native passthrough streams in conversion module', () => {
-    expect(() => createSseConverter('openai-completions', 'openai-completions')).toThrow(/同协议流式响应不应进入转换路径/)
+    expect(() => createSseConverter('openai-completions', 'openai-completions')).toThrow(/Same-protocol streaming responses must not enter the conversion path/)
   })
 
   it('buffers partial chunks split across pushes', () => {
@@ -548,10 +553,12 @@ describe('SSE conversion', () => {
     expect(converter.push('data: [DONE]\n\n')).toBe('')
   })
 
-  it('flushes a trailing event without a blank line', () => {
+  it('flushes a trailing event without a blank line and then closes the message', () => {
     const converter = createSseConverter('anthropic-messages', 'openai-completions')
     converter.push('data: {"choices":[{"delta":{"content":"tail"}}]}\n\n')
-    expect(converter.flush()).toBe('')
+    const flushed = converter.flush().split('\n\n').filter(Boolean).map(item => JSON.parse(item.replace('data: ', '')))
+    expect(flushed.map(event => event.type)).toEqual(['content_block_stop', 'message_delta', 'message_stop'])
+    expect(converter.finish?.()).toBe('')
 
     const partial = createSseConverter('anthropic-messages', 'openai-completions')
     partial.push('data: {"choices":[{"delta":{"content":"end"}}]}')
@@ -564,22 +571,52 @@ describe('SSE conversion', () => {
     })
   })
 
-  it('converts openai chunks to openai responses events', () => {
+  it('converts openai chunks to the full openai responses event lifecycle', () => {
     const converter = createSseConverter('openai-responses', 'openai-completions')
     const out = converter.push(
-      'data: {"choices":[{"delta":{"content":"he"}}]}\n\n'
-      + 'data: {"choices":[{"delta":{}}],"usage":{"prompt_tokens":4,"completion_tokens":1}}\n\n',
+      'data: {"id":"chat-1","model":"gpt-test","choices":[{"delta":{"content":"he"}}]}\n\n'
+      + 'data: {"choices":[{"delta":{"content":"llo"}}]}\n\n'
+      + 'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":4,"completion_tokens":1}}\n\n',
     )
-    const events = out.split('\n\n').filter(Boolean)
-    expect(events).toHaveLength(2)
-    expect(JSON.parse(events[0].replace('data: ', ''))).toEqual({
-      type: 'response.output_text.delta',
-      delta: 'he',
-    })
-    expect(JSON.parse(events[1].replace('data: ', ''))).toEqual({
-      type: 'response.completed',
-      response: { usage: { input_tokens: 4, output_tokens: 1 } },
-    })
+    const events = out.split('\n\n').filter(Boolean).map(item => JSON.parse(item.replace('data: ', '')))
+    expect(events.map(event => event.type)).toEqual([
+      'response.created',
+      'response.in_progress',
+      'response.output_item.added',
+      'response.content_part.added',
+      'response.output_text.delta',
+      'response.output_text.delta',
+      'response.output_text.done',
+      'response.content_part.done',
+      'response.output_item.done',
+      'response.completed',
+    ])
+    expect(events[4].delta).toBe('he')
+    expect(events.at(-1).response.output).toEqual([{
+      id: 'chat-1_msg',
+      type: 'message',
+      status: 'completed',
+      role: 'assistant',
+      content: [{ type: 'output_text', text: 'hello', annotations: [] }],
+    }])
+    expect(events.at(-1).response.usage).toEqual({ input_tokens: 4, output_tokens: 1, total_tokens: 5 })
+  })
+
+  it('consumes OpenAI DONE when producing Responses events', () => {
+    const converter = createSseConverter('openai-responses', 'openai-completions')
+    expect(converter.push('data: [DONE]\n\n')).toBe('')
+  })
+
+  it('does not append a stray DONE marker for Responses clients', () => {
+    const converter = createSseConverter('openai-responses', 'openai-completions')
+    converter.push('data: {"id":"chat-9","choices":[{"delta":{"content":"x"}}]}\n\n')
+    const events = converter.flush().split('\n\n').filter(Boolean).map(item => JSON.parse(item.replace('data: ', '')))
+    expect(events.map(event => event.type)).toEqual([
+      'response.output_text.done',
+      'response.content_part.done',
+      'response.output_item.done',
+      'response.completed',
+    ])
   })
 })
 

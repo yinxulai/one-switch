@@ -1,0 +1,1 @@
+ALTER TABLE `logical_models` ADD `sortOrder` integer DEFAULT 0 NOT NULL;

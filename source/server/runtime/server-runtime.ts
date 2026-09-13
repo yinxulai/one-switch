@@ -13,6 +13,7 @@ import { startProxyServer, stopProxyServer } from '../proxy/runtime/server'
 
 export interface ServerRuntimeOptions {
   dataDir: string
+  databaseFileName: string
   secretStore: KeychainApi
   runtimeProfile: RuntimeProfile
   managementHost?: string
@@ -44,7 +45,7 @@ export class ServerRuntime {
       configureSecretStore(this.options.secretStore)
       configureSettingsDefaults({ listenPort: this.options.runtimeProfile.proxyPort })
       installLogCapture()
-      await initDatabase(this.options.dataDir)
+      await initDatabase(this.options.dataDir, this.options.databaseFileName)
       const outboundConnector = createOutboundConnector(getSettings, this.options.systemProxyResolver)
       await outboundConnector.initialize()
       configureOutboundConnector(outboundConnector, this.options.systemProxyResolver)

@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { closeDatabase, initDatabase } from './index'
+import { TEST_DATABASE_FILE_NAME } from './test-support'
 import {
   countProviderModelsUsingRule,
   createRequestRewriteRule,
@@ -21,7 +22,7 @@ let temporaryDirectory: string
 
 beforeEach(async () => {
   temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-mod-rule-'))
-  await initDatabase(temporaryDirectory)
+  await initDatabase(temporaryDirectory, TEST_DATABASE_FILE_NAME)
 })
 
 afterEach(async () => {
@@ -57,7 +58,7 @@ function makeRule(overrides: Partial<RuleInput> = {}): RuleInput {
       headers: '{"content-type":"application/json"}',
       clientProtocol: 'openai-completions',
       upstreamProtocol: 'openai-completions',
-      streaming: false,
+      transport: 'http',
     }],
     ...overrides,
   }
@@ -136,7 +137,7 @@ describe('request rewrite rule store', () => {
     await expect(replaceProviderModelRequestRewriteRuleBindings(providerModel.id, [
       { ruleId: globalRule.id, priority: 5, enabled: true },
       { ruleId: globalRule.id, priority: 10, enabled: true },
-    ])).rejects.toThrow('规则绑定或优先级重复')
+    ])).rejects.toThrow('A request rewrite rule with the same binding and priority already exists')
 
     const deleted = await deleteRequestRewriteRule(boundRule.id)
     expect(deleted).toMatchObject({ id: boundRule.id, affectedProviderModelCount: 1 })
@@ -148,5 +149,43 @@ describe('request rewrite rule store', () => {
     await replaceProviderModelRequestRewriteRuleBindings(providerModel.id, [])
     expect(await listProviderModelRequestRewriteRules(providerModel.id)).toEqual([])
     expect(await countProviderModelsUsingRule(globalRule.id)).toBe(0)
+  })
+
+  it('rebinds another rule at the priority freed by a removed binding', async () => {
+    const provider = await createProvider({
+      name: 'Rebind Provider',
+      apiKeyReference: 'key_rebind_provider',
+      timeoutMilliseconds: 20_000,
+      enabled: true,
+    })
+    const providerModel = await createProviderModelRoute({
+      providerId: provider.id,
+      modelName: 'rebind-model',
+      priority: 1,
+      endpoints: [{
+        protocol: 'openai-completions',
+        endpointUrl: 'https://example.com/v1/chat/completions',
+        customAuthHeader: null,
+        protocolConversionEnabled: false,
+      }],
+    })
+    const first = await createRequestRewriteRule(makeRule({ name: 'first rule', scope: 'model' }))
+    const second = await createRequestRewriteRule(makeRule({ name: 'second rule', scope: 'model' }))
+
+    await replaceProviderModelRequestRewriteRuleBindings(providerModel.id, [
+      { ruleId: first.id, priority: 10, enabled: true },
+    ])
+    // 换绑最常见的路径：先移除规则 A（绑定只是被软删除），再把规则 B 放到它空出的
+    // priority 上。唯一性由部分索引 `..._priority_active` 表达，它只约束未删除的行，
+    // 所以这一步必须被允许。
+    await deleteRequestRewriteRule(first.id)
+
+    const rebound = await replaceProviderModelRequestRewriteRuleBindings(providerModel.id, [
+      { ruleId: second.id, priority: 10, enabled: true },
+    ])
+
+    expect(rebound).toEqual([
+      expect.objectContaining({ ruleId: second.id, priority: 10, enabled: true }),
+    ])
   })
 })

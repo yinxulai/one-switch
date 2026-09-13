@@ -1,9 +1,12 @@
 import { Fragment } from 'react'
-import { ArrowDownToLine, ArrowUpFromLine, ChevronDown, ChevronRight, Clock, Database, Zap } from 'lucide-react'
+import { AlertTriangle, ArrowDownToLine, ArrowUpFromLine, ChevronDown, ChevronRight, Clock, Database, RefreshCw, SearchX, Zap } from 'lucide-react'
 import type { RequestLogDetail, RequestLogEntry } from '@common/schemas'
 import { tableCellClass, tableHeaderCellClass, tableHeaderClass, TableFrame } from '@/components/table-primitives'
+import { TableStateRow } from '@/components/table-state'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useLocale, useTranslation } from '@/i18n/provider'
 import { cn } from '@/lib/utils'
 import { formatDuration, formatNumber, formatTime, formatTPS, formatTTFT } from '../lib/format'
 import { RequestLogDetailRow, RequestStatusBadge } from './request-log-detail-row'
@@ -25,12 +28,15 @@ interface RequestLogTableRowProps {
 interface RequestLogsTableProps {
   logs: RequestLogEntry[]
   loading: boolean
+  error: string | null
+  filtered: boolean
   expandedId: string | null
   details: Record<string, RequestLogDetail>
   detailLoadingIds: Record<string, boolean>
   detailErrors: Record<string, string>
-  getModelName: (id: string) => string
+  getModelName: (id: string | null) => string
   toggleExpand: (id: string) => void
+  onRetry: () => void
 }
 
 function formatModelSummary(log: RequestLogEntry) {
@@ -42,41 +48,42 @@ function formatModelSummary(log: RequestLogEntry) {
 
 export function CachedTokensCell(props: CachedTokensCellProps) {
   if (props.value === null) {
-    return <span className="text-muted-foreground/60">—</span>
+    return <span className="text-text-quaternary">—</span>
   }
 
   if (props.value > 0) {
     return (
-      <Badge className="h-5 bg-foreground/10 px-1.5 text-[10px] text-foreground">
+      <Badge variant="secondary" className="h-5 px-1.5 font-mono system-2xs-medium">
         {formatNumber(props.value)}
       </Badge>
     )
   }
 
-  return <span className="font-medium text-foreground/70">MISS</span>
+  return <span className="system-2xs-medium text-text-quaternary">MISS</span>
 }
 
 function RequestLogsTableHeader() {
+  const t = useTranslation()
   return (
     <thead className={tableHeaderClass}>
-      <tr>
-        <th className={cn(tableHeaderCellClass, 'w-8')} />
-        <th className={tableHeaderCellClass}>状态</th>
-        <th className={tableHeaderCellClass}>时间</th>
-        <th className={tableHeaderCellClass}>供应商模型</th>
-        <th className={cn(tableHeaderCellClass, 'text-center')}>
+      <tr className="h-8">
+        <th className={cn(tableHeaderCellClass, 'w-8 py-1.5')} />
+        <th className={cn(tableHeaderCellClass, 'py-1.5')}>{t('requestLogs.table.status')}</th>
+        <th className={cn(tableHeaderCellClass, 'py-1.5')}>{t('requestLogs.table.time')}</th>
+        <th className={cn(tableHeaderCellClass, 'py-1.5')}>{t('requestLogs.table.providerModel')}</th>
+        <th className={cn(tableHeaderCellClass, 'py-1.5 text-center')}>
           <ArrowUpFromLine size={11} className="mr-0.5 inline" />
-          输入
+          {t('requestLogs.table.input')}
         </th>
-        <th className={cn(tableHeaderCellClass, 'text-center')}>
+        <th className={cn(tableHeaderCellClass, 'py-1.5 text-center')}>
           <Database size={11} className="mr-0.5 inline" />
-          缓存输入
+          {t('requestLogs.table.cachedInput')}
         </th>
         <th className={cn(tableHeaderCellClass, 'text-center')}>
           <ArrowDownToLine size={11} className="mr-0.5 inline" />
-          输出
+          {t('requestLogs.table.output')}
         </th>
-        <th className={cn(tableHeaderCellClass, 'text-center')}>
+        <th className={cn(tableHeaderCellClass, 'py-1.5 text-center')}>
           <Clock size={11} className="mr-0.5 inline" />
           TTFT
         </th>
@@ -84,7 +91,7 @@ function RequestLogsTableHeader() {
           <Zap size={11} className="mr-0.5 inline" />
           TPS
         </th>
-        <th className={cn(tableHeaderCellClass, 'text-right')}>耗时</th>
+        <th className={cn(tableHeaderCellClass, 'py-1.5 text-right')}>{t('requestLogs.table.duration')}</th>
       </tr>
     </thead>
   )
@@ -128,6 +135,7 @@ function RequestLogsLoadingRows() {
 }
 
 function RequestLogTableRow(props: RequestLogTableRowProps) {
+  const locale = useLocale()
   const successfulAttempt = props.log.attempts.find(attempt => attempt.status === 'success')
   const tps = formatTPS(
     props.log.outputTokens,
@@ -139,27 +147,27 @@ function RequestLogTableRow(props: RequestLogTableRowProps) {
       <tr
         onClick={() => props.toggleExpand(props.log.id)}
         className={cn(
-          'cursor-pointer border-b border-border/60 transition-colors last:border-b-0 hover:bg-muted/20',
-          props.expanded && 'bg-muted/20',
+          'cursor-pointer border-b border-border/40 transition-colors last:border-b-0 hover:bg-state-base-hover',
+          props.expanded && 'bg-inset',
         )}
       >
-        <td className={cn(tableCellClass, 'text-foreground/70')}>
-          {props.expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <td className={cn(tableCellClass, 'text-text-quaternary')}>
+          {props.expanded ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
         </td>
         <td className={tableCellClass}>
           <RequestStatusBadge status={props.log.status} />
         </td>
-        <td className={cn(tableCellClass, 'whitespace-nowrap font-mono text-foreground/75')}>
-          {formatTime(props.log.createdTime)}
+        <td className={cn(tableCellClass, 'whitespace-nowrap font-mono text-text-tertiary')}>
+          {formatTime(locale, props.log.createdTime)}
         </td>
         <td className={cn(tableCellClass, 'max-w-40')}>
           {(() => {
             const { label, extraCount } = formatModelSummary(props.log)
             return (
               <div className="flex min-w-0 items-center gap-2">
-                <span className="min-w-0 truncate font-medium">{label}</span>
+                <span className="min-w-0 truncate system-xs-medium text-text-primary">{label}</span>
                 {extraCount > 0 && (
-                  <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                  <span className="shrink-0 rounded-md bg-components-input-bg-normal px-1.5 py-0.5 font-mono system-2xs-medium text-text-tertiary">
                     +{extraCount}
                   </span>
                 )}
@@ -168,7 +176,7 @@ function RequestLogTableRow(props: RequestLogTableRowProps) {
           })()}
         </td>
         <td className={cn(tableCellClass, 'text-center font-mono')}>
-          <span className={cn(props.log.inputTokens != null && 'text-foreground')}>
+          <span className={cn(props.log.inputTokens != null && 'text-text-primary')}>
             {formatNumber(props.log.inputTokens)}
           </span>
         </td>
@@ -176,7 +184,7 @@ function RequestLogTableRow(props: RequestLogTableRowProps) {
           <CachedTokensCell value={props.log.cachedInputTokens} />
         </td>
         <td className={cn(tableCellClass, 'text-center font-mono')}>
-          <span className={cn(props.log.outputTokens != null && 'text-foreground')}>
+          <span className={cn(props.log.outputTokens != null && 'text-text-primary')}>
             {formatNumber(props.log.outputTokens)}
           </span>
         </td>
@@ -205,18 +213,24 @@ function RequestLogTableRow(props: RequestLogTableRowProps) {
 }
 
 export function RequestLogsTable(props: RequestLogsTableProps) {
+  const t = useTranslation()
   let body
 
   if (props.loading) {
     body = <RequestLogsLoadingRows />
-  } else if (props.logs.length === 0) {
+  } else if (props.error !== null && props.logs.length === 0) {
     body = (
-      <tr>
-        <td colSpan={10} className="px-4 py-12 text-center text-muted-foreground">
-          暂无匹配的请求记录
-        </td>
-      </tr>
+      <TableStateRow colSpan={10} icon={AlertTriangle} tone="destructive" title={t('requestLogs.table.error.title')} description={props.error} action={
+        <Button variant="outline" className="mt-1" onClick={props.onRetry}>
+          <RefreshCw size={14} />
+          {t('common.action.retry')}
+        </Button>
+      } />
     )
+  } else if (props.logs.length === 0) {
+    body = props.filtered
+      ? <TableStateRow colSpan={10} icon={SearchX} title={t('requestLogs.table.empty.title')} description={t('requestLogs.table.empty.description')} />
+      : <TableStateRow colSpan={10} icon={SearchX} title={t('requestLogs.table.emptyAll.title')} description={t('requestLogs.table.emptyAll.description')} />
   } else {
     body = props.logs.map(log => (
       <RequestLogTableRow

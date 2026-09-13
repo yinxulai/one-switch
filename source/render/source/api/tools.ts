@@ -1,5 +1,5 @@
 import type { Protocol } from '@common/schemas'
-import type { ConfigDocument } from '@common/config-schemas'
+import type { TranslateParams } from '@common/i18n'
 import { request } from './client'
 
 export interface ModelTestResult {
@@ -10,6 +10,7 @@ export interface ModelTestResult {
   success: boolean
   statusCode?: number
   errorMessage?: string
+  errorParams?: TranslateParams
   inputTokens?: number | null
   outputTokens?: number | null
   durationMilliseconds: number
@@ -25,8 +26,6 @@ export const modelTestApi = {
   ),
 }
 
-export const configApi = {
-  export: () => request<{ config: ConfigDocument; content: string }>('/config/export'),
-  import: (config: ConfigDocument, mode: 'merge' | 'replace' = 'merge') => request<{ imported: { providers: number; logicalModels: number; providerModels: number } }>('/config/import', { config, mode }),
-  seedDevelopment: () => request<{ inserted: boolean }>('/config/seed-development'),
+export const developmentApi = {
+  seed: () => request<{ inserted: boolean }>('/development/seed'),
 }

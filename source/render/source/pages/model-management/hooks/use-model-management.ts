@@ -4,14 +4,15 @@ import { providerModelApi } from '@/api/models'
 import { unwrap } from '@/api/unwrap'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import { useToast } from '@/components/ui/toast'
+import { useTranslation } from '@/i18n/provider'
 import type { ProviderModelRoute } from '@common/schemas'
-import { queueKeys } from '@/pages/queue-control/queries'
 import { modelKeys } from './use-model-data'
 import { useModelData } from './use-model-data'
 import { useProviderDialog } from './use-provider-dialog'
 import { useProviderManagement } from './use-provider-management'
 import { useModelDialog } from './use-model-dialog'
 import { useModelReordering } from './use-model-reordering'
+import { useProviderTransfer } from './use-provider-transfer'
 import { PROTOCOL_OPTIONS } from '../lib/protocols'
 
 type UpdateModelEnabledVariables = { id: string; enabled: boolean }
@@ -19,6 +20,7 @@ type UpdateModelEnabledVariables = { id: string; enabled: boolean }
 export function useModelManagement() {
   const toast = useToast()
   const confirm = useConfirm()
+  const t = useTranslation()
   const client = useQueryClient()
   const data = useModelData()
   const selectedProvider = useMemo(() => data.providers.find(provider => provider.id === data.selectedProviderId), [data.providers, data.selectedProviderId])
@@ -26,35 +28,36 @@ export function useModelManagement() {
   const providerDialog = useProviderDialog({ reload: data.reload, selectProvider: data.setSelectedProviderId })
   const providerManagement = useProviderManagement({ reload: data.reload })
   const modelDialog = useModelDialog({ selectedProvider, models: selectedModels, reload: data.reload })
+  const providerTransfer = useProviderTransfer({ reload: data.reload })
 
-  const invalidateModels = useCallback(async () => { await Promise.all([client.invalidateQueries({ queryKey: modelKeys.all }), client.invalidateQueries({ queryKey: queueKeys.models })]) }, [client])
+  const invalidateModels = useCallback(async () => { await Promise.all([client.invalidateQueries({ queryKey: modelKeys.all }), client.invalidateQueries({ queryKey: ['logical-model-provider-models'] })]) }, [client])
   const updateModelMutation = useMutation({ mutationFn: ({ id, enabled }: UpdateModelEnabledVariables) => unwrap(providerModelApi.update(id, { logicalModelId: 'default', enabled })), onMutate: async ({ id, enabled }) => { await client.cancelQueries({ queryKey: modelKeys.all }); const previous = client.getQueryData<ProviderModelRoute[]>(modelKeys.all); client.setQueryData<ProviderModelRoute[]>(modelKeys.all, current => current?.map(model => model.id === id ? { ...model, enabled } : model)); return { previous } }, onError: (error, _variables, context) => { client.setQueryData(modelKeys.all, context?.previous); toast.error(error.message) }, onSettled: invalidateModels })
   const removeModelMutation = useMutation({ mutationFn: (id: string) => unwrap(providerModelApi.remove(id)), onError: error => toast.error(error.message) })
   const updateModelEnabled = useCallback(async (model: typeof data.models[number], enabled: boolean) => {
-    try { await updateModelMutation.mutateAsync({ id: model.id, enabled }); toast.success(enabled ? '模型已启用' : '模型已停用') } catch { /* handled by mutation */ }
-  }, [updateModelMutation, toast])
+    try { await updateModelMutation.mutateAsync({ id: model.id, enabled }); toast.success(enabled ? t('models.toast.enabled') : t('models.toast.disabled')) } catch { /* handled by mutation */ }
+  }, [updateModelMutation, toast, t])
   const removeModel = useCallback(async (model: typeof data.models[number]) => {
     const confirmed = await confirm({
-      title: `删除“${model.modelName}”？`,
-      description: '该模型关联的所有协议接口都会被移除，此操作无法撤销。',
-      confirmLabel: '删除模型',
+      title: t('models.delete.title', { name: model.modelName }),
+      description: t('models.delete.description'),
+      confirmLabel: t('models.row.delete'),
       variant: 'destructive',
     })
     if (!confirmed) return
     try {
       await removeModelMutation.mutateAsync(model.id)
       await invalidateModels()
-      toast.success('模型已删除')
+      toast.success(t('models.toast.deleted'))
     } catch { /* handled by mutation */ }
-  }, [confirm, invalidateModels, removeModelMutation, toast])
+  }, [confirm, invalidateModels, removeModelMutation, toast, t])
 
   const removeModels = useCallback(async (modelsToRemove: typeof data.models) => {
     if (modelsToRemove.length === 0) return false
     const count = modelsToRemove.length
     const confirmed = await confirm({
-      title: `删除选中的 ${count} 个模型？`,
-      description: '这些模型关联的所有协议接口都会被移除，此操作无法撤销。',
-      confirmLabel: `删除 ${count} 个模型`,
+      title: t('models.delete.bulkTitle', { count }),
+      description: t('models.delete.bulkDescription'),
+      confirmLabel: t('models.delete.bulkConfirmLabel', { count }),
       variant: 'destructive',
     })
     if (!confirmed) return false
@@ -65,19 +68,19 @@ export function useModelManagement() {
 
     if (successCount > 0) {
       await invalidateModels()
-      toast.success(failedCount > 0 ? `已删除 ${successCount} 个模型，${failedCount} 个删除失败` : `已删除 ${successCount} 个模型`)
+      toast.success(failedCount > 0 ? t('models.toast.deletedSome', { success: successCount, failed: failedCount }) : t('models.toast.deletedBulk', { success: successCount }))
       return true
     }
 
-    toast.error('批量删除失败，请稍后重试')
+    toast.error(t('models.toast.deleteFailed'))
     return false
-  }, [confirm, invalidateModels, removeModelMutation, toast])
+  }, [confirm, invalidateModels, removeModelMutation, toast, t])
 
   const disableModels = useCallback(async (modelsToDisable: typeof data.models) => {
     if (modelsToDisable.length === 0) return false
     const enabledModels = modelsToDisable.filter(model => model.enabled)
     if (enabledModels.length === 0) {
-      toast.success('所选模型已是停用状态')
+      toast.success(t('models.toast.alreadyDisabled'))
       return true
     }
 
@@ -87,13 +90,13 @@ export function useModelManagement() {
 
     if (successCount > 0) {
       await invalidateModels()
-      toast.success(failedCount > 0 ? `已禁用 ${successCount} 个模型，${failedCount} 个失败` : `已禁用 ${successCount} 个模型`)
+      toast.success(failedCount > 0 ? t('models.toast.disabledSome', { success: successCount, failed: failedCount }) : t('models.toast.disabledBulk', { success: successCount }))
       return true
     }
 
-    toast.error('批量禁用失败，请稍后重试')
+    toast.error(t('models.toast.disableFailed'))
     return false
-  }, [invalidateModels, toast, updateModelMutation])
+  }, [invalidateModels, toast, t, updateModelMutation])
 
   const handleDragEnd = useModelReordering(selectedModels, data.setModels, data.reload)
 
@@ -104,6 +107,7 @@ export function useModelManagement() {
     ...providerDialog,
     ...providerManagement,
     ...modelDialog,
+    ...providerTransfer,
     updateModelEnabled,
     removeModel,
     removeModels,

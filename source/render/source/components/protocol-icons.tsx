@@ -2,6 +2,7 @@ import { BotMessageSquare, MessageSquareCode, Repeat, Sparkles } from 'lucide-re
 import type { Protocol, ProviderModelRouteEndpoint } from '@common/schemas'
 import { CONVERTIBLE_PROTOCOLS } from '@common/protocols'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { useTranslation } from '@/i18n/provider'
 
 const PROTOCOL_META: Record<Protocol, { label: string; icon: typeof MessageSquareCode }> = {
   'openai-completions': { label: 'OpenAI Completions', icon: MessageSquareCode },
@@ -15,6 +16,7 @@ interface ProtocolIconsProps {
 
 export function ProtocolIcons(props: ProtocolIconsProps) {
   const { endpoints } = props
+  const t = useTranslation()
 
   return (
     <TooltipProvider delayDuration={150}>
@@ -25,8 +27,8 @@ export function ProtocolIcons(props: ProtocolIconsProps) {
           return (
             <Tooltip key={endpoint.protocol}>
               <TooltipTrigger asChild>
-                <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-muted/50 text-muted-foreground" aria-label={meta.label}>
-                  <ProtocolIcon size={11} />
+                <span className="inline-flex size-5 items-center justify-center rounded-md bg-inset text-text-tertiary" aria-label={meta.label}>
+                  <ProtocolIcon size={11} aria-hidden />
                 </span>
               </TooltipTrigger>
               <TooltipContent>{meta.label}</TooltipContent>
@@ -44,14 +46,14 @@ export function ProtocolIcons(props: ProtocolIconsProps) {
                 <Tooltip key={`conv-${endpoint.protocol}-${from}`}>
                   <TooltipTrigger asChild>
                     <span
-                      className="inline-flex h-5 w-5 items-center justify-center rounded border border-dashed border-amber-500/60 text-amber-600 dark:text-amber-400"
-                      aria-label={`${meta.label}（经协议转换支持）`}
+                      className="inline-flex size-5 items-center justify-center rounded-md bg-warning/10 text-text-warning"
+                      aria-label={t('protocol.conversion.aria', { protocol: meta.label })}
                     >
-                      <ProtocolIcon size={9} className="m-0.5" />
-                      <Repeat size={7} className="-ml-1.5 -mb-1.5" />
+                      <ProtocolIcon size={9} aria-hidden className="m-0.5" />
+                      <Repeat size={7} aria-hidden className="-ml-1.5 -mb-1.5" />
                     </span>
                   </TooltipTrigger>
-                  <TooltipContent>{meta.label} · 经协议转换支持（转换为 {PROTOCOL_META[endpoint.protocol].label}）</TooltipContent>
+                  <TooltipContent>{t('protocol.conversion.tooltip', { protocol: meta.label, target: PROTOCOL_META[endpoint.protocol].label })}</TooltipContent>
                 </Tooltip>
               )
             }))}

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Check,
   CheckCircle2,
   Circle,
   Cpu,
@@ -12,13 +11,20 @@ import {
   RotateCcw,
   Search,
   Square,
+  Trash2,
   TriangleAlert,
   XCircle,
 } from 'lucide-react'
 import type { Protocol, Provider, ProviderModelRoute } from '@common/schemas'
+import type { UiCatalogKey } from '@common/i18n/catalogs'
 import { CONVERTIBLE_PROTOCOLS } from '@common/protocols'
 import { modelTestApi, type ModelTestResult } from '@/api/tools'
+import { InlineEmptyState } from '@/components/inline-empty-state'
+import { TableFrame, TableHeaderSurface, tableRowClass } from '@/components/table-primitives'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
+import { useTranslation, type AppTranslator } from '@/i18n/provider'
 import {
   Dialog,
   DialogContent,
@@ -58,12 +64,15 @@ const PROTOCOL_LABELS: Record<Protocol, string> = {
 
 const TEST_CONCURRENCY = 3
 
-const TASK_STATUS_LABELS: Record<TestTaskStatus, string> = {
-  queued: '等待',
-  running: '请求中',
-  success: '通过',
-  failed: '失败',
-  cancelled: '已取消',
+/** 结果表列宽模板：表头与数据行共用一份，避免两处列宽各改一半。 */
+const TASK_GRID_COLUMNS = 'md:grid-cols-[20px_minmax(150px,1.6fr)_minmax(92px,0.9fr)_60px_68px_minmax(84px,auto)]'
+
+const TASK_STATUS_LABEL_KEYS: Record<TestTaskStatus, UiCatalogKey> = {
+  queued: 'modelTest.status.queued',
+  running: 'modelTest.status.running',
+  success: 'modelTest.status.success',
+  failed: 'modelTest.status.failed',
+  cancelled: 'modelTest.status.cancelled',
 }
 
 function getTestableProtocols(model: ProviderModelRoute): Protocol[] {
@@ -88,31 +97,39 @@ interface ProtocolButtonState {
 interface ProtocolButtonLabelOptions {
   converted: boolean
   protocol: Protocol
+  t: AppTranslator
 }
 
+/**
+ * 协议胶囊：未选中只给文字，选中才上底色。
+ * 未选中只给纯文字 + 悬浮底色：给每个胶囊铺 `bg-inset` 会在列里排出一片灰底小方块，
+ * 同一屏里的灰底块越少越好。转换出来的协议（`converted`）用 warning 色区分，选中时再用浅底强调。
+ */
 function getProtocolButtonClassName(state: ProtocolButtonState): string {
   if (state.converted) {
     return state.selected
-      ? 'bg-warning/15 text-warning-foreground ring-1 ring-warning/35'
-      : 'bg-muted/70 text-muted-foreground hover:bg-warning/10 hover:text-foreground'
+      ? 'bg-warning/15 text-text-warning'
+      : 'text-text-warning hover:bg-warning/10'
   }
-  if (state.selected) return 'bg-foreground text-background'
-  return 'bg-muted/70 text-muted-foreground hover:bg-muted hover:text-foreground'
-}
-
-function getProtocolButtonLabel(options: ProtocolButtonLabelOptions): string {
-  return PROTOCOL_LABELS[options.protocol]
+  if (state.selected) return 'bg-primary text-primary-foreground'
+  return 'text-text-tertiary hover:bg-state-base-hover hover:text-text-primary'
 }
 
 function getProtocolButtonTitle(options: ProtocolButtonLabelOptions): string {
   const label = PROTOCOL_LABELS[options.protocol]
-  return options.converted ? `${label}（经协议转换支持）` : label
+  return options.converted ? options.t('protocol.conversion.aria', { protocol: label }) : label
 }
 
-function getTaskResponseSummary(task: TestTask): string {
-  const status = task.result?.statusCode ? `HTTP ${task.result.statusCode} · ` : ''
-  const duration = task.result ? `${task.result.durationMilliseconds}ms` : '—'
-  return `${status}${duration}`
+/** 响应列只放「HTTP 状态 + 输出 token」：耗时单独占一列，扫一眼就能横向比对。 */
+function getTaskResponseLabel(task: TestTask): string {
+  if (!task.result) return '—'
+  const status = task.result.statusCode ? `HTTP ${task.result.statusCode}` : '—'
+  if (!task.result.success) return status
+  return `${status} ↓${task.result.outputTokens ?? '—'}`
+}
+
+function getTaskDurationLabel(task: TestTask): string {
+  return task.result ? `${task.result.durationMilliseconds}ms` : '—'
 }
 
 interface TaskStatusProps {
@@ -120,12 +137,15 @@ interface TaskStatusProps {
 }
 
 function TaskStatus(props: TaskStatusProps) {
+  const t = useTranslation()
   const { status } = props
-  if (status === 'running') return <Loader2 size={15} className="animate-spin text-primary" />
-  if (status === 'success') return <CheckCircle2 size={15} className="text-emerald-600" />
-  if (status === 'failed') return <XCircle size={15} className="text-red-600" />
-  if (status === 'cancelled') return <Square size={13} className="text-muted-foreground" />
-  return <Circle size={15} className="text-muted-foreground/35" />
+  // 图标是唯一的状态载体，必须给读屏留一个名字，否则整列读出来是空的。
+  const label = t(TASK_STATUS_LABEL_KEYS[status])
+  if (status === 'running') return <Loader2 size={15} role="img" aria-label={label} className="animate-spin text-primary" />
+  if (status === 'success') return <CheckCircle2 size={15} role="img" aria-label={label} className="text-text-success" />
+  if (status === 'failed') return <XCircle size={15} role="img" aria-label={label} className="text-text-destructive" />
+  if (status === 'cancelled') return <Square size={13} role="img" aria-label={label} className="text-text-quaternary" />
+  return <Circle size={15} role="img" aria-label={label} className="text-text-quaternary" />
 }
 
 interface ModelSelectionProps {
@@ -141,6 +161,7 @@ interface ModelSelectionProps {
 }
 
 function ModelSelection(props: ModelSelectionProps) {
+  const t = useTranslation()
   const [query, setQuery] = useState('')
   const normalizedQuery = query.trim().toLocaleLowerCase()
   const providerViews = useMemo(() => props.availableProviders.map(provider => {
@@ -163,8 +184,8 @@ function ModelSelection(props: ModelSelectionProps) {
               protocol,
               converted,
               selected: protocolSelected,
-              label: getProtocolButtonLabel({ converted, protocol }),
-              title: getProtocolButtonTitle({ converted, protocol }),
+              label: PROTOCOL_LABELS[protocol],
+              title: getProtocolButtonTitle({ converted, protocol, t }),
               className: getProtocolButtonClassName({ converted, selected: protocolSelected }),
             }
           }),
@@ -176,55 +197,61 @@ function ModelSelection(props: ModelSelectionProps) {
       models,
       selectedCount: models.filter(model => model.selectedCount > 0).length,
     }
-  }).filter(view => view.models.length > 0), [normalizedQuery, props.availableProviders, props.enabledModels, props.selectedModelProtocols, props.selectedProviderIds])
+  }).filter(view => view.models.length > 0), [normalizedQuery, props.availableProviders, props.enabledModels, props.selectedModelProtocols, props.selectedProviderIds, t])
 
   return (
-    <aside className="flex min-h-0 flex-col border-b border-border/70 bg-inset/80 lg:border-r lg:border-b-0">
-      <div className="space-y-3 p-4">
+    <aside className="flex min-h-0 flex-col border-b border-border/60 bg-card lg:border-r lg:border-b-0">
+      {/* 头部与搜索不铺底色，靠底部发丝线跟列表分开（左侧栏原本整块 `bg-inset`，是这页最主要的灰盒子）。 */}
+      <div className="grid shrink-0 gap-3 px-4 py-3.5">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="text-xs font-medium text-foreground">诊断范围</div>
-            <div className="mt-1 text-[10px] text-muted-foreground">选择渠道后可细化到目标协议</div>
+            <div className="system-xs-medium text-text-primary">{t('modelTest.selection.title')}</div>
+            <div className="mt-0.5 system-2xs-regular text-text-tertiary">{t('modelTest.selection.description')}</div>
           </div>
           <Button variant="ghost" size="xs" disabled={props.running || props.enabledModels.length === 0} onClick={props.onToggleAll}>
-            {props.allTasksSelected ? '清空' : '全选'}
+            {props.allTasksSelected ? t('modelTest.selection.clear') : t('common.action.selectAll')}
           </Button>
         </div>
-        <label className="flex h-8 items-center gap-2 rounded-md border border-border/70 bg-background px-2.5 text-muted-foreground focus-within:border-ring/50 focus-within:ring-1 focus-within:ring-ring/20">
-          <Search size={13} />
-          <input
+        <div className="relative">
+          <Search size={13} aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-text-quaternary" />
+          <Input
             value={query}
             disabled={props.running}
             onChange={event => setQuery(event.target.value)}
-            placeholder="搜索渠道或模型"
-            className="min-w-0 flex-1 bg-transparent text-[11px] text-foreground outline-none placeholder:text-muted-foreground"
+            placeholder={t('modelTest.selection.searchPlaceholder')}
+            className="pr-3 pl-7.5"
           />
-        </label>
+        </div>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 pb-3">
+      <div className="min-h-0 flex-1 divide-y divide-border/60 overflow-y-auto border-t border-border/60">
         {providerViews.map(providerView => (
-          <section key={providerView.provider.id} className={cn('rounded-md border border-transparent bg-background p-2.5 transition-colors', providerView.selected && 'border-border/70 bg-card')}>
-            <button
-              type="button"
-              disabled={props.running}
-              className="flex w-full items-center gap-2 text-left disabled:cursor-not-allowed"
-              onClick={() => props.onToggleProvider(providerView.provider.id)}
-            >
-              <span className={cn('flex size-4 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground', providerView.selected && 'bg-foreground text-background')}>
-                {providerView.selected && <Check size={10} strokeWidth={3} />}
-              </span>
-              <span className="min-w-0 flex-1 truncate text-[11px] font-medium">{providerView.provider.name}</span>
-              <span className="font-mono text-[9px] tabular-nums text-muted-foreground">{providerView.models.length} 模型</span>
-            </button>
+          <section key={providerView.provider.id}>
+            <div className="flex items-center gap-2.5 px-4 py-2.5">
+              <Checkbox
+                checked={providerView.selected}
+                disabled={props.running}
+                aria-label={providerView.provider.name}
+                onCheckedChange={() => props.onToggleProvider(providerView.provider.id)}
+              />
+              <button
+                type="button"
+                disabled={props.running}
+                className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-not-allowed"
+                onClick={() => props.onToggleProvider(providerView.provider.id)}
+              >
+                <span className="min-w-0 flex-1 truncate system-xs-medium text-text-primary">{providerView.provider.name}</span>
+                <span className="shrink-0 font-mono system-2xs-regular tabular-nums text-text-quaternary">{t('modelTest.selection.modelCount', { count: providerView.models.length })}</span>
+              </button>
+            </div>
 
             {providerView.selected && (
-              <div className="mt-2.5 space-y-2 pl-6">
+              <div className="grid gap-2.5 px-4 pb-3 pl-10">
                 {providerView.models.map(modelView => (
                   <div key={modelView.model.id}>
                     <div className="mb-1.5 flex items-center justify-between gap-2">
-                      <span className="min-w-0 truncate font-mono text-[10px] text-foreground">{modelView.model.modelName}</span>
-                      <span className="shrink-0 text-[9px] text-muted-foreground">{modelView.selectedCount}/{modelView.protocols.length}</span>
+                      <span className="min-w-0 truncate font-mono system-2xs-regular text-text-secondary">{modelView.model.modelName}</span>
+                      <span className="shrink-0 system-2xs-regular tabular-nums text-text-quaternary">{modelView.selectedCount}/{modelView.protocols.length}</span>
                     </div>
                     <div className="flex flex-wrap gap-1">
                       {modelView.protocols.map(protocolView => (
@@ -234,10 +261,10 @@ function ModelSelection(props: ModelSelectionProps) {
                           disabled={props.running}
                           aria-pressed={protocolView.selected}
                           title={protocolView.title}
-                          className={cn('inline-flex h-6 items-center gap-1 rounded px-1.5 text-[9px] font-medium transition-colors disabled:cursor-not-allowed', protocolView.className)}
+                          className={cn('inline-flex h-6 items-center gap-1 rounded-md px-1.5 system-2xs-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50', protocolView.className)}
                           onClick={() => props.onToggleModelProtocol(modelView.model.id, protocolView.protocol)}
                         >
-                          {protocolView.converted && <Repeat size={8} />}
+                          {protocolView.converted && <Repeat size={9} aria-hidden />}
                           {protocolView.label}
                         </button>
                       ))}
@@ -249,7 +276,10 @@ function ModelSelection(props: ModelSelectionProps) {
           </section>
         ))}
         {providerViews.length === 0 && (
-          <div className="px-3 py-10 text-center text-[11px] text-muted-foreground">没有匹配的渠道或模型</div>
+          <InlineEmptyState
+            title={props.enabledModels.length === 0 ? t('modelTest.empty.noModels') : t('modelTest.selection.empty')}
+            className="px-3 py-10"
+          />
         )}
       </div>
     </aside>
@@ -258,10 +288,12 @@ function ModelSelection(props: ModelSelectionProps) {
 
 interface TestProgressProps {
   cancelledCount: number
+  completedCount: number
   failureCount: number
   progress: number
   running: boolean
   successCount: number
+  totalCount: number
 }
 
 interface TestTaskRowProps {
@@ -272,65 +304,84 @@ interface EmptyTestTasksProps {
   hasEnabledModels: boolean
 }
 
+/**
+ * 常驻状态块。
+ *
+ * 无论是否跑过都渲染同一套骨架（状态文案 + 四个计数 + 进度条 + 费用提示），
+ * 只是空值落回 `0` / 尚未开始：这样点「开始诊断」时页面不会突然多出一整条横幅。
+ */
 function TestProgress(props: TestProgressProps) {
+  const t = useTranslation()
   const status = props.running
-    ? '正在并发验证渠道'
-    : props.failureCount > 0
-      ? '诊断完成，发现异常'
-      : props.cancelledCount > 0
-        ? '诊断已停止'
-        : '诊断完成，全部通过'
+    ? t('modelTest.progress.running')
+    : props.completedCount === 0
+      ? t('modelTest.progress.idle')
+      : props.failureCount > 0
+        ? t('modelTest.progress.failed')
+        : props.cancelledCount > 0
+          ? t('modelTest.progress.cancelled')
+          : t('modelTest.progress.done')
   return (
-    <div className="bg-inset/70 px-4 py-3">
-      <div className="flex items-center justify-between gap-4 text-[10px]">
+    <div className="mx-4 mt-3 rounded-lg border border-module-border px-3 py-2.5">
+      <div className="flex items-center justify-between gap-4 system-2xs-regular">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="truncate font-medium text-foreground">{status}</span>
-          <span className="shrink-0 text-success">通过 {props.successCount}</span>
-          <span className={cn('shrink-0', props.failureCount > 0 ? 'text-destructive' : 'text-muted-foreground')}>失败 {props.failureCount}</span>
-          {props.cancelledCount > 0 && <span className="shrink-0 text-muted-foreground">取消 {props.cancelledCount}</span>}
+          <span className={cn('truncate system-2xs-medium', props.running ? 'text-text-primary' : 'text-text-secondary')}>{status}</span>
+          <span className="shrink-0 text-text-success">{t('modelTest.progress.success', { count: props.successCount })}</span>
+          <span className={cn('shrink-0', props.failureCount > 0 ? 'text-text-destructive' : 'text-text-tertiary')}>{t('modelTest.progress.failure', { count: props.failureCount })}</span>
+          <span className={cn('shrink-0', props.cancelledCount > 0 ? 'text-text-tertiary' : 'text-text-quaternary')}>{t('modelTest.progress.cancelledCount', { count: props.cancelledCount })}</span>
         </div>
-        <span className="shrink-0 font-mono tabular-nums text-muted-foreground">{props.progress}%</span>
+        <span className="shrink-0 font-mono tabular-nums text-text-tertiary">{props.completedCount}/{props.totalCount} · {props.progress}%</span>
       </div>
-      <div className="mt-2 h-1 overflow-hidden rounded-full bg-muted"><div className={cn('h-full transition-all duration-300', props.failureCount > 0 && !props.running ? 'bg-destructive' : 'bg-foreground')} style={{ width: `${props.progress}%` }} /></div>
+      <div className="mt-2 h-1 overflow-hidden rounded-full bg-inset">
+        <div className={cn('h-full transition-all duration-300', props.failureCount > 0 && !props.running ? 'bg-destructive' : 'bg-primary')} style={{ width: `${props.progress}%` }} />
+      </div>
+      <div className="mt-2 flex items-start gap-2 border-t border-border/50 pt-2 system-2xs-regular leading-4 text-text-warning">
+        <TriangleAlert size={13} aria-hidden className="mt-px shrink-0" />
+        <span className="min-w-0">{t('modelTest.costWarning')}</span>
+      </div>
     </div>
   )
 }
 
 function TestTaskRow(props: TestTaskRowProps) {
   const { task } = props
-  const responseSummary = getTaskResponseSummary(task)
+  const t = useTranslation()
   return (
-    <div className="grid gap-2 px-3 py-2.5 md:grid-cols-[24px_minmax(180px,1.5fr)_minmax(120px,1fr)_72px_120px] md:items-center md:gap-3 odd:bg-inset/45">
+    <div className={cn(tableRowClass, 'grid grid-cols-1 gap-2 px-3 py-2.5 md:items-center md:gap-3', TASK_GRID_COLUMNS)}>
       <TaskStatus status={task.status} />
       <div className="min-w-0">
-        <div className="truncate text-[11px] font-medium">{task.providerName}</div>
-        <div className="mt-0.5 truncate font-mono text-[9px] text-muted-foreground">{task.modelName}</div>
+        <div className="truncate system-xs-medium text-text-primary">{task.providerName}</div>
+        <div className="mt-0.5 truncate font-mono system-2xs-regular text-text-tertiary">{task.modelName}</div>
       </div>
-      <div className="min-w-0 text-[10px] text-muted-foreground">
-        <span className={cn('inline-flex items-center gap-1 truncate', task.converted && 'text-warning-foreground')}>
-          {task.converted && <Repeat size={9} />}{PROTOCOL_LABELS[task.protocol]}
+      <div className="min-w-0 system-2xs-regular text-text-tertiary">
+        <span className={cn('inline-flex items-center gap-1 truncate', task.converted && 'text-text-warning')}>
+          {task.converted && <Repeat size={9} aria-hidden />}{PROTOCOL_LABELS[task.protocol]}
         </span>
       </div>
-      <div className={cn('text-[10px] font-medium', task.status === 'success' && 'text-success', task.status === 'failed' && 'text-destructive', task.status === 'running' && 'text-foreground', task.status === 'cancelled' && 'text-muted-foreground')}>{TASK_STATUS_LABELS[task.status]}</div>
-      <div className="font-mono text-[9px] tabular-nums text-muted-foreground md:text-right">{responseSummary}{task.result?.success && <span className="ml-1">↓{task.result.outputTokens ?? '—'}</span>}</div>
-      {task.errorMessage && <div className="col-span-full ml-9 wrap-break-word rounded-md bg-destructive/8 px-2.5 py-2 font-mono text-[10px] leading-4 text-destructive">{task.errorMessage}</div>}
+      <div className={cn('system-2xs-medium', task.status === 'success' && 'text-text-success', task.status === 'failed' && 'text-text-destructive', task.status === 'running' && 'text-text-primary', task.status === 'cancelled' && 'text-text-tertiary')}>{t(TASK_STATUS_LABEL_KEYS[task.status])}</div>
+      <div className="font-mono system-2xs-regular tabular-nums text-text-tertiary md:text-right">{getTaskDurationLabel(task)}</div>
+      <div className="font-mono system-2xs-regular tabular-nums text-text-tertiary md:text-right">{getTaskResponseLabel(task)}</div>
+      {task.errorMessage && <div className="col-span-full wrap-break-word rounded-lg border border-module-border bg-destructive/8 px-2.5 py-2 font-mono system-2xs-regular leading-4 text-text-destructive md:ml-8">{task.errorMessage}</div>}
     </div>
   )
 }
 
 function EmptyTestTasks(props: EmptyTestTasksProps) {
+  const t = useTranslation()
   return (
     <div className="flex min-h-52 flex-col items-center justify-center text-center">
-      <div className="mb-3 flex size-10 items-center justify-center rounded-md bg-muted/30 text-muted-foreground"><Cpu size={18} /></div>
-      <div className="text-xs font-medium">{props.hasEnabledModels ? '当前范围没有测试任务' : '没有可测试的供应商模型'}</div>
-      <div className="mt-1.5 max-w-sm text-[11px] leading-5 text-muted-foreground">
-        {props.hasEnabledModels ? '在左侧列表中勾选需要测试的渠道和协议，结果会在这里展示。' : '请先在模型管理中添加并启用供应商模型，然后返回这里验证协议与渠道。'}
+      {/* 空状态只用一枚淡图标，不再给图标铺灰底方块——同一屏里的灰盒子越少越好。 */}
+      <Cpu size={20} strokeWidth={1.5} aria-hidden className="mb-1.5 text-text-quaternary" />
+      <div className="system-xs-medium text-text-primary">{props.hasEnabledModels ? t('modelTest.empty.noTasks') : t('modelTest.empty.noModels')}</div>
+      <div className="mt-1.5 max-w-sm system-xs-regular leading-5 text-text-tertiary">
+        {props.hasEnabledModels ? t('modelTest.empty.noTasksHint') : t('modelTest.empty.noModelsHint')}
       </div>
     </div>
   )
 }
 
 export function ModelTestPanel(props: ModelTestPanelProps) {
+  const t = useTranslation()
   const enabledModels = useMemo(() => props.models.filter(model => model.enabled), [props.models])
   const availableProviders = useMemo(
     () => props.providers.filter(provider => enabledModels.some(model => model.providerId === provider.id)),
@@ -339,27 +390,58 @@ export function ModelTestPanel(props: ModelTestPanelProps) {
   const [selectedModelProtocols, setSelectedModelProtocols] = useState<Record<string, Set<Protocol>>>({})
   const [selectedProviderIds, setSelectedProviderIds] = useState<Set<string>>(new Set())
   const [tasks, setTasks] = useState<TestTask[]>([])
+  const [failedOnly, setFailedOnly] = useState(false)
   const [running, setRunning] = useState(false)
   const previousOpen = useRef(false)
   const abortControllerRef = useRef<AbortController | null>(null)
+  /**
+   * `running` 是渲染状态，要等下一帧才变成 `true`：连点两下「开始诊断」时两个
+   * 事件处理器看到的都还是 `false`，会同时打两批真实请求（真的花钱）。
+   * 用 ref 做同步闸门，并把定时器 / 网络请求都挂在同一批身上。
+   */
+  const runningRef = useRef(false)
 
+  // 面板被卸载（切换页面）时掐掉在跑的那批诊断，避免用户已经离开还在持续计费。
+  useEffect(() => () => abortControllerRef.current?.abort(), [])
+
+  /**
+   * 模型 / 供应商集合变化后校正选中态。
+   *
+   * 三个 updater 都遵守同一条规矩：**没有实际变化就返回 `current`**。
+   * 否则这里每次都返回新对象 / 新 Set / 新数组，而 `enabledModels`、`availableProviders`
+   * 又会随父级重渲染（供应商轮询每 10s、模型轮询每 30s）而重建，
+   * 于是「重渲染 → 重跑 effect → 写新 state → 再重渲染」会一直空转。
+   */
   useEffect(() => {
     const isOpening = props.open && !previousOpen.current
     previousOpen.current = props.open
     if (!props.open) return
 
     setSelectedModelProtocols(current => {
-      if (isOpening) return {}
-      return Object.fromEntries(enabledModels.map(model => [
-        model.id,
-        new Set([...current[model.id] ?? []].filter(protocol => getTestableProtocols(model).includes(protocol))),
-      ]))
+      if (isOpening) return Object.keys(current).length === 0 ? current : {}
+      let changed = false
+      const next: Record<string, Set<Protocol>> = {}
+      for (const model of enabledModels) {
+        const kept = new Set([...(current[model.id] ?? [])].filter(protocol => getTestableProtocols(model).includes(protocol)))
+        const previous = current[model.id]
+        // `kept` 是 `previous` 的子集，长度相同就意味着一个都没被剔掉，可以沿用原 Set 引用。
+        if (previous && previous.size === kept.size) next[model.id] = previous
+        else {
+          next[model.id] = kept
+          changed = true
+        }
+      }
+      if (Object.keys(next).length !== Object.keys(current).length) changed = true
+      return changed ? next : current
     })
-    setSelectedProviderIds(current => isOpening
-      ? new Set()
-      : new Set([...current].filter(providerId => availableProviders.some(provider => provider.id === providerId))))
+    setSelectedProviderIds(current => {
+      if (isOpening) return current.size === 0 ? current : new Set()
+      const next = new Set([...current].filter(providerId => availableProviders.some(provider => provider.id === providerId)))
+      return next.size === current.size ? current : next
+    })
     if (isOpening) {
-      setTasks([])
+      setTasks(current => (current.length === 0 ? current : []))
+      setFailedOnly(false)
       setRunning(false)
     }
   }, [props.open, enabledModels, availableProviders])
@@ -381,14 +463,26 @@ export function ModelTestPanel(props: ModelTestPanelProps) {
     }))
   }), [enabledModels, props.providers, selectedModelProtocols, selectedProviderIds])
 
-  const visibleTasks = tasks.length > 0 ? tasks : plannedTasks
-  const completedCount = tasks.filter(task => task.status === 'success' || task.status === 'failed' || task.status === 'cancelled').length
+  const hasResults = tasks.length > 0
   const successCount = tasks.filter(task => task.status === 'success').length
   const failureCount = tasks.filter(task => task.status === 'failed').length
   const cancelledCount = tasks.filter(task => task.status === 'cancelled').length
+  const completedCount = successCount + failureCount + cancelledCount
   const progress = tasks.length === 0 ? 0 : Math.round((completedCount / tasks.length) * 100)
+  /**
+   * 重测成功后失败数会归零，此时不能再停留在「只看失败」上——否则表格会空白，
+   * 而失败行其实已经变绿了。所以筛选生效与否是推导出来的，不写回 state。
+   */
+  const showFailedOnly = failedOnly && failureCount > 0
+  const visibleTasks = hasResults
+    ? showFailedOnly ? tasks.filter(task => task.status === 'failed') : tasks
+    : plannedTasks
+  const visibleTotal = hasResults ? tasks.length : plannedTasks.length
 
-  const clearTasks = () => setTasks([])
+  const clearTasks = () => {
+    setTasks([])
+    setFailedOnly(false)
+  }
   const toggleModelProtocol = (modelId: string, protocol: Protocol) => {
     if (running) return
     setSelectedModelProtocols(current => {
@@ -431,18 +525,30 @@ export function ModelTestPanel(props: ModelTestPanelProps) {
     clearTasks()
   }
 
-  const runTests = async () => {
-    if (plannedTasks.length === 0 || running) return
-    const pendingTasks = plannedTasks.map(task => ({ ...task }))
+  /**
+   * 跑一批诊断任务。
+   *
+   * - `runningRef` 做同步闸门：诊断会真的请求上游并计费，任何时候都只允许一批在跑。
+   * - 任务按 id 合并进结果表：整批开跑时表里通常是空的，重测时其它行的结论原样保留。
+   * - 并发只在这里控制（`TEST_CONCURRENCY` 个 worker），服务端一次请求只测一个目标。
+   */
+  const runTasks = async (batch: TestTask[]) => {
+    if (runningRef.current || batch.length === 0) return
+    const pending = batch.map(task => ({ ...task, status: 'queued' as const, result: undefined, errorMessage: undefined }))
     const controller = new AbortController()
+    runningRef.current = true
     abortControllerRef.current = controller
-    setTasks(pendingTasks)
     setRunning(true)
+    setTasks(current => {
+      if (current.length === 0) return pending
+      const byId = new Map(pending.map(task => [task.id, task]))
+      return current.map(task => byId.get(task.id) ?? task)
+    })
     let nextIndex = 0
 
     const worker = async () => {
-      while (!controller.signal.aborted && nextIndex < pendingTasks.length) {
-        const task = pendingTasks[nextIndex++]
+      while (!controller.signal.aborted && nextIndex < pending.length) {
+        const task = pending[nextIndex++]
         setTasks(current => current.map(item => item.id === task.id ? { ...item, status: 'running' } : item))
         try {
           const response = await modelTestApi.run(task.protocol, {
@@ -458,21 +564,23 @@ export function ModelTestPanel(props: ModelTestPanelProps) {
             ...item,
             status: succeeded ? 'success' : 'failed',
             result,
-            errorMessage: response.success ? result ? result.errorMessage : '未找到可测试的协议端点，请刷新模型配置后重试' : response.errorMessage,
+            errorMessage: response.success
+              ? result ? result.errorMessage : t('modelTest.error.missingEndpoint')
+              : response.errorMessage,
           } : item))
         } catch (error) {
           if (controller.signal.aborted) break
           setTasks(current => current.map(item => item.id === task.id ? {
             ...item,
             status: 'failed',
-            errorMessage: error instanceof Error ? error.message : '诊断请求失败',
+            errorMessage: error instanceof Error ? error.message : t('modelTest.error.requestFailed'),
           } : item))
         }
       }
     }
 
     try {
-      await Promise.all(Array.from({ length: Math.min(TEST_CONCURRENCY, pendingTasks.length) }, () => worker()))
+      await Promise.all(Array.from({ length: Math.min(TEST_CONCURRENCY, pending.length) }, () => worker()))
     } finally {
       if (controller.signal.aborted) {
         setTasks(current => current.map(task => task.status === 'queued' || task.status === 'running'
@@ -480,8 +588,19 @@ export function ModelTestPanel(props: ModelTestPanelProps) {
           : task))
       }
       if (abortControllerRef.current === controller) abortControllerRef.current = null
+      runningRef.current = false
       setRunning(false)
     }
+  }
+
+  const startTests = () => {
+    setFailedOnly(false)
+    void runTasks(plannedTasks)
+  }
+
+  /** 重测不重新规划：直接拿表里失败的那几行重跑，结果就地刷新，其它行不动。 */
+  const retryFailedTests = () => {
+    void runTasks(tasks.filter(task => task.status === 'failed'))
   }
 
   const cancelTests = () => abortControllerRef.current?.abort()
@@ -489,12 +608,12 @@ export function ModelTestPanel(props: ModelTestPanelProps) {
   return (
     <Dialog open={props.open} onOpenChange={open => !running && props.onOpenChange(open)}>
       <DialogContent className="flex h-[min(780px,92vh)] w-[calc(100%-1rem)] max-w-6xl flex-col gap-0 overflow-hidden p-0 sm:max-w-6xl">
-        <DialogHeader className="border-b border-border/70 bg-popover px-5 py-4 pr-14">
+        <DialogHeader className="bg-popover px-5 py-4 pr-14">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-foreground"><FlaskConical size={15} /></div>
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><FlaskConical size={15} aria-hidden /></div>
             <div className="min-w-0">
-              <DialogTitle className="text-sm">渠道诊断</DialogTitle>
-              <DialogDescription className="mt-1 text-[11px]">验证上游连通性、模型可用性与协议转换链路</DialogDescription>
+              <DialogTitle>{t('modelTest.title')}</DialogTitle>
+              <DialogDescription className="mt-1 system-xs-regular text-text-tertiary">{t('modelTest.description')}</DialogDescription>
             </div>
           </div>
         </DialogHeader>
@@ -512,64 +631,84 @@ export function ModelTestPanel(props: ModelTestPanelProps) {
             onToggleProvider={toggleProvider}
           />
 
-          <div className="flex min-h-0 flex-col bg-background">
-            <div className="px-4 py-3">
+          <div className="flex min-h-0 flex-col bg-card">
+            <div className="px-4 pt-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-4">
                   <div className="flex items-center gap-2">
-                    <Gauge size={14} className="text-muted-foreground" />
+                    <Gauge size={14} aria-hidden className="text-text-quaternary" />
                     <div>
-                      <div className="font-mono text-base font-medium tabular-nums leading-none">{plannedTasks.length}</div>
-                      <div className="mt-1 text-[9px] text-muted-foreground">诊断任务</div>
+                      <div className="font-mono text-base font-medium tabular-nums leading-none text-text-primary">{plannedTasks.length}</div>
+                      <div className="mt-1 system-2xs-regular text-text-tertiary">{t('modelTest.metric.tasks')}</div>
                     </div>
                   </div>
-                  <div className="h-7 w-px bg-muted" />
+                  <div className="h-7 w-px bg-border" />
                   <div>
-                    <div className="font-mono text-base font-medium tabular-nums leading-none">{selectedProviderIds.size}</div>
-                    <div className="mt-1 text-[9px] text-muted-foreground">已选渠道</div>
+                    <div className="font-mono text-base font-medium tabular-nums leading-none text-text-primary">{selectedProviderIds.size}</div>
+                    <div className="mt-1 system-2xs-regular text-text-tertiary">{t('modelTest.metric.channels')}</div>
                   </div>
-                  <div className="h-7 w-px bg-muted" />
+                  <div className="h-7 w-px bg-border" />
                   <div>
-                    <div className="font-mono text-base font-medium tabular-nums leading-none">{TEST_CONCURRENCY}</div>
-                    <div className="mt-1 text-[9px] text-muted-foreground">并发请求</div>
+                    <div className="font-mono text-base font-medium tabular-nums leading-none text-text-primary">{TEST_CONCURRENCY}</div>
+                    <div className="mt-1 system-2xs-regular text-text-tertiary">{t('modelTest.metric.concurrency')}</div>
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  {tasks.length > 0 && !running && <Button variant="ghost" size="icon-sm" title="清除诊断结果" onClick={clearTasks}><RotateCcw size={13} /></Button>}
+                  {hasResults && !running && (
+                    <Button variant="ghost" size="icon-sm" title={t('modelTest.action.clearResults')} aria-label={t('modelTest.action.clearResults')} onClick={clearTasks}>
+                      <Trash2 size={13} />
+                    </Button>
+                  )}
+                  {failureCount > 0 && !running && (
+                    <Button variant="outline" size="sm" onClick={retryFailedTests}>
+                      <RotateCcw size={12} /> {t('modelTest.action.retryFailed')}
+                    </Button>
+                  )}
                   {running ? (
                     <Button variant="destructive" size="sm" onClick={cancelTests}>
-                      <Square size={11} fill="currentColor" /> 停止
+                      <Square size={11} fill="currentColor" /> {t('modelTest.action.stop')}
                     </Button>
                   ) : (
-                    <Button size="sm" disabled={plannedTasks.length === 0} onClick={() => void runTests()}>
-                      <Play size={12} fill="currentColor" /> 开始诊断
+                    <Button size="sm" disabled={plannedTasks.length === 0} onClick={startTests}>
+                      <Play size={12} fill="currentColor" /> {t('modelTest.action.start')}
                     </Button>
                   )}
                 </div>
               </div>
             </div>
 
-            {(running || tasks.length > 0) ? (
-              <TestProgress
-                cancelledCount={cancelledCount}
-                failureCount={failureCount}
-                progress={progress}
-                running={running}
-                successCount={successCount}
-              />
-            ) : (
-              <div className="mx-4 flex items-center gap-2 rounded-md border border-warning/20 bg-warning/10 px-3 py-2 text-[10px] leading-4 text-muted-foreground">
-                <TriangleAlert size={13} className="shrink-0 text-warning-foreground" />
-                将向每个目标发送一次最小真实请求，可能产生少量费用，并记录到请求日志。
-              </div>
-            )}
+            <TestProgress
+              cancelledCount={cancelledCount}
+              completedCount={completedCount}
+              failureCount={failureCount}
+              progress={progress}
+              running={running}
+              successCount={successCount}
+              totalCount={visibleTotal}
+            />
 
             <main className="min-h-0 flex-1 overflow-auto p-4">
-              {visibleTasks.length > 0 ? (
-                <div className="overflow-hidden rounded-md border border-border/70 bg-card">
-                  <div className="hidden grid-cols-[24px_minmax(180px,1.5fr)_minmax(120px,1fr)_72px_120px] gap-3 border-b border-border/70 bg-muted/70 px-3 py-2 font-mono text-[9px] font-medium text-muted-foreground md:grid"><span /><span>渠道 / 模型</span><span>目标协议</span><span>状态</span><span className="text-right">响应</span></div>
-                  {visibleTasks.map(task => <TestTaskRow key={task.id} task={task} />)}
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <Button variant={showFailedOnly ? 'ghost' : 'secondary'} size="xs" onClick={() => setFailedOnly(false)}>{t('modelTest.filter.all')}</Button>
+                  <Button variant={showFailedOnly ? 'secondary' : 'ghost'} size="xs" disabled={!hasResults || failureCount === 0} onClick={() => setFailedOnly(true)}>
+                    {failureCount > 0 ? `${t('modelTest.filter.failed')} · ${failureCount}` : t('modelTest.filter.failed')}
+                  </Button>
                 </div>
+                <span className="font-mono system-2xs-regular tabular-nums text-text-quaternary">{visibleTasks.length} / {visibleTotal}</span>
+              </div>
+              {visibleTasks.length > 0 ? (
+                <TableFrame>
+                  <TableHeaderSurface className={cn('hidden gap-3 px-3 py-2 md:grid', TASK_GRID_COLUMNS)}>
+                    <span />
+                    <span>{t('modelTest.table.target')}</span>
+                    <span>{t('modelTest.table.protocol')}</span>
+                    <span>{t('modelTest.table.status')}</span>
+                    <span className="text-right">{t('modelTest.table.duration')}</span>
+                    <span className="text-right">{t('modelTest.table.response')}</span>
+                  </TableHeaderSurface>
+                  {visibleTasks.map(task => <TestTaskRow key={task.id} task={task} />)}
+                </TableFrame>
               ) : (
                 <EmptyTestTasks hasEnabledModels={enabledModels.length > 0} />
               )}

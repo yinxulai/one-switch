@@ -2,7 +2,7 @@
 
 ## 背景与定位
 
-现有架构默认优先原生透传：客户端协议通常应与 Provider 模型端点协议一致。对明确开启端点级转换的绑定，代理也可以提供有限的协议转换能力；未开启转换时，协议不匹配的端点不会进入候选队列。
+现有架构默认优先原生透传：客户端协议通常应与 Provider 模型端点协议一致。对明确开启端点级转换的绑定，代理也可以提供有限的协议转换能力；未开启转换时，协议不匹配的端点不会进入候选集合。
 
 协议兼容转换器（Protocol Conversion）作为**可选能力**打破这一限制：为具体 ProviderModel 端点绑定创建并启用对应的 protocol_converter 后，代理将客户端协议的请求/响应报文转换为配置端点所要求的 upstream 协议，包括流式 SSE 事件的实时转换。这里的 upstream 是请求链路概念，不预设当前目标一定是供应商；Provider 仍仅表示配置实体。
 
@@ -23,26 +23,30 @@
 - 转换对由**端点原生协议**决定：开启开关后，端点自动获得「其他两种协议 → 本协议」的转换能力
 - 每个转换对由独立的转换器模块实现，可单独标记支持度（完整 / 部分 / 不支持）
 
-### MVP 转换矩阵
+### 转换矩阵
+
+矩阵的唯一权威是 `source/server/proxy/protocols/shared/conversion-registry.ts`。当前注册的方向恰好是最常用的三个：
 
 | 客户端协议 | Provider openai-completions | Provider openai-responses | Provider anthropic-messages |
 |-----------|------------------------|----------------------|------------------------|
-| openai-completions | 直连 | 转换（P2） | 转换（P1） |
-| openai-responses | 转换（P1） | 直连 | 转换（P2） |
-| anthropic-messages | 转换（P1） | 转换（P2） | 直连 |
+| openai-completions | 直连 | 未实现 | 已实现 |
+| openai-responses | 已实现 | 直连 | 未实现 |
+| anthropic-messages | 已实现 | 未实现 | 直连 |
 
-P1 优先实现三个最高频方向：
+已实现的三个方向：
 
 1. `anthropic-messages → openai-completions`：让 Claude 系工具用 OpenAI 兼容渠道
 2. `openai-responses → openai-completions`：让 Responses API 客户端用 Chat Completions 渠道
 3. `openai-completions → anthropic-messages`：让 OpenAI 系工具用 Anthropic 渠道
+
+其余三个方向的组合在注册表里不存在，会被当作「该协议下无可用端点」拒绝，不会静默降级。新增一个方向 = 在注册表的请求表与响应表里各加一行，不动流程代码。
 
 ## 请求处理流程
 
 ```
 客户端请求 (协议 A)
   → 协议识别 (path) 得到 A
-  → 队列过滤：
+  → 候选过滤：
       原生匹配：providerEndpoint.protocol === A 且未开启转换 —— 原生候选
       转换匹配：存在 A → providerEndpoint.protocol 的已启用 protocol_converter —— 转换候选
   → 排序：原生候选优先于转换候选（同优先级内）
@@ -51,7 +55,7 @@ P1 优先实现三个最高频方向：
       转换候选：请求体 A → B 转换 → 发送 → 响应体/SSE B → A 反向转换 → 返回客户端
 ```
 
-### 队列过滤与排序规则
+### 候选过滤与排序规则
 
 - 原生端点始终优先：只有当所有原生候选失败后，才尝试转换候选
 - 转换候选之间按模型优先级排序
@@ -74,15 +78,26 @@ P1 优先实现三个最高频方向：
 - usage 统计在转换层从上游格式解析后按客户端协议格式回填
 - 空闲超时、切换边界规则与透传路径一致：一旦已向客户端下发转换后的事件，不再切换
 
+#### 流式状态机约定
+
+| 方向 | 约定 |
+|------|------|
+| OpenAI → Anthropic | content block index 由转换器统一分配：文本块占用首个 index，`tool_calls` 的 OpenAI index 通过映射表固定到各自的 Anthropic index，不允许直接复用 OpenAI 的 tool index |
+| OpenAI → Anthropic | `message_start` 在首次出现内容时合成；`message_delta` + `message_stop` 仅在同时拿到 `finish_reason` 与 `usage` 后发出；上游提前结束（缺 `usage`）时在流结束时用最近一次 `finish_reason` 兜底关闭 |
+| Anthropic → OpenAI | Anthropic 的 block index 会重新压缩为连续的 OpenAI `tool_calls` index；`thinking_delta`、`content_block_stop` 等无对应语义的事件被忽略；`message_delta` 缺少 `stop_reason` 时只回填 usage，由 `message_stop` 兜底补 `finish_reason` |
+| OpenAI → Responses | 必须合成完整事件生命周期：`response.created` → `response.in_progress` → `output_item.added` → `content_part.added` → `output_text.delta`* → `output_text.done` → `content_part.done` → `output_item.done` → `response.completed`；文本 item 在切换到 function call item 前必须先关闭 |
+| OpenAI 上游 → 任意客户端 | 上游 `data: [DONE]` 只表示 OpenAI SSE 结束，转换器必须消费并丢弃，不能转发给 Anthropic 或 Responses 客户端 |
+| 任意方向 | `flush()` 与 `finish()` 必须幂等；即使没有残留缓冲也要补齐收尾事件，保证客户端总能收到终止事件 |
+
 ## 数据模型变更
 
 - 新增 `provider_endpoints`：Provider 按原生协议维护默认端点。
 - `provider_model_endpoints`：将 ProviderModel 绑定到 ProviderEndpoint，可选配置模型专属 `url`；为空时回退到 `provider_endpoints.url`。
 - 新增 `protocol_converters`：按 ProviderModel 端点绑定和客户端协议配置 `enabled`；目标 upstream 协议通过 `provider_model_endpoints.providerEndpointId -> provider_endpoints.protocol` 得到。
-- `request_logs.clientProtocol` 记录客户端协议；请求级 `request_logs.upstreamProtocol` 仅作为可选摘要；每次 attempt 的真实 upstream 协议必须记录在 `request_attempts.upstreamProtocol`，与客户端协议不同即表示发生了转换。
-- 新增 `request_metrics`：按请求保存可扩展数值指标；Token 和其他用量保存到 `request_usages`。
+- `request_logs.clientProtocol` 记录客户端协议；请求级不再保存 upstream 协议摘要；每次 attempt 的真实 upstream 协议必须记录在 `request_attempts.upstreamProtocol`，与客户端协议不同即表示发生了转换。
+- Token 和其他用量按视角保存到 `request_usages`（请求级）与 `attempt_usages`（尝试级），原始 `usage` 报文以 `type = 'raw'` 的行保存在同一组表里；不再有通用指标 KV 表。
 - `request_attempts.upstreamProtocol` 为 nullable，记录本次尝试实际使用的端点协议，不依赖当前端点配置推导；upstream 返回的请求标识记录在 `upstreamRequestId`。
-- `RequestConversion` 独立记录 client/upstream 两侧协议、Header、正文和流式状态，不嵌入 `request_contents`。
+- **转换事实不单独建表。** `request_logs.clientProtocol` 与 `request_attempts.upstreamProtocol` 不相等即为「发生了转换」的充要判据；上游跳以什么形态作答读 `request_attempts.upstreamTransport`，耗时读 `request_attempts.durationMilliseconds`。原因：一份独立的转换表只能重复保存前两张表已持有的信息，且其中的耗时列会与 `request_attempts.durationMilliseconds` 形成一份会漂移的副本；“没发生转换”与“转换记录丢失”在该表里也不可区分。转换前后的载荷由 `request_contents`（客户端侧）与 `attempt_contents`（上游侧）分别唯一提供。
 - 修改器仅记录协议转换边界之后的报文：请求侧记录协议转换后的 upstream 原始请求与修改后供应商请求；响应侧记录协议转换后的 client 原始响应与修改后客户端响应。修改器不处理客户端原始请求、供应商原始响应或转换器内部的中间报文。
 
 ## UI 设计
@@ -131,7 +146,7 @@ P1 优先实现三个最高频方向：
 
 - 每个 ProviderModel 端点绑定条目内提供客户端协议转换配置：「添加转换协议」+ 说明文案「仅允许选中的客户端协议经过转换后使用此端点（兼容层，部分参数可能丢失）」
 
-### 队列控制页
+### 逻辑模型页
 
 - 每个 ProviderModel 条目的协议徽标区：
   - 原生协议：现有实心徽标（如 `OpenAI`）
@@ -147,16 +162,22 @@ P1 优先实现三个最高频方向：
 ## 转换器模块设计
 
 ```
-source/server/conversion/
-  index.ts                  # 转换器注册表：CONVERTERS[fromProtocol][toProtocol]
-  types.ts                  # Converter 接口与支持度枚举
-  request/
-    anthropic-to-openai-completions.ts
-    responses-to-openai-completions.ts
-    openai-completions-to-anthropic.ts
-  response/                 # 非流式响应反向转换
-  stream/                   # SSE 逐事件有状态转换
+source/server/proxy/protocols/
+  shared/
+    conversion-utils.ts                          # JSON 取值/序列化工具，畸形输入统一降级
+    request-conversion.ts                        # convertRequestBody 入口：按方向分发
+    request-conversion-openai-to-anthropic.ts
+    request-conversion-anthropic-to-openai.ts
+    request-conversion-responses-to-openai.ts
+    response-conversion.ts                       # convertResponseBody + createSseConverter 入口
+    response-conversion-openai-to-anthropic.ts   # 非流式 + 有状态 SSE
+    response-conversion-anthropic-to-openai.ts   # 非流式 + 有状态 SSE
+    response-conversion-openai-to-responses.ts   # 非流式 + 有状态 SSE（Responses 事件生命周期）
+  types.ts                                       # StreamConverter / NativeProtocolAdapter / ProtocolConversionAdapter
+  registry.ts                                    # 转换器注册表：按 (endpointProtocol, clientProtocol) 分发
 ```
+
+每个方向的实现都拆成「请求转换」与「响应转换」两个文件，响应转换文件同时导出非流式转换函数、状态工厂（`create*State`）、逐事件转换函数（`*Events`）与收尾函数（`finish*`），便于对状态机做单元测试而无需构造完整 SSE 流。
 
 `Converter` 接口（每个方向一组）：
 
@@ -177,9 +198,11 @@ interface ProtocolConverter {
 - **保守转换**：无法映射的字段丢弃并记录 debug 日志，不报错
 - **修改器边界**：请求修改器在 upstream 请求转换完成后、发送真实供应商前执行；响应修改器在真实供应商响应完成反向协议转换、写回客户端前执行。修改器不介入协议转换器内部的中间报文。
 - **系统提示词**：`system` 顶层字段 ↔ `messages` 中 `role: system` 首条消息
-- **工具调用**：OpenAI `tool_calls` ↔ Anthropic `tool_use` / `tool_result` content block 双向映射
+- **工具调用**：OpenAI `tool_calls` ↔ Anthropic `tool_use` / `tool_result` content block 双向映射；assistant 消息同时含文本与工具调用时两者都要保留，连续的 `role: tool` 结果必须合并进同一条消息的多个 `tool_result` block，以维持 OpenAI 要求的「工具结果紧随 assistant」顺序
+- **工具选择**：`tool_choice` 四种形态双向映射（`auto` / `required` ↔ `any` / `none` / 指定工具）；`parallel_tool_calls: false` ↔ `disable_parallel_tool_use: true`
+- **Responses 输入项**：`input` 数组中的 `function_call` / `function_call_output` 既可出现在顶层项，也可内嵌在 `message.content` 中，两种形态都要识别；`reasoning` / `item_reference` 无对应语义，直接丢弃
 - **多模态**：图片 base64 双向映射；视频等单侧能力降级为文本提示
-- **采样参数**：`temperature` / `top_p` / `max_tokens` 直接映射；`stop` ↔ `stop_sequences`
+- **采样参数**：`temperature` / `top_p` / `max_tokens`（Responses 为 `max_output_tokens`）直接映射；`stop` ↔ `stop_sequences`；`reasoning.effort` ↔ `reasoning_effort`
 - **usage**：按目标协议格式回填；不能把 OpenAI 总输入与 Anthropic 未缓存输入直接等同。
 - 不做角色扮演式 hack（不注入「你在扮演 Claude」之类的提示词）
 
@@ -207,13 +230,15 @@ interface ProtocolConverter {
 
 缓存字段是否生效仍取决于具体 API、端点和模型版本。转换器不伪造 cache key，不把 Anthropic `5m` / `1h` TTL 猜测为 OpenAI TTL，也不把 Google OpenAI-compatible 端点当作原生 Gemini CachedContent API。观测层兼容 OpenAI read/write details、Anthropic read/write 与 TTL 明细，以及 Gemini `cachedContentTokenCount` / `total_cached_tokens`。
 
-## 验收标准
+## 验收清单
+
+以下条目需要在真实供应商上人工逐条回归；未完成前不计入发布验收。
 
 - [ ] ProviderModel 端点绑定启用对应转换后，`anthropic-messages` 客户端请求能经 `openai-completions` 端点成功返回，非流式与流式均正常
-- [ ] 队列同时存在原生候选与转换候选时，原生候选优先；原生全部失败后自动落到转换候选
+- [ ] 候选模型中同时存在原生候选与转换候选时，原生候选优先；原生全部失败后自动落到转换候选
 - [ ] 转换候选失败（429/5xx）时照常切换，错误分类与透传一致
 - [ ] 客户端请求体不合法时返回 400 且不切换
 - [ ] 流式转换中途中断时，客户端收到协议对应的错误事件，连接正常关闭
-- [ ] 队列控制页能区分原生徽标与转换徽标
+- [ ] 逻辑模型页能区分原生徽标与转换徽标
 - [ ] 请求日志正确显示 `客户端协议 → Provider 协议`
 - [ ] 开关关闭的模型行为与现状完全一致（回归）

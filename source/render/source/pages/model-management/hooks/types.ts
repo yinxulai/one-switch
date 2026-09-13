@@ -1,4 +1,4 @@
-import type { Protocol, ProviderModelRouteEndpoint } from '@common/schemas'
+import type { Protocol, Provider, ProviderModelRouteEndpoint } from '@common/schemas'
 
 export interface ProtocolEndpointEntry {
   protocol: Protocol
@@ -15,6 +15,9 @@ export interface ProviderEndpointEntry {
 }
 
 export type ProviderEndpoints = Partial<Record<Protocol, string>>
+
+/** 导出范围：单个供应商（详情页）或全部（页面头部）。 */
+export type ProviderExportScope = { kind: 'all' } | { kind: 'provider'; provider: Provider }
 
 export function getEffectiveEndpointUrl(endpoint: ProviderModelRouteEndpoint): string {
   return endpoint.endpointUrl.trim()

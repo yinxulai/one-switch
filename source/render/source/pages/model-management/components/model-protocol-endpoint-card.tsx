@@ -1,7 +1,8 @@
 import { cn } from '@/lib/utils'
+import { FormField } from '@/components/form-kit'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { useTranslation } from '@/i18n/provider'
 import { ProtocolConversionSettings } from './protocol-conversion-settings'
 import { ProtocolUrlHint } from './protocol-url-hint'
 import { PROTOCOL_PLACEHOLDERS, PROTOCOL_OPTIONS } from '../lib/protocols'
@@ -15,16 +16,15 @@ interface ModelProtocolEndpointCardProps {
 
 export function ModelProtocolEndpointCard(props: ModelProtocolEndpointCardProps) {
   const { entry, index, updateProtocolEntry } = props
+  const t = useTranslation()
   const label = PROTOCOL_OPTIONS.find(option => option.value === entry.protocol)?.label
 
   return (
-    <div
-      className={cn('space-y-3 rounded-md bg-muted/30 p-3 transition-colors', !entry.enabled && 'opacity-60')}
-    >
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-medium">{label}</span>
+    <div className={cn('grid gap-3 rounded-lg border border-module-border bg-workflow-block-parma-bg p-3 transition-opacity', !entry.enabled && 'opacity-60')}>
+      <div className="flex items-center justify-between gap-3">
+        <span className="system-sm-medium text-text-primary">{label}</span>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">{entry.enabled ? '已启用' : '未启用'}</span>
+          <span className="system-xs-regular text-text-tertiary">{entry.enabled ? t('models.endpoint.enabled') : t('models.endpoint.disabled')}</span>
           <Switch
             checked={entry.enabled}
             onCheckedChange={checked => updateProtocolEntry(index, { enabled: checked })}
@@ -33,10 +33,10 @@ export function ModelProtocolEndpointCard(props: ModelProtocolEndpointCardProps)
       </div>
 
       {entry.enabled && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-muted-foreground">
-              {entry.overrideUrl ? '使用自定义地址' : '使用供应商默认地址'}
+        <div className="grid gap-3">
+          <div className="flex items-center justify-between gap-3">
+            <span className="system-xs-regular text-text-tertiary">
+              {entry.overrideUrl ? t('models.endpoint.useCustomUrl') : t('models.endpoint.useProviderDefault')}
             </span>
             <Switch
               checked={entry.overrideUrl}
@@ -46,17 +46,16 @@ export function ModelProtocolEndpointCard(props: ModelProtocolEndpointCardProps)
 
           {entry.overrideUrl && (
             <>
-              <div className="space-y-1.5">
-                <Label htmlFor={`model-endpoint-url-${index}`}>完整接口地址</Label>
+              <FormField label={t('providers.endpoint.urlLabel')} htmlFor={`model-endpoint-url-${index}`}>
                 <Input
                   id={`model-endpoint-url-${index}`}
                   type="url"
-                  className="font-mono text-xs"
+                  className="font-mono"
                   value={entry.endpointUrl}
                   onChange={event => updateProtocolEntry(index, { endpointUrl: event.target.value })}
                   placeholder={PROTOCOL_PLACEHOLDERS[entry.protocol]}
                 />
-              </div>
+              </FormField>
               <ProtocolUrlHint protocol={entry.protocol} />
             </>
           )}

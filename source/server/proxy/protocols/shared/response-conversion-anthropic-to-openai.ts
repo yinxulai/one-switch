@@ -1,22 +1,14 @@
-export type Json = Record<string, unknown>
+import { asArray, asNumber, asObject, asString, type Json } from './conversion-utils'
 
-function asObject(value: unknown): Json | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Json)
-    : null
-}
-
-function asArray(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : []
-}
-
-function asString(value: unknown): string | undefined {
-  return typeof value === 'string' ? value : undefined
-}
-
-function asNumber(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
-}
+/**
+ * Anthropic Messages 响应 → OpenAI Chat Completions 响应。
+ *
+ * 流式注意两点：
+ * 1. Anthropic 的 content block index 覆盖全部块类型（文本块也占一个），而 OpenAI 的
+ *    `tool_calls[].index` 只在工具调用之间递增，因此必须重新编号。
+ * 2. Anthropic 的 usage 分散在 `message_start`（输入侧）与 `message_delta`（输出侧），
+ *    需要跨事件合并后再换算，否则 token 数会失真。
+ */
 
 function anthropicContentToText(content: unknown): string {
   return asArray(content)
@@ -41,6 +33,7 @@ function anthropicUsageToOpenAi(usage: Json | null): Json | undefined {
   return {
     prompt_tokens: (input ?? 0) + (cached ?? 0) + (created ?? 0),
     completion_tokens: output ?? 0,
+    total_tokens: (input ?? 0) + (cached ?? 0) + (created ?? 0) + (output ?? 0),
     ...(Object.keys(details).length > 0 ? { prompt_tokens_details: details } : {}),
   }
 }
@@ -51,6 +44,7 @@ function anthropicStopToOpenAiFinish(stop: string | undefined): string {
     case 'max_tokens': return 'length'
     case 'stop_sequence': return 'stop'
     case 'tool_use': return 'tool_calls'
+    case 'refusal': return 'content_filter'
     default: return 'stop'
   }
 }
@@ -69,14 +63,47 @@ export function anthropicResponseToOpenAi(body: Json): Json {
 export interface AnthropicToOpenAiState {
   id: string
   model: string
-  toolCalls: Map<number, { id: string; name: string }>
+  created: number
+  /** Anthropic content block index → OpenAI tool_calls index */
+  toolIndexes: Map<number, number>
   started: boolean
+  stopped: boolean
   usage?: Json
 }
 
+export function createAnthropicToOpenAiState(): AnthropicToOpenAiState {
+  return { id: '', model: '', created: Math.floor(Date.now() / 1000), toolIndexes: new Map(), started: false, stopped: false }
+}
+
+function chunk(state: AnthropicToOpenAiState, delta: Json, finishReason: string | null): Json {
+  return {
+    id: state.id,
+    object: 'chat.completion.chunk',
+    created: state.created,
+    model: state.model,
+    choices: [{ index: 0, delta, finish_reason: finishReason }],
+  }
+}
+
+/** Anthropic usage 分散在 message_start / message_delta，需浅合并后换算。 */
 function mergeAnthropicUsage(current: Json | undefined, incoming: Json | null): Json | undefined {
   if (!incoming) return current
   return { ...(current ?? {}), ...incoming }
+}
+
+/** 复用/分配某个 Anthropic 工具块的 OpenAI tool_calls index。 */
+function toolIndexOf(state: AnthropicToOpenAiState, anthropicIndex: number): number {
+  const existing = state.toolIndexes.get(anthropicIndex)
+  if (existing !== undefined) return existing
+  const assigned = state.toolIndexes.size
+  state.toolIndexes.set(anthropicIndex, assigned)
+  return assigned
+}
+
+function finishChunk(state: AnthropicToOpenAiState, finishReason: string): Json {
+  const usage = anthropicUsageToOpenAi(state.usage ?? null)
+  state.stopped = true
+  return { ...chunk(state, {}, finishReason), ...(usage ? { usage } : {}) }
 }
 
 export function anthropicEventToOpenAiChunks(event: Json, state: AnthropicToOpenAiState): Json[] {
@@ -87,27 +114,43 @@ export function anthropicEventToOpenAiChunks(event: Json, state: AnthropicToOpen
     state.id = asString(message?.id) ?? state.id
     state.model = asString(message?.model) ?? state.model
     state.usage = mergeAnthropicUsage(state.usage, asObject(message?.usage))
-    chunks.push({ id: state.id, object: 'chat.completion.chunk', created: Math.floor(Date.now() / 1000), model: state.model, choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }] })
+    chunks.push(chunk(state, { role: 'assistant' }, null))
   } else if (event.type === 'content_block_start') {
+    state.started = true
     const block = asObject(event.content_block)
-    const index = asNumber(event.index) ?? 0
-    if (block?.type === 'tool_use') {
+    if (block?.type === 'tool_use' || block?.type === 'server_tool_use') {
+      const index = toolIndexOf(state, asNumber(event.index) ?? 0)
       const id = asString(block.id) ?? ''
       const name = asString(block.name) ?? ''
-      state.toolCalls.set(index, { id, name })
-      chunks.push({ id: state.id, object: 'chat.completion.chunk', model: state.model, choices: [{ index: 0, delta: { tool_calls: [{ index, id, type: 'function', function: { name, arguments: '' } }] }, finish_reason: null }] })
+      chunks.push(chunk(state, { tool_calls: [{ index, id, type: 'function', function: { name, arguments: '' } }] }, null))
     }
+    // thinking / redacted_thinking / text 块起始无对应 Chat Completions 输出
   } else if (event.type === 'content_block_delta') {
     const delta = asObject(event.delta)
-    const index = asNumber(event.index) ?? 0
     const text = delta?.type === 'text_delta' ? asString(delta.text) : undefined
     const partialJson = delta?.type === 'input_json_delta' ? asString(delta.partial_json) : undefined
-    if (text) chunks.push({ id: state.id, object: 'chat.completion.chunk', model: state.model, choices: [{ index: 0, delta: { content: text }, finish_reason: null }] })
-    if (partialJson) chunks.push({ id: state.id, object: 'chat.completion.chunk', model: state.model, choices: [{ index: 0, delta: { tool_calls: [{ index, function: { arguments: partialJson } }] }, finish_reason: null }] })
+    if (text) chunks.push(chunk(state, { content: text }, null))
+    if (partialJson) {
+      const index = toolIndexOf(state, asNumber(event.index) ?? 0)
+      chunks.push(chunk(state, { tool_calls: [{ index, function: { arguments: partialJson } }] }, null))
+    }
   } else if (event.type === 'message_delta') {
     state.usage = mergeAnthropicUsage(state.usage, asObject(event.usage))
-    const usage = anthropicUsageToOpenAi(state.usage ?? null)
-    chunks.push({ id: state.id, object: 'chat.completion.chunk', model: state.model, choices: [{ index: 0, delta: {}, finish_reason: anthropicStopToOpenAiFinish(asString(asObject(event.delta)?.stop_reason)) }], ...(usage ? { usage } : {}) })
+    const stopReason = asString(asObject(event.delta)?.stop_reason)
+    if (stopReason) {
+      chunks.push(finishChunk(state, anthropicStopToOpenAiFinish(stopReason)))
+    } else {
+      const usage = anthropicUsageToOpenAi(state.usage ?? null)
+      chunks.push({ ...chunk(state, {}, null), ...(usage ? { usage } : {}) })
+    }
+  } else if (event.type === 'message_stop') {
+    // 正常情况 message_delta 已带 stop_reason 收尾；这里兜底，避免客户端等不到 finish_reason。
+    if (state.started && !state.stopped) chunks.push(finishChunk(state, 'stop'))
   }
   return chunks
+}
+
+export function finishAnthropicToOpenAiChunks(state: AnthropicToOpenAiState): Json[] {
+  if (!state.started || state.stopped) return []
+  return [finishChunk(state, 'stop')]
 }

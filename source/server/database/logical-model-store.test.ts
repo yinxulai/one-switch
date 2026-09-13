@@ -3,7 +3,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { closeDatabase, initDatabase } from './index'
-import { createLogicalModel, deleteLogicalModel, listLogicalModels, listSchedulingPolicies, updateLogicalModel, upsertSchedulingPolicy } from './logical-model-store'
+import { TEST_DATABASE_FILE_NAME } from './test-support'
+import { createLogicalModel, deleteLogicalModel, listLogicalModels, listSchedulingPolicies, reorderLogicalModels, updateLogicalModel, upsertSchedulingPolicy } from './logical-model-store'
 import { createProvider } from './provider-store'
 import { createProviderModelRoute } from './model-store'
 
@@ -11,7 +12,7 @@ let temporaryDirectory: string
 
 beforeEach(async () => {
   temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-logical-model-store-'))
-  await initDatabase(temporaryDirectory)
+  await initDatabase(temporaryDirectory, TEST_DATABASE_FILE_NAME)
 })
 
 afterEach(async () => {
@@ -21,7 +22,7 @@ afterEach(async () => {
 
 describe('logical model store', () => {
   it('creates and updates logical models with real database persistence', async () => {
-    const created = await createLogicalModel({ name: 'production', description: 'prod routing', enabled: true })
+    const created = await createLogicalModel({ id: 'production', name: 'production', description: 'prod routing', enabled: true })
 
     expect(await listLogicalModels()).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: created.id, name: 'production' }),
@@ -79,5 +80,16 @@ describe('logical model store', () => {
     expect(await listLogicalModels(true)).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'default', deletedTime: expect.any(Number) }),
     ]))
+  })
+
+  it('persists the dragged logical model order across reads', async () => {
+    await createLogicalModel({ id: 'alpha', name: 'alpha' })
+    await createLogicalModel({ id: 'beta', name: 'beta' })
+
+    const before = (await listLogicalModels()).map(model => model.id)
+    const reversed = [...before].reverse()
+    await reorderLogicalModels(reversed)
+
+    expect((await listLogicalModels()).map(model => model.id)).toEqual(reversed)
   })
 })

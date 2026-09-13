@@ -4,12 +4,10 @@ import path from 'node:path'
 import type { ServerResponse } from 'node:http'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { closeDatabase, initDatabase } from '../database'
+import { TEST_DATABASE_FILE_NAME } from '../database/test-support'
 import { createLogicalModel } from '@server/database/logical-model-store'
 import { modelRoutes } from './routes/catalog'
-
-function mockResponse() {
-  return { statusCode: 0, headersSent: false, writableEnded: false, setHeader: vi.fn(), end: vi.fn() } as unknown as ServerResponse
-}
+import { mockResponse } from './test-support'
 
 function responseData(response: ServerResponse): Record<string, unknown> {
   const body = vi.mocked(response.end).mock.calls[0]?.[0]
@@ -20,7 +18,7 @@ let temporaryDirectory: string
 
 beforeEach(async () => {
   temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-models-'))
-  await initDatabase(temporaryDirectory)
+  await initDatabase(temporaryDirectory, TEST_DATABASE_FILE_NAME)
 })
 
 afterEach(async () => {
@@ -31,7 +29,7 @@ afterEach(async () => {
 describe('logical model routes', () => {
   it('creates, lists, gets, updates and deletes a logical model', async () => {
     const createRes = mockResponse()
-    await modelRoutes.invoke('/api/logical-model/create', createRes, { name: 'dev-model', description: 'for tests' })
+    await modelRoutes.invoke('/api/logical-model/create', createRes, { id: 'dev-model', name: 'dev-model', description: 'for tests' })
     const created = responseData(createRes).data as { id: string; name: string }
     expect(created.name).toBe('dev-model')
 
@@ -59,8 +57,22 @@ describe('logical model routes', () => {
     expect(responseData(res)).toMatchObject({ success: false, errorCode: 'NOT_FOUND' })
   })
 
+  it('reorders logical models through the management route', async () => {
+    await createLogicalModel({ id: 'route-order-a', name: 'route-order-a' })
+    await createLogicalModel({ id: 'route-order-b', name: 'route-order-b' })
+
+    const listRes = mockResponse()
+    await modelRoutes.invoke('/api/logical-model/list', listRes)
+    const before = (responseData(listRes).data as { id: string }[]).map(model => model.id)
+    const reversed = [...before].reverse()
+
+    const reorderRes = mockResponse()
+    await modelRoutes.invoke('/api/logical-model/reorder', reorderRes, { ids: reversed })
+    expect((responseData(reorderRes).data as { id: string }[]).map(model => model.id)).toEqual(reversed)
+  })
+
   it('creates a model from the underlying store with default fields', async () => {
-    const model = await createLogicalModel({ name: 'store-model' })
+    const model = await createLogicalModel({ id: 'store-model', name: 'store-model' })
     expect(model).toMatchObject({ name: 'store-model', enabled: true, description: '' })
   })
 })

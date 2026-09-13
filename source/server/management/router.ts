@@ -3,12 +3,14 @@ import type { ManagementHandler } from './core/response'
 import { sendError } from './core/response'
 import {
   analyticsRoutes,
-  configRoutes,
+  developmentRoutes,
   logRoutes,
   modelRoutes,
   modelTestRoutes,
   outboundProxyTestRoutes,
   providerModelFetchRoutes,
+  routerGraphRoutes,
+  routerRunRoutes,
   providerModelRoutes,
   providerRoutes,
   relationRoutes,
@@ -32,12 +34,14 @@ const router = new HttpRouter<ManagementHandler>()
   .mount(logRoutes)
   .mount(requestLogRoutes)
   .mount(analyticsRoutes)
-  .mount(configRoutes)
   .mount(modelTestRoutes)
   .mount(outboundProxyTestRoutes)
   .mount(providerModelFetchRoutes)
+  .mount(routerGraphRoutes)
+  .mount(routerRunRoutes)
   .mount(relationRoutes)
   .mount(requestRewriteRuleRoutes)
+  .mount(developmentRoutes)
 
 export async function handleApiRequest(req: IncomingMessage, res: ServerResponse, environment: RuntimeEnvironment = 'production'): Promise<void> {
   const url = new URL(req.url!, 'http://localhost')
@@ -49,7 +53,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
   const route = router.match(req.method, url.pathname)
 
   if (!route) {
-    sendError(res, 'NOT_FOUND', `API 路径不存在 ${url.pathname}`, 404)
+    sendError(res, 'NOT_FOUND', `API path not found: ${url.pathname}`, 404, { path: url.pathname })
     return
   }
 

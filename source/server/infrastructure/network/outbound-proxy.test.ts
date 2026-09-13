@@ -8,9 +8,9 @@ describe('outbound proxy utilities', () => {
   })
 
   it('rejects unsupported URL content', () => {
-    expect(() => normalizeProxyUrl('ftp://localhost:21')).toThrow('仅支持 HTTP、HTTPS 和 SOCKS')
-    expect(() => normalizeProxyUrl('http://localhost:7890/path')).toThrow('只能包含协议、主机、端口和凭据')
-    expect(() => normalizeProxyUrl('')).toThrow('请输入自定义代理 URL')
+    expect(() => normalizeProxyUrl('ftp://localhost:21')).toThrow('only supports HTTP, HTTPS and SOCKS')
+    expect(() => normalizeProxyUrl('http://localhost:7890/path')).toThrow('may only contain the protocol, host, port and credentials')
+    expect(() => normalizeProxyUrl('')).toThrow('A custom proxy URL is required')
   })
 
   it('redacts credentials without hiding the endpoint', () => {
@@ -35,7 +35,7 @@ describe('outbound proxy utilities', () => {
 
   it('validates custom mode URL and ignores non-custom mode', () => {
     expect(() => validateOutboundProxyModeAndUrl('custom', 'http://127.0.0.1:7890')).not.toThrow()
-    expect(() => validateOutboundProxyModeAndUrl('custom', 'ftp://127.0.0.1:21')).toThrow('仅支持 HTTP、HTTPS 和 SOCKS')
+    expect(() => validateOutboundProxyModeAndUrl('custom', 'ftp://127.0.0.1:21')).toThrow('only supports HTTP, HTTPS and SOCKS')
     expect(() => validateOutboundProxyModeAndUrl('system', '')).not.toThrow()
     expect(() => validateOutboundProxyModeAndUrl('direct', '')).not.toThrow()
   })

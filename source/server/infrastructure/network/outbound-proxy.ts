@@ -5,20 +5,20 @@ const SUPPORTED_PROXY_PROTOCOLS = new Set(['http:', 'https:', 'socks:', 'socks4:
 
 export function normalizeProxyUrl(value: string): string {
   const trimmed = value.trim()
-  if (!trimmed) throw new AppError('VALIDATION_ERROR', 400, '请输入自定义代理 URL')
+  if (!trimmed) throw new AppError('VALIDATION_ERROR', 400, 'A custom proxy URL is required')
 
   let url: URL
   try {
     url = new URL(trimmed)
   } catch (error) {
-    throw new AppError('VALIDATION_ERROR', 400, '自定义代理 URL 格式无效', { cause: error })
+    throw new AppError('VALIDATION_ERROR', 400, 'The custom proxy URL is not a valid URL', { cause: error })
   }
 
   if (!SUPPORTED_PROXY_PROTOCOLS.has(url.protocol)) {
-    throw new AppError('VALIDATION_ERROR', 400, '自定义代理仅支持 HTTP、HTTPS 和 SOCKS 协议')
+    throw new AppError('VALIDATION_ERROR', 400, 'A custom proxy URL only supports HTTP, HTTPS and SOCKS')
   }
   if (!url.hostname || (url.pathname !== '' && url.pathname !== '/') || url.search || url.hash) {
-    throw new AppError('VALIDATION_ERROR', 400, '自定义代理 URL 只能包含协议、主机、端口和凭据')
+    throw new AppError('VALIDATION_ERROR', 400, 'A custom proxy URL may only contain the protocol, host, port and credentials')
   }
   return url.toString().replace(/\/$/, '')
 }
@@ -74,7 +74,7 @@ export function resolveChromiumProxyRule(rule: string, targetUrl: string): strin
     if (scheme === 'SOCKS4') return `socks4://${address}`
   }
   if (rule.trim() === '') return ''
-  throw new AppError('SYSTEM_PROXY_RESOLUTION_FAILED', 502, `系统代理返回了不支持的规则（目标：${new URL(targetUrl).origin}）`)
+  throw new AppError('SYSTEM_PROXY_RESOLUTION_FAILED', 502, `The system proxy returned an unsupported rule (target: ${new URL(targetUrl).origin})`, { details: { target: new URL(targetUrl).origin } })
 }
 
 function splitBypassList(value: string): string[] {
