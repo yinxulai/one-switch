@@ -1,8 +1,8 @@
 import * as React from 'react'
 import { Braces, Check, ChevronRight, Copy, Route, ScrollText } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
+import { resolveProxyOrigin } from '@common/proxy-origin'
 import type {
-  ProxyServerStatus,
   RequestContent,
   RequestLogDetail,
   RequestLogEntry,
@@ -84,19 +84,6 @@ interface MetaFactProps {
 
 const RUNTIME_LOG_RETENTION_DAYS = 3
 const RUNTIME_LOG_RETENTION_MS = RUNTIME_LOG_RETENTION_DAYS * 24 * 60 * 60 * 1000
-
-/**
- * 把代理监听的地址拼成客户端请求的绝对前缀。
- *
- * 通配地址不能直接连（`0.0.0.0` 只有 Linux 允许回连），统一收敛到回环地址；
- * IPv6 要补上方括号，否则 `::1:9300` 会被当成主机名解析。
- */
-function resolveOrigin(status: ProxyServerStatus | null): string | null {
-  if (!status) return null
-  const wildcard = status.host === '' || status.host === '0.0.0.0' || status.host === '::'
-  const host = wildcard ? '127.0.0.1' : status.host
-  return `http://${host.includes(':') ? `[${host}]` : host}:${status.port}`
-}
 
 const STATUS_BADGE: Record<string, string> = {
   pending: 'bg-info/10 text-info',
@@ -517,7 +504,7 @@ export function RequestLogDetailRow(props: RequestLogDetailRowProps) {
   const [selectedAttemptId, setSelectedAttemptId] = React.useState<string | null>(null)
   const canOpenRuntimeLogs = Date.now() - log.createdTime <= RUNTIME_LOG_RETENTION_MS
   // 客户端请求的绝对地址：代理监听地址 + 记录下来的路径。拿不到监听地址就不拼，宁可禁用。
-  const origin = resolveOrigin(proxyStatus)
+  const origin = resolveProxyOrigin(proxyStatus?.host ?? null, proxyStatus?.port ?? null)
 
   const clientLabel = log.clientProtocol === null
     ? t('requestLogs.detail.unrecognizedProtocol')
