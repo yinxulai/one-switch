@@ -1,16 +1,17 @@
 import { defineConfig } from 'vite'
-import { readFileSync } from 'node:fs'
 import { fileURLToPath, URL } from 'node:url'
 import react from '@vitejs/plugin-react'
 import electron from 'vite-plugin-electron'
 import tailwindcss from '@tailwindcss/vite'
+import packageJson from './package.json' with { type: 'json' }
 
 const previewOnly = process.env.VITE_PREVIEW_ONLY === 'true'
 const projectRoot = fileURLToPath(new URL('./', import.meta.url))
-// 渲染层需要应用版本号（例如内置「修改 UA」模板的默认值），但 `app.getVersion()` 只在主进程里有。
-// 打包产物与 package.json 同版本（electron-builder 就用这个字段），所以构建时读一次注入即可；
-// 声明在 `source/render/source/vite-env.d.ts`，测试侧同步见 `vitest.config.ts`。
-const appVersion = (JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string }).version
+// 渲染层需要应用版本号（内置「修改 UA」模板的默认值）。主进程有 `app.getVersion()`，
+// 渲染层只能异步走 updater IPC 拿 `currentVersion`，而 `dev:preview` 与单测里根本没有 Electron，
+// 所以版本号在构建期从 package.json 取一次，`define` 成字面量注入。
+// 声明在 `source/render/source/vite-env.d.ts`，测试侧同一份见 `vitest.config.ts`。
+const appVersion = packageJson.version
 
 const commonAlias = {
   '@common': fileURLToPath(new URL('./source/common', import.meta.url)),
