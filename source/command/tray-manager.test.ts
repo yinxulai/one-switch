@@ -1,0 +1,241 @@
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { BrowserWindow, MenuItemConstructorOptions } from 'electron'
+import { createAppTranslator } from '@common/i18n/catalogs'
+
+/**
+ * 托盘是原生 UI，只能在主进程里跑，没有 DOM 可以断言。
+ * 所以这里把 electron 与两个外部依赖打桩，直接验菜单内容与点击行为——
+ * 这是托盘唯一能被自动化覆盖的部分（视觉效果仍需人工看）。
+ */
+const mocks = vi.hoisted(() => {
+  const tray = {
+    setToolTip: vi.fn(),
+    setContextMenu: vi.fn(),
+    popUpContextMenu: vi.fn(),
+    destroy: vi.fn(),
+    on: vi.fn(),
+  }
+  const mainWindow = {
+    on: vi.fn(),
+    show: vi.fn(),
+    focus: vi.fn(),
+    hide: vi.fn(),
+  }
+  // `new Tray(...)` 要能被当成构造函数；返回对象即可替换掉实例。
+  const Tray = vi.fn(function TrayMock() {
+    return tray
+  })
+
+  return {
+    tray,
+    mainWindow,
+    Tray,
+    app: { quit: vi.fn(), dock: { show: vi.fn(), hide: vi.fn() } },
+    clipboard: { writeText: vi.fn() },
+    buildFromTemplate: vi.fn((template: MenuItemConstructorOptions[]) => ({ template })),
+    getProxyServerStatus: vi.fn(),
+    startProxyServer: vi.fn(),
+    stopProxyServer: vi.fn(),
+  }
+})
+
+vi.mock('electron', () => ({
+  app: mocks.app,
+  Tray: mocks.Tray,
+  BrowserWindow: class {},
+  Menu: { buildFromTemplate: mocks.buildFromTemplate },
+  clipboard: mocks.clipboard,
+}))
+
+vi.mock('./tray-icon', () => ({ generateTrayIcon: () => ({}) }))
+
+vi.mock('./i18n', () => ({
+  nativeTranslator: () => createAppTranslator('zh-CN'),
+  onNativeLocaleChanged: () => () => undefined,
+}))
+
+vi.mock('@server/proxy/runtime/server', () => ({
+  getProxyServerStatus: mocks.getProxyServerStatus,
+  startProxyServer: mocks.startProxyServer,
+  stopProxyServer: mocks.stopProxyServer,
+}))
+
+import { TrayManager } from './tray-manager'
+
+type MenuItem = MenuItemConstructorOptions
+
+/** 最近一次挂到托盘上的菜单模板。 */
+function lastTemplate(): MenuItem[] {
+  const call = mocks.tray.setContextMenu.mock.calls.at(-1) as [{ template: MenuItem[] }] | undefined
+  if (!call) throw new Error('tray menu was never set')
+  return call[0].template
+}
+
+/** 只看有文案的条目：分隔线与 macOS 分组标题不参与顺序断言。 */
+function labels(): (string | undefined)[] {
+  return lastTemplate()
+    .filter(item => item.type !== 'separator' && item.type !== 'header')
+    .map(item => item.label)
+}
+
+function findItem(label: string): MenuItem {
+  const item = lastTemplate().find(entry => entry.label === label)
+  if (!item) throw new Error(`menu item not found: ${label}`)
+  return item
+}
+
+function click(item: MenuItem): void {
+  const handler = item.click as (() => void) | undefined
+  if (!handler) throw new Error(`menu item is not clickable: ${String(item.label)}`)
+  handler()
+}
+
+async function initRunning(): Promise<TrayManager> {
+  const manager = new TrayManager()
+  manager.init(mocks.mainWindow as unknown as BrowserWindow)
+  await vi.waitFor(() => expect(mocks.tray.setContextMenu).toHaveBeenCalled())
+  return manager
+}
+
+/**
+ * 一个状态会真的改变的假代理服务。
+ *
+ * 比按调用次数排队更接近真实行为：轮询、点击、点击后再读，同一份状态被读多次，
+ * 「第几次返回什么」这种写法会把用例意图藏在调用顺序里。
+ */
+function fakeProxyServer(initialRunning: boolean): { isRunning: () => boolean } {
+  let running = initialRunning
+  mocks.getProxyServerStatus.mockImplementation(async () => ({
+    running,
+    host: '127.0.0.1',
+    port: 19300,
+  }))
+  mocks.startProxyServer.mockImplementation(async () => {
+    running = true
+  })
+  mocks.stopProxyServer.mockImplementation(async () => {
+    running = false
+  })
+  return { isRunning: () => running }
+}
+
+let manager: TrayManager | null = null
+
+afterEach(() => {
+  manager?.destroy()
+  manager = null
+  vi.clearAllMocks()
+})
+
+describe('托盘菜单结构', () => {
+  it('运行中：状态行 + 复制地址 + 停止 + 打开主界面 + 退出', async () => {
+    mocks.getProxyServerStatus.mockResolvedValue({ running: true, host: '127.0.0.1', port: 19300 })
+    manager = await initRunning()
+
+    expect(labels()).toEqual(['运行中 · 19300', '复制接入地址', '停止代理服务', '打开主界面', '退出 One Switch'])
+  })
+
+  it('已停止：状态行与启停项一起翻转，菜单项数量不变', async () => {
+    mocks.getProxyServerStatus.mockResolvedValue({ running: false, host: '127.0.0.1', port: 19300 })
+    manager = await initRunning()
+
+    expect(labels()).toEqual(['已停止', '复制接入地址', '启动代理服务', '打开主界面', '退出 One Switch'])
+    expect(mocks.tray.setToolTip).toHaveBeenLastCalledWith('One Switch · 已停止')
+  })
+
+  it('状态行不可点击，其余条目都可点击', async () => {
+    mocks.getProxyServerStatus.mockResolvedValue({ running: true, host: '127.0.0.1', port: 19300 })
+    manager = await initRunning()
+
+    expect(findItem('运行中 · 19300').enabled).toBe(false)
+    expect(findItem('运行中 · 19300').click).toBeUndefined()
+    for (const label of ['停止代理服务', '打开主界面', '退出 One Switch']) {
+      expect(findItem(label).enabled).not.toBe(false)
+      expect(typeof findItem(label).click).toBe('function')
+    }
+  })
+
+  it('复制接入地址：子菜单列出两个基址，通配监听地址回落到回环地址', async () => {
+    mocks.getProxyServerStatus.mockResolvedValue({ running: true, host: '0.0.0.0', port: 19300 })
+    manager = await initRunning()
+
+    const copyItem = findItem('复制接入地址')
+    expect(copyItem.enabled).not.toBe(false)
+    expect((copyItem.submenu as MenuItem[]).map(item => item.label)).toEqual([
+      'http://127.0.0.1:19300/v1',
+      'http://127.0.0.1:19300/v1/messages',
+    ])
+  })
+
+  it('点一个基址就把它写进剪贴板，并借用 tooltip 给出回执', async () => {
+    mocks.getProxyServerStatus.mockResolvedValue({ running: true, host: '127.0.0.1', port: 19300 })
+    manager = await initRunning()
+
+    const endpointItem = (findItem('复制接入地址').submenu as MenuItem[])[1]
+    click(endpointItem)
+
+    expect(mocks.clipboard.writeText).toHaveBeenCalledWith('http://127.0.0.1:19300/v1/messages')
+    expect(mocks.tray.setToolTip).toHaveBeenLastCalledWith('接入地址已复制')
+  })
+})
+
+describe('托盘启停与轮询', () => {
+  it('已停止时点击启停项会启动代理，菜单随后翻成「停止代理服务」', async () => {
+    const server = fakeProxyServer(false)
+    manager = await initRunning()
+    expect(labels()).toContain('启动代理服务')
+
+    click(findItem('启动代理服务'))
+
+    await vi.waitFor(() => expect(mocks.startProxyServer).toHaveBeenCalled())
+    expect(mocks.stopProxyServer).not.toHaveBeenCalled()
+    expect(server.isRunning()).toBe(true)
+    await vi.waitFor(() => expect(labels()).toContain('停止代理服务'))
+  })
+
+  it('运行中时点击启停项会停止代理', async () => {
+    const server = fakeProxyServer(true)
+    manager = await initRunning()
+    expect(labels()).toContain('停止代理服务')
+
+    click(findItem('停止代理服务'))
+
+    await vi.waitFor(() => expect(mocks.stopProxyServer).toHaveBeenCalled())
+    expect(mocks.startProxyServer).not.toHaveBeenCalled()
+    expect(server.isRunning()).toBe(false)
+    await vi.waitFor(() => expect(labels()).toContain('启动代理服务'))
+  })
+
+  it('状态没变就不重建菜单，避免把正开着的菜单顶掉', async () => {
+    mocks.getProxyServerStatus.mockResolvedValue({ running: true, host: '127.0.0.1', port: 19300 })
+    manager = await initRunning()
+    expect(mocks.tray.setContextMenu).toHaveBeenCalledTimes(1)
+
+    // 白盒调用私有轮询：定时器本身不在这里验。
+    const poll = (manager as unknown as { refreshStatus: () => Promise<void> }).refreshStatus
+    await poll.call(manager)
+
+    expect(mocks.tray.setContextMenu).toHaveBeenCalledTimes(1)
+  })
+
+  it('状态读取失败时保留上一份快照，不会把菜单说成「已停止」', async () => {
+    mocks.getProxyServerStatus.mockResolvedValueOnce({ running: true, host: '127.0.0.1', port: 19300 })
+    mocks.getProxyServerStatus.mockRejectedValue(new Error('database is locked'))
+    manager = await initRunning()
+
+    const poll = (manager as unknown as { refreshStatus: () => Promise<void> }).refreshStatus
+    await poll.call(manager)
+
+    expect(labels()).toContain('运行中 · 19300')
+    expect(mocks.tray.setContextMenu).toHaveBeenCalledTimes(1)
+  })
+
+  it('状态一次都没读到过时只挂兜底菜单，托盘不能变成死路', async () => {
+    mocks.getProxyServerStatus.mockRejectedValue(new Error('database is locked'))
+    manager = new TrayManager()
+    manager.init(mocks.mainWindow as unknown as BrowserWindow)
+
+    await vi.waitFor(() => expect(mocks.tray.setContextMenu).toHaveBeenCalled())
+    expect(labels()).toEqual(['打开主界面', '退出 One Switch'])
+  })
+})

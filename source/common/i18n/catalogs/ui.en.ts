@@ -1321,10 +1321,14 @@ export const uiEn = {
   // ========== 原生（托盘 / 应用菜单 / 对话框 / 更新） ==========
   // 主进程拿不到渲染层的 context，但两者必须用同一种语言：
   // 语言真相源统一是 `settings.language`，数据库读不出来时才退回 `app.getLocale()`。
-  'native.tray.tooltipRunning': 'One Switch · proxy running (port {port})',
-  'native.tray.tooltipStopped': 'One Switch · proxy stopped',
-  'native.tray.proxyRunning': 'Proxy server running · port {port}',
-  'native.tray.proxyStopped': 'Proxy server stopped',
+  // 托盘菜单：第一行是状态（不可点），后面才是动作；`{port}` 只在运行时有意义。
+  // tooltip 在代码里拼成 `应用名 · 状态`，所以这里的状态文案不带应用名。
+  // `section.proxy` 是 macOS 原生分组标题（`type: 'header'`，macOS 14+ 才有），其他平台不渲染。
+  'native.tray.section.proxy': 'Proxy',
+  'native.tray.status.running': 'Running · {port}',
+  'native.tray.status.stopped': 'Stopped',
+  'native.tray.copyEndpoint': 'Copy API endpoint',
+  'native.tray.copyEndpointDone': 'API endpoint copied',
   'native.tray.openWindow': 'Open the main window',
   'native.tray.startProxy': 'Start the proxy server',
   'native.tray.stopProxy': 'Stop the proxy server',

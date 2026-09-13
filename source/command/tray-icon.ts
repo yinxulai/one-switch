@@ -4,14 +4,18 @@ import { app, nativeImage, type NativeImage } from 'electron'
 import productionTrayIconUrl from '../../build/tray-icon.png?url'
 import developmentTrayIconUrl from '../../build/tray-icon-dev.png?url'
 
-export type TrayIconStatus = 'running' | 'stopped' | 'error'
-
 const TRAY_ICON_SIZE = 16
 // macOS 走 template image：由系统按菜单栏明暗自动着色——纯白图标在浅色菜单栏上会看不见。
 // 同时开着开发版和正式版时，开发版少一块图形，一眼能分清。
 const trayIconUrl = app.isPackaged ? productionTrayIconUrl : developmentTrayIconUrl
 
-/** 三个运行状态共用一张全白图标，状态差异由托盘菜单与 tooltip 表达。 */
+/**
+ * 所有平台、所有状态共用同一张全白图标。
+ *
+ * 颜色不作为状态通道：macOS 的 template image 由系统接管着色，我们给的彩色根本不会被采用；
+ * Windows/Linux 的任务栏底色随系统主题变化，彩色图标在浅色底上反而糊成一团。
+ * 状态由菜单第一行与 tooltip 表达——那里能写清楚端口号，比一个色点准确得多。
+ */
 export function generateTrayIcon(): NativeImage {
   const source = nativeImage.createFromDataURL(trayIconUrl)
   if (source.isEmpty()) throw new Error('Unable to load the bundled tray icon')

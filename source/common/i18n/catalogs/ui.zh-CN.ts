@@ -1316,10 +1316,14 @@ export const uiZhCN: Record<keyof typeof uiEn, MessageValue> = {
   'failureReason.OTHER': '其他',
 
   // ========== 原生（托盘 / 应用菜单 / 对话框 / 更新） ==========
-  'native.tray.tooltipRunning': 'One Switch · 代理运行中 (端口 {port})',
-  'native.tray.tooltipStopped': 'One Switch · 代理已停止',
-  'native.tray.proxyRunning': '代理服务运行中 · 端口 {port}',
-  'native.tray.proxyStopped': '代理服务已停止',
+  // 托盘菜单：第一行是状态（不可点），后面才是动作；`{port}` 只在运行时有意义。
+  // tooltip 在代码里拼成 `应用名 · 状态`，所以这里的状态文案不带应用名。
+  // `section.proxy` 是 macOS 原生分组标题（`type: 'header'`，macOS 14+ 才有），其他平台不渲染。
+  'native.tray.section.proxy': '代理服务',
+  'native.tray.status.running': '运行中 · {port}',
+  'native.tray.status.stopped': '已停止',
+  'native.tray.copyEndpoint': '复制接入地址',
+  'native.tray.copyEndpointDone': '接入地址已复制',
   'native.tray.openWindow': '打开主界面',
   'native.tray.startProxy': '启动代理服务',
   'native.tray.stopProxy': '停止代理服务',
