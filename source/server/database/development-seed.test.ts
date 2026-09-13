@@ -34,11 +34,11 @@ describe('development seed', () => {
   it('populates an empty development database with representative data', async () => {
     expect(await seedDevelopmentData(secretStore)).toBe(true)
 
-    expect(await listProviders()).toHaveLength(5)
-    expect((await listProviders()).map(provider => provider.name)).toEqual(expect.arrayContaining(['OpenAI', 'Anthropic', 'Volcengine Ark', 'DeepSeek', 'Protocol Lab']))
+    expect(await listProviders()).toHaveLength(4)
+    expect((await listProviders()).map(provider => provider.name)).toEqual(expect.arrayContaining(['OpenAI', 'Anthropic', 'Volcengine Ark', 'DeepSeek']))
     expect((await listProviders()).every(provider => !provider.name.includes('开发示例'))).toBe(true)
     expect(await listLogicalModels()).toHaveLength(1)
-    expect(getDb().select({ id: providerModels.id }).from(providerModels).all()).toHaveLength(10)
+    expect(getDb().select({ id: providerModels.id }).from(providerModels).all()).toHaveLength(7)
     expect(await listRequestLogs(200)).toHaveLength(120)
     const firstBatchRequests = await listRequestLogs(120, 0)
     const successfulRequest = await getRequestLog(firstBatchRequests.find(request => request.status === 'success')!.id)
@@ -60,7 +60,7 @@ describe('development seed', () => {
         total_tokens: expect.any(Number),
       }),
     }))
-    expect(getDb().select().from(providerModels).all()).toHaveLength(10)
+    expect(getDb().select().from(providerModels).all()).toHaveLength(7)
     // 数值用量表里只有可求和的 token 类条目，原始报文另占一行 `raw`。
     const usageRows = getDb().select().from(requestUsages).where(eq(requestUsages.requestId, successfulRequestId)).all()
     expect(usageRows).toEqual(expect.arrayContaining([
@@ -93,7 +93,7 @@ describe('development seed', () => {
       'openai-responses',
       'anthropic-messages',
     ]))
-    expect(secretStore.set).toHaveBeenCalledTimes(5)
+    expect(secretStore.set).toHaveBeenCalledTimes(4)
   })
 
   it('does not modify a database that already has configuration', async () => {
@@ -119,14 +119,14 @@ describe('development seed', () => {
 
     expect(await seedDevelopmentData(secretStore, { allowExisting: true })).toBe(true)
     expect((await listProviders()).map(provider => provider.name)).toContain('Existing provider')
-    expect(await listProviders()).toHaveLength(6)
-    expect(secretStore.set).toHaveBeenCalledTimes(5)
+    expect(await listProviders()).toHaveLength(5)
+    expect(secretStore.set).toHaveBeenCalledTimes(4)
 
     const firstBatchIds = new Set((await listRequestLogs(200)).map(request => request.id))
     expect(await seedDevelopmentData(secretStore, { allowExisting: true })).toBe(true)
-    expect(await listProviders()).toHaveLength(6)
+    expect(await listProviders()).toHaveLength(5)
     expect(await listLogicalModels()).toHaveLength(1)
-    expect(getDb().select({ id: providerModels.id }).from(providerModels).all()).toHaveLength(10)
+    expect(getDb().select({ id: providerModels.id }).from(providerModels).all()).toHaveLength(7)
     const allRequests = await listRequestLogs(300)
     expect(allRequests).toHaveLength(240)
     const secondBatchRequests = allRequests.filter(request => !firstBatchIds.has(request.id))
@@ -136,6 +136,6 @@ describe('development seed', () => {
     expect((await getRequestUsage(secondBatchSuccess.id)).totalTokens).not.toBeNull()
     expect(await listRequestContents(secondBatchSuccess.id)).toHaveLength(1)
     expect(await listAttemptsByRequest(secondBatchFailure.id)).toHaveLength(2)
-    expect(secretStore.set).toHaveBeenCalledTimes(5)
+    expect(secretStore.set).toHaveBeenCalledTimes(4)
   })
 })

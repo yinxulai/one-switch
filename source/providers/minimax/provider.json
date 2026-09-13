@@ -5,6 +5,6 @@
   "aliases": ["mini-max", "mini max"],
   "color": "#30c4a2",
   "endpoints": {
-    "openai-completions": "https://api.minimax.chat/v1/text/chatcompletion_pro"
+    "openai-completions": "https://api.minimax.cn/v1/chat/completions"
   }
 }

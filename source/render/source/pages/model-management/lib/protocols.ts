@@ -18,7 +18,7 @@ export const PROTOCOL_PLACEHOLDERS: Record<Protocol, string> = {
 export const PROTOCOL_EXAMPLES: Record<Protocol, ProtocolExample[]> = {
   'openai-completions': [
     { provider: 'OpenAI', url: 'https://api.openai.com/v1/chat/completions' },
-    { provider: 'DeepSeek', url: 'https://api.deepseek.com/v1/chat/completions' },
+    { provider: 'DeepSeek', url: 'https://api.deepseek.com/chat/completions' },
     { provider: 'Ollama', providerKey: 'providers.example.ollamaLocal', url: 'http://localhost:11434/v1/chat/completions' },
   ],
   'openai-responses': [

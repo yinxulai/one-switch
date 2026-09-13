@@ -5,7 +5,6 @@
   "aliases": ["gemini", "vertex-ai", "vertex ai", "google-gemini"],
   "color": "#4285f4",
   "endpoints": {
-    "openai-completions": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-    "openai-responses": "https://generativelanguage.googleapis.com/v1beta/openai/responses"
+    "openai-completions": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
   }
 }

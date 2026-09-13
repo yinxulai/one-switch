@@ -63,19 +63,6 @@ const PROVIDER_FIXTURES = [
       'openai-completions': 'https://api.deepseek.com/chat/completions',
     },
   },
-  {
-    id: 'prov_dev_all_protocols',
-    name: 'Protocol Lab',
-    // 同上：按 id 匹配的重命名字面量，不改。
-    legacyName: '协议实验室（开发示例）',
-    apiKeyReference: 'key_dev_all_protocols',
-    apiKey: 'sk-development-all-protocols',
-    endpoints: {
-      'openai-completions': 'https://api.example.com/v1/chat/completions',
-      'openai-responses': 'https://api.example.com/v1/responses',
-      'anthropic-messages': 'https://api.example.com/v1/messages',
-    },
-  },
 ] as const
 
 const PROVIDER_MODEL_FIXTURES = [
@@ -86,15 +73,6 @@ const PROVIDER_MODEL_FIXTURES = [
   ['default', 'prov_dev_openai', 'o3', 'openai-responses', 5],
   ['default', 'prov_dev_ark', 'doubao-seed-1-6-flash', 'openai-completions', 6],
   ['default', 'prov_dev_deepseek', 'deepseek-chat', 'openai-completions', 7],
-  ['default', 'prov_dev_all_protocols', 'universal-chat', 'all', 8],
-  ['default', 'prov_dev_all_protocols', 'universal-reasoner', 'all', 9],
-  ['default', 'prov_dev_all_protocols', 'universal-fast', 'all', 10],
-] as const
-
-const ALL_PROTOCOLS = [
-  'openai-completions',
-  'openai-responses',
-  'anthropic-messages',
 ] as const
 
 const DEVELOPMENT_REQUEST_COUNT = 120
@@ -177,7 +155,7 @@ export async function seedDevelopmentData(secretStore: KeychainApi, options: Dev
       }))).run()
       transaction.insert(providerModelHealth).values(providerModelsToInsert.map(({ index }) => ({ providerModelId: `model_dev_provider_${index + 1}`, updatedTime: timestamp }))).run()
       for (const { fixture, index } of providerModelsToInsert) {
-        const protocols = fixture[3] === 'all' ? ALL_PROTOCOLS : [fixture[3]]
+        const protocols = [fixture[3]]
         for (const protocol of protocols) {
           const endpointId = `endpoint_dev_${fixture[1]}_${protocol}`
           const url = PROVIDER_FIXTURES.find(provider => provider.id === fixture[1])?.endpoints[protocol as keyof typeof PROVIDER_FIXTURES[number]['endpoints']] ?? 'https://api.example.com'
@@ -253,7 +231,7 @@ export async function seedDevelopmentData(secretStore: KeychainApi, options: Dev
         providerModelId,
         providerName: request.provider.name,
         providerModelName: fixture[2],
-        upstreamProtocol: fixture[3] === 'all' ? 'openai-completions' : fixture[3],
+        upstreamProtocol: fixture[3],
         upstreamRequestId: null,
         url: '',
         status: request.status,
