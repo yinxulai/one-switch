@@ -43,7 +43,8 @@ const PROVIDER_FIXTURES = [
   {
     id: 'prov_dev_ark',
     name: 'Volcengine Ark',
-    // `legacyName` 是升级用的历史字面量：旧开发库里的行可能仍叫这个名字，改了它就地升级不上。
+    // `legacyName` 用于按 id 就地重命名：库里同一 id 的行可能仍带着这个名字，
+    // 匹配得上才能就地升级，否则会多出一行。
     legacyName: '火山方舟（开发示例）',
     apiKeyReference: 'key_dev_ark',
     apiKey: 'development-ark-key',
@@ -65,7 +66,7 @@ const PROVIDER_FIXTURES = [
   {
     id: 'prov_dev_all_protocols',
     name: 'Protocol Lab',
-    // 同上：历史字面量，不改。
+    // 同上：按 id 匹配的重命名字面量，不改。
     legacyName: '协议实验室（开发示例）',
     apiKeyReference: 'key_dev_all_protocols',
     apiKey: 'sk-development-all-protocols',

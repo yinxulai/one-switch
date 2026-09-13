@@ -65,7 +65,7 @@ interface IterationNode extends WorkflowNodeBase {
 - **命中判定读 `collectPath`，汇总结果写 `resultPath`，两者互不干扰**：`collectPath` 每轮结束读一次，非空即本轮命中；`resultPath` 留空（`''`）表示只判定命中、不写回，`route` 里该路径保持循环体自己写下的值。要做「循环体负责产出、下游再兜底」的拼法就必须留空，否则整轮没命中时汇总结果会用空数组把循环体写下的落点覆盖掉（见 [route-design.md](./route-design.md) §2.7）；
 - `maxIterations` 是单个迭代节点的业务预算，全局步骤预算只负责防止恶意或错误图无限执行；被上限截断时会在 trace 的 `stoppedReason` 里写明剩余项数。
 
-循环状态属于一次执行，不写回用户配置。旧版设计里设想的 `metadata.iteration` / `metadata.loop` 没有落地：作用域统一收在 `route.iteration` 下，离开循环后它就是最后一轮的值，调用方读不读都不影响流程。
+循环状态属于一次执行，不写回用户配置。作用域统一收在 `route.iteration` 下，离开循环后它就是最后一轮的值，调用方读不读都不影响流程。
 
 ## 能力注入：脚本与 LLM 节点
 
@@ -128,7 +128,7 @@ interface PromptNode extends WorkflowNodeBase {
 
 条件规则的比较值也支持来自字段（`valueSource: 'field'` + `valueFieldPath`），因此「请求模型是否在逻辑模型列表里」这类判断完全由条件节点完成，引擎不预计算业务结论。
 
-引擎不内置「跟随请求模型」这类专用语义，默认策略由 `Input → Condition(route.requestedModel in logicalModels[*].id) → ModelSelect(变量) / ModelSelect(固定 default) → Output` 组合而成，见 [route-design.md](./route-design.md) §2.7。
+引擎不内置「跟随请求模型」这类专用语义，默认策略由 `Input → 协议发现 → Condition(request.body.model in logicalModels[*].id) → ModelSelect(变量) / ModelSelect(固定 default) → Output` 组合而成，见 [route-design.md](./route-design.md) §2.7。协议发现这一步不可省：入口节点不解析请求体，`request.body.model` 这个路径由它按命中的协议声明给下游。
 
 抓不到任何逻辑模型时该节点仍产出 trace，`success` 为 `false`，但不阻断执行。
 
@@ -143,7 +143,7 @@ interface PromptNode extends WorkflowNodeBase {
 
 ### 类型与操作符
 
-字段类型由采样值推断（`string` / `number` / `boolean` / `enum` / `array` / `object` / `unknown`），只影响 UI 中的候选操作符集合，**不影响运行时语义**：
+字段类型由**节点声明**（输入节点与协议发现节点各自的声明表，见 [route-design.md](./route-design.md) §4.1），取值分 `string` / `number` / `boolean` / `enum` / `array` / `object` / `unknown`，只影响 UI 中的候选操作符集合，**不影响运行时语义**：
 
 - `array` / `object` 字段暴露整体判定操作符（`contains`、`empty`、`notEmpty`、`equals`…）；
 - `unknown` 字段不限制操作符，运行时按实际取值决定语义 —— 数组元素、未定义字段、将来的动态脚本产出都走这条路，等价于“按动态脚本那样处理”。
@@ -168,8 +168,8 @@ interface PromptNode extends WorkflowNodeBase {
 
 每次保存生成一个递增版本（最多保留 30 版），代理读的永远是「最新保存的那一版」；一版都没保存过时用内建默认策略现场生成。读写入口都在 `source/server/database/router-graph-store.ts`，画布不保留本地副本。
 
-读取时执行 JSON 解析、Zod `safeParse` 和图校验。任何旧格式（裸节点数组、节点内嵌连接字段）都不再被读取；节点级的旧字段（`queue-select` / `queueIds` / `follow-request-model`）在解析时迁移一次。
+读取时执行 JSON 解析、Zod `safeParse` 与图校验。形状对不上就直接报错，不做就地修补：能跑的就是当前这份 schema 定义的图。
 
 ## 后续演进
 
-当需要支持嵌套循环和真正的容器子图时，应把循环体从“手动回边”升级为结构化 body 子图，并以执行作用域栈承载嵌套状态（目前 `route.iteration` 只有一层作用域，嵌套循环会互相覆盖）。该迁移不应与本次图视图和校验混在一起。
+当需要支持嵌套循环和真正的容器子图时，应把循环体从“手动回边”升级为结构化 body 子图，并以执行作用域栈承载嵌套状态（目前 `route.iteration` 只有一层作用域，嵌套循环会互相覆盖）。这项改动不应与图视图和图校验混在一起。

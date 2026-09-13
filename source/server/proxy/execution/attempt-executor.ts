@@ -215,7 +215,7 @@ async function attemptRequest(context: RequestContext, response: ProxyResponse, 
         //
         // 代理只做忠诚转发：既不替上游补做形态的转换，也不把整包 JSON 硬塞进流式响应——
         // 那种「看起来能用」的响应只是把上游违约藏起来，客户端拿到的是一个 SSE 语义下的 JSON
-        // 字节流，而日志里看不出任何异常（§1.6.2）。因此它不是成功，而是一次失败：
+        // 字节流，而日志里看不出任何异常（§1.2）。因此它不是成功，而是一次失败：
         // 按切换策略处理，让下一个候选来接。
         transportMismatch = disposition === 'success' && context.transport === 'http-stream' && upstreamTransport !== 'http-stream'
         if (transportMismatch) {

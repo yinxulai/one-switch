@@ -175,7 +175,7 @@ export const logicalModels = sqliteTable(
     enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
     /**
      * 逻辑模型在管理页的展示顺序，数值越小越靠前。
-     * 全部历史数据与 `default` 都是 0，此时回退到 `createdTime` 排序，行为与加列前一致。
+     * 全为 0（含 `default`）时回退到 `createdTime` 排序。
      */
     sortOrder: integer('sortOrder').notNull().default(0),
     createdTime: integer('createdTime').notNull(),

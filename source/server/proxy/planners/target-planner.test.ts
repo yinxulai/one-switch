@@ -70,7 +70,7 @@ function candidate(id: string, endpoints: EndpointFixture[], providerId = 'prov_
 }
 
 function plan(clientProtocol: Protocol, manualModelId: string | null = null): Promise<PlanResult> {
-  // 上游载体不在这里传：它由端点自己的地址决定（`wss://` 就是 websocket）。
+  // 上游形态不在这里传：它由端点自己的地址决定（`wss://` 就是 websocket）。
   // 客户端跳的取值从不改变哪个端点合法。
   return Promise.resolve(proxyTargetPlanner.plan({ logicalModelId: 'default', clientProtocol, manualModelId }))
 }

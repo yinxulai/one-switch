@@ -23,7 +23,9 @@ export function SortableProviderModel(props: SortableProviderModelProps) {
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn(
-        'relative overflow-hidden rounded-md border border-module-border bg-card',
+        // 边界只由外层列表外壳提供（`border` + `divide-y`），行本身不再套一圈边框，
+        // 否则同一条嵌套链上会出现「外壳边框 + 行边框 + 分隔线」三层叠线。
+        'relative overflow-hidden bg-card',
         isDragging && 'z-10 overflow-visible ring-1 ring-primary/45 bg-primary/3',
       )}
     >

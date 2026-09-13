@@ -20,9 +20,9 @@ export interface AttemptObserverOptions {
  * 两者对「这份正文该怎么记」共用同一个判断——客户端跳声明的形态是不是 `http-stream`——
  * 因此正文的**形状**始终一致：要么两边都是分块快照，要么两边都是原文。
  *
- * 上一版这里读的是合成量「客户端要增量 **且** 上游以 SSE 回答」，等于把「上游没兼现形态」
- * 这个状态抹平成了「那就当整包记」；现在这个状态由执行器显式判定为 failover（§1.6.2），
- * 观察者不再掺和。**上游跳实际是什么形态**仍是独立的一件事，由执行器读响应头得出
+ * 这里读的是**客户端跳声明的形态**，不是「客户端要增量 **且** 上游以 SSE 回答」的合成量：
+ * 后者会把「上游没兑现形态」抹平成「那就当整包记」，而那个状态由执行器显式判定为
+ * failover（§1.2）。**上游跳实际是什么形态**仍是独立的一件事，由执行器读响应头得出
  * （`upstreamTransport`），落库时进的是尝试行而不是请求行。
  *
  * 观察者不改任何字节，也不影响转发结果——它抛错只会丢掉自己的记录。
@@ -30,7 +30,7 @@ export interface AttemptObserverOptions {
 export interface AttemptObserver extends Observer {
   /** 上游响应头投影；尚未收到时为 `null`。 */
   head(): HeadFrame | null
-  /** 上游视角正文；交付方式是 `stream` 时是分块快照，否则是原文。 */
+  /** 上游视角正文；客户端跳声明 `http-stream` 时是分块快照，否则是原文。 */
   upstreamBody(): string | null
   /** 原文字节；流式下发时为完整 SSE 文本（与分块快照相对，用于健康度判定）。 */
   rawBody(): string | null

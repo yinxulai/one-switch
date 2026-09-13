@@ -122,7 +122,10 @@ export async function handleProxyRequest(req: IncomingMessage, res: ServerRespon
 
   // 路由决策：把这次请求交给当前生效的工作流图，拿回一串按优先级排的落点逻辑模型。
   // 图是异步的（脚本节点会跳进沙箱、提示词节点会去调模型），因此落点在这一步之后才有。
-  const requestedModel = modelResult.model.trim()
+  // 模型名**不进图**，也不在这里另立一个变量：图读到的就是请求本身（路径 / 方法 / 头 / 体），
+  // 模型名在 `request.body.model` 上，由协议发现节点按命中的协议声明。
+  // 下面那两条日志**就地**引用上面那次模型校验读到的值，它不是第二份事实：
+  // 「没落点」那条恰恰是持久化的请求日志里 `logicalModelId` 为空的场景，控制台不记就没人知道客户端要的是哪个模型。
   const route = await resolveRoute({
     request: { path: requestUrl.pathname, method, headers: toRouteHeaders(req.headers), body: parseRouteBody(requestBody) },
     clientProtocol: protocol,
@@ -132,11 +135,11 @@ export async function handleProxyRequest(req: IncomingMessage, res: ServerRespon
     traceId: requestId,
   })
   if (route.logicalModelIds.length === 0) {
-    console.error(`[proxy] no landing logical model requestId=${requestId} requestedModel=${requestedModel} graphVersion=${route.graphVersion} stopReason=${route.stopReason}`)
+    console.error(`[proxy] no landing logical model requestId=${requestId} clientModel=${modelResult.model.trim()} graphVersion=${route.graphVersion} stopReason=${route.stopReason}`)
     await reject({ statusCode: 503, errorCode: 'NO_MODEL_CONFIGURED', errorMessage: NO_LANDING_DETAIL }, { logicalModelId: null, clientProtocol: protocol, requestBody, transport })
     return
   }
-  console.debug(`[proxy] route resolved requestId=${requestId} requestedModel=${requestedModel} graphVersion=${route.graphVersion} stopReason=${route.stopReason} landingModels=${route.logicalModelIds.join(',')}`)
+  console.debug(`[proxy] route resolved requestId=${requestId} clientModel=${modelResult.model.trim()} graphVersion=${route.graphVersion} stopReason=${route.stopReason} landingModels=${route.logicalModelIds.join(',')}`)
 
   // 落点 → 候选：落点列表按优先级排，第一个有可用候选的落点胜出。
   // 协议取自图的决策而不是入口自己再记一份：两者同源才能保证「图说是什么就是什么」。

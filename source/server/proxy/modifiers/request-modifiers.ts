@@ -34,9 +34,9 @@ export interface RequestModifierOptions {
  * 2. 正文：模型改写 + 请求默认值 + 协议转换，都在适配器里一次做完。
  * 3. 规则：用户配置在最后介入，改的是「已经属于上游协议」的报文。
  *
- * 三个修改器都**不声明 `scope`**，因为这里没有可排除的形态：交付方式说的是响应怎么交付
- * （§1.6.1），而请求总是整份读完再发；载体在客户端跳是事实、在上游跳是规划器的决策，
- * 没有一个能构成「这个修改器在某种形态下没有能做的事」。
+ * 三个修改器都**不声明 `scope`**，因为这里没有可排除的形态：`ModifierScope.transports` 说的是
+ * 「响应以什么形态回来」（§1.1），而请求总是整份读完再发——没有一个形态能构成
+ * 「这个修改器在某种形态下没有能做的事」。
  */
 export function createRequestModifiers(options: RequestModifierOptions): Modifier[] {
   return [

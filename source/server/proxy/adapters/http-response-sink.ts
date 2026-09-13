@@ -5,7 +5,7 @@ import type { ProxyResponse } from '@server/proxy/response/proxy-response'
  * 上游响应的分帧格式：手里这堆字节是 SSE 还是整包 JSON。
  *
  * 这是**事实**（上游怎么回的），与客户端的**预期**（`exchange.transport`）是两件事，因此读它
- * 之前先想清楚要哪一半（§1.6.2）：选解析器用它，决定交付行为用预期。
+ * 之前先想清楚要哪一半（§1.2）：选解析器用它，决定交付行为用预期。
  */
 export function isEventStreamResponse(headers: HeaderMap): boolean {
   return String(headers['content-type'] ?? '').includes('text/event-stream')
@@ -32,7 +32,7 @@ export interface HttpResponseSinkOptions {
    * 它是**预期**，也是出口唯一的交付依据：`http-stream` 才边收边发，否则攒完再发。
    * 上游回了一个非 SSE 的 2xx 时，执行器已经在上游响应头落地的那一刻把这次尝试判成
    * failover（见 `attempt-executor.ts`），因此出口不需要、也不允许再去读上游响应头
-   * 来重新回答「这次到底算不算流式」（§1.6.2）。
+   * 来重新回答「这次到底该不该边收边发」（§1.2）。
    */
   transport: TransportKind
   /** 是否记录写出的字节。关闭时只保留缓冲分支的兜底正文。 */

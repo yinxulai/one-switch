@@ -38,7 +38,7 @@ export const APPENDABLE_KINDS: AppendableKind[] = [
   'prompt',
 ]
 
-/** 画布默认列顺序：既用于图例排序，也用于旧数据的自动布局。 */
+/** 画布默认列顺序：用于旧数据的自动布局。 */
 export const NODE_KIND_ORDER: WorkflowNodeKind[] = [
   'input',
   'control-input',
@@ -61,8 +61,6 @@ export interface NodeKindMeta {
   icon: NodeKindIcon
   /** 图标色块底色（对齐 Dify `block-icon.tsx` 的 util-colors-*-500 纯色块，前景固定白色） */
   tone: string
-  /** 端口、连线、图例使用的强调色 */
-  accent: string
 }
 
 export const NODE_KIND_META: Record<WorkflowNodeKind, NodeKindMeta> = {
@@ -71,63 +69,54 @@ export const NODE_KIND_META: Record<WorkflowNodeKind, NodeKindMeta> = {
     hintKey: 'router.node.input.hint',
     icon: CirclePlay,
     tone: 'bg-util-colors-blue-brand-blue-brand-500',
-    accent: 'bg-util-colors-blue-brand-blue-brand-500',
   },
   'control-input': {
     labelKey: 'router.node.control-input.label',
     hintKey: 'router.node.control-input.hint',
     icon: ArrowRightLeft,
     tone: 'bg-util-colors-blue-blue-500',
-    accent: 'bg-util-colors-blue-blue-500',
   },
   'protocol-discovery': {
     labelKey: 'router.node.protocol-discovery.label',
     hintKey: 'router.node.protocol-discovery.hint',
     icon: GitBranch,
     tone: 'bg-util-colors-green-green-500',
-    accent: 'bg-util-colors-green-green-500',
   },
   condition: {
     labelKey: 'router.node.condition.label',
     hintKey: 'router.node.condition.hint',
     icon: Waypoints,
     tone: 'bg-util-colors-cyan-cyan-500',
-    accent: 'bg-util-colors-cyan-cyan-500',
   },
   'model-select': {
     labelKey: 'router.node.model-select.label',
     hintKey: 'router.node.model-select.hint',
     icon: ArrowRightLeft,
     tone: 'bg-util-colors-indigo-indigo-500',
-    accent: 'bg-util-colors-indigo-indigo-500',
   },
   iteration: {
     labelKey: 'router.node.iteration.label',
     hintKey: 'router.node.iteration.hint',
     icon: Repeat2,
     tone: 'bg-util-colors-violet-violet-500',
-    accent: 'bg-util-colors-violet-violet-500',
   },
   script: {
     labelKey: 'router.node.script.label',
     hintKey: 'router.node.script.hint',
     icon: SquareCode,
     tone: 'bg-util-colors-yellow-yellow-500',
-    accent: 'bg-util-colors-yellow-yellow-500',
   },
   prompt: {
     labelKey: 'router.node.prompt.label',
     hintKey: 'router.node.prompt.hint',
     icon: Sparkles,
     tone: 'bg-util-colors-pink-pink-500',
-    accent: 'bg-util-colors-pink-pink-500',
   },
   output: {
     labelKey: 'router.node.output.label',
     hintKey: 'router.node.output.hint',
     icon: ArrowRight,
     tone: 'bg-util-colors-warning-warning-500',
-    accent: 'bg-util-colors-warning-warning-500',
   },
 }
 
@@ -166,10 +155,6 @@ export function kindIcon(kind: WorkflowNodeKind): NodeKindIcon {
 
 export function kindTone(kind: WorkflowNodeKind): string {
   return NODE_KIND_META[kind]?.tone ?? 'bg-primary'
-}
-
-export function kindAccent(kind: WorkflowNodeKind): string {
-  return NODE_KIND_META[kind]?.accent ?? 'bg-primary'
 }
 
 export function nodeSummary(t: AppTranslator, model: WorkflowNodeModel): string {

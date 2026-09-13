@@ -11,6 +11,7 @@ import type { NodePanelProps } from '../node-data'
 import { useTranslation } from '@/i18n/provider'
 import type { UiCatalogKey } from '@common/i18n/catalogs'
 import type { ModelSelectSource, RuntimeLogicalModel } from '@common/router/types'
+import { readCandidates } from './field-candidates'
 import {
   NodePanelField,
   NodePanelGroupHeader,
@@ -59,7 +60,7 @@ export function ModelSelectPanel(props: NodePanelProps) {
 
   /** 变量取值只能来自字符串 / 字符串数组字段：逻辑模型 id 的形态。 */
   const variableFields = useMemo(
-    () => conditionFieldHints.filter(field => field.valueType === 'string' || field.valueType === 'array'),
+    () => readCandidates('model-select', conditionFieldHints),
     [conditionFieldHints],
   )
 

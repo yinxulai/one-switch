@@ -7,8 +7,8 @@ import type { ControlInputNode } from '@common/router/types'
 
 /**
  * 控制输入节点视图。
- * 只保留唯一的 `out` 端口：引擎实际只按 `out` 继续路由，
- * 旧实现里按控制项 id 生成的端口不会被引擎识别，属于无效端口，已移除。
+ * 节点只有唯一的 `out` 端口：引擎只按 `out` 继续路由，
+ * 按控制项 id 生成端口会得到引擎读不到的无效端口，因此不那样做。
  * 行结构对齐 Dify `nodes/start/node.tsx`：h-6 圆角浅底 + 名称 + 右侧 key。
  */
 export function ControlInputNodeView(props: RouteNodeProps) {

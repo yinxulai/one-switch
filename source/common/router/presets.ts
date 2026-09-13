@@ -1,6 +1,7 @@
 import { isBuiltInDefaultLogicalModel } from '@common/schemas'
 
 import {
+  ALL_WORKFLOW_PROTOCOLS,
   DEFAULT_OPERATOR_SET,
   PROMPT_TIMEOUT_DEFAULT,
   SCRIPT_TIMEOUT_DEFAULT,
@@ -30,11 +31,14 @@ import {
  */
 
 /**
- * 测试运行用的示例原始输入。
- * 保持最小形态：只有路由真正会读到的请求事实（路径 / 方法 / 头 / 体）。
+ * 测试运行用的示例原始输入：一份**真实的 OpenAI Chat Completions 请求**。
+ *
+ * 它只负责给「测试输入」框一个能直接跑的默认值，**不是**字段候选表的来源：
+ * 体里有什么字段、叫什么名字，是协议层的事（见 `@common/router/request-shape`），
+ * 所以这里写得像真实请求就行，不必（也不能）迁就图上某个节点想看到什么。
  * `logicalModels` 由页面在运行时注入真实模型列表。
- * `user-agent` 是给「UA 区分来源」用的，`messages` / `tools` 是给两个复杂度预设用的：
- * 不预置这些字段，对应预设跑起来就只能走兜底分支。
+ * `user-agent` 是给「UA 分流」预设用的，`messages` / `tools` 是给「脚本分流」预设用的
+ * （它读的是「协议发现」节点声明的字段）：不预置这些，对应预设跑起来就只能走兜底分支。
  */
 export const samplePayload = {
   request: {
@@ -58,14 +62,21 @@ export function createId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`
 }
 
+/**
+ * 新建条件规则的默认值。
+ *
+ * 默认字段只能取**输入节点真的保证得了**的东西（请求行）—— 请求体里的字段
+ * 是协议层的事，输入节点不知道体里有什么，拿一个体字段当默认值是错的：
+ * 一建出来就是「字段缺失」告警，还会误导用户以为入口节点看得见请求体内容。
+ */
 export function createConditionRule(): ConditionRule {
   return {
-    fieldPath: 'request.body.tenant',
+    fieldPath: 'request.method',
     valueType: 'string',
-    operator: 'startsWith',
+    operator: 'equals',
     valueSource: 'literal',
     valueFieldPath: '',
-    value: 'vip-',
+    value: 'POST',
   }
 }
 
@@ -308,11 +319,20 @@ export function resolveLandingModelIds(pool: PresetModelPool, index: number | nu
  *
  * 规则全部由基础节点组合而成，没有任何专用节点，
  * 命中判断就是一条普通的「字段 in 字段」条件：
- * 输入 → 条件（route.requestedModel in logicalModels[*].id）
- *        ├─ IF   → 逻辑模型选择（变量取值 route.requestedModel）→ 出口
- *        └─ ELSE → 逻辑模型选择（兜底落点，生成时定好具体 id）→ 出口
+ * 输入 → 协议发现 → 条件（request.body.model in logicalModels[*].id）
+ *          ├─ IF   → 逻辑模型选择（变量取值 request.body.model）→ 出口
+ *          └─ ELSE → 逻辑模型选择（兜底落点，生成时定好具体 id）→ 出口
  *
- * 注意比较右侧用的是通配投影 `logicalModels[*].id`：
+ * 为什么中间要过一道协议发现：请求模型是**协议层**的事实。入口节点不解析请求体，
+ * 它不知道体里有什么、更不知道模型名写在哪（`/v1/responses` 在 `input` 旁边，
+ * 其余协议在 `messages` 旁边）。要入口节点报出 `request.body.model`，
+ * 就等于要求它兼容所有协议。所以这一步交给协议发现节点：
+ * 它按命中的协议声明请求体形状，下游条件读到的就是协议解析后的位置。
+ * 四条协议分支都接同一个条件（包括 `unknown`）—— 认不出协议也要按同一套策略兜底。
+ *
+ * 左侧直接读请求里写的模型名，不在 `route` 下另存一份副本：
+ * 派生副本会多出第二个事实源，副本与请求不同步时没人说得清哪个是真的。
+ * 比较右侧用的是通配投影 `logicalModels[*].id`：
  * 上下文里本来就带着完整的逻辑模型列表，没必要再派生一份 id 数组。
  *
  * 兜底落点在生成时从传入的逻辑模型里挑真实 id，所以这条策略套用即可运行，
@@ -325,7 +345,7 @@ export function createDefaultPolicyGraph(models: RuntimeLogicalModel[]): Workflo
     name: '请求模型在逻辑模型列表里',
     conditions: [
       {
-        fieldPath: 'route.requestedModel',
+        fieldPath: 'request.body.model',
         valueType: 'string',
         operator: 'in',
         valueSource: 'field',
@@ -339,12 +359,20 @@ export function createDefaultPolicyGraph(models: RuntimeLogicalModel[]): Workflo
     nodes: [
       createInputNode({ x: 80, y: 220 }),
       {
+        id: 'protocol',
+        kind: 'protocol-discovery',
+        name: '协议发现',
+        enabled: true,
+        description: '先认出协议，再按该协议声明请求体形状；下游读的是协议解析后的字段。',
+        position: { x: 420, y: 220 },
+      },
+      {
         id: 'condition',
         kind: 'condition',
         name: '请求模型是否命中逻辑模型',
         enabled: true,
-        description: 'route.requestedModel 在 logicalModels[*].id 里时走直连分支，否则落到默认逻辑模型。',
-        position: { x: 460, y: 220 },
+        description: 'request.body.model 在 logicalModels[*].id 里时走直连分支，否则落到默认逻辑模型。',
+        position: { x: 760, y: 220 },
         cases: [conditionCase],
       },
       {
@@ -352,10 +380,10 @@ export function createDefaultPolicyGraph(models: RuntimeLogicalModel[]): Workflo
         kind: 'model-select',
         name: '直连请求模型',
         enabled: true,
-        description: '把 route.requestedModel 的取值直接当作逻辑模型 id。',
-        position: { x: 860, y: 110 },
+        description: '把 request.body.model 的取值直接当作逻辑模型 id。',
+        position: { x: 1100, y: 110 },
         source: 'variable',
-        variablePath: 'route.requestedModel',
+        variablePath: 'request.body.model',
         modelIds: [],
         fallbackModelIds: [],
       },
@@ -365,16 +393,22 @@ export function createDefaultPolicyGraph(models: RuntimeLogicalModel[]): Workflo
         name: '默认逻辑模型',
         enabled: true,
         description: '未命中时落到内置的默认逻辑模型。',
-        position: { x: 860, y: 330 },
+        position: { x: 1100, y: 330 },
         source: 'fixed',
         variablePath: '',
         modelIds: resolveLandingModelIds(pool, null),
         fallbackModelIds: [],
       },
-      createOutputNode({ x: 1260, y: 220 }),
+      createOutputNode({ x: 1440, y: 220 }),
     ],
     edges: [
-      { id: 'edge-input-condition', sourceNodeId: 'input', sourcePort: 'out', targetNodeId: 'condition' },
+      { id: 'edge-input-protocol', sourceNodeId: 'input', sourcePort: 'out', targetNodeId: 'protocol' },
+      ...ALL_WORKFLOW_PROTOCOLS.map(protocol => ({
+        id: `edge-protocol-${protocol}`,
+        sourceNodeId: 'protocol',
+        sourcePort: protocol,
+        targetNodeId: 'condition',
+      })),
       { id: 'edge-condition-direct', sourceNodeId: 'condition', sourcePort: conditionCase.id, targetNodeId: 'model-direct' },
       { id: 'edge-condition-else', sourceNodeId: 'condition', sourcePort: 'else', targetNodeId: 'model-default' },
       { id: 'edge-model-direct-output', sourceNodeId: 'model-direct', sourcePort: 'out', targetNodeId: 'output' },
@@ -592,6 +626,11 @@ export function createUserAgentGraph(models: RuntimeLogicalModel[]): WorkflowGra
  * 天然容忍多余空白，`[Cc]` 又顺手兼容了首字母大写。
  * 想让判定绝对可靠，就把提示词改成「只回答 JSON」，再用脚本节点解析它。
  *
+ * 提示词拼的是**请求体整体**（`${request.body}`）：那是入口节点保证得了的东西（协议无关），
+ * 所以这条策略不需要协议发现节点。要精确到「消息列表」，就在前面加一个协议发现节点、
+ * 把模板改成 `${request.body.messages}` —— 这里刻意不替用户猜协议：
+ * `/v1/responses` 的消息在 `input` 里而不在 `messages` 里，猜错就是静默判定成「简单」。
+ *
  * LLM 节点默认借用兜底逻辑模型（生成时定好），换成专门的判定用小模型更省；
  * 两个落点也在生成时按传入的逻辑模型列表定好，套用后直接能跑。
  */
@@ -682,10 +721,18 @@ export function createLlmComplexityGraph(models: RuntimeLogicalModel[]): Workflo
 /**
  * JS 脚本分流模板：用一段沙箱脚本把请求规模算成分档，再按分档落到不同逻辑模型。
  *
- * 输入 → JS 脚本节点（算消息数 / 上下文字数 / 工具数，返回 simple 或 complex）
+ * 输入 → 协议发现 → JS 脚本节点（算消息数 / 上下文字数 / 工具数，返回 simple 或 complex）
  *        → 条件（route.complexity 等于 complex）
  *          ├─ 复杂 → 逻辑模型选择（固定复杂落点）→ 出口
  *          └─ 其余 → 逻辑模型选择（固定简单落点）→ 出口
+ *
+ * 中间那道协议发现是必须的：脚本读的是**请求体里的具体字段**（消息列表、工具数），
+ * 那是协议层的事实。入口节点不解析请求体，它只保证 `request.body` 整体存在；
+ * 要拿到 `request.body.messages`，得让协议发现节点按命中的协议声明下来 ——
+ * 少了这道节点，脚本编辑器里就补全不出这个路径，图能跑但改不动。
+ * 认出协议的同时它也把协议名写进 `route.protocol`，脚本照着这个一手事实决定
+ * 消息列表读 `messages` 还是 `input`：体里同时有这两者时，只有协议说得清哪个是真的。
+ * 协议分支（四种，含 `unknown`）全部接同一个脚本：认不出协议也要按同一套策略兜底。
  *
  * 与 LLM 模板的分流骨架完全一致，差别只在「谁来判定」：
  * 脚本的返回值是确定的字符串，所以这里用「等于」精确判定，不需要正则去容错。
@@ -713,18 +760,29 @@ export function createScriptRoutingGraph(models: RuntimeLogicalModel[]): Workflo
   const nodes: WorkflowNodeModel[] = [
     createInputNode({ x: 80, y: 300 }),
     {
+      id: 'protocol',
+      kind: 'protocol-discovery',
+      name: '协议发现',
+      enabled: true,
+      description: '按路径与请求头认出协议，声明脚本要读的请求体字段（消息列表、工具列表）。',
+      position: { x: 340, y: 300 },
+    },
+    {
       id: 'complexity-script',
       kind: 'script',
       name: 'JS 计算请求复杂度',
       enabled: true,
       description: '按消息数 / 上下文字数 / 工具数打分，返回 simple 或 complex 写进 route.complexity。',
-      position: { x: 460, y: 300 },
+      position: { x: 600, y: 300 },
       code: `// payload 是本次运行数据的深拷贝；get(路径) 支持 a[*].b 通配投影。
-const messages = get('request.body.messages')
+// 消息列表写在哪是协议层的事实：completions / anthropic 在 messages 里，responses 在 input 里。
+// 上游「协议发现」节点已经把认出的协议写进 route.protocol，照着它取**那一条**路径 ——
+// 「先取 messages、取不到再取 input」这种兜底顺序在体里两者都有时会读错那一个。
+const messages = get(get('route.protocol') === 'openai-responses' ? 'request.body.input' : 'request.body.messages')
 const tools = get('request.body.tools')
 const messageCount = Array.isArray(messages) ? messages.length : 0
 const toolCount = Array.isArray(tools) ? tools.length : 0
-// 没有 messages 时退化成整个请求体的长度，至少还有个量级。
+// 认不出协议（route.protocol 是 unknown）时上面两个都取不到，退化成整个请求体的长度，至少还有个量级。
 const charCount = JSON.stringify(messages ?? get('request.body') ?? '').length
 
 // 三条里任意一条成立就算复杂请求，阈值按自己的业务调。
@@ -750,7 +808,7 @@ return isComplex ? 'complex' : 'simple'`,
       name: '复杂请求落点',
       enabled: true,
       description: '复杂请求落到这个逻辑模型。',
-      position: { x: 1300, y: 140 },
+      position: { x: 1560, y: 140 },
       source: 'fixed',
       variablePath: '',
       modelIds: complexLanding,
@@ -762,17 +820,23 @@ return isComplex ? 'complex' : 'simple'`,
       name: '其余请求落点',
       enabled: true,
       description: '简单请求落到这个逻辑模型。',
-      position: { x: 1300, y: 460 },
+      position: { x: 1560, y: 460 },
       source: 'fixed',
       variablePath: '',
       modelIds: simpleLanding,
       fallbackModelIds: [],
     },
-    createOutputNode({ x: 1720, y: 300 }),
+    createOutputNode({ x: 1980, y: 300 }),
   ]
 
   const edges: WorkflowEdge[] = [
-    { id: 'edge-input-script', sourceNodeId: 'input', sourcePort: 'out', targetNodeId: 'complexity-script' },
+    { id: 'edge-input-protocol', sourceNodeId: 'input', sourcePort: 'out', targetNodeId: 'protocol' },
+    ...ALL_WORKFLOW_PROTOCOLS.map(protocol => ({
+      id: `edge-protocol-${protocol}`,
+      sourceNodeId: 'protocol',
+      sourcePort: protocol,
+      targetNodeId: 'complexity-script',
+    })),
     { id: 'edge-script-condition', sourceNodeId: 'complexity-script', sourcePort: 'out', targetNodeId: 'complexity-condition' },
     { id: 'edge-condition-complex', sourceNodeId: 'complexity-condition', sourcePort: complexCase.id, targetNodeId: 'model-complex' },
     { id: 'edge-condition-simple', sourceNodeId: 'complexity-condition', sourcePort: 'else', targetNodeId: 'model-simple' },

@@ -19,7 +19,7 @@ export function parseJsonObject(body: Buffer): Record<string, unknown> | null {
   }
 }
 
-/** 从请求体读出模型名。语义与原来的 `validateLogicalModel` 完全一致，含错误文案。 */
+/** 从请求体读出模型名。 */
 export function readJsonModel(body: Buffer): ProtocolModelReadResult {
   const payload = parseJsonObject(body)
   if (payload === null) return { ok: false, reason: JSON_BODY_REQUIRED_MESSAGE }
@@ -32,7 +32,7 @@ export function readJsonModel(body: Buffer): ProtocolModelReadResult {
 /**
  * 把模型名写进请求体，保留其余字段。
  *
- * 空体原样返回；非法 JSON 与非对象体抛错（错误文案与原来的 `rewriteRequestModel` 一致）。
+ * 空体原样返回；非法 JSON 与非对象体抛错。
  */
 export function writeJsonModel(body: Buffer, modelName: string): Buffer {
   if (body.length === 0) return body

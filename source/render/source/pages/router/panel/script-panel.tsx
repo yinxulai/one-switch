@@ -11,6 +11,7 @@ import {
 import type { NodePanelProps } from '../node-data'
 import { useTranslation } from '@/i18n/provider'
 import { SCRIPT_TIMEOUT_LIMIT, type ScriptNode } from '@common/router/types'
+import { readCandidates } from './field-candidates'
 import { PanelCodeEditor } from './panel-code-editor'
 import {
   NodePanelField,
@@ -37,9 +38,9 @@ export function ScriptPanel(props: NodePanelProps) {
     update(current => current.kind === 'script' ? { ...current, ...patchValue } : current)
   }, [update])
 
-  /** 取值候选：脚本主要用来读取上游产出，所有已知字段都值得列出来。 */
+  /** 取值候选：脚本能读任意值（含整体对象 / 数组），所以上游声明过的字段全都列。 */
   const sourceFields = useMemo(
-    () => conditionFieldHints.filter(field => field.valueType !== 'object'),
+    () => readCandidates('script', conditionFieldHints),
     [conditionFieldHints],
   )
 

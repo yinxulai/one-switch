@@ -43,7 +43,7 @@ Electron + Node + TypeScript + React/Vite，选型理由与版本要求见 [tech
 | 数据 | 统计分析 | 请求量、成功率、耗时分布、token 趋势，可按时间范围与单个供应商下钻 |
 | 数据 | 请求记录 | 请求级与尝试级明细，含客户端/上游正文对比 |
 | 高级 | 请求重写 | 可复用重写规则的集中管理，见 [request-rewrite-rules.md](./request-rewrite-rules.md) |
-| 系统 | 接入配置 | 本地 Base URL 与各协议接入地址的展示与快捷复制 |
+| 系统 | 接入配置 | 各协议接入地址的展示与快捷复制，以及客户端要填的字段 |
 | 系统 | 运行日志 | 应用运行时日志（`runtime_logs`） |
 | 系统 | 设置 | 外观（主题、语言）、启动、监听、出站代理、日志与数据维护 |
 
@@ -76,6 +76,15 @@ Electron + Node + TypeScript + React/Vite，选型理由与版本要求见 [tech
 - 使用抽屉或对话框打开详情，支持格式化、复制和折叠
 - 筛选：按模型、协议、供应商、状态、时间范围
 - 日志字段、采集开关与保留策略见 [observability.md](./observability.md) 与 [data-model.md](./data-model.md)
+
+### 接入配置页
+
+这一页只回答两个问题，各自只在一张卡里回答，没有第三张复述它们的卡：
+
+- **地址是什么**（本地代理服务）：运行状态、监听地址，以及两种协议各自的接入地址（`/v1` 与 `/v1/messages`），每行一个复制按钮
+- **客户端要填什么**（客户端配置）：模型名（任意非空值，命中逻辑模型则直达，未命中由 `default` 兜底逻辑模型处理）、API Key（本地不校验鉴权）、上游凭证（在模型管理里维护）
+
+监听 `0.0.0.0` 时它本身不是可访问地址，展示给客户端的一律回落到 `127.0.0.1`，并在卡片头上说明原因。
 
 ### 设置页
 
@@ -116,4 +125,4 @@ Electron + Node + TypeScript + React/Vite，选型理由与版本要求见 [tech
 - **引擎与图模型**（节点/边结构、控制流与端口、迭代、脚本与 LLM 能力注入、图的加载与保存）：见 [workflow-engine.md](./workflow-engine.md)
 - **画布交互与节点面板**：见 [route-workbench.md](./route-workbench.md)
 
-> **此处曾有一版「最少通用节点」方案，已废弃。** 该方案主张 `input + control-input + condition + model-select + output` 五节点覆盖全部路由能力，并额外设计 `channelProfiles` / `modelRoutingPolicy` 渠道注册表。其中「不再扩展更多专用节点」的判断与实现不符——迭代、脚本、LLM、协议发现节点都已落地；`channelProfiles` / `modelRoutingPolicy` / `enableLlmRouting` / `llmRouterModelId` 这套注册表方案没有被实现；`matchedRuleId` / `matchedRuleType` / `selectedModelIds` / `llmDecision` / `controlSnapshot` 等运行时字段也不存在于请求日志模型中。实际契约以 `source/common/router/types.ts` 与 `source/server/database/schema.ts` 为准。
+契约以代码为准：图模型与节点定义在 `source/common/router/types.ts`，落库结构在 `source/server/database/schema.ts`。

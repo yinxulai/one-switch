@@ -40,7 +40,7 @@ const rootRoute = createRootRoute({ component: App, errorComponent: RootErrorCom
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
-  beforeLoad: () => { throw redirect({ to: '/logical-models', replace: true }) },
+  beforeLoad: () => { throw redirect({ to: '/router', replace: true }) },
 })
 
 const logicalModelsRoute = createRoute({
@@ -188,7 +188,7 @@ export const router = createRouter({
   routeTree,
   history: createHashHistory(),
   defaultPreload: 'intent',
-  defaultNotFoundComponent: () => <Navigate to="/logical-models" replace />,
+  defaultNotFoundComponent: () => <Navigate to="/router" replace />,
 })
 
 declare module '@tanstack/react-router' {

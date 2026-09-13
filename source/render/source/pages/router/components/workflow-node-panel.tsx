@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPoi
 import { Trash2, X } from 'lucide-react'
 
 import { Input } from '@/components/ui/input'
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
@@ -23,6 +24,21 @@ export function computeMaxPanelWidth(canvasWidth: number): number {
   return Math.max(MIN_PANEL_WIDTH, Math.floor(canvasWidth - RESERVED_CANVAS_WIDTH))
 }
 
+/**
+ * 外壳样式。
+ *
+ * 宽度不写在这里：面板可拖拽改宽，那是内联 style 的活。这里只处理公共 `SheetContent`
+ * 里会挡住内联宽度的默认值——`data-[side=right]:w-3/4`（被内联 style 压过）与
+ * `data-[side=right]:sm:max-w-sm`（384px 上限，靠 `!` 顶掉，否则拉宽到 420px 以上会被压回去）。
+ *
+ * `workflow-node-panel` / `workflow-dify-surface` 两个作用域类必须挂在浮层元素自己身上：
+ * `index.css` 里 Dify 的输入框刻度靠它们生效，而浮层会被 portal 到 body，拿不到画布的祖先作用域。
+ */
+const NODE_PANEL_CLASSNAME = cn(
+  'workflow-node-panel workflow-dify-surface outline-hidden',
+  'max-w-[calc(100vw-2rem)]! gap-0! border-l-[0.5px] border-components-panel-border bg-components-panel-bg!',
+)
+
 type WorkflowNodePanelProps = {
   model: WorkflowNodeModel
   /** 画布宽度，用于限制面板最大宽度 */
@@ -38,15 +54,13 @@ type WorkflowNodePanelProps = {
 }
 
 /**
- * 右侧节点配置面板。
- * 结构复制自 Dify `app/components/workflow/panel/index.tsx` +
- * `nodes/_base/components/workflow-panel/index.tsx`：
- * 常驻画布右侧、可拖拽改宽，替换掉原来的抽屉式配置。
+ * 节点配置浮层。
  *
- * 定位使用 `fixed`（窗口级）而不是相对画布的 `absolute`：画布外层有 `overflow-hidden`
- * 与 `rounded-xl`，面板只要画在画布内部就会被裁掉圆角、且高度被限制在画布盒子里。
- * 现在面板贴满窗口右侧的整条边（上、下都到窗口边界），不会出现「面板比窗口矮一截」的观感；
- * 页面标题栏的操作按钮由页面自己让出面板宽度（见 `page.tsx` 的 `headerInset`）。
+ * 面板本体用公共 `Sheet`（右侧 `side="right"`）承载：浮层被 portal 到 body、
+ * 自带遮罩与进出场动画，画布与页面布局完全不动——窗口级 `fixed` 面板会去挤标题栏按钮。
+ *
+ * 内部分段沿用 Dify `app/components/workflow/panel/index.tsx` +
+ * `nodes/_base/components/workflow-panel/index.tsx`：标题行 / 描述 / 滚动正文 / 删除。
  */
 export function WorkflowNodePanel(props: WorkflowNodePanelProps) {
   const {
@@ -116,26 +130,32 @@ export function WorkflowNodePanel(props: WorkflowNodePanelProps) {
   const t = useTranslation()
 
   return (
-    <aside className="fixed inset-y-0 right-0 z-40 flex outline-hidden">
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-label={t('router.nodePanel.resizeAria')}
-        onPointerDown={handleResizeStart}
-        className="group/resize flex w-2 shrink-0 cursor-col-resize items-center justify-center"
-      >
-        <span
-          className={cn(
-            'h-10 w-0.5 rounded-full bg-state-base-handle transition-all',
-            dragging ? 'h-full bg-state-accent-solid' : 'group-hover/resize:h-full group-hover/resize:bg-state-accent-solid/70',
-          )}
-        />
-      </div>
-
-      <div
-        className="workflow-node-panel workflow-dify-surface flex h-full min-w-0 flex-col overflow-hidden border-l-[0.5px] border-components-panel-border bg-components-panel-bg"
+    <Sheet open onOpenChange={open => { if (!open) onClose() }}>
+      <SheetContent
+        side="right"
+        showCloseButton={false}
+        className={NODE_PANEL_CLASSNAME}
         style={{ width: `${boundedWidth}px` }}
       >
+        {/* Radix 要求浮层里存在标题；节点名本身是可编辑输入框，标题只留给读屏。 */}
+        <SheetTitle className="sr-only">{t('router.nodePanel.title')}</SheetTitle>
+
+        {/* 拖拽把手压在面板左沿外侧半个身位：面板浮在画布之上，改宽只能靠自己，不能再靠挤占布局。 */}
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={t('router.nodePanel.resizeAria')}
+          onPointerDown={handleResizeStart}
+          className="group/resize absolute inset-y-0 left-0 z-10 flex w-2 -translate-x-1/2 cursor-col-resize items-center justify-center"
+        >
+          <span
+            className={cn(
+              'h-10 w-0.5 rounded-full bg-state-base-handle transition-all',
+              dragging ? 'h-full bg-state-accent-solid' : 'group-hover/resize:h-full group-hover/resize:bg-state-accent-solid/70',
+            )}
+          />
+        </div>
+
         <div className="flex shrink-0 items-center gap-2 px-3 pt-3 pb-1.5">
           <BlockIcon kind={model.kind} size="md" />
 
@@ -202,7 +222,7 @@ export function WorkflowNodePanel(props: WorkflowNodePanelProps) {
             </DifyButton>
           </div>
         )}
-      </div>
-    </aside>
+      </SheetContent>
+    </Sheet>
   )
 }

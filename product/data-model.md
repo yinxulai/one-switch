@@ -626,7 +626,7 @@ CREATE INDEX idx_request_logs_client_protocol
 
 `clientProtocol` 与 `logicalModelId` 均可为空：请求可能在协议识别或模型解析之前就被拒掉，但它同样是用户真实发出的请求，必须留下记录。为空表达的是「还没走到那一步」，不是「没有这一列」。
 
-`transport` 是**请求进入代理时就已经定下的预期**（客户端要整包还是增量，见 [proxy-engine.md](./proxy-engine.md) §1.6.1）——它是客户端跳的形态，取自入口对请求体的解析，因此属于请求级事实；上游跳实际是什么形态是**上游视角的事实**，写在 `request_attempts.upstreamTransport` 上。两者不相等不是「上游不配合」这种可容错的小事，而是「本次传输无法按声明兑现」——代理不自己攒出一份整包来弥合（见 [proxy-engine.md](./proxy-engine.md) §1.6.2）。`totalDurationMilliseconds` 是从收到请求到写完响应的总耗时，它无法由尝试耗时稳定推导（尝试之间还有调度与等待），因此落在日志主表。
+`transport` 是**请求进入代理时就已经定下的预期**（客户端要整包还是增量，见 [proxy-engine.md](./proxy-engine.md) §1.1）——它是客户端跳的形态，取自入口对请求体的解析，因此属于请求级事实；上游跳实际是什么形态是**上游视角的事实**，写在 `request_attempts.upstreamTransport` 上。两者不相等不是「上游不配合」这种可容错的小事，而是「本次传输无法按声明兑现」——代理不自己攒出一份整包来弥合（见 [proxy-engine.md](./proxy-engine.md) §1.2）。`totalDurationMilliseconds` 是从收到请求到写完响应的总耗时，它无法由尝试耗时稳定推导（尝试之间还有调度与等待），因此落在日志主表。
 
 原始协议 `usage` 报文不再占用日志主表的列：它属于某个视角的一份事实，以 `type = 'raw'` 的记录保存在对应的用量表里（见 3.10）。
 
@@ -754,7 +754,7 @@ CREATE INDEX idx_attempt_usages_created_time
 | `captured` | 完整采集 |
 | `partial` | 流式采集中断或部分丢失 |
 
-这两个值由 CHECK 约束在数据库层强制。早期设计的 `disabled` / `failed` 从未被写入过——「未开启采集」的正确表达是**根本没有正文行**，「采集异常」的正确表达同样是**没有行**或 `partial`。枚举里保留永远不会出现的值，只会让读取方多写两个永远进不去的分支。
+这两个值由 CHECK 约束在数据库层强制。「未开启采集」的正确表达是**根本没有正文行**，「采集异常」的正确表达同样是**没有行**或 `partial`；枚举里多一个永远进不去的值，只会让读取方多一条永远走不到的分支。
 
 日志详情页根据 `captureStatus` 展示不同状态，而不是猜测内容为空的原因。
 
@@ -809,7 +809,7 @@ CREATE UNIQUE INDEX idx_attempt_contents_attempt
 }
 ```
 
-正文 envelope 只有两种形态，由**本次传输是否逐帧**决定（`request_logs.transport` 是不是 `http-stream`，不是「是不是流式请求」——见 [proxy-engine.md](./proxy-engine.md) §1.6.1）：
+正文 envelope 只有两种形态，由**本次传输是否逐帧**决定（`request_logs.transport` 是不是 `http-stream`，不是「是不是流式请求」——见 [proxy-engine.md](./proxy-engine.md) §1.1）：
 
 逐帧传输时存分块 envelope，保留每个 chunk 的原始文本（SSE 事件可能跨 chunk，拼回去才能重放）：
 
@@ -822,13 +822,13 @@ CREATE UNIQUE INDEX idx_attempt_contents_attempt
 
 其余情况存脱敏后的原文文本（JSON 也存文本，不做二次解析——代理对报文内容只做改写，不做建模）。
 
-> 早期草图里曾有 `body` / `bodyText` / `contentType` / `isStreaming` 四个字段，已全部废弃：前三个是为了让读取方直接拿到结构化正文，但那等于把「谁解析报文」从代理挪到了渲染进程；`isStreaming` 则是被人为混成一根轴的旧布尔，它的两半各归其位——库里的 `request_logs.transport` 只表示**客户端跳的传输形态**（代理层对应 `ExchangeView.transport`），`request_attempts.upstreamTransport` 才是**上游跳实际是什么形态**。
+> 正文表只存脱敏后的原文文本与 chunk 数组，不另存结构化正文字段：把 `body` / `bodyText` / `contentType` 这类解析结果也存一遍，等于把「谁解析报文」从代理挪到了渲染进程。流式与否同样不单独占一列——库里的 `request_logs.transport` 只表示**客户端跳的传输形态**（代理层对应 `ExchangeView.transport`），`request_attempts.upstreamTransport` 才是**上游跳实际是什么形态**。
 
-#### 3.11.1 转换事实为什么不再建表
+#### 3.11.1 转换事实为什么不建表
 
-早期设计有一张 `request_conversions`，只回答一个问题：**这次尝试发生了什么转换**。但它记录的每一项信息都可以从别处推导：
+转换事实不单独建表。它要回答的只有一个问题：**这次尝试发生了什么转换**，而它要记的每一项都可以从别处推导：
 
-| `request_conversions` 列 | 唯一的真实出处 |
+| 转换相关字段 | 唯一的真实出处 |
 | --- | --- |
 | `clientProtocol` | `request_logs.clientProtocol` |
 | `upstreamProtocol` | `request_attempts.upstreamProtocol` |
@@ -842,12 +842,12 @@ CREATE UNIQUE INDEX idx_attempt_contents_attempt
 发生协议转换  ⇔  request_logs.clientProtocol ≠ request_attempts.upstreamProtocol
 ```
 
-因此该表没有任何独立信息。更糟的是它会引入两个具体问题：
+把这张表建出来不会带来任何独立信息，还会引入两个具体问题：
 
 1. **漂移的第二份耗时。** `request_conversions.durationMilliseconds` 与 `request_attempts.durationMilliseconds` 是同一事实的两份副本，两份副本必然有一天不一致，而且不一致时无法判断谁对。
 2. **「没发生转换」和「没记录」不可区分。** 未发生转换的尝试没有对应行，所以「查不到转换记录的尝试」既可能是同一协议直通，也可能是转换记录丢失，读取方无法判断。
 
-删除后转换事实并入 `request_attempts`：一次尝试永远是恰好一行，事实永远存在，不需要任何 JOIN 也不需要任何存在性判断。
+转换事实因此并入 `request_attempts`：一次尝试永远是恰好一行，事实永远存在，不需要任何 JOIN 也不需要任何存在性判断。
 
 `request_contents` 与 `attempt_contents` 两张视角表加上 `request_attempts` 这一张事实表，就足以支撑日志详情页的每一个展示位：
 

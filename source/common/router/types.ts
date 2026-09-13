@@ -29,12 +29,11 @@ export const ALL_WORKFLOW_PROTOCOLS: WorkflowProtocol[] = [
 
 /**
  * 请求走的**传输形态**（一次对话在线上长什么样）词表定义在 `@common/schemas`
- * （`TransportKindSchema`），代理层与工作流层共用同一份 —— 这里不再另立一套
+ * （`TransportKindSchema`），代理层与工作流层共用同一份 —— 这里不另立一套
  * 「工作流传输」枚举。
  *
- * 曾经的 `WorkflowTransport = 'http' | 'http-sse' | 'websocket'` 与随后短暂存在过的
- * 「载体 × 交付方式」两根轴都是错的：前者把「客户端要不要增量」当成连接形态的一档，
- * 后者把同一件事拆成两个词、再让调用方去算它们的乘积。现在只有一根轴。
+ * 只有这一根轴：连接形态由端点地址的 scheme 表达（`wss://` 是 WebSocket），
+ * 「客户端要不要增量」是同一档 `http-stream` 的线格式，不是另一档连接形态。
  */
 
 /**
@@ -237,11 +236,11 @@ export interface ConditionNode extends WorkflowNodeBase {
 /**
  * 逻辑模型选择节点的落点来源。
  * - `fixed`：使用配置好的固定逻辑模型列表；
- * - `variable`：把某个字段的取值直接当作逻辑模型 id（例如 `route.requestedModel`），
+ * - `variable`：把某个字段的取值直接当作逻辑模型 id（例如 `request.body.model`），
  *   取不到值时使用兜底逻辑模型。
  *
  * 这里刻意不内置「跟随请求模型」这类专用语义：请求模型直连由
- * 「条件（`route.requestedModel in logicalModels[*].id`） + 逻辑模型选择(变量) +
+ * 「条件（`request.body.model in logicalModels[*].id`） + 逻辑模型选择(变量) +
  * 逻辑模型选择(固定 default)」等基础节点组合表达。
  */
 export type ModelSelectSource = 'fixed' | 'variable'
@@ -249,7 +248,7 @@ export type ModelSelectSource = 'fixed' | 'variable'
 export interface ModelSelectNode extends WorkflowNodeBase {
   kind: 'model-select'
   source: ModelSelectSource
-  /** `variable` 来源读取的字段路径，例如 `route.requestedModel` */
+  /** `variable` 来源读取的字段路径，例如 `request.body.model` */
   variablePath: string
   /** 固定逻辑模型（`fixed` 来源使用） */
   modelIds: string[]
@@ -442,10 +441,10 @@ export interface RunCapabilities {
  *
  * 设计约定（见 `product/route-design.md`）：
  * - `metadata` 里的内容归调用方所有，引擎只读不写；
- * - 决策结果（`modelIds`）与决策依据（请求模型、协议、控制输入、迭代作用域）都放在 `route` 下；
+ * - 决策结果（`modelIds`）与决策依据（协议、控制输入、迭代作用域）都放在 `route` 下；
  * - 过程性的调试数据（协议归一化结果、每个节点的判定明细）只进 trace，不进 payload；
- * - 不再写「可用逻辑模型 id」这类派生冗余字段：`logicalModels` 已经在上下文里，
- *   需要时用通配投影取值（`logicalModels[*].id`）即可。
+ * - 不写派生冗余字段：请求模型直接读请求本身（`request.body.model`），
+ *   「可用逻辑模型 id」由通配投影（`logicalModels[*].id`）现算，都不再各存一份副本。
  */
 export interface RouteDecision {
   /** 本次运行的追踪 id */
@@ -458,8 +457,6 @@ export interface RouteDecision {
   modelIds: string[]
   /** 是否走了兜底策略（变量取值没有命中，转而使用兜底逻辑模型） */
   fallback: boolean
-  /** 请求体里的模型 id（`request.body.model`） */
-  requestedModel: string
   /** 控制输入节点注入的运行时取值 */
   controls: Record<string, unknown>
   /** 迭代作用域；从未进入过遍历迭代节点时不存在 */
@@ -614,7 +611,7 @@ export const DEFAULT_OPERATOR_SET: Record<SchemaValueType, ConditionOperator[]> 
 
 /**
  * 支持「比较值来自另一个字段」的操作符。
- * 例如 `route.requestedModel in logicalModels[*].id` —— 通用的成员判定，
+ * 例如 `request.body.model in logicalModels[*].id` —— 通用的成员判定，
  * 不需要引擎为某个具体场景预先算好布尔结果。
  */
 export const FIELD_OPERAND_OPERATORS: ConditionOperator[] = ['equals', 'notEquals', 'in', 'notIn', 'contains', 'notContains']

@@ -86,10 +86,9 @@ type TrendPointRow = {
 
 // 请求级用量透视。
 //
-// 用量表是「一种类型一行」，分析页要的是「一列一种类型」。以前的做法是在
-// 请求表上写五列 `case when type = ...`：每一行用量都要先与它所属的请求连上，
-// 分组时的中间结果是「请求 × 用量行」。改成先在用量表里按请求聚好
-// （聚合后每个请求只剩一行），再左连接回请求表，扫描的行数降到原来的 1/2～1/5。
+// 用量表是「一种类型一行」，分析页要的是「一列一种类型」。**先在用量表里按请求聚好**
+// （聚合后每个请求只剩一行），再左连接回请求表：分组时的中间结果因此是「请求」而不是
+// 「请求 × 用量行」，扫描的行数比在请求表上现算 `case when` 少一个量级。
 //
 // 逐类型取值意味着 `raw` 行（上游原始报文，数值列为 NULL）不会进入任何一列。
 function buildRequestUsagePivot(sinceMs: number) {
@@ -154,10 +153,8 @@ function formatIntradayLabel(startMs: number): string {
 /**
  * 请求来源统计。
  *
- * 属性与用量都存在「一请求多行」的表里。以前是三个相关子查询逐请求回查：
- * `request_attributes` 两次、`request_usages` 一次，等于按请求数把这两张表各扫一遍。
- * 改成先各自按请求聚合好（各带自己的时间窗），再左连接回请求表：
- * 回查次数从「请求数 × 3」降到两次分组。
+ * 属性与用量都存在「一请求多行」的表里。两张表各自**先按请求聚合好**（各带自己的
+ * 时间窗），再左连接回请求表：回查次数因此是常数（两次分组），不随请求数增长。
  *
  * `request_attributes` 的主键是 `(requestId, key)`，所以同一个 key 最多只有一行，
  * `max(case when key = ... end)` 取到的就是那一行。
@@ -215,7 +212,7 @@ const providerStatSelect = {
 type ProviderStatRow = { providerId: string; providerName: string; attempts: number | null; success: number | null; failed: number | null; avgLatency: number | null }
 
 function normalizeDevelopmentProviderName(providerId: string, providerName: string): string {
-  // `（开发示例）` 是开发种子数据用过的**历史后缀字面量**，改了它旧开发库里的行就清不掉后缀了。
+  // 开发种子数据给提供方名带过 `（开发示例）` 后缀，库里可能还留着这样的行，读的时候就地去掉。
   return providerId.startsWith('prov_dev_') ? providerName.replace(/（开发示例）$/, '') : providerName
 }
 
@@ -246,11 +243,10 @@ type ProviderTrendRow = TrendPointRow & {
 }
 
 /**
- * 尝试级用量透视：把「一种类型一行」拧成「一列一种类型」，同样按尝试先聚合、再左连接。
+ * 尝试级用量透视：把「一种类型一行」拧成「一列一种类型」，**先按尝试聚合、再左连接**。
  *
- * 以前这里是五个相关子查询（`sum(coalesce((SELECT ... WHERE attemptId = 本行), 0))`）：
- * 每一条尝试都要回扫一次用量表，分组时等于把「尝试数 × 5 次索引查找」做完再求和。
- * 先聚合好再连接，一次即可。
+ * 用一条透视聚合，而不是为每一条尝试各回扫一次用量表的五个相关子查询：
+ * 后者在分组时的代价是「尝试数 × 5 次索引查找」，前者一次分组即可。
  *
  * 逐类型取值意味着 `raw` 行（上游原始报文，数值列为 NULL）不会进入任何一列。
  */
@@ -343,9 +339,9 @@ export async function getModelStats(sinceMs: number, limit = 10, providerId?: st
   // 失败尝试的用量不算进这些列；未命中透视的尝试以 0 参与。
   const successOnly = (type: UsageTokenType) => sql<number>`coalesce(sum(case when ${requestAttempts.status} = 'success' then ${pivot[type]} else 0 end), 0)`
   const rows = getDb().select({
-    // 排行单位是「上游模型」：一个 providerModelId 只属于一个提供方，所以只按它分组。
-    // 旧实现按 (providerModelId, providerId) 分组：历史尝试里留下的旧提供方快照
-    // 会把同一个模型拆成两行，排行榜上同一个模型出现两次，还要各占一个 TOP 名额。
+    // 排行单位是「上游模型」：一个 providerModelId 只属于一个提供方，所以只按它分组——
+    // 带上 providerId 会让提供方改绑后留在尝试行里的旧快照把同一个模型拆成两行，
+    // 排行榜上同一个模型出现两次，还要各占一个 TOP 名额。
     providerModelId: requestAttempts.providerModelId,
     providerModelName: requestAttempts.providerModelName,
     providerId: requestAttempts.providerId,
@@ -413,8 +409,8 @@ export function formatLatencyBucketRange(index: number): string {
 // 尝试，代表不了一次可用的响应。
 //
 // 分桶直接在 SQL 里做：`group by 桶号` 只为出现过的桶返回一行。
-// 以前是把窗口内每一个 TTFT 都取回 JS 再排序分桶，30 天窗口下等于
-// 为了一张直方图把几十万个整数搬进内存再排一次序。
+// 把窗口内每一个 TTFT 都取回 JS 再排序分桶，等于为了一张直方图
+// 把几十万个整数搬进内存再排一次序。
 export async function getLatencyDistribution(sinceMs: number, providerId?: string): Promise<LatencyBucket[]> {
   const filters = [sql`${requestLogs.createdTime} >= ${sinceMs}`, eq(requestLogs.status, 'success'), sql`${requestAttempts.ttftMilliseconds} is not null`]
   if (providerId) filters.push(eq(requestAttempts.providerId, providerId))

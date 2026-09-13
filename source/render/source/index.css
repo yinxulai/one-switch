@@ -114,8 +114,8 @@ html[data-magicui-theme-vt="active"] [data-slot="app-sidebar"] > div:first-child
   --color-text-primary: #101828;
   --color-text-secondary: #354052;
   --color-text-tertiary: #676f83;
-  /* quaternary 是「最淡但仍要读得清」的那一档。原来的 0.3 叠白后只有 1.9:1 对比度，
-     连「浅灰提示」都算不上，而是看不见——时间戳、分隔符、空值占位全在那里面。
+  /* quaternary 是「最淡但仍要读得清」的那一档：时间戳、分隔符、空值占位全在它上面。
+     0.3 叠白后只有 1.9:1 对比度，连「浅灰提示」都算不上，而是看不见；
      0.5 约 3.4:1，层次还在（tertiary 是 5:1），但小字终于是能读的。 */
   --color-text-quaternary: rgb(16 24 40 / 0.5);
   /* 主题色：accent 一族全部改回应用自身的 `--primary`。
@@ -202,8 +202,8 @@ html[data-magicui-theme-vt="active"] [data-slot="app-sidebar"] > div:first-child
   --color-components-tooltip-bg: rgb(255 255 255 / 0.95);
   /* 输入域必须比它所在的任何一层都更「深」才看得出来：
        白卡面 100% → 输入 91.4%；灰色区块 95.4% → 输入 89.5%。
-     原先取 0.25 时（约 95.2%），它和 `--color-workflow-block-parma-bg`
-     (#f2f4f7≈95.4%) 几乎同色，灰色区块里的表单域完全看不出是输入框。
+     取值下限就在这里：约 95% 的输入底色与 `--color-workflow-block-parma-bg`
+     (#f2f4f7≈95.4%) 几乎同色，灰色区块里的表单域会看不出是输入框。
      hover / active 依次向白靠拢，形成 91.4% → 95.2% → 98.4% 的三段台阶。 */
   --color-components-input-bg-normal: rgb(200 206 218 / 0.4);
   --color-components-input-bg-hover: rgb(200 206 218 / 0.25);
@@ -525,9 +525,9 @@ html[data-magicui-theme-vt="active"] [data-slot="app-sidebar"] > div:first-child
     --info-foreground: 0 0% 100%;
     /* `bg-inset` 是「凹槽」层，必须和上下两层都拉开距离：
          卡面 100% → 凹槽 92% → 内部芯片（回卡面 100% 或 parma 95.4%）
-       原先取 96% 时，它与 `--color-workflow-block-parma-bg`(#f2f4f7≈95.4%)
+       96% 与 `--color-workflow-block-parma-bg`(#f2f4f7≈95.4%)
        只差 0.6%，亮色下两个令牌是同一个颜色，嵌套的模块就再也分不出来。
-       取 92% 后与卡面差 8 个点、与 parma 差 3.4 个点，暗色侧 5% 对卡面 12%、
+       取 92% 则与卡面差 8 个点、与 parma 差 3.4 个点，暗色侧 5% 对卡面 12%、
        对 parma≈16% 也是同样的量级，两侧观感才对得上。
        配套规则：一条嵌套链里只允许出现一层凹槽 —— 容器用了 `bg-inset`，
        它内部的模块就回到 `bg-card`（或 `bg-workflow-block-parma-bg`），

@@ -40,7 +40,7 @@
 
 ### 为什么用统一 POST 风格 API
 
-管理 API 全部使用 POST 方法，路径格式为 `/api/资源/动作`，不依赖 HTTP 方法和状态码语义。以下是 v0.3 当前契约；旧版 `/api/upstream-model/*` 路径已删除，不提供兼容别名。实际注册路由以 `source/server/management/router.ts` 为准：
+管理 API 全部使用 POST 方法，路径格式为 `/api/资源/动作`，不依赖 HTTP 方法和状态码语义。以下是当前契约，不提供兼容别名；实际注册路由以 `source/server/management/router.ts` 为准：
 
 - **简单一致**：前端调用统一用 POST，不需要区分 GET/POST/PUT/DELETE，不需要处理不同状态码
 - **结构化错误**：错误通过 body 中的 `success`、`errorCode`、`errorMessage` 表达，类型安全，前端可统一处理
@@ -151,7 +151,7 @@ one-switch/
 | 模型测试、协议发现、出站代理测试 | `management/routes/diagnostics/` |
 | 供应商包导入导出 | `management/provider-transfer/` |
 
-所有路由由同一个注册表合并，不提供旧版兼容别名。
+所有路由由同一个注册表合并，不提供兼容别名。
 
 ### 数据存储
 

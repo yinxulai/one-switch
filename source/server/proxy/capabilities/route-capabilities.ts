@@ -1,13 +1,10 @@
-import { createContext, Script } from 'node:vm'
 import type { Protocol } from '@common/schemas'
 import { generateId } from '@common/utils'
-import { getByPath } from '@common/router/engine'
 import type {
   PromptInvocation,
   PromptInvocationResult,
   RunCapabilities,
   ScriptInvocation,
-  ScriptInvocationResult,
   WorkflowProtocol,
 } from '@common/router/types'
 import { executeProxyRequest } from '../execution/attempt-executor'
@@ -15,6 +12,7 @@ import { proxyTargetPlanner } from '../planners/target-planner'
 import { createRequestContext } from '../request/request-context'
 import { BufferedProxyResponse } from '../response/proxy-response'
 import { getManualModel } from '../routing/manual-routing'
+import { executeRouteScript } from './script-sandbox'
 
 /**
  * 路由图运行能力的服务端实现（脚本沙箱 / 提示词调用）。
@@ -24,21 +22,19 @@ import { getManualModel } from '../routing/manual-routing'
  * 于是渲染进程复用同一份引擎做静态推演时，这些节点会明确报「能力未注入」，而不是静默跳过。
  */
 
-const SCRIPT_LOG_LIMIT = 50
-
 /** 提示词调用用的客户端协议：请求协议不是聊天协议时，按 openai-completions 调用。 */
-function promptProtocol(protocol: WorkflowProtocol): Protocol {
+export function promptProtocol(protocol: WorkflowProtocol): Protocol {
   if (protocol === 'openai-completions' || protocol === 'openai-responses' || protocol === 'anthropic-messages') {
     return protocol
   }
   return 'openai-completions'
 }
 
-function buildPromptBody(protocol: Protocol, invocation: PromptInvocation): string {
+export function buildPromptBody(protocol: Protocol, invocation: PromptInvocation): string {
   const messages = invocation.prompt ? [{ role: 'user', content: invocation.prompt }] : []
   const system = invocation.systemPrompt.trim()
 
-  // `model` 只是占位：执行器会用上游模型名改写它（`rewriteRequestModel`）。
+  // `model` 只是占位：真实调用的上游模型名由协议适配器改写（`writeJsonModel`，经封装描述的 `writeModel`）。
   if (protocol === 'openai-responses') {
     return JSON.stringify({
       model: invocation.logicalModelId,
@@ -99,96 +95,27 @@ function extractCompletionsReply(payload: Record<string, unknown>): string {
   if (!first || typeof first !== 'object') return ''
   const record = first as Record<string, unknown>
   const message = record.message
-  if (!message || typeof message !== 'object') return blockText(record)
-  return blockText(message)
+  // chat completions 的正文在 `choices[0].message.content`（可能是字符串，也可能是 content parts 数组）。
+  if (message && typeof message === 'object') return blockText((message as Record<string, unknown>).content)
+  // 没有 `message` 时只剩旧版 completions 接口的 `choices[0].text` 一种可能。
+  return blockText(record)
 }
 
 /** 从各协议的回复体里取出正文：openai 取 `message.content`，anthropic 拼接 `content[].text`。 */
-function extractReplyText(protocol: Protocol, payload: Record<string, unknown>): string {
+export function extractReplyText(protocol: Protocol, payload: Record<string, unknown>): string {
   if (protocol === 'anthropic-messages') return extractAnthropicReply(payload)
   if (protocol === 'openai-responses') return extractResponsesReply(payload)
   return extractCompletionsReply(payload)
 }
 
-function parseJsonObject(raw: string): Record<string, unknown> | null {
+/** 把上游回复体文本解析成对象。名字里不带 `Json`：协议层的 `parseJsonObject(body: Buffer)` 解的是**请求体**，两件事不共用一个名字。 */
+export function parseReplyObject(raw: string): Record<string, unknown> | null {
   try {
     const parsed: unknown = JSON.parse(raw)
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
     return parsed as Record<string, unknown>
   } catch {
     return null
-  }
-}
-
-/** 沙箱只能交回可序列化的数据；这里做一次转换，顺手挡掉循环引用与宿主对象。 */
-function toSerializable(value: unknown): unknown {
-  if (value === undefined) return undefined
-  try {
-    return JSON.parse(JSON.stringify(value))
-  } catch {
-    return undefined
-  }
-}
-
-function formatLogArgument(value: unknown): string {
-  if (typeof value === 'string') return value
-  if (value === undefined) return 'undefined'
-  const serialized = toSerializable(value)
-  if (serialized === undefined) return String(value)
-  return typeof serialized === 'string' ? serialized : JSON.stringify(serialized)
-}
-
-/**
- * 在 `node:vm` 上下文里执行用户脚本。
- *
- * 隔离策略：
- * - 不给 `require` / `process` / 定时器 / 网络 / 文件系统，只有数据 + `get()` + 受控 `console`；
- * - 关闭 `eval` / `new Function`（`codeGeneration.strings = false`）与 WASM 编译；
- * - 每次执行都有 `timeout`，死循环会被中断而不是挂住主进程。
- */
-function executeScript(invocation: ScriptInvocation): ScriptInvocationResult {
-  const startedAt = Date.now()
-  const logs: string[] = []
-  const pushLog = (level: string, args: unknown[]) => {
-    if (logs.length >= SCRIPT_LOG_LIMIT) return
-    logs.push(`[${level}] ${args.map(formatLogArgument).join(' ')}`)
-  }
-
-  const sandbox = {
-    payload: invocation.payload,
-    get: (path: unknown) => getByPath(invocation.payload, String(path ?? '')),
-    console: {
-      log: (...args: unknown[]) => pushLog('log', args),
-      warn: (...args: unknown[]) => pushLog('warn', args),
-      error: (...args: unknown[]) => pushLog('error', args),
-    },
-  }
-
-  try {
-    const context = createContext(sandbox, {
-      name: `router-script-${invocation.nodeId}`,
-      codeGeneration: { strings: false, wasm: false },
-    })
-    const script = new Script(`"use strict";\n(function () {\n${invocation.code}\n})()`, {
-      filename: `router-script-${invocation.nodeId}.js`,
-    })
-    const value = script.runInContext(context, { timeout: invocation.timeoutMilliseconds })
-    return {
-      success: true,
-      value: toSerializable(value),
-      logs,
-      durationMilliseconds: Date.now() - startedAt,
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    return {
-      success: false,
-      logs,
-      error: message.includes('Script execution timed out')
-        ? `Script execution timed out (> ${invocation.timeoutMilliseconds} ms), aborted`
-        : message,
-      durationMilliseconds: Date.now() - startedAt,
-    }
   }
 }
 
@@ -245,7 +172,7 @@ async function executePrompt(invocation: PromptInvocation): Promise<PromptInvoca
       }
     }
 
-    const parsed = parseJsonObject(response.body)
+    const parsed = parseReplyObject(response.body)
     if (!parsed) {
       return {
         success: false,
@@ -286,7 +213,7 @@ async function executePrompt(invocation: PromptInvocation): Promise<PromptInvoca
 /** 供路由图执行入口（代理入口、管理端试跑）使用的能力集合。 */
 export function createRouteCapabilities(): RunCapabilities {
   return {
-    runScript: (invocation: ScriptInvocation) => Promise.resolve(executeScript(invocation)),
+    runScript: (invocation: ScriptInvocation) => Promise.resolve(executeRouteScript(invocation)),
     runPrompt: (invocation: PromptInvocation) => executePrompt(invocation),
   }
 }

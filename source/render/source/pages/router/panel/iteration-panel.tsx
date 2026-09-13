@@ -12,6 +12,7 @@ import { ITERATION_COLLECT_MODE_HINTS, ITERATION_COLLECT_MODE_LABELS } from '../
 import { useTranslation } from '@/i18n/provider'
 import type { NodePanelProps } from '../node-data'
 import type { IterationCollectMode, IterationNode } from '@common/router/types'
+import { readCandidates } from './field-candidates'
 import {
   NodePanelField,
   NodePanelHint,
@@ -43,7 +44,7 @@ export function IterationPanel(props: NodePanelProps) {
 
   /** 可遍历的候选来源：只有数组和对象能被遍历。 */
   const iterableFields = useMemo(
-    () => conditionFieldHints.filter(field => field.valueType === 'array' || field.valueType === 'object'),
+    () => readCandidates('iteration', conditionFieldHints),
     [conditionFieldHints],
   )
 
