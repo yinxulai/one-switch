@@ -2,7 +2,7 @@
 
 ## 设计目标
 
-`source/server` 是一个本地模块化服务，当前由 Electron 主进程使用，并服务于测试。当前阶段优先让代码按能力聚合、职责清楚，不为尚未出现的复杂度预设完整的领域驱动目录。
+`packages/core/src` 是一个本地模块化服务，当前由 Electron 主进程使用，并服务于测试。它不依赖 Electron，之后作为核心包同时服务于 CLI 与 App，包边界与迁移阶段见 [packaging.md](./packaging.md)（S0 平移已完成）。当前阶段优先让代码按能力聚合、职责清楚，不为尚未出现的复杂度预设完整的领域驱动目录。
 
 遵循四条规则：
 
@@ -28,7 +28,7 @@ Server 分为五块：
 ## 当前实际目录
 
 ```text
-source/server/
+packages/core/source/
 ├── index.ts
 ├── runtime/server-runtime.ts
 ├── management/
@@ -61,7 +61,7 @@ source/server/
 └── security/                          # Host validation 等安全适配
 ```
 
-当前不存在 `proxy/handler.ts`、`source/server/api/` 或 `infrastructure/database/`。`proxy/` 的分层目录与依赖方向由 `scripts/check-proxy-layers.mjs` 在 `pnpm lint` 中强制断言，新增层级或跨层引用会直接失败。
+当前不存在 `proxy/handler.ts`、`packages/core/source/api/` 或 `infrastructure/database/`。`proxy/` 的分层目录与依赖方向由 `packages/core/scripts/check-proxy-layers.mjs` 在 `pnpm lint` 中强制断言，新增层级或跨层引用会直接失败。
 
 ## 依赖方向
 
@@ -116,11 +116,11 @@ Client request
   -> Client response
 ```
 
-`proxy/request/` 负责入口解析，`proxy/execution/` 负责编排候选尝试；协议注册、协议转换、传输、响应管线和观测分别由对应模块负责。当前协议范围以 `source/common/protocols.ts` 为准，不包含 Gemini。
+`proxy/request/` 负责入口解析，`proxy/execution/` 负责编排候选尝试；协议注册、协议转换、传输、响应管线和观测分别由对应模块负责。当前协议范围以 `packages/contracts/source/protocols.ts` 为准，不包含 Gemini。
 
 ## 生命周期
 
-`source/server/index.ts` 是对外生命周期入口，仅负责持有和转交唯一的 `ServerRuntime` 实例；实际的数据库、management、proxy 启停顺序、失败回滚和资源释放由 `source/server/runtime/server-runtime.ts` 编排。
+`packages/core/source/index.ts` 是对外生命周期入口，仅负责持有和转交唯一的 `ServerRuntime` 实例；实际的数据库、management、proxy 启停顺序、失败回滚和资源释放由 `packages/core/source/runtime/server-runtime.ts` 编排。
 
 ```mermaid
 stateDiagram-v2

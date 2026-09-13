@@ -23,7 +23,7 @@
 | OpenAI Completions / OpenAI Responses | Bearer Token | `Authorization: Bearer <apiKey>` |
 | Anthropic Messages | Header | `x-api-key: <apiKey>`，并附带协议版本头 |
 
-协议清单与认证预设以 `source/common/protocols.ts` 的 `PROTOCOL_AUTH_PRESETS` 为准；当前不支持 Gemini 或自定义协议，因此没有「由适配器自定认证」这类行。
+协议清单与认证预设以 `packages/contracts/source/protocols.ts` 的 `PROTOCOL_AUTH_PRESETS` 为准；当前不支持 Gemini 或自定义协议，因此没有「由适配器自定认证」这类行。
 
 ### 健康状态（运行时）
 
@@ -159,7 +159,7 @@
 
 ## 供应商包导入导出
 
-导入导出只针对**供应商**这一个单位：接口是 `/api/provider/export` 与 `/api/provider/import`，格式契约定义在 `source/common/provider-bundle.ts`，服务端实现在 `source/server/management/provider-transfer/`。
+导入导出只针对**供应商**这一个单位：接口是 `/api/provider/export` 与 `/api/provider/import`，格式契约定义在 `packages/contracts/source/provider-bundle.ts`，服务端实现在 `packages/core/source/management/provider-transfer/`。
 
 不做全量配置的导入导出：配置文档需要同时承载供应商、逻辑模型、调度策略和全局设置，任何一处字段变化都会让整份文件失效，而用户真正想搬家的往往只是「另一台机器上的这几个供应商」。供应商是自洽的单元，因此按供应商打包。
 

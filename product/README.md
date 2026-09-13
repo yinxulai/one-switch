@@ -30,7 +30,8 @@
 | 桌面端形态 | [desktop.md](./desktop.md) | 托盘与菜单、控制台页面、用户流程 |
 | 服务端结构 | [server-architecture.md](./server-architecture.md) | 两个监听服务、模块划分、依赖方向、启动与关闭 |
 | 技术架构 | [tech-architecture.md](./tech-architecture.md) | 技术栈与依赖、构建与打包、仓库顶层结构 |
+| 包结构与多形态分发 | [packaging.md](./packaging.md) | 包边界、目录归属、CLI 与 App 的宿主适配、运行时配置、迁移阶段 |
 | 国际化 | [i18n.md](./i18n.md) | 三层语言模型、UI 目录、诊断固定英文、错误码契约、迁移阶段 |
 | 版本规划 | [roadmap.md](./roadmap.md) | 唯一的进度与验收状态来源 |
 
-管理 API 清单以代码为准（`source/server/management/router.ts` 与 `source/server/management/routes/`）；控制台页面清单以 `source/render/source/pages/` 为准；数据库表与字段以 `source/server/database/schema.ts` 为准。
+管理 API 清单以代码为准（`packages/core/source/management/router.ts` 与 `packages/core/source/management/routes/`）；控制台页面清单以 `packages/console/source/pages/` 为准；数据库表与字段以 `packages/core/source/database/schema.ts` 为准。

@@ -186,7 +186,7 @@ curl http://127.0.0.1:9300/v1/models
 
 ## 本地开发
 
-需要 Node.js 22 或更高版本，以及 pnpm 9.6：
+需要 Node.js 22 或更高版本，以及 pnpm 11：
 
 ```bash
 pnpm install
@@ -196,16 +196,18 @@ pnpm run dev
 常用命令：
 
 ```bash
+pnpm run dev           # 启动开发会话：控制台 dev server + Electron
+pnpm run dev:preview   # 只启动控制台（浏览器预览）
 pnpm run typecheck     # TypeScript 类型检查
-pnpm run lint          # ESLint
-pnpm run test:server   # 服务端测试
-pnpm run build         # 构建当前平台安装包
+pnpm run lint          # ESLint + 分层守卫 + 包边界守卫
+pnpm run test          # 全部测试
+pnpm run build         # 编译各包产物（不打包安装包）
 pnpm run release:mac   # 构建 macOS arm64 与 x64 安装包
 pnpm run release:win   # 构建 Windows arm64 与 x64 安装包
 pnpm run release:linux # 构建 Linux arm64 与 x64 安装包
 ```
 
-技术栈包括 Electron、React、TypeScript、Vite、Drizzle ORM 和 SQLite。更详细的设计与行为约定见 [规格文档](./product/README.md)。
+仓库是一个 pnpm workspace：`packages/{contracts,core,console}` 为可被消费的库包，`packages/toolkit` 收纳跨包的开发脚本（任务编排、静态守卫），`apps/app` 为桌面宿主，任务编排由 Turborepo 统一（`turbo.json`）。各包自带的脚本放在自己的 `scripts/` 下（`apps/app/scripts/`、`packages/core/scripts/`、`packages/console/scripts/`）。技术栈包括 Electron、React、TypeScript、Vite、Drizzle ORM 和 SQLite。更详细的设计与行为约定见 [规格文档](./product/README.md)。
 
 ## 当前边界
 

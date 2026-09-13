@@ -21,7 +21,7 @@
 | `openai-responses` | POST `/v1/responses`、`/responses`（传输为 HTTP） |
 | `anthropic-messages` | POST `/v1/messages`、`/messages` |
 
-- 当前实现只有以上三种协议，路径表以 `source/server/proxy/protocols/*/descriptor.ts` 为准；Gemini、Custom 等其它协议不在能力范围内
+- 当前实现只有以上三种协议，路径表以 `packages/core/source/proxy/protocols/*/descriptor.ts` 为准；Gemini、Custom 等其它协议不在能力范围内
 - 若 path 无法匹配任何已知协议，返回 404 并提示未识别的 API 路径
 - `/v1/models` 是代理自身提供的本地服务接口，不透传到上游
 
@@ -77,7 +77,7 @@ v0.3 MVP 只有兜底逻辑模型 `default`。ProviderModel 通过 `scheduling_p
 
 - 协议不匹配的 ProviderModel 跳过（例如 OpenAI 协议的请求不会尝试只有 Anthropic 端点的 ProviderModel）
 - 被标记为冷却或禁用的 Provider 或 ProviderModel 跳过
-- 如果过滤后候选为空，返回“当前协议下无可用 ProviderModel”的错误响应（枚举与过滤规则以 `source/server/proxy/planners/` 为准）
+- 如果过滤后候选为空，返回“当前协议下无可用 ProviderModel”的错误响应（枚举与过滤规则以 `packages/core/source/proxy/planners/` 为准）
 
 ### 自动切换规则
 

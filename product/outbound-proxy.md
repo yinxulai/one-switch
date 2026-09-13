@@ -2,7 +2,7 @@
 
 ## 文档状态
 
-本文定义 One Switch 访问模型供应商时使用指定网络代理的产品与技术契约。功能已实现（`source/server/infrastructure/network/outbound-connector.ts` 基于 `proxy-agent`，管理 API 提供 `/api/outbound-proxy/test`，设置页有对应卡片），本文同时作为行为契约与验收依据。
+本文定义 One Switch 访问模型供应商时使用指定网络代理的产品与技术契约。功能已实现（`packages/core/source/infrastructure/network/outbound-connector.ts` 基于 `proxy-agent`，管理 API 提供 `/api/outbound-proxy/test`，设置页有对应卡片），本文同时作为行为契约与验收依据。
 
 ## 背景与目标
 
@@ -193,7 +193,7 @@ flowchart TD
 
 ### 模块职责
 
-建议新增 `source/server/infrastructure/network/`：
+建议新增 `packages/core/source/infrastructure/network/`：
 
 ```text
 network/
@@ -225,7 +225,7 @@ network/
 - 底层库负责按目标协议和代理 URL 缓存具体连接实现，并在缓存淘汰时释放连接资源；
 - 应用退出或网络运行时销毁时释放共享出站连接器。
 
-`session.resolveProxy()` 可能返回按优先级排列的 `DIRECT`、`PROXY host:port`、`HTTPS host:port`、`SOCKS host:port`、`SOCKS4 host:port` 等 Chromium 代理规则。解析器按顺序选择首个受支持结果；`DIRECT` 返回空字符串；无法识别或系统解析失败时返回稳定错误，不静默回退到其他来源。系统代理解析通过运行时注入的适配器提供，保持 `source/server` 核心模块可测试且不直接依赖 Electron。
+`session.resolveProxy()` 可能返回按优先级排列的 `DIRECT`、`PROXY host:port`、`HTTPS host:port`、`SOCKS host:port`、`SOCKS4 host:port` 等 Chromium 代理规则。解析器按顺序选择首个受支持结果；`DIRECT` 返回空字符串；无法识别或系统解析失败时返回稳定错误，不静默回退到其他来源。系统代理解析通过运行时注入的适配器提供，保持 `packages/core` 可测试且不直接依赖 Electron。
 
 设置更新后不需要重启监听服务。出站连接器对每个新请求读取最新配置，进行中的请求继续使用建连时选定的路径。测试草稿创建短生命周期连接器，测试结束后释放资源，不会修改或污染已保存配置对应的共享实例。
 
@@ -335,21 +335,21 @@ sequenceDiagram
 
 ### 公共模型与持久化
 
-- `source/common/schemas.ts`
-- `source/server/database/settings-store.ts` 及测试
+- `packages/contracts/source/schemas.ts`
+- `packages/core/source/database/settings-store.ts` 及测试
 
 ### 服务端网络与管理 API
 
 - 新增共享出站网络基础设施模块；
-- `source/server/proxy/transports/http.ts`
-- `source/server/proxy/execution/`
-- `source/server/management/routes/diagnostics/provider-models-fetch.ts`
+- `packages/core/source/proxy/transports/http.ts`
+- `packages/core/source/proxy/execution/`
+- `packages/core/source/management/routes/diagnostics/provider-models-fetch.ts`
 - 新增代理测试路由并挂载到 Management router；
-- `source/server/errors.ts` 增加稳定错误映射。
+- `packages/core/source/errors.ts` 增加稳定错误映射。
 
 ### 渲染端
 
-- `source/render/source/api/runtime.ts` 增加测试 API；
+- `packages/console/source/api/runtime.ts` 增加测试 API；
 - 运行设置页新增上游代理卡片；
 - 设置保存请求包含新增字段；
 - 保存按钮文案和重启条件按本文调整。

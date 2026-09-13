@@ -2,7 +2,7 @@
 
 ## 定位
 
-本文描述 `source/server/proxy` 的结构。核心是一套**协议无关的透传内核**：默认只搬运字节与帧，不解析任何报文；「我们自己的功能」（请求/响应重写、协议转换、日志、用量、正文采集、健康冷却、路由策略）一律以插件形式挂在**观察接口**与**修改接口**上。
+本文描述 `packages/core/source/proxy` 的结构。核心是一套**协议无关的透传内核**：默认只搬运字节与帧，不解析任何报文；「我们自己的功能」（请求/响应重写、协议转换、日志、用量、正文采集、健康冷却、路由策略）一律以插件形式挂在**观察接口**与**修改接口**上。
 
 传输方式（HTTP、未来的其他方式）与接口形态（`chat/completions`、`embeddings`、`messages`、`responses`……）都作为**数据声明**进入注册表，内核里不出现任何协议名或传输名。
 
@@ -186,7 +186,7 @@ ingress(protocol, 客户端跳形态) ──protocol→protocol 转换──► 
 
 ## 三、契约定义
 
-以下为 `source/server/proxy/contracts/` 应包含的全部类型。类型定义即为接口文档，实现不得扩张契约。
+以下为 `packages/core/source/proxy/contracts/` 应包含的全部类型。类型定义即为接口文档，实现不得扩张契约。
 
 > 契约文件：`contracts/frame.ts`、`exchange.ts`、`transport.ts`、`modifier.ts`、`observer.ts`、`protocol.ts`、`planner.ts`、`local-handler.ts`、`route-matcher.ts`、`headers.ts`（+ `index.ts` barrel）。
 > `ExchangeView.transport` 是客户端跳的传输形态，也是全仓唯一的传输字段名（§1.1）。
@@ -512,7 +512,7 @@ flowchart TD
 
 > 标记含义：[x] 表示已由自动化测试或 `pnpm lint` / `pnpm typecheck` 门控覆盖。
 
-- [x] `proxy/contracts/` 只含类型，`proxy/kernel/` 无 `node:http`、无协议名、无数据库依赖，`scripts/check-proxy-layers.mjs` 通过
+- [x] `proxy/contracts/` 只含类型，`proxy/kernel/` 无 `node:http`、无协议名、无数据库依赖，`packages/core/scripts/check-proxy-layers.mjs` 通过
 - [x] 新增一个协议只需新增 `protocols/<id>/descriptor.ts` 一个文件，不改内核、不改其他协议
 - [x] 新增一个接口只需在已有协议目录里新增一个 `EndpointSpec`（注册表的匹配、封装查找与拒绝路径都由声明驱动，不需要改注册表代码）
 - [x] 新增一档传输形态只需扩展 `TransportKind` 词表 + 实现 `Transport`（用 `transports: [...]` 声明服务哪几档，`transports/registry.ts` 自动发现），不改内核、不改任何 Modifier/Observer（实现按 `resolveUpstreamTransport(target.url, exchange.transport)` 选取）
@@ -527,7 +527,7 @@ flowchart TD
 - [x] 双向交换与单工尝试共用同一份搬运与收尾：`relayAttempt` 与 `relayConnected` 共用 `runRelay`，上游只断一次是内核不变式（`kernel/relay.test.ts` 断言 abort 次数为 1）
 - [x] `/v1/models` 由 `LocalHandler` 提供，`proxy-runtime.ts` 不再包含任何业务分支
 - [x] 路由决策只有一处：`planners/target-planner.ts` 是 `AttemptPlanner` 的唯一实现，入口只把规划结果翻成拒绝码；执行器与传输层只见 `UpstreamTarget`（`target-planner.test.ts` 14 例覆盖原生优先、HTTP 转换候选、WS 仅原生、三种空候选原因、字段映射与坏 URL 不下传抛错）
-- [x] 分层约束可执行：`scripts/check-proxy-layers.mjs` 挂在 `pnpm lint` 里
+- [x] 分层约束可执行：`packages/core/scripts/check-proxy-layers.mjs` 挂在 `pnpm lint` 里
 - [x] 只有一根轴：`TransportKind` = `http` / `http-stream` / `websocket`，是全仓唯一的传输词表（`schemas.test.ts` 钉住词表，`transports/registry.ts` 的加载期断言钉住「每个声明的取值都有实现服务」）
 - [x] 客户端跳的取值不进入上游跳：`PlannerInput` 没有 `transport` 字段，上游形态由 `resolveUpstreamTransport(target.url, exchange.transport)` 从端点地址现算（`upstream-url.test.ts` 断言 `wss://` / `ws://` → `websocket`，其余镜像客户端跳；`attempt-executor.test.ts` 断言 WS 端点不下传给转换候选）
 - [x] 预期与事实两半分持：预期落空 → `transportMismatch` → failover，并按 `provider-model` 记健康失败（`response.test.ts` 断言 `classifyHealthFailure({ statusCode: 200, transportMismatch: true }) === 'provider-model'`）

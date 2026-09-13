@@ -64,7 +64,7 @@ One Switch 既是本地代理，也是一套请求路由与模型选择系统。
 
 `request` 只保留归一化之后的最小形状：`method` / `path` / `headers` / `body`。`headers` 是**扁平的字符串字典**（`Record<string, string>`）——代理入口已经把同名头按 `,` 合并，路由侧不需要多值头，因此也不再为它展开字段路径。
 
-**入口节点不解析请求体**：`body` 对入口来说是不透明的——它只知道「有一个体」，不知道体里有哪些字段，更不知道是什么格式。请求体的格式与字段语义**属于协议层**：消息在 `messages` 还是 `input`、系统提示词在 `system` 还是 `instructions`、模型名写在哪，三种协议各不相同。要入口节点报出 `request.body.model`，就等于要求它兼容所有协议，这显然办不到——而是入口**本来就不该知道**这件事。所以这一层交给**协议发现节点**：它按命中的协议把请求体的形状声明给下游，字段候选表也按协议分支给出（声明表在 `source/common/router/request-shape.ts`）。声明的是**请求体里的真实位置，不是解析结果的副本**——副本会多出第二个事实源。`unknown`（认不出协议）刻意不声明任何字段：不确定就别声称。
+**入口节点不解析请求体**：`body` 对入口来说是不透明的——它只知道「有一个体」，不知道体里有哪些字段，更不知道是什么格式。请求体的格式与字段语义**属于协议层**：消息在 `messages` 还是 `input`、系统提示词在 `system` 还是 `instructions`、模型名写在哪，三种协议各不相同。要入口节点报出 `request.body.model`，就等于要求它兼容所有协议，这显然办不到——而是入口**本来就不该知道**这件事。所以这一层交给**协议发现节点**：它按命中的协议把请求体的形状声明给下游，字段候选表也按协议分支给出（声明表在 `packages/contracts/source/router/request-shape.ts`）。声明的是**请求体里的真实位置，不是解析结果的副本**——副本会多出第二个事实源。`unknown`（认不出协议）刻意不声明任何字段：不确定就别声称。
 
 声明表同时是**引擎读体的唯一入口**：引擎自己要用到的两条（模型名、消息列表）在表里各占一个 `role`，引擎按 role 取路径（`requestBodyField`），而不是在代码里再写一遍「先找 `messages`、找不到再找 `input`」——那种兜底顺序就是声明表的第二份副本，今天恰好对、换种协议就静默跑偏（`/v1/responses` 的消息在 `input` 里，而 `messages` 可能另有所指）。协议发现节点的 trace 归一化视图与运行面板上那一行「请求模型」都取自这同一处。
 
@@ -180,7 +180,7 @@ Input ─▶ 协议发现 ─▶ Condition（request.body.model in logicalModels
 
 这两条契约都不是靠自觉，而是有回归用例兜着（`pages/router/field-hints.test.ts` 的「内置策略 × 字段候选表」）：用例把每个预设节点真正读的路径抽出来（条件字段与比较字段、变量取值、遍历来源、脚本里的 `get('…')`、提示词里的 `${…}`），要求它必须出现在**该节点自己的候选表**里，候选表口径与面板共用同一份实现（`pages/router/panel/field-candidates.ts`）。图「能跑」和「改得动」是两件事：payload 里本来就有整个请求体，读一条没人声明过的路径照样算得出结果，但用户在脚本编辑器里补全不出来、在条件下拉里选不到，这张图就是死的。同一组用例还有一条「只在某一种协议里存在的请求体字段，预设必须按 `route.protocol` 取舍」：像 `messages` / `input` / `system` / `instructions` 这种只在部分协议里存在的字段，预设只要读了其中一个，就必须显式引用 `route.protocol` 来取舍（`model` / `tools` 这种每种协议都有的不受约束）。
 
-内置脚本预设里那段代码是真的会被跑一遍再断言的（`source/server/proxy/capabilities/script-sandbox.test.ts`）：引擎侧的脚本节点测试都注入假 `runScript`、只能比对代码文本，少了一层就逼不出「换个协议就读错字段」；沙箱本身只依赖 `node:vm`，所以能脱离代理执行栈单独跑。
+内置脚本预设里那段代码是真的会被跑一遍再断���的（`packages/core/source/proxy/capabilities/script-sandbox.test.ts`）：引擎侧的脚本节点测试都注入假 `runScript`、只能比对代码文本，少了一层就逼不出「换个协议就读错字段」；沙箱本身只依赖 `node:vm`，所以能脱离代理执行栈单独跑。
 
 `ua-source-routing` 用一套「循环体写落点、迭代节点只判定命中」的拼法：
 
@@ -240,7 +240,7 @@ Input ─▶ 协议发现 ─▶ Condition（request.body.model in logicalModels
 
 #### 2.9.1 操作符清单（中文名 / 语义）
 
-面板与节点卡片展示的是下表的中文名，标识符只作为次要信息（`CONDITION_OPERATOR_META`，`source/common/router/types.ts`）。说明文字与引擎判定一一对应：用户读到什么，运行时就得怎么判：
+面板与节点卡片展示的是下表的中文名，标识符只作为次要信息（`CONDITION_OPERATOR_META`，`packages/contracts/source/router/types.ts`）。说明文字与引擎判定一一对应：用户读到什么，运行时就得怎么判：
 
 | 标识符 | 中文名 | 语义 | 备注 |
 | --- | --- | --- | --- |
@@ -291,7 +291,7 @@ Input ─▶ 协议发现 ─▶ Condition（request.body.model in logicalModels
 - **版本可以带名字与说明**：保存时弹窗收集的 `name` / `description` 是给这一版写的人类注记，存进 `workflows` 表并展示在历史版本列表里，不参与任何运行时判定；**版本号有自己的字段，不塞进名字里** —— 版本的身份是 `version`（列表里的 `v{n}`），名字不要求唯一，同名多版靠版本号区分，两者都留空就存空串（不会自动填成 `Version N`），内容与最新版一致时不生成版本、这两项也一并丢弃；
 - **脚本与提示词节点在主进程执行**：试跑接口与代理入口共用同一份能力集合（`createRouteCapabilities()`：脚本走 `node:vm` 沙箱、提示词走真实上游调用），因此画布上的试跑结果与线上行为一致。
 
-相关实现位置：图存储 `source/server/database/router-graph-store.ts`；路由求解 `source/server/proxy/routing/route-resolver.ts`；落点→候选 `source/server/proxy/routing/landing-planner.ts`；能力集合 `source/server/proxy/capabilities/route-capabilities.ts`。
+相关实现位置：图存储 `packages/core/source/database/router-graph-store.ts`；路由求解 `packages/core/source/proxy/routing/route-resolver.ts`；落点→候选 `packages/core/source/proxy/routing/landing-planner.ts`；能力集合 `packages/core/source/proxy/capabilities/route-capabilities.ts`。
 
 管理端接口（都挂在管理服务的 `/api/router` 下，图与试跑各一组）：
 
@@ -311,13 +311,13 @@ Input ─▶ 协议发现 ─▶ Condition（request.body.model in logicalModels
 
 - **节点配置不携带连接信息**：不存在 `next` / `bodyNext` / `elseNext`，控制流全部由 `WorkflowGraph.edges[].sourcePort` 表达；
 - **端口名就是语义**：`out`（单出口）、`body`（循环体入口）、`else`（条件未命中）、条件分支的 `case-*`，以及协议分支端口（来自 `WORKFLOW_PROTOCOLS`）；
-- **节点类型清单是代码**：`source/common/router/types.ts` 的 `WorkflowNodeKind` 是唯一来源，渲染侧 `source/render/source/pages/router/node-meta.ts` 为每种 kind 提供显示名与图标，执行器按 `kind` 分发。
+- **节点类型清单是代码**：`packages/contracts/source/router/types.ts` 的 `WorkflowNodeKind` 是唯一来源，控制台侧 `packages/console/source/pages/router/node-meta.ts` 为每种 kind 提供显示名与图标，执行器按 `kind` 分发。
 
 ## 4. 节点目录
 
 路由工作台只保留“路由决策”相关节点；修改请求内容的逻辑属于独立的重写层（见 [request-rewrite-rules.md](./request-rewrite-rules.md)）与协议转换层，不进入路由图执行路径。
 
-节点类型清单以 `source/common/router/types.ts` 的 `WorkflowNodeKind` 为准，共 9 种：
+节点类型清单以 `packages/contracts/source/router/types.ts` 的 `WorkflowNodeKind` 为准，共 9 种：
 
 | kind | 面板名称 | 一句话定位 | 详述位置 |
 | --- | --- | --- | --- |
@@ -327,7 +327,7 @@ Input ─▶ 协议发现 ─▶ Condition（request.body.model in logicalModels
 | `output` | 输出 | 路由终点，交出最终落点 | §4.4 |
 | `script` | JS 脚本 | 用一段 JS 把结论算出来写回 payload | §4.5 |
 | `prompt` | LLM | 用指定逻辑模型执行提示词并写回 | §4.6 |
-| `control-input` | 控制输入 | 注入开关 / 下拉控制值，不改图即可调参 | `ControlInputNode`（`source/common/router/types.ts`） |
+| `control-input` | 控制输入 | 注入开关 / 下拉控制值，不改图即可调参 | `ControlInputNode`（`packages/contracts/source/router/types.ts`） |
 | `protocol-discovery` | 协议发现 | 识别请求协议，按协议端口分流，并把该协议下的请求体形状声明给下游（运行时报出协议、形态与按声明读到的请求模型） | `ProtocolDiscoveryNode`（同上） |
 | `iteration` | 遍历迭代 | 遍历数组 / 对象，逐项跑循环体 | [workflow-engine.md](./workflow-engine.md) |
 
@@ -355,7 +355,7 @@ Input ─▶ 协议发现 ─▶ Condition（request.body.model in logicalModels
 
 说明：
 - 这是所有后续节点的统一起点；
-- **入口节点不解析请求体**：它只保证「有一个体」，不声称体里有哪些字段。`request.body.model` / `messages` / `tools` 这类**协议形状的路径不在它的候选表里**，由协议发现节点在命中的协议分支上声明（声明表在 `source/common/router/request-shape.ts`，渲染侧可直接 import）。同一条规则写在多个协议分支上也不会冲突，候选表按路径去重；
+- **入口节点不解析请求体**：它只保证「有一个体」，不声称体里有哪些字段。`request.body.model` / `messages` / `tools` 这类**协议形状的路径不在它的候选表里**，由协议发现节点在命中的协议分支上声明（声明表在 `packages/contracts/source/router/request-shape.ts`，控制台侧可直接 import）。同一条规则写在多个协议分支上也不会冲突，候选表按路径去重；
 - **运行输出也只有它保证得了的那一条**：本次可见的逻辑模型 id 列表。请求模型不在这里（那是协议层的事实，见 §2.3），运行面板上它显示在协议发现节点下；
 - 输入端口可以多，但必须是清晰的上下文对象。
 

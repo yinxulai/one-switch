@@ -283,7 +283,7 @@ thinking/reasoning 不是三个协议中完全同构的字段。当前实现尚�
 - 「修改 User-Agent」的默认值是 `OneSwitch/<应用版本号>`，版本号取构建时的 `package.json`
   （Vite `define` 注入的 `__APP_VERSION__`），所以默认值声称的就是当前这个二进制，
   而不是某个随版本迭代变成假话的写死字符串。
-- 模板定义留在渲染层（`source/render/.../rule-presets.ts`），不放进 `@common`：它没有服务端用途，
+- 模板定义留在渲染层（`packages/console/source/pages/.../rule-presets.ts`），不放进 `@common`：它没有服务端用途，
   与智能路由预设（服务端要在没有存过图时直接执行，因此必须在 `@common`）的约束不同。
 
 ## 10. 供应商包导入导出

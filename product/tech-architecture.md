@@ -7,12 +7,12 @@
 | 层级 | 技术选型 | 说明 |
 |------|----------|------|
 | 桌面壳 | Electron | 跨平台桌面应用 |
-| 构建工具 | Vite | 主进程 / 预加载 / 渲染进程统一构建 |
+| 构建工具 | Vite + Turborepo | 三份 Vite 配置分目标构建；turbo 统一任务编排与依赖顺序 |
 | 主进程 | TypeScript + 原生 Node `http` | 独立的代理服务与管理服务，不引入 HTTP 框架 |
 | 代理透传 | 原生 `http.request` + 手动 pipe | 流式可控、依赖最少 |
 | Schema 定义 | Zod | 运行时类型校验、配置声明、API 请求/响应验证 |
-| API 规范 | Zod Schema + 源码路由注册表 | 当前管理契约由 `source/common/schemas.ts` 与 `source/server/management/router.ts` 实现；OpenAPI 尚未接入 |
-| 代码生成 | 未使用 | Render API client 为 `source/render/source/api/client.ts` 中的手写轻量 fetch 封装 |
+| API 规范 | Zod Schema + 源码路由注册表 | 当前管理契约由 `packages/contracts/source/schemas.ts` 与 `packages/core/source/management/router.ts` 实现；OpenAPI 尚未接入 |
+| 代码生成 | 未使用 | 控制台 API client 为 `packages/console/source/api/client.ts` 中的手写轻量 fetch 封装 |
 | 本地存储 | SQLite（`node:sqlite` + Drizzle ORM）+ 系统密钥环 | 配置和日志存 SQLite，密钥存 keychain |
 | 数据库迁移 | 单一首发基线 + 发布后版本迁移 | 首发结构干净，发布后升级可追踪 |
 | 渲染进程 | React 18 + TypeScript | 控制台 UI |
@@ -29,8 +29,7 @@
 - 代理透传层需要完全掌控请求/响应流，框架反而增加抽象成本
 - 两个监听器共享应用级数据库和密钥存储，但生命周期独立；停止或重启代理不会中断管理 API
 - 减少依赖，降低打包体积和安全面
-- 代理服务是纯 Node 模块，Electron 只是宿主，未来可抽 CLI / 无头模式
-
+- 代理服务是纯 Node 模块，Electron 只是宿主，未来可抽 CLI / 无头模式（规划见 [packaging.md](./packaging.md)）
 ### 为什么用 Zod 做 Schema
 
 - **单一真相源**：配置模型、API 请求/响应、数据库行都用 Zod schema 定义，TypeScript 类型从中推导
@@ -40,7 +39,7 @@
 
 ### 为什么用统一 POST 风格 API
 
-管理 API 全部使用 POST 方法，路径格式为 `/api/资源/动作`，不依赖 HTTP 方法和状态码语义。以下是当前契约，不提供兼容别名；实际注册路由以 `source/server/management/router.ts` 为准：
+管理 API 全部使用 POST 方法，路径格式为 `/api/资源/动作`，不依赖 HTTP 方法和状态码语义。以下是当前契约，不提供兼容别名；实际注册路由以 `packages/core/source/management/router.ts` 为准：
 
 - **简单一致**：前端调用统一用 POST，不需要区分 GET/POST/PUT/DELETE，不需要处理不同状态码
 - **结构化错误**：错误通过 body 中的 `success`、`errorCode`、`errorMessage` 表达，类型安全，前端可统一处理
@@ -63,47 +62,74 @@ OpenAPI 目前未接入，项目没有 OpenAPI 文档、生成类型或 `openapi
 
 ```
 one-switch/
-├── package.json
-├── vite.config.ts
-├── tsconfig.json
-├── tailwind.config.js
-├── postcss.config.js
-├── product/                      # 产品规格文档
-├── source/
-│   ├── server/                     # 核心主体：runtime + management + proxy + database
-│   │   ├── index.ts                # 外部生命周期入口
-│   │   ├── runtime/server-runtime.ts # ServerRuntime 启动/停止编排
-│   │   ├── management/             # 管理 HTTP 服务，routes/ 下按域分组注册
-│   │   ├── proxy/                  # 分层代理链路，见 proxy-engine.md
-│   │   ├── database/               # SQLite + Drizzle 持久化层及按领域拆分的 *-store.ts
-│   │   ├── infrastructure/secrets/ # 系统密钥环适配
-│   │   └── security/               # Host validation
+├── package.json                         # 工作区根：脚本入口 + 全部运行期依赖
+├── pnpm-workspace.yaml
+├── turbo.json                           # 任务编排与依赖顺序（build / typecheck / lint / test / dev）
+├── tsconfig.json / tsconfig.base.json / tsconfig.check.json
+├── vitest.config.ts                     # 单一测试配置，按包过滤
+├── eslint.config.js                     # 分层守卫与包边界守卫经 packages/toolkit 挂在 pnpm lint 上
+├── product/                             # 产品规格文档
+├── packages/                            # 工作区内部包：可被第三方消费的库 + 开发工具
+│   ├── contracts/                       # 共享契约：Zod schema、协议表、i18n 目录、宿主接口
+│   │   └── source/
+│   │       ├── schemas.ts
+│   │       ├── protocols.ts
+│   │       ├── keychain.ts
+│   │       ├── runtime-profile.ts
+│   │       ├── i18n/                    # i18n 核心与语言目录，见 i18n.md
+│   │       └── router/                  # 路由契约类型与预设
 │   │
-│   ├── command/                    # Electron 主进程、预加载与命令入口
-│   │   ├── index.ts                # Electron 应用编排
-│   │   ├── preload.ts              # 暴露最小化 API 给渲染进程
-│   │   ├── auto-launch.ts          # 开机自启
-│   │   ├── tray-manager.ts         # 菜单栏/托盘管理
-│   │   └── secret-store.ts         # 系统密钥环封装
+│   ├── core/                            # 核心主体：runtime + management + proxy + database
+│   │   ├── drizzle/                     # 迁移基线（随包分发，打包时映射进 asar）
+│   │   ├── drizzle.config.ts
+│   │   ├── scripts/                     # db.mjs、check-proxy-layers.mjs
+│   │   └── source/
+│   │       ├── index.ts                 # 外部生命周期入口
+│   │       ├── runtime/server-runtime.ts # ServerRuntime 启动/停止编排
+│   │       ├── management/              # 管理 HTTP 服务，routes/ 下按域分组注册
+│   │       ├── proxy/                   # 分层代理链路，见 proxy-engine.md
+│   │       ├── database/                # SQLite + Drizzle 持久化层及按领域拆分的 *-store.ts
+│   │       ├── infrastructure/secrets/  # 系统密钥环适配
+│   │       └── security/                # Host validation
 │   │
-│   ├── common/                     # server / command / render 共享
-│   │   ├── schemas.ts              # Zod schema（可被 server、command 和 render 引用）
-│   │   └── i18n/                   # i18n 核心与语言目录，见 i18n.md
+│   ├── console/                         # React 控制台，构建为静态产物
+│   │   ├── index.html
+│   │   ├── vite.config.ts               # 渲染层构建（固定端口 5173，strictPort）
+│   │   ├── components.json / public/    # shadcn 配置与静态资源
+│   │   ├── scripts/                     # i18n 硬编码门禁插件、vitest setup
+│   │   └── source/
+│   │       ├── api/                     # client.ts + 按领域 API modules
+│   │       ├── features/                # Provider、Proxy、Health、Settings、Logical Models
+│   │       ├── infrastructure/          # polling-manager、deep-equal
+│   │       ├── store/                   # create-store
+│   │       ├── components/              # shadcn/ui 组件 + 业务组件
+│   │       ├── pages/                   # 按页面目录组织的 page、service、hooks
+│   │       ├── providers/               # 供应商定义（provider.json + 图标）
+│   │       └── services/                # 通用 use-async
 │   │
-│   └── render/                     # UI 入口：React 渲染进程
-│       ├── index.html
-│       ├── main.tsx
-│       ├── App.tsx
-│       ├── api/                    # client.ts + 按领域 API modules
-│       ├── features/               # Provider、Proxy、Health、Settings、Logical Models
-│       ├── infrastructure/         # polling-manager、deep-equal
-│       ├── store/                  # create-store
-│       ├── components/             # shadcn/ui 组件 + 业务组件
-│       ├── pages/                  # 按页面目录组织的 page、service、hooks
-│       └── services/               # 通用 use-async
+│   └── toolkit/                         # 跨包开发脚本：任务编排、包边界守卫、脚本运行库
+│       └── scripts/                     # lint / test / typecheck / 包边界守卫 / lib
 │
-└── resources/                      # 静态资源：图标、托盘图标等
+├── apps/                                # 宿主壳，不作为库发布
+│   └── app/                             # Electron 主进程、预加载与命令入口
+│       ├── vite.config.ts               # 主进程构建（ESM）
+│       ├── vite.preload.config.ts       # preload 构建（CJS，必须与主进程分成两次构建）
+│       ├── vite.shared.ts               # 两份配置共用的入口、别名与 Node 外部化
+│       ├── electron-builder.config.cjs  # 打包配置
+│       ├── build/                       # 应用图标与托盘图标
+│       ├── scripts/                     # build.mjs、dev.mjs、version.mjs、macos-adhoc-sign.cjs
+│       ├── dist/command/                # 构建产物：index.js（主进程）+ preload.js
+│       └── source/
+│           ├── index.ts                 # Electron 应用编排
+│           ├── preload.ts               # 暴露最小化 API 给渲染进程
+│           ├── auto-launch.ts           # 开机自启
+│           ├── tray-manager.ts          # 菜单栏/托盘管理
+│           └── secret-store.ts          # 系统密钥环封装
+│
+└── release/                             # 打包产物
 ```
+
+包边界、每包构建产物与目录对照见 [packaging.md](./packaging.md)。当前状态：S0（目录平移与工具链搬迁）已完成——目录名用 `source/`、根目录只留工作区级配置、脚本按业务归入各包 `scripts/`（跨包的收在 `packages/toolkit/scripts/`）、turbo 接管任务编排、三份 Vite 配置各自构建一个目标（控制台 / 主进程 / preload）；导入别名仍沿用旧名（`@common` / `@server` / `@`）而只是重指向新位置；`apps/cli` 尚未建立。
 
 ## 模块地图
 
@@ -111,16 +137,16 @@ one-switch/
 
 | 模块 | 职责 | 权威文档 |
 | --- | --- | --- |
-| `source/server/runtime` | 进程级组装与生命周期：启动/停止 management 与 proxy，失败回滚 | [server-architecture.md](./server-architecture.md) |
-| `source/server/management` | 配置管理与管理 API（含路由工作台、重写规则、诊断） | [server-architecture.md](./server-architecture.md) |
-| `source/server/proxy` | 代理请求链路：入口、路由、规划、执行、协议、修饰、观测 | [proxy-engine.md](./proxy-engine.md) |
-| `source/server/database` | SQLite + Drizzle 持久化层与按域拆分的 `*-store.ts` | [data-model.md](./data-model.md) |
-| `source/server/infrastructure`、`source/server/security` | 密钥环适配、Host 校验 | [security-privacy.md](./security-privacy.md) |
-| `source/common` | server / command / render 共享契约（Zod schema、协议表、路由类型、i18n 核心与语言目录） | 各自主题文档、[i18n.md](./i18n.md) |
-| `source/command` | Electron 主进程：窗口、托盘、开机自启、自动更新、密钥存储 | [desktop.md](./desktop.md) |
-| `source/render` | React 控制台 | [desktop.md](./desktop.md) |
+| `packages/core/source/runtime` | 进程级组装与生命周期：启动/停止 management 与 proxy，失败回滚 | [server-architecture.md](./server-architecture.md) |
+| `packages/core/source/management` | 配置管理与管理 API（含路由工作台、重写规则、诊断） | [server-architecture.md](./server-architecture.md) |
+| `packages/core/source/proxy` | 代理请求链路：入口、路由、规划、执行、协议、修饰、观测 | [proxy-engine.md](./proxy-engine.md) |
+| `packages/core/source/database` | SQLite + Drizzle 持久化层与按域拆分的 `*-store.ts` | [data-model.md](./data-model.md) |
+| `packages/core/source/infrastructure`、`packages/core/source/security` | 密钥环适配、Host 校验 | [security-privacy.md](./security-privacy.md) |
+| `packages/contracts/source` | 全形态共享契约（Zod schema、协议表、路由类型、i18n 核心与语言目录） | 各自主题文档、[i18n.md](./i18n.md) |
+| `apps/app/source` | Electron 主进程：窗口、托盘、开机自启、自动更新、密钥存储 | [desktop.md](./desktop.md) |
+| `packages/console/source` | React 控制台 | [desktop.md](./desktop.md) |
 
-代理服务与管理服务是两个独立监听器：代理可单独停止、重启而不影响管理服务，两者都由 `ServerRuntime` 持有。协议范围以 `source/common/protocols.ts` 为准，当前不支持 Gemini 或 Custom 协议。
+代理服务与管理服务是两个独立监听器：代理可单独停止、重启而不影响管理服务，两者都由 `ServerRuntime` 持有。协议范围以 `packages/contracts/source/protocols.ts` 为准，当前不支持 Gemini 或 Custom 协议。
 
 ### 管理 API 契约
 
@@ -139,7 +165,7 @@ one-switch/
 { success: false, errorCode: "PROVIDER_NOT_FOUND", errorMessage: "供应商不存在" }
 ```
 
-接口清单不在文档里维护，按域查阅 `source/server/management/router.ts` 与 `management/routes/`：
+接口清单不在文档里维护，按域查阅 `packages/core/source/management/router.ts` 与 `management/routes/`：
 
 | 域 | 源码位置 |
 | --- | --- |
@@ -155,15 +181,16 @@ one-switch/
 
 ### 数据存储
 
-SQLite（`node:sqlite` + Drizzle ORM）承载配置与日志，表结构与字段定义见 [data-model.md](./data-model.md)，Drizzle 定义以 `source/server/database/schema.ts` 为准。
+SQLite（`node:sqlite` + Drizzle ORM）承载配置与日志，表结构与字段定义见 [data-model.md](./data-model.md)，Drizzle 定义以 `packages/core/source/database/schema.ts` 为准。
 
-- 首发基线：`drizzle/` 只保留一份 `initial_schema` 基线迁移与快照，`pnpm db:generate` 生成新迁移
+- 首发基线：`packages/core/drizzle/` 只保留一份 `initial_schema` 基线迁移与快照，`pnpm db:generate` 生成新迁移
+- 基线随 `@one-switch/core` 包分发：开发期从模块目录逐级上溯找到 `packages/core/drizzle`，打包后则命中 asar 内映射的同名路径，两端不需要两套写死的深度
 - 首发后冻结基线，只追加后续迁移，不改写已发布历史
 - API Key 等敏感信息存在系统密钥环中，数据库只存引用 ID
 
 ### 运行环境与 profile
 
-开发版与正式版通过 `source/common/runtime-profile.ts` 的显式 profile 区分，profile 统一定义应用数据目录、代理端口、管理端口与管理 API 地址，Electron、服务端与 renderer 共用同一配置源。
+开发版与正式版通过 `packages/contracts/source/runtime-profile.ts` 的显式 profile 区分，profile 统一定义应用数据目录、代理端口、管理端口与管理 API 地址，各宿主（Electron 主进程、服务端、控制台）共用同一配置源。
 
 | profile | 数据目录 | 代理端口 / 管理端口 |
 | --- | --- | --- |
@@ -174,17 +201,22 @@ SQLite（`node:sqlite` + Drizzle ORM）承载配置与日志，表结构与字�
 
 ### 渲染进程
 
-React 18 + TypeScript + shadcn/ui + Tailwind。页面通过 `source/render/source/api/*.ts` 调用管理 API，领域状态按 `features/*` 与页面 hooks 组织，`infrastructure/polling-manager.ts` 提供共享轮询，`store/create-store.ts` 提供轻量外部 store。
+React 18 + TypeScript + shadcn/ui + Tailwind。页面通过 `packages/console/source/api/*.ts` 调用管理 API，领域状态按 `features/*` 与页面 hooks 组织，`infrastructure/polling-manager.ts` 提供共享轮询，`store/create-store.ts` 提供轻量外部 store。
 
-侧边栏分组与页面清单以 `source/render/source/components/app-sidebar.tsx` 为准，各页面职责见 [desktop.md](./desktop.md) 的控制台页面表。
+侧边栏分组与页面清单以 `packages/console/source/components/app-sidebar.tsx` 为准，各页面职责见 [desktop.md](./desktop.md) 的控制台页面表。
 
 ## 构建与打包
 
+包拆分后的交付形态与每包构建产物见 [packaging.md](./packaging.md)「交付形态」「构建与测试编排」。渲染进程与宿主是两套独立构建：控制台由 `packages/console/vite.config.ts` 构建为静态产物，Electron 主进程与 preload 由 `apps/app/` 下的两份配置分别构建；宿主不再内联渲染层构建。
+
 ### Vite
 
-- 主进程、预加载脚本、渲染进程统一配置
-- 开发时支持热重载（主进程重启、渲染进程 HMR）
-- 生产构建自动打包
+- 控制台：`packages/console/vite.config.ts`，输出 `packages/console/dist/`，dev server 固定 `127.0.0.1:5173`
+- 主进程（ESM）：`apps/app/vite.config.ts`，输出 `apps/app/dist/command/index.js`
+- preload（CJS）：`apps/app/vite.preload.config.ts`，输出 `apps/app/dist/command/preload.js`；必须与主进程分成两次构建，因为 Vite 一份配置只能产出一个格式
+- 三份配置共用 `apps/app/vite.shared.ts` 里的入口、别名、Node 内置模块外部化与 `target: node22`
+- 开发时 `pnpm dev` 由 turbo 启动各包 `dev` 任务，宿主侧的实际编排在 `apps/app/scripts/dev.mjs`：先等控制台 dev server 起来，再起两份 `vite build --watch`，等首轮构建落定后拉起 Electron，之后监听产物目录做整应用重启；渲染层热更新由 Vite HMR 提供
+- 生产构建由 Vite 直接产出静态产物，不再依赖开发期插件
 
 ### electron-builder
 
@@ -193,17 +225,17 @@ React 18 + TypeScript + shadcn/ui + Tailwind。页面通过 `source/render/sourc
 - ad-hoc 签名只保证应用包内部完整性，不提供开发者身份信任，也不能提交 Apple 公证
 - GitHub Release 必须附带 DMG 的 SHA-256 文件和“隐私与安全 > 仍要打开”的首次安装说明
 - 未来购买 Apple Developer Program 后，替换为 Developer ID Application 签名和 Apple notarization；不得把免费 Apple Development 证书用于公网分发
-- 自动更新已实现：`source/command/updater.ts` 使用 `electron-updater`，支持检查、手动下载、进度、安装和状态广播；生产环境启动后静默检查，开发环境无更新元数据时显示友好状态。
+- 自动更新已实现：`apps/app/source/updater.ts` 使用 `electron-updater`，支持检查、手动下载、进度、安装和状态广播；生产环境启动后静默检查，开发环境无更新元���据时显示友好状态。
 - 无正式 Developer ID 签名阶段，自动更新明确关闭 macOS 更新包发行者签名校验，下载完整性依赖更新元数据中的 SHA-512。这是当前发布方式的预期取舍；启用正式签名和 Apple notarization 后必须恢复签名校验。
 
 ## 开发流程
 
-以下命令与根目录 `package.json` 的 scripts 一致：
+以下命令与根目录 `package.json` 的 scripts 一致，实现落在各包 `scripts/`（跨包编排在 `packages/toolkit/scripts/`）：
 
-1. `pnpm dev` — 启动开发模式
-2. `pnpm build` — 执行 typecheck、Vite bundling 和 electron-builder
+1. `pnpm dev` — 启动开发会话（turbo 并行跑 `dev` 任务，实际编排在 `apps/app/scripts/dev.mjs`）
+2. `pnpm build` — 按 turbo 任务图依次构建 `contracts` → `core` → `console` / `app`
 3. `pnpm typecheck` — TypeScript 类型检查
-4. `pnpm lint` — ESLint 检查
+4. `pnpm lint` — ESLint 检查（含代理分层与包边界守卫）
 5. `pnpm test:server` — 运行 Server/Vitest 测试
 6. `pnpm release:win`、`pnpm release:mac`、`pnpm release:linux` — 构建对应平台发布包
 
@@ -214,4 +246,4 @@ React 18 + TypeScript + shadcn/ui + Tailwind。页面通过 `source/render/sourc
 3. **原生 http 不引入框架**：减少依赖、完全控制流式行为
 4. **轻量外部 Store 管理共享状态**：集中缓存 Provider、健康状态、`default` 逻辑模型和设置，避免页面重复请求与轮询闪烁
 5. **shadcn/ui + Tailwind**：组件按需复制、体积小、定制灵活
-6. **Vite 统一构建**：一套配置管三个进程，开发体验好
+6. **Vite 按目标分构建**：控制台、主进程、preload 各一份配置，各自只解决一个问题

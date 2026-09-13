@@ -86,7 +86,7 @@ runWorkflow(graph, inputPayload, { capabilities })
 - 能力抛出的异常在引擎侧被转成一句可读的错误信息并记进 trace，不会打断整轮运行；
 - 超时由节点配置并在引擎侧夹一次（脚本上限 10s、LLM 上限 10min），能力实现负责真正的中断；
 - 引擎传给脚本的是 payload 的**深拷贝**，脚本里的赋值不会污染引擎正在使用的决策数据；
-- 服务端实现见 `source/server/management/routes/diagnostics/router-capabilities.ts`：脚本走 `node:vm` 沙箱，LLM 走真实请求通路（逻辑模型 → 协议发现 → 密钥 → 故障转移）。
+- 服务端实现见 `packages/core/source/management/routes/diagnostics/router-capabilities.ts`：脚本走 `node:vm` 沙箱，LLM 走真实请求通路（逻辑模型 → 协议发现 → 密钥 → 故障转移）。
 
 ```ts
 interface ScriptNode extends WorkflowNodeBase {
@@ -166,7 +166,7 @@ interface PromptNode extends WorkflowNodeBase {
 { version: 1, nodes: WorkflowNodeModel[], edges: WorkflowEdge[] }
 ```
 
-每次保存生成一个递增版本（最多保留 30 版），代理读的永远是「最新保存的那一版」；一版都没保存过时用内建默认策略现场生成。读写入口都在 `source/server/database/router-graph-store.ts`，画布不保留本地副本。
+每次保存生成一个递增版本（最多保留 30 版），代理读的永远是「最新保存的那一版」；一版都没保存过时用内建默认策略现场生成。读写入口都在 `packages/core/source/database/router-graph-store.ts`，画布不保留本地副本。
 
 读取时执行 JSON 解析、Zod `safeParse` 与图校验。形状对不上就直接报错，不做就地修补：能跑的就是当前这份 schema 定义的图。
 

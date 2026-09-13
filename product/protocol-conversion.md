@@ -25,7 +25,7 @@
 
 ### 转换矩阵
 
-矩阵的唯一权威是 `source/server/proxy/protocols/shared/conversion-registry.ts`。当前注册的方向恰好是最常用的三个：
+矩阵的唯一权威是 `packages/core/source/proxy/protocols/shared/conversion-registry.ts`。当前注册的方向恰好是最常用的三个：
 
 | 客户端协议 | Provider openai-completions | Provider openai-responses | Provider anthropic-messages |
 |-----------|------------------------|----------------------|------------------------|
@@ -162,7 +162,7 @@
 ## 转换器模块设计
 
 ```
-source/server/proxy/protocols/
+packages/core/source/proxy/protocols/
   shared/
     conversion-utils.ts                          # JSON 取值/序列化工具，畸形输入统一降级
     request-conversion.ts                        # convertRequestBody 入口：按方向分发

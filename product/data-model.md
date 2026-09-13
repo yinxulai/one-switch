@@ -43,7 +43,7 @@ v0.3 包含以下 22 张核心表。
 
 数据库启动时通过 Drizzle runtime migrator 应用 `drizzle/` 下的生成 migration，并由 `__drizzle_migrations` 记录已执行版本。`logical_models.default` 是应用 seed，不属于 schema migration。preview 阶段 `drizzle/` 只保留一个由 schema 直接生成的首发基线，因此兼容性判定不需要维护任何「历史表名」清单：`__drizzle_migrations` 里出现基线之外的 migration，或者库里有表却没有任何 migration 记录，就直接拒绝启动，要求用户重新初始化数据库。
 
-数据文件名为 `one-switch-v<主版本号>.db`（例如 `one-switch-v1.db`），主版本号取自应用版本号（`source/common/database-file.ts` 是这条规则的唯一实现）。这意味着发布一个不兼容的大版本时，应用会在全新的文件上初始化，旧文件既不读取也不删除——所谓「不兼容旧版本」因此不需要任何检测代码，只是换了一个文件名。
+数据文件名为 `one-switch-v<主版本号>.db`（例如 `one-switch-v1.db`），主版本号取自应用版本号（`packages/contracts/source/database-file.ts` 是这条规则的唯一实现）。这意味着发布一个不兼容的大版本时，应用会在全新的文件上初始化，旧文件既不读取也不删除——所谓「不兼容旧版本」因此不需要任何检测代码，只是换了一个文件名。
 
 | 表 | 用途 | 数据性质 |
 | --- | --- | --- |
@@ -1140,7 +1140,7 @@ Token、缓存 Token 和其他协议用量 -> `request_usages` / `attempt_usages
 8. 插入默认逻辑模型；
 9. 初始化 Provider 健康状态。
 
-`source/server/database/index.ts` 不再包含以下逻辑：
+`packages/core/source/database/index.ts` 不再包含以下逻辑：
 
 - 旧表检测（第 5 步只判断「这个库是不是本版本建的」，不认任何具体表名，也不修补任何结构）；
 - 旧字段迁移；
@@ -1252,17 +1252,17 @@ Store 层应分为两部分：
 
 本版本落地时需要同步修改：
 
-1. `source/server/database/schema.ts`；
-2. `source/server/database/index.ts`；
-3. `source/server/database/provider-store.ts`、`model-store.ts`、`logical-model-store.ts`、`settings-store.ts`、`health-store.ts`、`request-log-store.ts`、`analytics-store.ts`；
-4. `source/common/schemas.ts`；
-5. `source/server/database/development-seed.ts`；
-6. `source/server/database/index.test.ts`；
+1. `packages/core/source/database/schema.ts`；
+2. `packages/core/source/database/index.ts`；
+3. `packages/core/source/database/provider-store.ts`、`model-store.ts`、`logical-model-store.ts`、`settings-store.ts`、`health-store.ts`、`request-log-store.ts`、`analytics-store.ts`；
+4. `packages/contracts/source/schemas.ts`；
+5. `packages/core/source/database/development-seed.ts`；
+6. `packages/core/source/database/index.test.ts`；
 7. 分域 Store 测试（`store-boundaries.test.ts`、各领域测试）；
-8. 供应商包导入导出逻辑（`source/server/management/provider-transfer/`、`source/common/provider-bundle.ts`）；
+8. 供应商包导入导出逻辑（`packages/core/source/management/provider-transfer/`、`packages/contracts/source/provider-bundle.ts`）；
 9. Provider、模型、路由和统计相关 SQL；
 10. 删除旧版 Drizzle 迁移文件，生成新的首发基线；
-11. 数据文件名规则（`source/common/database-file.ts`）及其在 `source/command/index.ts`、`source/server/index.ts`、`source/server/runtime/server-runtime.ts`、`source/server/database/index.ts` 之间的传递；测试统一使用 `source/server/database/test-support.ts` 里的固定文件名。
+11. 数据文件名规则（`packages/contracts/source/database-file.ts`）及其在 `apps/app/source/index.ts`、`packages/core/source/index.ts`、`packages/core/source/runtime/server-runtime.ts`、`packages/core/source/database/index.ts` 之间的传递；测试统一使用 `packages/core/source/database/test-support.ts` 里的固定文件名。
 
 ## 11. 后续演进建议（评审补充）
 

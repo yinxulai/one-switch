@@ -1,6 +1,6 @@
 # 路由工作台
 
-> 工作台的**交互设计**与**画布侧组件结构**在本文件维护。节点语义与节点目录见 [route-design.md](./route-design.md) §4，图模型与执行模型见 [workflow-engine.md](./workflow-engine.md)，页面在控制台中的位置见 [desktop.md](./desktop.md)。画布与节点的实际实现以 `source/render/source/pages/router/` 为准。
+> 工作台的**交互设计**与**画布侧组件结构**在本文件维护。节点语义与节点目录见 [route-design.md](./route-design.md) §4，图模型与执行模型见 [workflow-engine.md](./workflow-engine.md)，页面在控制台中的位置见 [desktop.md](./desktop.md)。画布与节点的实际实现以 `packages/console/source/pages/router/` 为准。
 
 ## 1. 设计目标
 
@@ -56,7 +56,7 @@
 ### 3.2 文件结构
 
 ```text
-source/render/source/pages/router/
+packages/console/source/pages/router/
 ├── page.tsx                      # 画布与面板布局、选中态、图操作入口
 ├── node-registry.ts              # nodeTypes / edgeTypes
 ├── node-meta.ts / node-data.ts   # 节点元信息与面板数据契约
@@ -79,7 +79,7 @@ source/render/source/pages/router/
 ├── nodes/                        # 九种节点，清单见 route-design.md §4
 └── panel/                        # 与节点一一对应的配置面板
 
-source/common/router/             # 图数据与执行，render 与 server 共用
+packages/contracts/source/router/       # 图数据与执行，console 与 core 共用
 ├── types.ts / schemas.ts         # 节点、端口、边的类型与校验
 ├── engine.ts                     # 图执行
 └── presets.ts                    # 默认图与策略预设

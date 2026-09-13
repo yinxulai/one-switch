@@ -186,4 +186,16 @@
 - 按延迟、成功率、权重或成本的智能路由
 - 主动健康探测
 - 多配置 Profile
-- 本地 CLI 或无头模式
+- 本地 CLI 或无头模式（设计、包边界与阶段验收见 [packaging.md](./packaging.md)，进度见下文「工程演进」）
+
+## 工程演进：包拆分与多形态分发（S0–S4）
+
+目标是把核心能力拆成包，让同一套能力同时服务 CLI 与桌面 App 两种形态。设计、包边界、目录映射与宿主适配点以 [packaging.md](./packaging.md) 为唯一权威；本节的勾选状态是该计划的进度来源。
+
+- [x] S0 骨架平移（不改逻辑）：建立 pnpm workspace 与 `packages/{contracts,core,console}` 三个库包 + `apps/app` 宿主壳，按迁移映射表平移目录与导入别名，并顺手完成根目录清理——目录名统一为 `source/`、脚本按业务归入各包 `scripts/`（跨包的收在 `packages/toolkit/scripts/`）、打包资产按「谁用谁持有」进 `apps/app/`、turbo 接管任务编排。验收结果：`pnpm typecheck` / `pnpm lint` / `pnpm test` 全过（109 文件 / 1123 测试，与平移前一致）、`pnpm build` 2 个 turbo 任务通过、`pnpm dev` 端到端复验通过（详见 [packaging.md](./packaging.md) §7 S0）
+- [ ] S1 `core` 可独立运行：`core` / `contracts` 产出独立构建产物，新增裸 Node 冒烟脚本。验收：不安装 Electron 的 Node 进程能启动服务、完成一次成功转发与一次失败切换，并能干净退出
+- [ ] S2 CLI 成型：落地密钥存储、Web 托管、前端运行时注入、桌面能力抽象与运行时配置，实现 `start` / `stop` / `status` / `version`。验收：CLI 启动后浏览器可用完整控制台，关闭终端后端口释放
+- [ ] S3 App 回归：`app` 改为消费 `core` + `console`，托盘 / 自动更新 / 开机自启 / 原生对话框保持（`electron-builder` 配置与打包脚本已在 S0 迁入包内，本阶段只剩构建产物映射与 `apps/app/source` 的 `main/` / `preload/` 细分）。验收：桌面安装包端到端可用且升级路径不回归
+- [ ] S4 分发与文档：CLI 以 npm 全局 bin 分发并声明 `engines`；`tech-architecture.md`、`server-architecture.md` 与本节同步
+
+已落地的工程前置：在既有分层守卫之外新增包边界守卫 `packages/toolkit/scripts/check-package-boundaries.mjs`（随 `pnpm lint` 执行），强制 `packages/*` 与 `apps/*` 之间的依赖方向。规则里已经包含一个独立 CLI 包的分支，到 S2 建立 `apps/cli` 时自动生效。

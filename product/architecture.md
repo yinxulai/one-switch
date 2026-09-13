@@ -45,6 +45,6 @@ flowchart LR
 
 1. 当前支持的客户端/上游协议只有 `openai-completions`、`openai-responses`、`anthropic-messages`，各协议的识别路径见 [proxy.md](./proxy.md) 的协议识别表；Gemini 等其它协议尚未实现，不属于当前能力。
 2. 同协议请求只做最小请求处理：根据 path 识别协议、将请求体中的 `model` 替换为 ProviderModel 的 `modelName`、注入认证头并安全透传端到端 header。
-3. 协议转换不是全协议自动互转，而是由 ProviderModel 端点绑定上显式启用的转换器控制。当前注册的方向以 `source/server/proxy/protocols/shared/conversion-registry.ts` 与各协议的 `conversion-adapters.ts` 为准，包括 OpenAI Completions ↔ Anthropic Messages、OpenAI Responses → OpenAI Completions，以及各协议直连；未注册方向必须拒绝。转换开关、矩阵与候选过滤见 [protocol-conversion.md](./protocol-conversion.md)。
-4. 已启用转换时，请求由 `source/server/proxy/protocols/shared/request-conversion*.ts` 改写，响应及 SSE 由 `source/server/proxy/protocols/shared/response-conversion*.ts` 处理；转换可能改变响应格式，不能概括为“始终逐块透传”。
+3. 协议转换不是全协议自动互转，而是由 ProviderModel 端点绑定上显式启用的转换器控制。当前注册的方向以 `packages/core/source/proxy/protocols/shared/conversion-registry.ts` 与各协议的 `conversion-adapters.ts` 为准，包括 OpenAI Completions ↔ Anthropic Messages、OpenAI Responses → OpenAI Completions，以及各协议直连；未注册方向必须拒绝。转换开关、矩阵与候选过滤见 [protocol-conversion.md](./protocol-conversion.md)。
+4. 已启用转换时，请求由 `packages/core/source/proxy/protocols/shared/request-conversion*.ts` 改写，响应及 SSE 由 `packages/core/source/proxy/protocols/shared/response-conversion*.ts` 处理；转换可能改变响应格式，不能概括为“始终逐块透传”。
 5. 每个 `provider_endpoints` 配置 Provider 的原生协议 URL；`provider_model_endpoints.url` 非空时覆盖默认 URL。路由只考虑当前 LogicalModel 的 `scheduling_policies` 绑定、健康状态和协议原生匹配/显式转换匹配的候选。

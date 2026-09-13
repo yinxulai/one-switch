@@ -41,7 +41,7 @@ Windows / Linux 的托盘底色随系统主题变化，彩色图标在浅色底�
 
 ## 控制台页面
 
-侧边栏分组与页面清单以 `source/render/source/components/app-sidebar.tsx` 为准：
+侧边栏分组与页面清单以 `packages/console/source/components/app-sidebar.tsx` 为准：
 
 | 分组 | 页面 | 说明 |
 |------|------|------|
@@ -136,4 +136,4 @@ Windows / Linux 的托盘底色随系统主题变化，彩色图标在浅色底�
 - **引擎与图模型**（节点/边结构、控制流与端口、迭代、脚本与 LLM 能力注入、图的加载与保存）：见 [workflow-engine.md](./workflow-engine.md)
 - **画布交互与节点面板**：见 [route-workbench.md](./route-workbench.md)
 
-契约以代码为准：图模型与节点定义在 `source/common/router/types.ts`，落库结构在 `source/server/database/schema.ts`。
+契约以代码为准：图模型与节点定义在 `packages/contracts/source/router/types.ts`，落库结构在 `packages/core/source/database/schema.ts`。
