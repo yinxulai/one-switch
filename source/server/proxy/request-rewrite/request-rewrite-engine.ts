@@ -10,9 +10,7 @@ const PROTECTED_HEADERS = new Set(['authorization', 'host', 'content-length', 'c
  * 两边对「这一跳是什么形态」的认知当场分叉，而这正是代理最不该制造的状态。
  */
 const PROTECTED_BODY_FIELDS = new Set(['stream'])
-const MAX_BODY_BYTES = 2 * 1024 * 1024
 const MAX_ACTIONS = 50
-const MAX_REPLACEMENTS = 100
 
 export interface RequestRewriteContext {
   stage: 'request' | 'response'
@@ -58,7 +56,6 @@ export function applyRequestRewriteRules(body: Buffer, headers: Record<string, s
     for (const action of actions) {
       if (action.type.startsWith('header-')) applyHeader(currentHeaders, action as Extract<RequestRewriteRuleAction, { type: `header-${string}` }>, rule.id)
       else currentBody = Buffer.from(applyBody(currentBody, action as Extract<RequestRewriteRuleAction, { type: `body-${string}` }>, rule.id))
-      if (currentBody.length > MAX_BODY_BYTES) throw new RequestRewriteError('The rewritten body is too large', rule.id)
     }
     appliedRuleIds.push(rule.id)
   }
@@ -90,7 +87,6 @@ function applyBody(body: Buffer, action: BodyAction, ruleId: string): Buffer {
   try { value = JSON.parse(body.toString('utf8')) } catch { throw new RequestRewriteError('The body is not valid JSON', ruleId) }
   if (action.type === 'body-replace' && action.search.length === 0) throw new RequestRewriteError('The body replacement search string must not be empty', ruleId)
   const segments = parsePath(action.path, ruleId)
-  if (segments.length > 12) throw new RequestRewriteError('The body path is too deep', ruleId)
   if (action.type === 'body-set') setPath(value, segments, action.value, ruleId)
   else if (action.type === 'body-delete') deletePath(value, segments, ruleId)
   else replacePath(value, segments, action.search ?? '', action.replacement ?? '', action.regex ?? false, ruleId)
@@ -122,16 +118,8 @@ function replacePath(root: unknown, segments: string[], search: string, replacem
   const parent = getParent(root, segments, ruleId); const key = segments[segments.length - 1]; const target = parent[key]
   if (typeof target !== 'string') throw new RequestRewriteError('The JSON replacement target must be a string', ruleId)
   try {
-    if (regex) {
-      const pattern = new RegExp(search, 'g')
-      const matches = target.match(pattern)?.length ?? 0
-      if (matches > MAX_REPLACEMENTS) throw new RequestRewriteError('Too many replacements', ruleId)
-      parent[key] = target.replace(pattern, replacement)
-    } else {
-      const count = target.split(search).length - 1
-      if (count > MAX_REPLACEMENTS) throw new RequestRewriteError('Too many replacements', ruleId)
-      parent[key] = target.split(search).join(replacement)
-    }
+    if (regex) parent[key] = target.replace(new RegExp(search, 'g'), replacement)
+    else parent[key] = target.split(search).join(replacement)
   } catch (error) {
     if (error instanceof RequestRewriteError) throw error
     throw new RequestRewriteError(`Invalid regular expression: ${search}`, ruleId)

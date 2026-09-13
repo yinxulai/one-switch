@@ -7,10 +7,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { NodePanelProps } from '../node-data'
+import type { NodePanelProps, PanelLogicalModel } from '../node-data'
 import { useTranslation } from '@/i18n/provider'
 import type { UiCatalogKey } from '@common/i18n/catalogs'
-import type { ModelSelectSource, RuntimeLogicalModel } from '@common/router/types'
+import type { ModelSelectSource } from '@common/router/types'
 import { readCandidates } from './field-candidates'
 import {
   NodePanelField,
@@ -161,7 +161,7 @@ export function ModelSelectPanel(props: NodePanelProps) {
 interface ModelPickerProps {
   title: string
   emptyHint: string
-  logicalModels: RuntimeLogicalModel[]
+  logicalModels: PanelLogicalModel[]
   selectedIds: string[]
   target: ModelField
   onToggle: (target: ModelField, modelId: string, checked: boolean) => void
@@ -169,6 +169,7 @@ interface ModelPickerProps {
 
 function ModelPicker(props: ModelPickerProps) {
   const { title, emptyHint, logicalModels, selectedIds, target, onToggle } = props
+  const t = useTranslation()
 
   return (
     <div className="grid gap-2">
@@ -176,14 +177,23 @@ function ModelPicker(props: ModelPickerProps) {
       {logicalModels.length === 0 && <NodePanelHint tone="warning">{emptyHint}</NodePanelHint>}
       <div className="grid gap-1.5">
         {logicalModels.map(logicalModel => (
-          <label key={logicalModel.id} className="flex items-center gap-2 rounded-lg border border-module-border bg-workflow-block-parma-bg px-2.5 py-2 system-xs-regular text-text-secondary">
+          <label key={logicalModel.id} className="flex items-start gap-2 rounded-lg border border-module-border bg-workflow-block-parma-bg px-2.5 py-2">
             <input
               type="checkbox"
+              className="mt-0.5 shrink-0"
               checked={selectedIds.includes(logicalModel.id)}
               onChange={event => onToggle(target, logicalModel.id, event.target.checked)}
             />
-            <span className="min-w-0 flex-1 truncate">{logicalModel.name}</span>
-            <span className="shrink-0 font-mono system-2xs-regular text-text-tertiary">{logicalModel.id}</span>
+            {/* 名称与 id 占一行、说明另起一行：说明通常比名称长得多，挤在同一行会把两者都截断。 */}
+            <span className="grid min-w-0 flex-1 gap-0.5">
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="min-w-0 flex-1 truncate system-xs-medium text-text-secondary">{logicalModel.name}</span>
+                <span className="shrink-0 font-mono system-2xs-regular text-text-tertiary">{logicalModel.id}</span>
+              </span>
+              <span className="line-clamp-2 system-xs-regular text-text-tertiary">
+                {logicalModel.description?.trim() || t('router.panel.modelNoDescription')}
+              </span>
+            </span>
           </label>
         ))}
       </div>

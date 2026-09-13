@@ -120,6 +120,7 @@ export function ActionEditor(props: ActionEditorProps) {
                     className={isReplace ? 'sm:col-span-2' : undefined}
                     label={labels.value}
                     htmlFor={`${action.id}-value`}
+                    hint={isReplace && action.regex ? t('rules.actions.regexHint') : undefined}
                   >
                     <div className="flex items-center gap-2">
                       <Input

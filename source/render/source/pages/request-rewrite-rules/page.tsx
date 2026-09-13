@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Plus, ShieldCheck } from 'lucide-react'
+import { ShieldCheck } from 'lucide-react'
 import { requestRewriteRuleApi } from '@/api/models'
 import { PageContent, PageHeader, PageLayout } from '@/components/layout'
-import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useToast } from '@/components/ui/toast'
-import { useTranslation, type AppTranslator } from '@/i18n/provider'
+import { useTranslation } from '@/i18n/provider'
 import { RuleEditorDialog } from './components/rule-editor-dialog'
+import { RulePresetMenu } from './components/rule-preset-menu'
 import { RuleStats } from './components/rule-stats'
 import { RulesTable } from './components/rules-table'
+import { createBlankRule, createRuleFromPreset, type RulePreset } from './rule-presets'
 import { formatJsonActionValue, parseJsonActionValue, type RequestRewriteRule, type RuleStatusFilter } from './types'
 import type { RequestRewriteRule as ApiRequestRewriteRule, Protocol } from '@common/schemas'
 
@@ -35,29 +36,12 @@ function toApiRule(rule: RequestRewriteRule): Omit<ApiRequestRewriteRule, 'id' |
   }
 }
 
-function createRule(t: AppTranslator): RequestRewriteRule {
-  const id = `rule-${Date.now()}`
-  return {
-    id,
-    name: t('rules.untitled'),
-    description: '',
-    enabled: true,
-    global: false,
-    protocols: [],
-    match: { clientProtocols: [], upstreamProtocols: [] },
-    actions: [{ id: `${id}-action`, stage: 'request', target: 'header', operation: 'set', path: '', value: '' }],
-    testCases: [],
-    boundProviders: 0,
-    updatedTime: null,
-  }
-}
-
 export function RequestRewriteRulesPage() {
   const t = useTranslation()
   const toast = useToast()
   const [rules, setRules] = useState<RequestRewriteRule[]>([])
   const [editingRuleId, setEditingRuleId] = useState('')
-  const [draft, setDraft] = useState<RequestRewriteRule>(() => createRule(t))
+  const [draft, setDraft] = useState<RequestRewriteRule>(() => createBlankRule(t))
   const [loading, setLoading] = useState(true)
   useEffect(() => { void requestRewriteRuleApi.list().then(result => { if (result.success) { const next = result.data.map(toUiRule); setRules(next); if (next[0]) { setEditingRuleId(next[0].id); setDraft(next[0]) } } setLoading(false) }) }, [])
   const [editorOpen, setEditorOpen] = useState(false)
@@ -87,8 +71,12 @@ export function RequestRewriteRulesPage() {
   }
 
   const addRule = () => {
-    const next = createRule(t)
-    editRule(next)
+    editRule(createBlankRule(t))
+  }
+
+  /** 模板同样是**未保存**的草稿：填入内容、打开编辑器，由用户自己确认后保存。 */
+  const addRuleFromPreset = (preset: RulePreset) => {
+    editRule(createRuleFromPreset(preset, t))
   }
 
   const saveRule = () => { void (async () => { const result = draft.updatedTime === null ? await requestRewriteRuleApi.create(toApiRule(draft)) : await requestRewriteRuleApi.update(draft.id, toApiRule(draft)); if (!result.success) { toast.error(result.errorMessage); return }; const next = toUiRule(result.data); setRules(current => current.some(rule => rule.id === next.id) ? current.map(rule => rule.id === next.id ? next : rule) : [next, ...current]); setDraft(next); setEditingRuleId(next.id); setEditorOpen(false); toast.success(t('rules.saved')) })() }
@@ -116,7 +104,7 @@ export function RequestRewriteRulesPage() {
         description={t('rules.description')}
         actions={(
           <div className="flex items-center gap-2">
-            <Button type="button" onClick={addRule}><Plus /> {t('rules.create')}</Button>
+            <RulePresetMenu onCreateBlank={addRule} onCreateFromPreset={addRuleFromPreset} />
           </div>
         )}
       />

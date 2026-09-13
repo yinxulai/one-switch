@@ -56,8 +56,8 @@ export const RequestRewriteRuleTestCaseSchema = z.object({
   id: z.string().min(1).max(100),
   name: z.string().min(1).max(100),
   stage: RuleStageSchema.default('request'),
-  body: z.string().max(2 * 1024 * 1024),
-  headers: z.string().max(64 * 1024),
+  body: z.string(),
+  headers: z.string(),
   clientProtocol: ProtocolSchema.default('openai-completions'),
   upstreamProtocol: ProtocolSchema.default('openai-completions'),
   /** 试跑时假设的传输形态；响应阶段的规则在 `http-stream` 下没有能做的事。 */
@@ -66,12 +66,12 @@ export const RequestRewriteRuleTestCaseSchema = z.object({
 export type RequestRewriteRuleTestCase = z.infer<typeof RequestRewriteRuleTestCaseSchema>
 const RequestRewriteRuleActionBaseSchema = z.object({ stage: RuleStageSchema.default('request') })
 export const RequestRewriteRuleActionSchema = z.discriminatedUnion('type', [
-  RequestRewriteRuleActionBaseSchema.extend({ type: z.literal('header-set'), name: z.string().min(1).max(128), value: z.string().max(4096) }),
-  RequestRewriteRuleActionBaseSchema.extend({ type: z.literal('header-append'), name: z.string().min(1).max(128), value: z.string().max(4096) }),
-  RequestRewriteRuleActionBaseSchema.extend({ type: z.literal('header-remove'), name: z.string().min(1).max(128) }),
-  RequestRewriteRuleActionBaseSchema.extend({ type: z.literal('body-set'), path: z.string().min(3).max(512), value: JsonValueSchema }),
-  RequestRewriteRuleActionBaseSchema.extend({ type: z.literal('body-delete'), path: z.string().min(3).max(512) }),
-  RequestRewriteRuleActionBaseSchema.extend({ type: z.literal('body-replace'), path: z.string().min(3).max(512), search: z.string().max(4096), replacement: z.string().max(4096), regex: z.boolean().default(false) }),
+  RequestRewriteRuleActionBaseSchema.extend({ type: z.literal('header-set'), name: z.string().min(1), value: z.string() }),
+  RequestRewriteRuleActionBaseSchema.extend({ type: z.literal('header-append'), name: z.string().min(1), value: z.string() }),
+  RequestRewriteRuleActionBaseSchema.extend({ type: z.literal('header-remove'), name: z.string().min(1) }),
+  RequestRewriteRuleActionBaseSchema.extend({ type: z.literal('body-set'), path: z.string().min(3), value: JsonValueSchema }),
+  RequestRewriteRuleActionBaseSchema.extend({ type: z.literal('body-delete'), path: z.string().min(3) }),
+  RequestRewriteRuleActionBaseSchema.extend({ type: z.literal('body-replace'), path: z.string().min(3), search: z.string(), replacement: z.string(), regex: z.boolean().default(false) }),
 ])
 export type RequestRewriteRuleAction = z.infer<typeof RequestRewriteRuleActionSchema>
 export const RequestRewriteRuleSchema = z.object({

@@ -55,6 +55,16 @@ export type RouteNodeProps = NodeProps<RouteFlowNode>
 export type NodePanelUpdate = (updater: (node: WorkflowNodeModel) => WorkflowNodeModel) => void
 
 /**
+ * 节点面板里展示的逻辑模型。
+ *
+ * 比运行时形状多一个 `description`：说明只在配置界面里给人看，
+ * 图与引擎都不读它（引擎归一化模型列表时只留 id / 名称 / 开关）。
+ */
+export interface PanelLogicalModel extends RuntimeLogicalModel {
+  description?: string
+}
+
+/**
  * 右侧节点面板的 props。
  * 组件按节点种类注册，内部自行收窄 `model` 类型。
  */
@@ -64,7 +74,7 @@ export interface NodePanelProps {
   /** 当前图上的全部节点，用于展示字段 / 逻辑模型来源 */
   nodeModels: WorkflowNodeModel[]
   /** 可选逻辑模型 */
-  logicalModels: RuntimeLogicalModel[]
+  logicalModels: PanelLogicalModel[]
   /** 上游 schema 推出的可用字段（条件节点与逻辑模型选择节点的变量取值共用） */
   conditionFieldHints: SchemaFieldDescriptor[]
 }
