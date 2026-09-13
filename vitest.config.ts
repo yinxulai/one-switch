@@ -1,7 +1,13 @@
+import { readFileSync } from 'node:fs'
 import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vitest/config'
 
+// 与 `vite.config.ts` 的 `define` 保持一致：测试同样走 Vite 的转换管线，
+// 少了这一行，任何间接 import 到 `rule-presets.ts` 的用例都会因 `__APP_VERSION__` 未定义而炸。
+const appVersion = (JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string }).version
+
 export default defineConfig({
+  define: { __APP_VERSION__: JSON.stringify(appVersion) },
   resolve: {
     alias: {
       '@common': fileURLToPath(new URL('./source/common', import.meta.url)),

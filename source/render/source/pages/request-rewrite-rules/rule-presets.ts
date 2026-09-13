@@ -13,17 +13,15 @@ import type { RequestRewriteRule, RuleAction, RuleTestCase } from './types'
  * 2. **名称与说明取自当前界面语言**。规则名保存后就是用户数据（路由预设的节点名同理），
  *    用户在哪门语言下创建，草稿就是哪门语言的写法，之后可以自己改。
  *
+ * 模板清单刻意保持**短**：只留「改一个头、删一个头、改一个字段」这三种最常被问到的形态。
+ * 删除字段、文本替换、响应阶段这些动作编辑器本来就支持，用户照着搭即可 ——
+ * 模板一多，下拉就成了要先通读一遍才能选的目录，反而拖慢「新建一条规则」这个动作。
+ *
  * 模板自带的试跑输入同样是刻意的：套用后直接点「运行测试」就能看到动作真的改了东西，
  * 而不是让用户先自己编一份请求体才知道规则有没有生效。
  */
 
-export type RulePresetId =
-  | 'set-user-agent'
-  | 'remove-request-header'
-  | 'delete-request-field'
-  | 'set-request-field'
-  | 'replace-request-text'
-  | 'replace-response-text'
+export type RulePresetId = 'set-user-agent' | 'remove-request-header' | 'set-request-field'
 
 type RuleActionDraft = Omit<RuleAction, 'id'>
 /** 试跑用例的名称由模板统一定，不单独占 key。 */
@@ -38,18 +36,27 @@ export interface RulePreset {
 }
 
 /**
+ * 「修改 UA」模板的默认值：让请求以本工具自己的标识出场，而不是伪装成某个具体 SDK；
+ * 真要伪装，把值改成目标客户端的 UA 即可。
+ *
+ * 版本号取构建时的 `package.json`（Vite `define` 注入的 `__APP_VERSION__`），
+ * 这样默认值不会随版本迭代变成一句谎话 —— 它声称的就是当前这个二进制。
+ */
+const USER_AGENT_VALUE = `OneSwitch/${__APP_VERSION__}`
+
+/**
  * 模板清单。
  *
- * 每个模板演示一种动作形态（Header 覆盖 / Header 删除 / Body 删除 / Body 设置 / 字面量替换 / 正则替换），
- * 覆盖 request 与 response 两个阶段；示例字段刻意选三个协议根级都有的名字
- * （`model` / `temperature` / `metadata`），这样模板不写 `match` 也能在任一协议下生效。
+ * 三个模板各演示一种基础形态：Header 覆盖、Header 删除、Body 字段设置。
+ * 示例字段刻意选三个协议根级都有的名字（`temperature`），示例 Header 用通用的 `user-agent` / `cookie`，
+ * 因此模板都不写 `match`，在任一协议下都能直接跑通。
  */
 export const RULE_PRESETS: readonly RulePreset[] = [
   {
     id: 'set-user-agent',
     nameKey: 'rules.presets.setUserAgent.name',
     descriptionKey: 'rules.presets.setUserAgent.description',
-    actions: [{ stage: 'request', target: 'header', operation: 'set', path: 'User-Agent', value: 'OpenAI/Python 1.55.3' }],
+    actions: [{ stage: 'request', target: 'header', operation: 'set', path: 'User-Agent', value: USER_AGENT_VALUE }],
     testCase: {
       stage: 'request',
       headers: '{\n  "content-type": "application/json",\n  "user-agent": "curl/8.4.0"\n}',
@@ -74,20 +81,6 @@ export const RULE_PRESETS: readonly RulePreset[] = [
     },
   },
   {
-    id: 'delete-request-field',
-    nameKey: 'rules.presets.deleteRequestField.name',
-    descriptionKey: 'rules.presets.deleteRequestField.description',
-    actions: [{ stage: 'request', target: 'body', operation: 'remove', path: '$.metadata' }],
-    testCase: {
-      stage: 'request',
-      headers: '{\n  "content-type": "application/json"\n}',
-      body: '{\n  "model": "gpt-4o-mini",\n  "metadata": { "traceId": "local-only" },\n  "messages": [{ "role": "user", "content": "hello" }]\n}',
-      clientProtocol: 'openai-completions',
-      upstreamProtocol: 'openai-completions',
-      transport: 'http',
-    },
-  },
-  {
     id: 'set-request-field',
     nameKey: 'rules.presets.setRequestField.name',
     descriptionKey: 'rules.presets.setRequestField.description',
@@ -96,34 +89,6 @@ export const RULE_PRESETS: readonly RulePreset[] = [
       stage: 'request',
       headers: '{\n  "content-type": "application/json"\n}',
       body: '{\n  "model": "gpt-4o-mini",\n  "messages": [{ "role": "user", "content": "hello" }]\n}',
-      clientProtocol: 'openai-completions',
-      upstreamProtocol: 'openai-completions',
-      transport: 'http',
-    },
-  },
-  {
-    id: 'replace-request-text',
-    nameKey: 'rules.presets.replaceRequestText.name',
-    descriptionKey: 'rules.presets.replaceRequestText.description',
-    actions: [{ stage: 'request', target: 'body', operation: 'replace', path: '$.model', value: 'gpt-4o-mini', replacement: 'gpt-4o-mini-2024-07-18', regex: false }],
-    testCase: {
-      stage: 'request',
-      headers: '{\n  "content-type": "application/json"\n}',
-      body: '{\n  "model": "gpt-4o-mini",\n  "messages": [{ "role": "user", "content": "hello" }]\n}',
-      clientProtocol: 'openai-completions',
-      upstreamProtocol: 'openai-completions',
-      transport: 'http',
-    },
-  },
-  {
-    id: 'replace-response-text',
-    nameKey: 'rules.presets.replaceResponseText.name',
-    descriptionKey: 'rules.presets.replaceResponseText.description',
-    actions: [{ stage: 'response', target: 'body', operation: 'replace', path: '$.model', value: '-\\d{4}-\\d{2}-\\d{2}$', replacement: '', regex: true }],
-    testCase: {
-      stage: 'response',
-      headers: '{\n  "content-type": "application/json"\n}',
-      body: '{\n  "id": "chatcmpl-demo",\n  "model": "gpt-4o-mini-2024-07-18",\n  "choices": [{ "index": 0, "message": { "role": "assistant", "content": "hi" } }]\n}',
       clientProtocol: 'openai-completions',
       upstreamProtocol: 'openai-completions',
       transport: 'http',

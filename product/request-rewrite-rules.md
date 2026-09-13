@@ -264,12 +264,9 @@ thinking/reasoning 不是三个协议中完全同构的字段。当前实现尚�
 
 | 模板 | 动作 | 用途 |
 | --- | --- | --- |
-| 修改 User-Agent | 请求 Header `set` `User-Agent` | 隐藏真实客户端标识 |
+| 修改 User-Agent | 请求 Header `set` `User-Agent` | 隐藏真实客户端标识；默认值 `OneSwitch/<应用版本号>` |
 | 移除请求头 | 请求 Header `remove` `cookie` | 摘掉本地会话 Cookie |
-| 删除请求字段 | 请求 Body `delete` `$.metadata` | 删掉上游不接受的字段 |
 | 设置请求字段 | 请求 Body `set` `$.temperature` | 固定采样参数 |
-| 替换请求正文文本 | 请求 Body `replace` `$.model`（字面量） | 换成上游认得的精确模型版本 |
-| 替换响应正文文本 | 响应 Body `replace` `$.model`（正则） | 去掉模型名末尾的日期后缀 |
 
 约定：
 
@@ -278,8 +275,14 @@ thinking/reasoning 不是三个协议中完全同构的字段。当前实现尚�
 - 模板的名称与说明取自创建时的界面语言，并作为规则名/描述写进草稿，用户可以自由改写。
 - 模板不设置 `scope: 'global'`，是否全局由用户决定。
 - 模板自带一条可直接运行的测试用例，套用后能立刻看到动作效果。
-- 示例字段刻意选三种协议根级都存在的 `model` / `temperature` / `metadata`，示例 Header 用通用的
-  `user-agent` / `cookie`，因此模板都不写匹配条件：只想覆盖一个 Header 的规则，不必先想清楚协议矩阵。
+- 模板刻意只有三个，覆盖「改一个头、删一个头、改一个字段」这三种最常被问到的形态。
+  删除字段、文本替换、响应阶段等动作编辑器本来就支持，用户照着搭即可；
+  模板一多，下拉就变成要先通读一遍才能选的目录，反而拖慢「新建一条规则」这个动作。
+- 示例字段选三种协议根级都存在的 `temperature`，示例 Header 用通用的 `user-agent` / `cookie`，
+  因此模板都不写匹配条件：只想覆盖一个 Header 的规则，不必先想清楚协议矩阵。
+- 「修改 User-Agent」的默认值是 `OneSwitch/<应用版本号>`，版本号取构建时的 `package.json`
+  （Vite `define` 注入的 `__APP_VERSION__`），所以默认值声称的就是当前这个二进制，
+  而不是某个随版本迭代变成假话的写死字符串。
 - 模板定义留在渲染层（`source/render/.../rule-presets.ts`），不放进 `@common`：它没有服务端用途，
   与智能路由预设（服务端要在没有存过图时直接执行，因此必须在 `@common`）的约束不同。
 
