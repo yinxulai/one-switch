@@ -10,7 +10,6 @@ interface EndpointEntry {
   key: string
   title: string
   protocols: string
-  hint: string
   url: string
 }
 
@@ -31,25 +30,31 @@ interface ServiceEndpointCardProps {
   onNavigateToSettings?: () => void
 }
 
+/**
+ * 两种接入协议各占一行：OpenAI 的两种协议共用一个 Base URL，Anthropic 的 Messages 走独立路径。
+ * 协议名（Chat Completions / Responses / Messages）是规范里的专有名词，不进文案表。
+ */
 function buildEntries(t: AppTranslator, baseUrl: string): EndpointEntry[] {
   return [
     {
       key: 'openai',
       title: t('access.endpoint.openai.title'),
       protocols: 'Chat Completions · Responses',
-      hint: t('access.endpoint.openai.hint'),
       url: baseUrl ? `${baseUrl}/v1` : '',
     },
     {
       key: 'anthropic',
-      title: 'Anthropic',
+      title: t('access.endpoint.anthropic.title'),
       protocols: 'Messages',
-      hint: t('access.endpoint.anthropic.hint'),
       url: baseUrl ? `${baseUrl}/v1/messages` : '',
     },
   ]
 }
 
+/**
+ * 监听状态。监听 `0.0.0.0` 时它本身不是可访问地址，这里直接说明客户端该用哪个地址，
+ * 不让用户自己去翻译「所有网卡」是什么意思。
+ */
 function describeListening(t: AppTranslator, host: string, port: number | null, wildcardHost: boolean): string {
   if (!host || port === null) return t('access.endpoint.reading')
   if (wildcardHost) return t('access.endpoint.listeningWildcard', { host, port })
@@ -60,21 +65,27 @@ function EndpointRow(props: EndpointRowProps) {
   const { entry, copied, onCopy } = props
   const t = useTranslation()
   return (
-    <div className="grid gap-2 py-3.5">
-      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="system-sm-medium text-text-primary">{entry.title}</span>
-            <span className="system-xs-regular text-text-quaternary">{entry.protocols}</span>
-          </div>
-          <p className="mt-0.5 system-xs-regular text-text-tertiary">{entry.hint}</p>
-        </div>
-        <Button variant="outline" size="sm" className="shrink-0" disabled={!entry.url} onClick={() => onCopy(entry.key, entry.url)}>
+    <div className="grid min-w-0 gap-2 py-3.5">
+      <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+        <span className="system-sm-medium text-text-primary">{entry.title}</span>
+        <span className="system-2xs-regular text-text-quaternary">{entry.protocols}</span>
+      </div>
+      {/* 复制按钮跟地址同一行，紧挨着被复制的对象；地址等宽、可整段选中。 */}
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <span className="min-w-0 truncate font-mono system-sm-regular text-text-primary select-all">
+          {entry.url || '—'}
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          className="shrink-0"
+          disabled={!entry.url}
+          onClick={() => onCopy(entry.key, entry.url)}
+        >
           {copied ? <Check /> : <Copy />}
           {copied ? t('common.action.copied') : t('access.endpoint.copyUrl')}
         </Button>
       </div>
-      <span className="truncate font-mono system-sm-regular text-text-primary">{entry.url || t('access.endpoint.urlPending')}</span>
     </div>
   )
 }

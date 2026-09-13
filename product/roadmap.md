@@ -15,7 +15,7 @@
 ### 当前实现结论（2026-08-22）
 
 - v0.3 的数据库基线、关系模型、分域 Store、路由、协议适配器、请求观测分层、管理 API 和控制台主流程已落地。
-- 请求链路统一使用 `client*` / `upstream*` 边界：`clientProtocol` 表示客户端协议，`request_attempts.upstreamProtocol` 表示每次真实远端尝试；正文按视角拆为 `request_contents`（客户端）与 `attempt_contents`（上游），不再使用 `providerProtocol` 表示运行时链路。
+- 请求链路统一使用 `client*` / `upstream*` 边界：`clientProtocol` 表示客户端协议，`request_attempts.upstreamProtocol` 表示每次真实远端尝试；正文按视角拆为 `request_contents`（客户端）与 `attempt_contents`（上游）。
 - 观测数据遵循两条硬约束：**一张表 = 一个视角**（列名不带视角前缀，用量同样拆为 `request_usages` / `attempt_usages`，不用可空列判别归属）；**事实永远写入、载荷才受开关控制**（协议转换由两侧协议对比得出而不单独建表，是否流式、TTFT、命中的改写规则 id 与尝试级原始 usage 写在 `request_attempts` 上，`captureRequestContent` 关闭时依然完整落库）。
 - 完整源码验证已通过：`pnpm typecheck`、`pnpm test`、`pnpm lint`；Vite bundling 也已通过。
 - Windows electron-builder 当前受符号链接权限限制，发布包安装验证仍未完成；该环境问题不改变源码验证结论。
@@ -159,7 +159,7 @@
 - [x] 供应商包备份/恢复：按供应商导出/导入端点、模型与自定义设置，密钥仅存系统密钥环
 - [ ] Token 用量统计：按 `request_usages.type` 聚合展示今日/本周用量（基础指标已存在，产品口径与专用 UI 仍需确认）
 - [ ] 协议兼容转换器补充验收（详见 [protocol-conversion.md](./protocol-conversion.md)）：核心转换和 UI 已落地，转换候选故障切换、转换错误 400、流式转换异常及各方向发布包验收仍待补齐
-- [x] 代理引擎结构重构（设计详见 [proxy-engine.md](./proxy-engine.md)）：协议矩阵从 6 处收敛到单一描述符注册表，内核去掉协议与 HTTP 分支，把重写/转换/日志/用量/健康落位为 Modifier 与 Observer 插件；S1–S11 已完成（S6「WS 传输落地」已取消，内核侧传输轴与双向搬运能力保留）
+- [x] 代理引擎（设计详见 [proxy-engine.md](./proxy-engine.md)）：协议矩阵收敛到单一描述符注册表，内核没有协议与 HTTP 分支，重写/转换/日志/用量/健康落位为 Modifier 与 Observer 插件；双向传输能力预留在内核，当前没有实现、也不在计划内
 - [x] 上游出站代理设置（详见 [outbound-proxy.md](./outbound-proxy.md)）：HTTP/HTTPS/SOCKS 代理、绕过规则、草稿连接测试，覆盖模型请求与模型列表获取
 - Linux 打包与托盘体验完善
 - 更细粒度的错误切换策略配置

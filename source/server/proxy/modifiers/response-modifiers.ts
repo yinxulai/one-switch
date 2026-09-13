@@ -87,7 +87,7 @@ function createConversionModifier(options: ResponseModifierOptions): Modifier {
       if (!adapter) return frame
       const head = context.upstreamHead as HeadFrame
       // 响应头在这里只用来选**解析器**（手里这堆字节是 SSE 还是整包 JSON），不决定要不要转换、
-      // 也不决定交付方式：客户端要增量而上游回整包时，执行器已经把它判成 failover
+      // 也不决定交付行为：客户端要增量而上游回整包时，执行器已经把它判成 failover
       // （`options.routing.deliverable` 为假），转换器根本不会被选中。
       // 于是 `accumulateWholeBody` 只会落到它唯一合法的那一半：上游确实发了一整包、而这次又要转协议。
       if (isEventStreamResponse(head.headers)) return convertStream(adapter, frame)
@@ -167,7 +167,7 @@ function createResponseRewriteModifier(options: ResponseModifierOptions): Modifi
         stage: 'response',
         clientProtocol: context.clientProtocol,
         upstreamProtocol: context.upstreamProtocol,
-        // `scope` 已经保证这里是整包交付；这里再把交付方式传一遍不是冗余，而是规则引擎
+        // `scope` 已经保证这里是整包交付；这里再把形态传一遍不是冗余，而是规则引擎
         // 自主回答「这份正文能不能逐块改」时的唯一依据（见 `RequestRewriteContext.transport`）。
         transport: context.exchange.transport,
       })

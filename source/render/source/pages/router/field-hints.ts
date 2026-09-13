@@ -1,4 +1,6 @@
 import { ALL_TRANSPORT_KINDS } from '@common/schemas'
+import type { UiCatalogKey } from '@common/i18n/catalogs'
+import { requestShapeOf } from '@common/router/request-shape'
 import {
   ALL_WORKFLOW_PROTOCOLS,
   DEFAULT_OPERATOR_SET,
@@ -29,109 +31,37 @@ export function buildWorkflowConnections(graph: WorkflowGraph): WorkflowConnecti
   }))
 }
 
-function inferType(value: unknown): SchemaValueType {
-  if (Array.isArray(value)) return 'array'
-  if (value && typeof value === 'object') return 'object'
-  if (typeof value === 'string') return 'string'
-  if (typeof value === 'number') return 'number'
-  if (typeof value === 'boolean') return 'boolean'
-  return 'unknown'
-}
+/**
+ * 输入节点能保证的字段。
+ *
+ * 全是**不解析请求体就能知道**的东西：请求行、请求头、请求体整体，
+ * 以及调用方自带的 `metadata`（内容由调用方定义，引擎只读不写）。
+ * 请求体里有什么字段、是什么格式（JSON 对象？字节流？）是**协议**的事，
+ * 只有协议发现节点知道 —— 见 `@common/router/request-shape`。
+ */
+const INPUT_REQUEST_FIELDS: { path: string; valueType: SchemaValueType; noteKey?: UiCatalogKey }[] = [
+  { path: 'request.path', valueType: 'string' },
+  { path: 'request.method', valueType: 'string' },
+  { path: 'request.headers', valueType: 'object', noteKey: 'router.fieldNote.requestHeaders' },
+  { path: 'request.body', valueType: 'object', noteKey: 'router.fieldNote.requestBody' },
+  { path: 'metadata', valueType: 'object', noteKey: 'router.fieldNote.metadata' },
+]
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
+/** 逻辑模型列表的字段名：内容由调用方在运行时注入，示例输入里通常没有这一项。 */
+const LOGICAL_MODELS_PATH = 'logicalModels'
 
 /**
- * 按「整体字段」暴露、不再往里展开的路径。
- * `request.headers` 是扁平的字符串字典（`Record<string, string>`），
- * 展开成 `request.headers.x-provider` 既不准也没意义。
+ * `RuntimeLogicalModel` 的字段契约（与 `@common/router/types` 一一对应）。
+ *
+ * 逻辑模型列表是**运行时注入**的：任何静态示例里都不可能有它，
+ * 所以这组通配投影只能显式给出，否则默认策略里的 `logicalModels[*].id`
+ * 在「比较字段」下拉里根本选不到。
  */
-const OPAQUE_PATHS = new Set(['request.headers'])
-
-/** 展开递归深度上限，防止深层嵌套数据把候选列表撑爆。 */
-const MAX_FLATTEN_DEPTH = 4
-
-/** 数组采样上限：只看前若干条推断元素结构。 */
-const MAX_ARRAY_SAMPLE = 20
-
-function flattenFields(t: AppTranslator, source: unknown, prefix: string, sourceNodeId: string, sourcePort: string, depth = 0): SchemaFieldDescriptor[] {
-  if (!isPlainObject(source)) {
-    return prefix
-      ? [{ path: prefix, valueType: inferType(source), sourceNodeId, sourcePort }]
-      : []
-  }
-
-  const fields: SchemaFieldDescriptor[] = []
-  for (const [key, value] of Object.entries(source)) {
-    const nextPath = prefix ? `${prefix}.${key}` : key
-    if (Array.isArray(value)) {
-      fields.push(...flattenArrayFields(t, value, nextPath, sourceNodeId, sourcePort, depth))
-      continue
-    }
-    if (isPlainObject(value) && !OPAQUE_PATHS.has(nextPath)) {
-      // 对象字段同时给出「整体」和「细化」两种选择：
-      // 整体用于 `empty` / `notEmpty` / `contains`（按键名）这类整块判断，
-      // 细化用于逐字段比较。数组也走同一套「整体 + 通配投影」约定。
-      fields.push({
-        path: nextPath,
-        valueType: 'object',
-        sourceNodeId,
-        sourcePort,
-        note: t('router.fieldNote.object'),
-      })
-      fields.push(...flattenFields(t, value, nextPath, sourceNodeId, sourcePort, depth + 1))
-      continue
-    }
-    fields.push({
-      path: nextPath,
-      valueType: inferType(value),
-      sourceNodeId,
-      sourcePort,
-    })
-  }
-  return fields
-}
-
-/**
- * 数组字段的展开策略（「判断对象或者数组内容」用得上）：
- * - 元素是对象 → 额外展开出 `path[*].key` 形式的通配投影字段，
- *   引擎按元素取值后再取字段，条件判断表里就能直接选到「每个元素的某个属性」；
- * - 元素不是对象 / 采不到样本 → 只留一个 `array` 字段，
- *   交给 `contains`、`empty`、`notEmpty` 对整体判定。
- */
-function flattenArrayFields(t: AppTranslator, items: unknown[], prefix: string, sourceNodeId: string, sourcePort: string, depth: number): SchemaFieldDescriptor[] {
-  const arrayField: SchemaFieldDescriptor = { path: prefix, valueType: 'array', sourceNodeId, sourcePort }
-  if (items.length === 0 || depth >= MAX_FLATTEN_DEPTH) return [arrayField]
-
-  // 元素结构可能不一致：把可采样到的对象元素的键并起来，尽量不漏字段。
-  const merged: Record<string, unknown> = {}
-  for (const item of items.slice(0, MAX_ARRAY_SAMPLE)) {
-    if (!isPlainObject(item)) continue
-    for (const [key, value] of Object.entries(item)) {
-      if (!(key in merged)) merged[key] = value
-    }
-  }
-  if (Object.keys(merged).length === 0) return [arrayField]
-
-  const wildcardPath = `${prefix}${PATH_WILDCARD_SUFFIX}`
-  const fields: SchemaFieldDescriptor[] = [
-    { ...arrayField, note: t('router.fieldNote.array') },
-  ]
-  for (const [key, value] of Object.entries(merged)) {
-    const nextPath = `${wildcardPath}.${key}`
-    if (Array.isArray(value)) {
-      fields.push(...flattenArrayFields(t, value, nextPath, sourceNodeId, sourcePort, depth + 1))
-      continue
-    }
-    if (isPlainObject(value)) {
-      fields.push(...flattenFields(t, value, nextPath, sourceNodeId, sourcePort, depth + 1))
-      continue
-    }
-    fields.push({ path: nextPath, valueType: inferType(value), sourceNodeId, sourcePort })
-  }
-  return fields
-}
+const LOGICAL_MODEL_PROJECTIONS: { key: string; valueType: SchemaValueType }[] = [
+  { key: 'id', valueType: 'string' },
+  { key: 'name', valueType: 'string' },
+  { key: 'enabled', valueType: 'boolean' },
+]
 
 function collectUpstreamConnections(graph: WorkflowGraph, targetNodeId: string): {
   connections: WorkflowConnection[]
@@ -179,9 +109,16 @@ function addUniqueField(fields: SchemaFieldDescriptor[], field: SchemaFieldDescr
   if (existing.valueType === 'enum' && field.valueType === 'enum') {
     existing.enumOptions = [...new Set([...(existing.enumOptions ?? []), ...(field.enumOptions ?? [])])]
   }
+
+  // 同一路径被多次声明时，具体类型覆盖 `unknown`：
+  // 先声明的多半只是「猜不准」（迭代节点按 collectPath 报回写路径时就还不知道循环体写了什么），
+  // 后面真知道类型的节点不该被这个猜测挡住 —— 否则一条按类型收窄的候选表会把它筛掉。
+  if (existing.valueType === 'unknown' && field.valueType !== 'unknown') {
+    existing.valueType = field.valueType
+  }
 }
 
-export function resolveInputHints(t: AppTranslator, graph: WorkflowGraph, targetNodeId: string, samplePayload: unknown): InputHintResult {
+export function resolveInputHints(t: AppTranslator, graph: WorkflowGraph, targetNodeId: string): InputHintResult {
   const models = graph.nodes
   const { connections, upstreamNodeIds } = collectUpstreamConnections(graph, targetNodeId)
   const modelsById = new Map(models.map(model => [model.id, model]))
@@ -191,20 +128,32 @@ export function resolveInputHints(t: AppTranslator, graph: WorkflowGraph, target
     if (!upstreamNodeIds.has(model.id)) continue
 
     if (model.kind === 'input') {
-      for (const field of flattenFields(t, samplePayload, '', model.id, 'context')) addUniqueField(fields, field)
+      for (const field of INPUT_REQUEST_FIELDS) {
+        addUniqueField(fields, {
+          path: field.path,
+          valueType: field.valueType,
+          sourceNodeId: model.id,
+          sourcePort: 'context',
+          ...(field.noteKey ? { note: t(field.noteKey) } : {}),
+        })
+      }
       addUniqueField(fields, {
-        path: 'logicalModels',
+        path: LOGICAL_MODELS_PATH,
         valueType: 'array',
         sourceNodeId: model.id,
         sourcePort: 'context',
         note: t('router.fieldNote.logicalModels'),
       })
-      addUniqueField(fields, {
-        path: 'route.requestedModel',
-        valueType: 'string',
-        sourceNodeId: model.id,
-        sourcePort: 'context',
-      })
+      // 通配投影无条件暴露：命中判断（`request.body.model in logicalModels[*].id`）依赖它，
+      // 而示例输入里带没带 `logicalModels` 不应该决定这条路径在不在候选表里。
+      for (const projection of LOGICAL_MODEL_PROJECTIONS) {
+        addUniqueField(fields, {
+          path: `${LOGICAL_MODELS_PATH}${PATH_WILDCARD_SUFFIX}.${projection.key}`,
+          valueType: projection.valueType,
+          sourceNodeId: model.id,
+          sourcePort: 'context',
+        })
+      }
       continue
     }
 
@@ -252,6 +201,24 @@ export function resolveInputHints(t: AppTranslator, graph: WorkflowGraph, target
         sourcePort: 'context',
         enumOptions: [...ALL_TRANSPORT_KINDS],
       })
+
+      // 请求体字段由**这个节点**给出，而不是输入节点：体里有哪些字段、是什么格式，
+      // 只有协议层知道（`/v1/responses` 的消息在 `input` 里，其余协议在 `messages` 里）。
+      // 按**连接的端口**取对应协议的声明：连在哪个协议端口上，就是那一条协议解析出的字段。
+      // 认不出协议（`unknown`）时一个字段都保证不了，那一条端口就一条字段都不产出。
+      for (const protocol of protocolEnumOptions) {
+        const shape = requestShapeOf(protocol)
+        if (!shape || shape.format !== 'json') continue
+        for (const field of shape.fields) {
+          addUniqueField(fields, {
+            path: field.path,
+            valueType: field.valueType,
+            sourceNodeId: model.id,
+            sourcePort: protocol,
+            ...(field.noteKey ? { note: t(field.noteKey) } : {}),
+          })
+        }
+      }
       continue
     }
 

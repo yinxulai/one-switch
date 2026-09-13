@@ -25,7 +25,7 @@ export class TrayManager {
     console.info('[tray] initialization started')
 
     // 创建初始托盘图标
-    const icon = generateTrayIcon('stopped')
+    const icon = generateTrayIcon()
     this.tray = new Tray(icon)
     this.tray.setToolTip('One Switch')
 
@@ -193,8 +193,7 @@ export class TrayManager {
         console.info(`[tray] proxy status changed status=${newStatus} port=${status.port}`)
         this.status = newStatus
         this.statusPort = status.port
-        const icon = generateTrayIcon(newStatus)
-        this.tray.setImage(icon)
+        // 图标本身不随状态变化（统一全白），状态体现在 tooltip 与菜单文案上。
         this.refreshTooltip()
         await this.updateMenu()
       }

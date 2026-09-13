@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { runWorkflow as runWorkflowEngine, type WorkflowRunOptions } from './engine'
-import { createDefaultPolicyGraph, createLlmComplexityGraph, createScriptRoutingGraph, createUserAgentGraph } from './presets'
+import { createDefaultPolicyGraph, createLlmComplexityGraph, createScriptRoutingGraph, createUserAgentGraph, ROUTER_POLICY_PRESETS } from './presets'
 import { WorkflowGraphSchema } from './schemas'
 import { PROMPT_TIMEOUT_DEFAULT, SCRIPT_TIMEOUT_DEFAULT } from './types'
 import type { ConditionCase, ConditionRule, PromptInvocation, ScriptInvocation, WorkflowGraph, WorkflowNodeModel } from './types'
@@ -96,7 +96,7 @@ describe('router engine', () => {
     expect(payload.metadata).toEqual({ source: 'desktop' })
   })
 
-  it('把增量的客户端意图记成一档传输形态，而不是另立一个载体', async () => {
+  it('把增量的客户端意图记成一档传输形态', async () => {
     const graph = createBaseGraph()
 
     const result = await runWorkflow(graph, {
@@ -116,7 +116,7 @@ describe('router engine', () => {
     })
 
     // 变的只是客户端想怎么收字节，所以是轴上的另一个取值 `http-stream`，
-    // 而不是「HTTP 载体 + 流式交付」的乘积，也不是一个 `http-sse` 载体。
+    // 而不是「HTTP 连接 + 流式交付」的乘积，也不是一个 `http-sse` 之类的词。
     const payload = result.outputPayload as { route: { protocol: string; transport: string } }
     expect(payload.route.transport).toBe('http-stream')
     expect(payload.route.protocol).toBe('openai-completions')
@@ -243,7 +243,7 @@ describe('router engine', () => {
     const graph = createBaseGraph({
       condition: {
         cases: [singleCase([{
-          fieldPath: 'route.requestedModel',
+          fieldPath: 'request.body.model',
           valueType: 'string',
           operator: 'in',
           valueSource: 'field',
@@ -286,19 +286,19 @@ describe('router engine', () => {
 
     expect(miss.trace.some(item => item.nodeId === 'condition-gate' && !item.success)).toBe(true)
 
-    const payload = hit.outputPayload as { route: { requestedModel: string } }
-    expect(payload.route.requestedModel).toBe('model-hit')
-    // 不再派生「可用逻辑模型 id」这类冗余字段：上下文里的 logicalModels 才是唯一事实来源。
-    expect('availableModelIds' in payload.route).toBe(false)
-    // 命中判断由条件节点完成，引擎不再预先算好布尔字段。
-    expect(Object.keys(payload.route).filter(key => key.startsWith('requestedModel'))).toEqual(['requestedModel'])
+    const payload = hit.outputPayload as { request: { body: { model: string } }; route: Record<string, unknown> }
+    // `route` 只装「决策结果 + 不可推导的一手事实」，其余一律不落：请求模型就是请求自己的字段
+    // （`request.body.model`），「可用逻辑模型 id」用 `logicalModels[*].id` 投影现算。
+    // 用整键集合断言（而不是逐个 not.toContain）：将来任何新派生字段加进来都会在这里现形。
+    expect(Object.keys(payload.route).sort()).toEqual(['controls', 'fallback', 'modelIds', 'protocol', 'traceId', 'transport'])
+    expect(payload.request.body.model).toBe('model-hit')
   })
 
   it('字段右值：比较字段取不到值时按空集合判定', async () => {
     const graph = createBaseGraph({
       condition: {
         cases: [singleCase([{
-          fieldPath: 'route.requestedModel',
+          fieldPath: 'request.body.model',
           valueType: 'string',
           operator: 'in',
           valueSource: 'field',
@@ -324,7 +324,7 @@ describe('router engine', () => {
     const graph = createBaseGraph({
       condition: {
         cases: [singleCase([{
-          fieldPath: 'route.requestedModel',
+          fieldPath: 'request.body.model',
           valueType: 'string',
           operator: 'notIn',
           valueSource: 'field',
@@ -421,17 +421,78 @@ describe('router engine', () => {
     // 输出数据挂在节点 id 上，每个节点可以有多条；渲染侧再查名称作分组标题。
     expect(new Set(Object.keys(result.nodeOutputs))).toEqual(new Set(['input', 'control-input', 'protocol', 'condition-gate', 'model-select', 'output']))
     expect(result.nodeOutputs.input).toEqual([
-      { name: '请求模型', value: 'model-vip' },
       { name: '逻辑模型', value: ['model-vip'] },
     ])
     expect(result.nodeOutputs['control-input']).toEqual([{ name: '功能开关', value: true, note: 'featureEnabled' }])
     expect(result.nodeOutputs.protocol).toEqual([
       { name: '协议', value: 'openai-completions' },
       { name: '传输形态', value: 'http' },
+      { name: '请求模型', value: 'model-vip' },
     ])
     expect(result.nodeOutputs['condition-gate']).toEqual([{ name: '分支 1', value: '命中' }])
     expect(result.nodeOutputs['model-select']).toEqual([{ name: '落点逻辑模型', value: ['model-vip', 'model-default'] }])
     expect(result.nodeOutputs.output).toEqual([{ name: '最终落点', value: ['model-vip', 'model-default'] }])
+  })
+
+  it('请求模型由协议发现节点报出，输入节点不读请求体', async () => {
+    const graph = createBaseGraph()
+
+    const result = await runWorkflow(graph, {
+      request: { path: '/v1/chat/completions', headers: {}, body: { model: 'gpt-4o-mini' } },
+      logicalModels: [{ id: 'model-vip', name: 'VIP', enabled: true }],
+      metadata: {},
+    })
+
+    // 体里明明白白写着模型名，输入节点也不读它：它只报自己保证得了的 `logicalModels`。
+    // 「模型名写在哪」是协议层的事实，读出来的是协议发现节点（下一条断言）。
+    expect(result.nodeOutputs.input).toEqual([{ name: '逻辑模型', value: ['model-vip'] }])
+    expect(result.nodeOutputs.protocol?.find(item => item.name === '请求模型')).toEqual({ name: '请求模型', value: 'gpt-4o-mini' })
+  })
+
+  it('归一化视图按协议声明读请求体：responses 的消息在 input 里', async () => {
+    const graph = createBaseGraph()
+
+    // 体里同时放了 `messages` 与 `input`：谁才是真消息由**协议声明**说了算。
+    // 靠「先找 messages、找不到再找 input」的兜底顺序会在这里读错 —— 而那个顺序
+    // 正是声明表的第二份副本，换个协议就静默跑偏（见 request-shape.ts 的 `requestBodyField`）。
+    const result = await runWorkflow(graph, {
+      request: {
+        path: '/v1/responses',
+        headers: {},
+        body: {
+          model: 'gpt-5',
+          messages: [{ role: 'user', content: '不该被读' }],
+          input: [{ role: 'user', content: '真正要读的' }],
+        },
+      },
+      logicalModels: [{ id: 'model-vip', name: 'VIP', enabled: true }],
+      metadata: {},
+    })
+
+    expect(result.trace.find(item => item.nodeId === 'protocol')?.details).toMatchObject({
+      normalized: {
+        protocol: 'openai-responses',
+        model: 'gpt-5',
+        messages: [{ role: 'user', content: '真正要读的' }],
+      },
+    })
+  })
+
+  it('认不出协议时协议发现节点如实给出空模型名，不按别的协议猜', async () => {
+    const graph = createBaseGraph()
+
+    const result = await runWorkflow(graph, {
+      request: { path: '/v1/unknown-endpoint', headers: {}, body: { model: 'text-embedding-3' } },
+      logicalModels: [],
+      metadata: {},
+    })
+
+    // 认不出协议就一个字段都保证不了：体里那个 `model` 照旧不认账，也不退回某一种协议的路径。
+    expect(result.nodeOutputs.protocol).toEqual([
+      { name: '协议', value: 'unknown' },
+      { name: '传输形态', value: 'http' },
+      { name: '请求模型', value: '' },
+    ])
   })
 
   it('保留条件命中后的逻辑模型选择结果', async () => {
@@ -649,7 +710,7 @@ describe('router engine', () => {
 
     const payload = result.outputPayload as { route: { modelIds: string[]; fallback: boolean } }
     expect(result.nodeOutputs['model-direct']).toEqual([
-      { name: '取值字段', value: 'route.requestedModel' },
+      { name: '取值字段', value: 'request.body.model' },
       { name: '落点逻辑模型', value: ['model-hit'] },
     ])
     expect(payload.route.modelIds).toEqual(['model-hit'])
@@ -799,8 +860,10 @@ describe('router engine', () => {
     })
 
     expect(invocations).toHaveLength(1)
-    // 脚本读的是 messages / tools，缺字段时自己兜住，不依赖调用方一定传全。
-    expect(invocations[0].code).toContain("get('request.body.messages')")
+    // 脚本读的是消息列表与工具数：消息列表在哪由协议决定（先读 `route.protocol`），
+    // 缺字段时自己兜住，不依赖调用方一定传全。
+    expect(invocations[0].code).toContain("'request.body.messages'")
+    expect(invocations[0].code).toContain("get('route.protocol')")
     expect(invocations[0].code).toContain("get('request.body.tools')")
     expect((complex.outputPayload as { route: { modelIds: string[] } }).route.modelIds).toEqual(['model-fast'])
     expect(complex.nodeOutputs).not.toHaveProperty('model-simple')
@@ -826,6 +889,32 @@ describe('router engine', () => {
     expect(failed.stopReason).toBe('output')
   })
 
+  it('内置策略都按当前实现报数：入口节点只报逻辑模型，请求模型由协议发现节点报', async () => {
+    // 「内置策略有没有跟上新实现」的机器判据：
+    // - 请求体字段任何策略都不许从入口节点出来（那是协议层的知识）；
+    // - 链路里有协议发现节点的策略，必须真的报出这次请求的模型名。
+    // 少了这一条，预设可以一直「长得像」，跑起来却是空的。
+    for (const preset of ROUTER_POLICY_PRESETS) {
+      const graph = preset.createGraph(presetLogicalModels)
+      const result = await runWorkflow(graph, {
+        request: { path: '/v1/chat/completions', headers: { 'user-agent': 'Cursor/0.42.3' }, body: { model: 'gpt-4o-mini' } },
+        logicalModels: presetLogicalModels,
+        metadata: {},
+      })
+
+      expect({ id: preset.id, input: result.nodeOutputs.input }).toEqual({
+        id: preset.id,
+        input: [{ name: '逻辑模型', value: presetLogicalModels.map(model => model.id) }],
+      })
+
+      if (!graph.nodes.some(node => node.kind === 'protocol-discovery')) continue
+      expect({ id: preset.id, protocolModel: result.nodeOutputs.protocol?.find(item => item.name === '请求模型') }).toEqual({
+        id: preset.id,
+        protocolModel: { name: '请求模型', value: 'gpt-4o-mini' },
+      })
+    }
+  })
+
   it('变量取值：字段为空时回落到兜底逻辑模型', async () => {
     const result = await runWorkflow(createVariableModelGraph('model-fallback'), {
       request: { path: '/v1/chat/completions', headers: { 'x-provider': 'openai' }, body: { model: '' } },
@@ -835,7 +924,7 @@ describe('router engine', () => {
 
     const payload = result.outputPayload as { route: { modelIds: string[]; fallback: boolean } }
     expect(result.nodeOutputs['model-select']).toEqual([
-      { name: '取值字段', value: 'route.requestedModel' },
+      { name: '取值字段', value: 'request.body.model' },
       { name: '落点逻辑模型', value: ['model-fallback'], note: '兜底' },
     ])
     expect(payload.route.modelIds).toEqual(['model-fallback'])
@@ -871,7 +960,7 @@ describe('router engine', () => {
     })
 
     expect(result.nodeOutputs['model-select']).toEqual([
-      { name: '取值字段', value: 'route.requestedModel' },
+      { name: '取值字段', value: 'request.body.model' },
       { name: '落点逻辑模型', value: [] },
     ])
     expect((result.outputPayload as { route: { modelIds: string[] } }).route.modelIds).toEqual([])
@@ -917,7 +1006,7 @@ describe('router engine · 类型感知条件', () => {
     expect(await conditionHit(rule({ operator: 'empty' }), { tags: {} })).toBe(true)
     expect(await conditionHit(rule({ operator: 'empty' }), { tags: { region: 'cn' } })).toBe(false)
     expect(await conditionHit(rule({ operator: 'notEmpty' }), { tags: { region: 'cn' } })).toBe(true)
-    // undefined 与空对象都算空，字符串化后为 "[object Object]" 的旧行为不再出现。
+    // undefined 与空对象都算空；不能把它们字符串化成 "[object Object]" 再判。
     expect(await conditionHit(rule({ operator: 'empty' }), {})).toBe(true)
   })
 
@@ -1152,7 +1241,7 @@ describe('router engine · 遍历迭代', () => {
 })
 
 
-/** 最小变量取值图：输入 → 逻辑模型选择（读取 route.requestedModel）→ 输出。 */
+/** 最小变量取值图：输入 → 逻辑模型选择（读取 request.body.model）→ 输出。 */
 function createVariableModelGraph(fallbackModelId?: string): WorkflowGraph {
   return {
     version: 1,
@@ -1166,7 +1255,7 @@ function createVariableModelGraph(fallbackModelId?: string): WorkflowGraph {
         description: '',
         position: { x: 100, y: 0 },
         source: 'variable',
-        variablePath: 'route.requestedModel',
+        variablePath: 'request.body.model',
         modelIds: [],
         fallbackModelIds: fallbackModelId ? [fallbackModelId] : [],
       },
@@ -1245,10 +1334,9 @@ describe('router engine · 脚本节点', () => {
       },
     })
 
-    const payload = result.outputPayload as { request: { body: { model: string } }; route: { requestedModel: string; scriptResult: string } }
+    const payload = result.outputPayload as { request: { body: { model: string } }; route: { scriptResult: string } }
     expect(payload.route.scriptResult).toBe('mutated')
     expect(payload.request.body.model).toBe('gpt-4o-mini')
-    expect(payload.route.requestedModel).toBe('gpt-4o-mini')
   })
 
   it('没有注入沙箱能力时记为失败，但仍然继续走完整张图', async () => {
@@ -1327,7 +1415,7 @@ function createPromptGraph(overrides?: PromptNodeOverrides): WorkflowGraph {
         position: { x: 200, y: 0 },
         logicalModelId: 'model-vip',
         systemPrompt: '租户 ${request.body.tenant} 的路由助手',
-        promptTemplate: '请在 ${logicalModels[*].id} 里挑一个，请求模型是 ${route.requestedModel}，未知字段是 ${route.neverSet}。',
+        promptTemplate: '请在 ${logicalModels[*].id} 里挑一个，请求模型是 ${request.body.model}，未知字段是 ${route.neverSet}。',
         resultPath: 'route.promptResult',
         temperature: 0.2,
         maxTokens: 256,

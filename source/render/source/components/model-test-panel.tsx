@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Check,
   CheckCircle2,
   Circle,
   Cpu,
@@ -23,6 +22,8 @@ import { modelTestApi, type ModelTestResult } from '@/api/tools'
 import { InlineEmptyState } from '@/components/inline-empty-state'
 import { TableFrame, TableHeaderSurface, tableRowClass } from '@/components/table-primitives'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
 import { useTranslation, type AppTranslator } from '@/i18n/provider'
 import {
   Dialog,
@@ -99,14 +100,19 @@ interface ProtocolButtonLabelOptions {
   t: AppTranslator
 }
 
+/**
+ * 协议胶囊：未选中只给文字，选中才上底色。
+ * 未选中只给纯文字 + 悬浮底色：给每个胶囊铺 `bg-inset` 会在列里排出一片灰底小方块，
+ * 同一屏里的灰底块越少越好。转换出来的协议（`converted`）用 warning 色区分，选中时再用浅底强调。
+ */
 function getProtocolButtonClassName(state: ProtocolButtonState): string {
   if (state.converted) {
     return state.selected
       ? 'bg-warning/15 text-text-warning'
-      : 'bg-inset text-text-tertiary hover:bg-warning/10 hover:text-text-primary'
+      : 'text-text-warning hover:bg-warning/10'
   }
   if (state.selected) return 'bg-primary text-primary-foreground'
-  return 'bg-inset text-text-tertiary hover:bg-state-base-hover hover:text-text-primary'
+  return 'text-text-tertiary hover:bg-state-base-hover hover:text-text-primary'
 }
 
 function getProtocolButtonTitle(options: ProtocolButtonLabelOptions): string {
@@ -194,47 +200,53 @@ function ModelSelection(props: ModelSelectionProps) {
   }).filter(view => view.models.length > 0), [normalizedQuery, props.availableProviders, props.enabledModels, props.selectedModelProtocols, props.selectedProviderIds, t])
 
   return (
-    <aside className="flex min-h-0 flex-col bg-inset">
-      <div className="grid gap-3 p-4">
+    <aside className="flex min-h-0 flex-col border-b border-border/60 bg-card lg:border-r lg:border-b-0">
+      {/* 头部与搜索不铺底色，靠底部发丝线跟列表分开（左侧栏原本整块 `bg-inset`，是这页最主要的灰盒子）。 */}
+      <div className="grid shrink-0 gap-3 px-4 py-3.5">
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="system-xs-medium text-text-primary">{t('modelTest.selection.title')}</div>
-            <div className="mt-1 system-2xs-regular text-text-tertiary">{t('modelTest.selection.description')}</div>
+            <div className="mt-0.5 system-2xs-regular text-text-tertiary">{t('modelTest.selection.description')}</div>
           </div>
           <Button variant="ghost" size="xs" disabled={props.running || props.enabledModels.length === 0} onClick={props.onToggleAll}>
             {props.allTasksSelected ? t('modelTest.selection.clear') : t('common.action.selectAll')}
           </Button>
         </div>
-        <label className="flex h-8 items-center gap-2 rounded-lg bg-components-input-bg-normal px-3 text-text-quaternary transition-colors focus-within:bg-components-input-bg-active focus-within:ring-2 focus-within:ring-state-accent-solid">
-          <Search size={13} aria-hidden />
-          <input
+        <div className="relative">
+          <Search size={13} aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-text-quaternary" />
+          <Input
             value={query}
             disabled={props.running}
             onChange={event => setQuery(event.target.value)}
             placeholder={t('modelTest.selection.searchPlaceholder')}
-            className="min-w-0 flex-1 bg-transparent text-[13px] text-components-input-text-filled outline-none placeholder:text-components-input-text-placeholder"
+            className="pr-3 pl-7.5"
           />
-        </label>
+        </div>
       </div>
 
-      <div className="min-h-0 flex-1 grid gap-2 overflow-y-auto px-3 pb-3">
+      <div className="min-h-0 flex-1 divide-y divide-border/60 overflow-y-auto border-t border-border/60">
         {providerViews.map(providerView => (
-          <section key={providerView.provider.id} className={cn('rounded-lg border border-transparent p-2.5 transition-colors hover:bg-state-base-hover', providerView.selected && 'border-module-border bg-card hover:bg-card')}>
-            <button
-              type="button"
-              disabled={props.running}
-              className="flex w-full items-center gap-2 text-left disabled:cursor-not-allowed"
-              onClick={() => props.onToggleProvider(providerView.provider.id)}
-            >
-              <span className={cn('flex size-4 shrink-0 items-center justify-center rounded-md bg-card text-text-quaternary', providerView.selected && 'bg-primary text-primary-foreground')}>
-                {providerView.selected && <Check size={10} strokeWidth={3} aria-hidden />}
-              </span>
-              <span className="min-w-0 flex-1 truncate system-xs-medium text-text-primary">{providerView.provider.name}</span>
-              <span className="font-mono system-2xs-regular tabular-nums text-text-quaternary">{t('modelTest.selection.modelCount', { count: providerView.models.length })}</span>
-            </button>
+          <section key={providerView.provider.id}>
+            <div className="flex items-center gap-2.5 px-4 py-2.5">
+              <Checkbox
+                checked={providerView.selected}
+                disabled={props.running}
+                aria-label={providerView.provider.name}
+                onCheckedChange={() => props.onToggleProvider(providerView.provider.id)}
+              />
+              <button
+                type="button"
+                disabled={props.running}
+                className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-not-allowed"
+                onClick={() => props.onToggleProvider(providerView.provider.id)}
+              >
+                <span className="min-w-0 flex-1 truncate system-xs-medium text-text-primary">{providerView.provider.name}</span>
+                <span className="shrink-0 font-mono system-2xs-regular tabular-nums text-text-quaternary">{t('modelTest.selection.modelCount', { count: providerView.models.length })}</span>
+              </button>
+            </div>
 
             {providerView.selected && (
-              <div className="mt-2.5 grid gap-2 pl-6">
+              <div className="grid gap-2.5 px-4 pb-3 pl-10">
                 {providerView.models.map(modelView => (
                   <div key={modelView.model.id}>
                     <div className="mb-1.5 flex items-center justify-between gap-2">
@@ -249,7 +261,7 @@ function ModelSelection(props: ModelSelectionProps) {
                           disabled={props.running}
                           aria-pressed={protocolView.selected}
                           title={protocolView.title}
-                          className={cn('inline-flex h-6 items-center gap-1 rounded-md px-1.5 system-2xs-medium transition-colors disabled:cursor-not-allowed', protocolView.className)}
+                          className={cn('inline-flex h-6 items-center gap-1 rounded-md px-1.5 system-2xs-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50', protocolView.className)}
                           onClick={() => props.onToggleModelProtocol(modelView.model.id, protocolView.protocol)}
                         >
                           {protocolView.converted && <Repeat size={9} aria-hidden />}
@@ -358,7 +370,8 @@ function EmptyTestTasks(props: EmptyTestTasksProps) {
   const t = useTranslation()
   return (
     <div className="flex min-h-52 flex-col items-center justify-center text-center">
-      <div className="mb-3 flex size-10 items-center justify-center rounded-lg bg-inset text-text-quaternary"><Cpu size={18} aria-hidden /></div>
+      {/* 空状态只用一枚淡图标，不再给图标铺灰底方块——同一屏里的灰盒子越少越好。 */}
+      <Cpu size={20} strokeWidth={1.5} aria-hidden className="mb-1.5 text-text-quaternary" />
       <div className="system-xs-medium text-text-primary">{props.hasEnabledModels ? t('modelTest.empty.noTasks') : t('modelTest.empty.noModels')}</div>
       <div className="mt-1.5 max-w-sm system-xs-regular leading-5 text-text-tertiary">
         {props.hasEnabledModels ? t('modelTest.empty.noTasksHint') : t('modelTest.empty.noModelsHint')}

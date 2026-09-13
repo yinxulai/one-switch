@@ -38,7 +38,7 @@ export interface AttemptOutcome {
   /**
    * 这次尝试的失败是不是「上游跳没兼现客户端跳要求的形态」（2xx 但要 `http-stream` 却回了非 SSE）。
    *
-   * 健康度分类需要它：这种失败的状态码是 `200`，按状态码分类只会得到 `'none'`（§1.6.2）。
+   * 健康度分类需要它：这种失败的状态码是 `200`，按状态码分类只会得到 `'none'`（§1.2）。
    */
   transportMismatch?: boolean
   /**

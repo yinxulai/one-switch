@@ -190,6 +190,14 @@ export const LogicalModelIdSchema = z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/, 
  */
 export const BUILT_IN_DEFAULT_LOGICAL_MODEL_NAME = 'default'
 
+/**
+ * 内建默认逻辑模型的种子说明。
+ *
+ * 它是服务端写入的初始值，不是用户输入——因此在界面上要能被翻译：前端看到说明恰好等于这个
+ * 常量时，就换成目录里的本地化文案（用户改过的说明不受影响，照旧显示服务端值）。
+ */
+export const BUILT_IN_DEFAULT_LOGICAL_MODEL_DESCRIPTION = 'Default fallback routing model'
+
 /** 只用到 id 与 name 的模型描述，避免让谓词依赖完整的 `LogicalModel`。 */
 export interface LogicalModelIdentity {
   id: string
@@ -407,7 +415,7 @@ export const RequestAttemptSchema = z.object({
    *
    * 这是**上游视角**的事实。「客户端跳的形态」是请求级事实，落在 `request_logs.transport`，
    * 两者是不同的东西，不能互相顶替；两者不一致（要 `http-stream` 却回了整包）就是上游违约，
-   * 在代码里表现为这次尝试被判 failover（§1.6.2）。
+   * 在代码里表现为这次尝试被判 failover（§1.2）。
    * 未收到响应（网络错误、请求取消）时无从判断，因此为 `null`。
    */
   upstreamTransport: TransportKindSchema.nullable(),
@@ -729,7 +737,7 @@ export type LatencyBucket = z.infer<typeof LatencyBucketSchema>
  * 失败原因的分类码。
  *
  * 只作为**机器码**存在：服务端只负责把上游错误归到某几个桶里，桶名本身不携带语言，
- * 界面按当前语言把码翻成人看的标签。早期这里直接存中文标签，等于把界面语言烧进了数据库口径。
+ * 界面按当前语言把码翻成人看的标签。把标签存进库里，等于让界面语言成为数据库口径的一部分。
  */
 export const FAILURE_REASON_CATEGORIES = ['TIMEOUT', 'RATE_LIMITED', 'SERVER_ERROR', 'AUTH_FAILED', 'OTHER'] as const
 export const FailureReasonCategorySchema = z.enum(FAILURE_REASON_CATEGORIES)

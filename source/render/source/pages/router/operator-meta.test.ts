@@ -26,7 +26,7 @@ describe('条件操作符元信息', () => {
     }
   })
 
-  it('元信息表与操作符清单一一对应，不残留已删除的操作符', () => {
+  it('元信息表与操作符清单一一对应', () => {
     expect(Object.keys(CONDITION_OPERATOR_META).sort()).toEqual([...ALL_CONDITION_OPERATORS].sort())
   })
 

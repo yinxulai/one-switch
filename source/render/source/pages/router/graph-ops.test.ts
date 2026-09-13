@@ -253,12 +253,19 @@ describe('图谱校验（回归）', () => {
     const graph = createDefaultPolicyGraph(presetLogicalModels)
     expect(WorkflowGraphSchema.safeParse(graph).error?.issues).toBeUndefined()
     // 规则完全由既有基础节点表达，没有任何专用节点类型。
-    expect(new Set(graph.nodes.map(node => node.kind))).toEqual(new Set(['input', 'condition', 'model-select', 'output']))
+    expect(new Set(graph.nodes.map(node => node.kind))).toEqual(new Set(['input', 'protocol-discovery', 'condition', 'model-select', 'output']))
+    // 请求模型是协议层的事实：入口节点不解析请求体，所以链路里必须有一道协议发现，
+    // 而且四条协议分支（含 `unknown`）都要进同一个条件 —— 认不出协议也要按同一套策略兜底。
+    const protocol = graph.nodes.find(node => node.kind === 'protocol-discovery')
+    expect(graph.edges.filter(edge => edge.sourceNodeId === protocol?.id).map(edge => edge.sourcePort).sort())
+      .toEqual(['anthropic-messages', 'openai-completions', 'openai-responses', 'unknown'])
+    expect(graph.edges.filter(edge => edge.sourceNodeId === protocol?.id).every(edge => edge.targetNodeId === 'condition')).toBe(true)
+    expect(graph.edges.some(edge => edge.sourceNodeId === 'input' && edge.targetNodeId === protocol?.id)).toBe(true)
     // 命中判断是一条普通的「字段 in 字段」条件，不是引擎预计算的布尔字段；
     // 右侧用通配投影读逻辑模型 id，不需要再派生一份 id 数组。
     const condition = graph.nodes.find(node => node.kind === 'condition')
     expect(condition?.cases[0].conditions[0]).toMatchObject({
-      fieldPath: 'route.requestedModel',
+      fieldPath: 'request.body.model',
       operator: 'in',
       valueSource: 'field',
       valueFieldPath: 'logicalModels[*].id',
@@ -286,31 +293,6 @@ describe('图谱校验（回归）', () => {
     expect(backEdges.sort()).toEqual(['model-claude-cli', 'model-cursor', 'ua-condition'])
     // 从 body 端口往回走能回到本节点，说明循环是闭合的。
     expect(graph.edges.some(edge => edge.sourceNodeId === 'model-cursor' && edge.targetNodeId === iteration?.id)).toBe(true)
-  })
-
-  it('旧图的 kind / mode / queueIds 会被迁移到 model-select', () => {
-    const legacy = {
-      version: 1,
-      nodes: [
-        { id: 'input', kind: 'input', name: '输入', enabled: true, description: '', position: { x: 0, y: 0 } },
-        { id: 'model', kind: 'queue-select', name: '模型选择', enabled: true, description: '', position: { x: 100, y: 0 }, mode: 'follow-request-model', queueIds: ['model-a'], fallbackQueueIds: ['default'] },
-        { id: 'output', kind: 'output', name: '输出', enabled: true, description: '', position: { x: 200, y: 0 }, includeTrace: true, summaryLevel: 'brief' },
-      ],
-      edges: [
-        { id: 'edge-input-model', sourceNodeId: 'input', sourcePort: 'out', targetNodeId: 'model' },
-        { id: 'edge-model-output', sourceNodeId: 'model', sourcePort: 'out', targetNodeId: 'output' },
-      ],
-    }
-
-    const parsed = WorkflowGraphSchema.parse(legacy)
-    const modelNode = parsed.nodes.find(node => node.kind === 'model-select')
-    expect(modelNode).toMatchObject({
-      source: 'variable',
-      variablePath: 'route.requestedModel',
-      modelIds: ['model-a'],
-      fallbackModelIds: ['default'],
-    })
-    expect(modelNode).not.toHaveProperty('mode')
   })
 
   it('插入任意可新增节点后，图仍能通过 schema 校验', () => {

@@ -20,7 +20,7 @@ function setup(transport: TransportKind, captureEnabled = true) {
 
 describe('upstream SSE detection', () => {
   // 这是**事实**检测（上游怎么回的），只用来选解析器。传输行为不看它：那个由
-  // 客户端声明的 transport 决定，上游没兜住就是执行器那一步的 failover（§1.6.2）。
+  // 客户端声明的 transport 决定，上游没兜住就是执行器那一步的 failover（§1.2）。
   it('detects SSE from the content type regardless of parameter case', () => {
     expect(isEventStreamResponse({ 'content-type': 'text/event-stream; charset=utf-8' })).toBe(true)
     expect(isEventStreamResponse({ 'content-type': 'application/json' })).toBe(false)

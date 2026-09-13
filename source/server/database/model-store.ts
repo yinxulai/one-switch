@@ -105,8 +105,8 @@ export async function updateProviderModelRoute(id: string, updates: Partial<Omit
       updatedTime: time,
     }).where(eq(providerModels.id, id)).run()
     if (updates.endpoints !== undefined) {
-      // 不再「先删后插」：端点集合变化交给 `replaceRouteEndpoints` 做差异更新，
-      // 没变的绑定原地保留（连同它的 id），只对增减做软删除/新增。
+      // 端点集合变化交给 `replaceRouteEndpoints` 做差异更新：没变的绑定原地保留
+      // （连同它的 id），只对增减做软删除/新增。
       replaceRouteEndpoints(transaction, id, updates.providerId ?? existing.providerId, updates.endpoints, time)
     }
   })
@@ -219,8 +219,8 @@ type Transaction = Parameters<Parameters<ReturnType<typeof getDb>['transaction']
  * 把模型的端点绑定调成给定集合。
  *
  * 「目标集合」是完整的：目标里没有的绑定一律软删除（连带它的转换器），
- * 目标里有的则原地更新——能重用就不新增，行的 id 保持稳定。
- * 这样频繁编辑模型不会再像以前那样每次把全部绑定删掉重建。
+ * 目标里有的则原地更新——能重用就不新增，行的 id 保持稳定，
+ * 因此频繁编辑模型不会每次都把全部绑定重建一遍。
  */
 function replaceRouteEndpoints(transaction: Transaction, modelId: string, providerId: string, endpoints: ProviderModelRouteEndpoint[], time: number): void {
   const activeBindings = transaction.select().from(providerModelEndpoints)

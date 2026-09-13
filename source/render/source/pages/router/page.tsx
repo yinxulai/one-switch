@@ -70,17 +70,12 @@ import {
   resolveInsertAnchor,
 } from './graph-ops'
 import {
-  NODE_KIND_META,
   isProtectedNode,
-  kindAccent,
   toCanvasNodeType,
 } from './node-meta'
 import type { NodeInsertRequest, NodeRunStatus, RouteFlowNode } from './node-data'
 import { edgeTypes, nodeTypes } from './node-registry'
-import type { AppendableKind, NodePosition, WorkflowGraph, WorkflowNodeKind, WorkflowNodeModel, WorkflowRunResult } from '@common/router/types'
-
-/** 画布下方的图例：只展示主干语义，控制输入与输出不重复色。 */
-const legendKinds: WorkflowNodeKind[] = ['input', 'protocol-discovery', 'condition', 'iteration', 'script', 'prompt', 'model-select', 'output']
+import type { AppendableKind, NodePosition, WorkflowGraph, WorkflowNodeModel, WorkflowRunResult } from '@common/router/types'
 
 /** 这些元素自身消费删除键，画布的键盘删除需要跳过。 */
 const EDITABLE_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT'])
@@ -146,6 +141,15 @@ function WorkflowStudioCanvas() {
   const [payloadError, setPayloadError] = useState('')
   const [runResult, setRunResult] = useState<WorkflowRunResult | null>(null)
   const [versions, setVersions] = useState<RouterGraphVersion[]>([])
+  /**
+   * 服务端当前生效的那张图 —— 「有没有可保存的改动」以它为基线。
+   *
+   * `null` 表示服务端一版都没保存过（此时代理跑内建默认策略），画布上的内容一律算未保存，
+   * 所以它同样是一个「有改动」的状态；载入完成后才允许保存，避免首屏闪一下可点。
+   */
+  const [activeGraph, setActiveGraph] = useState<WorkflowGraph | null>(null)
+  const [graphLoaded, setGraphLoaded] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   /**
    * 首屏从服务端拉一次「当前生效的图」与版本列表。
@@ -162,11 +166,17 @@ function WorkflowStudioCanvas() {
           unwrap(routerApi.getGraphVersions()),
         ])
         if (cancelled) return
-        if (snapshot) setGraph(toCanvasGraph(snapshot.graph))
+        if (snapshot) {
+          const canvasGraph = toCanvasGraph(snapshot.graph)
+          setGraph(canvasGraph)
+          setActiveGraph(canvasGraph)
+        }
         setVersions(toRouterGraphVersions(summaries))
       } catch (error) {
         if (cancelled) return
         toast.error(error instanceof Error ? error.message : t('router.error.loadGraph'))
+      } finally {
+        if (!cancelled) setGraphLoaded(true)
       }
     })()
     return () => {
@@ -495,8 +505,8 @@ function WorkflowStudioCanvas() {
       && selectedNode.kind !== 'script'
       && selectedNode.kind !== 'prompt'
     ) return []
-    return resolveInputHints(t, graph, selectedNode.id, samplePayload).fields
-  }, [graph, selectedNode, samplePayload, t])
+    return resolveInputHints(t, graph, selectedNode.id).fields
+  }, [graph, selectedNode, t])
 
   // ---- 运行与保存 ----------------------------------------------------------
 
@@ -521,8 +531,12 @@ function WorkflowStudioCanvas() {
    * 内容与最新版本一致时不会重复生成，避免连点保存堆出一串重复版本。
    */
   const saveWorkflow = useCallback(async () => {
+    const graphToSave = graphRef.current
+    setSaving(true)
     try {
-      const result = await unwrap(routerApi.saveGraph(graphRef.current))
+      const result = await unwrap(routerApi.saveGraph(graphToSave))
+      // 存下去的这一版立刻对代理生效，它同时成为「有无改动」的新基线。
+      setActiveGraph(graphToSave)
       if (!result.created) {
         toast.info(t('router.toast.identicalToLatest', { version: result.version }))
         return
@@ -531,6 +545,8 @@ function WorkflowStudioCanvas() {
       toast.success(t('router.toast.versionSaved', { version: result.version }))
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t('router.error.saveFailed'))
+    } finally {
+      setSaving(false)
     }
   }, [toast, t])
 
@@ -574,28 +590,31 @@ function WorkflowStudioCanvas() {
     [graph, runtimeLogicalModels],
   )
 
-  const draggable = dragEnabled && dockMode === 'select'
+  /**
+   * 画布相对「当前生效的那一版」有改动才允许保存。
+   *
+   * 内容一致时后端本来就不会生成新版本，但按钮常亮会让人以为随时有东西要存；
+   * 这里把「有没有可保存的改动」直接做成可用状态，就是保存按钮的语义本身。
+   */
+  const canSaveWorkflow = graphLoaded && !saving && (activeGraph === null || !isSameGraph(activeGraph, graph))
 
-  /** 节点面板贴满窗口右侧，标题栏按钮需要让出它的宽度，否则会被面板盖住。 */
-  const headerInset = selectedNode ? panelWidth : 0
+  const draggable = dragEnabled && dockMode === 'select'
 
   return (
     <PageLayout>
       <PageHeader
         title={t('router.title')}
         description={t('router.description')}
-        // 面板占掉右侧后标题栏会变窄，说明文案保持单行截断，避免换行把标题栏撑高、
-        // 进而让画布高度在「选中/取消选中节点」之间跳动。
+        // 说明文案保持单行截断：标题栏高度固定，画布高度才不会随文案换行变化。
         className="[&_p]:truncate"
         actions={(
           // 标题栏不提供 gap，两个按钮直接放在 Fragment 里会贴在一起。
-          // 节点面板是贴满整窗高度的窗口级面板，这里给它让出宽度，免得面板把按钮盖住。
-          <div className="flex items-center gap-2" style={{ paddingRight: headerInset }}>
+          <div className="flex items-center gap-2">
             <PolicyMenu activePolicyId={activePolicyId} onApply={applyPolicy} />
             <DifyButton size="medium" onClick={() => setTestDrawerOpen(true)}>
               <CirclePlay className="size-3.5" aria-hidden /> {t('router.run')}
             </DifyButton>
-            <DifyButton size="medium" variant="primary" onClick={saveWorkflow}>
+            <DifyButton size="medium" variant="primary" onClick={saveWorkflow} disabled={!canSaveWorkflow}>
               <Save className="size-3.5" aria-hidden /> {t('router.save')}
             </DifyButton>
             <VersionMenu versions={versions} onRestore={restoreVersion} />
@@ -604,21 +623,8 @@ function WorkflowStudioCanvas() {
       />
 
       <PageContent>
-        <div className="flex items-center gap-4 system-xs-regular text-text-tertiary">
-          {legendKinds.map(kind => (
-            <span key={kind} className="flex items-center gap-1.5">
-              <span className={cn('size-2 rounded-full', kindAccent(kind))} />
-              {t(NODE_KIND_META[kind].labelKey)}
-            </span>
-          ))}
-          {/* 节点面板是窗口级固定定位，展开后会盖住这一行右侧，说明文案先收起。 */}
-          {!selectedNode && (
-            <span className="ml-auto hidden text-text-quaternary sm:inline">
-              {t('router.legendHint')}
-            </span>
-          )}
-        </div>
-
+        {/* 画布上不放图例行：节点名与配色在节点本身与节点选择器里已经出现一次，
+            再列一行只是把同样的话说第二遍，白占画布上方的纵向空间。 */}
         <Card className="w-full ring-0">
           <CardContent>
             <div

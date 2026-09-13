@@ -14,7 +14,7 @@ export interface LocalEndpointInput {
  * `if (url.pathname === ...)` 里挪出来，变成和协议入口一样的**数据声明**：
  *
  * - 入口匹配统一走注册表，因此本地端点可以是任意方法（`GET /v1/models`
- *   与将来可能的 `POST` 本地端点共用同一个匹配器，见 §1.7）；
+ *   与将来可能的 `POST` 本地端点共用同一个匹配器，见 §3.6）；
  * - runtime 只保留「生命周期 + 边界错误处理」，不再知道任何具体路径；
  * - 新增本地端点只需在 `localEndpoints` 数组里加一条，不触碰 runtime。
  */

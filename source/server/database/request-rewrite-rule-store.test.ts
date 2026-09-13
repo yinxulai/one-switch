@@ -177,7 +177,7 @@ describe('request rewrite rule store', () => {
     ])
     // 换绑最常见的路径：先移除规则 A（绑定只是被软删除），再把规则 B 放到它空出的
     // priority 上。唯一性由部分索引 `..._priority_active` 表达，它只约束未删除的行，
-    // 所以这一步必须是允许的——早期迁移遗留的全量唯一索引会让它直接撞 UNIQUE 失败。
+    // 所以这一步必须被允许。
     await deleteRequestRewriteRule(first.id)
 
     const rebound = await replaceProviderModelRequestRewriteRuleBindings(providerModel.id, [

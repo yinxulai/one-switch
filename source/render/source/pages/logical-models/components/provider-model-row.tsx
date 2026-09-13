@@ -136,54 +136,64 @@ export function ProviderModelRow(props: ProviderModelRowProps) {
     <div
       onClick={props.onSelect}
       className={cn(
-        'group/row grid min-h-14 min-w-88 grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-x-1 overflow-hidden border-b border-border/50 border-l-2 border-l-transparent px-3 py-2 last:border-b-0 transition-colors hover:bg-state-base-hover',
+        'group/row relative flex min-h-14 min-w-88 items-center gap-2 overflow-hidden border-b border-border/50 border-l-2 border-l-transparent px-3 py-2 last:border-b-0 transition-colors hover:bg-state-base-hover',
         props.selected && 'border-l-primary bg-accent',
         props.mode === 'manual' && 'cursor-pointer',
         props.dragging && 'bg-state-base-hover-alt',
       )}
     >
-      <div className="min-w-0">
-        <div
-          className="flex min-h-9 w-full cursor-grab touch-none select-none items-center gap-2 rounded-md px-1.5 text-text-quaternary active:cursor-grabbing"
-          {...(props.mode === 'auto' ? props.dragHandleProps : {})}
-          aria-label={props.mode === 'auto' ? t('logicalModels.row.dragAria', { model: model.modelName }) : undefined}
-        >
-          {props.mode === 'manual' ? (
-            props.selected ? <CircleDot size={16} className="text-primary" /> : <Circle size={16} className="text-text-quaternary" />
-          ) : (
-            <GripVertical size={16} />
-          )}
-        </div>
-      </div>
-      <div className="min-w-0">
-        <div className="min-w-0">
-          <div className="flex min-w-0 items-center gap-2 system-xs-medium">
-            {props.provider && props.onNavigateToProviderAnalytics ? (
-              <button
-                type="button"
-                className="group/provider inline-flex min-w-0 items-center gap-0.5 rounded-sm text-left text-text-primary outline-none transition-colors hover:text-primary focus-visible:bg-accent focus-visible:text-primary"
-                title={t('logicalModels.row.viewAnalytics', { provider: props.provider.name })}
-                aria-label={t('logicalModels.row.viewAnalytics', { provider: props.provider.name })}
-                onClick={event => {
-                  event.stopPropagation()
-                  props.onNavigateToProviderAnalytics?.(model.providerId)
-                }}
-              >
-                <span className="min-w-0 truncate">{props.provider.name}</span>
-                <span className="shrink-0 text-text-quaternary" aria-hidden="true">·</span>
-                <span className="min-w-0 truncate font-mono text-text-primary">{model.modelName}</span>
-                <ChevronRight size={13} aria-hidden="true" className="shrink-0 text-text-quaternary transition-transform group-hover/provider:translate-x-0.5 group-hover/provider:text-primary group-focus-visible/provider:text-primary" />
-              </button>
+      <div className="min-w-0 flex-1">
+        {/* 手柄静止时宽度收成 0（图标被裁掉），浮入这一行才撑开，所以不显示时它完全不占位置。
+            它必须留在「供应商 · 模型名」这一行里：与文字各自居中于同一条行盒才必然对齐；
+            拆到左边单独一列，它会按两行文字的整体高度居中，图标比文字低半行。 */}
+        <div className="flex min-w-0 items-center system-xs-medium">
+          <div
+            className={cn(
+              'flex h-5 w-0 shrink-0 items-center justify-center overflow-hidden rounded-sm text-text-quaternary transition-[width,color] hover:text-text-primary focus-visible:w-6.5 focus-visible:text-text-primary focus-visible:outline-none',
+              // 自动转移下只在浮入这一行（或正在拖动）时才露出手柄：否则列表左边是一整排抓取图标。
+              props.mode === 'auto' && 'cursor-grab touch-none select-none active:cursor-grabbing',
+              // 手动指定的圆点要一直看得见；自动转移下手柄只在浮入或拖动时撑开（20px + 6px 间距）。
+              props.mode !== 'auto' || props.dragging ? 'w-6.5' : 'group-hover/row:w-6.5',
+            )}
+            {...(props.mode === 'auto' ? props.dragHandleProps : {})}
+            aria-label={props.mode === 'auto' ? t('logicalModels.row.dragAria', { model: model.modelName }) : undefined}
+          >
+            {props.mode === 'manual' ? (
+              props.selected ? <CircleDot size={16} className="text-primary" /> : <Circle size={16} className="text-text-quaternary" />
             ) : (
-              <>
-                <div className="min-w-0 truncate text-text-primary">{props.provider?.name ?? t('logicalModels.row.unknownProvider')}</div>
-                <span className="shrink-0 text-text-quaternary" aria-hidden="true">·</span>
-                <div className="min-w-0 truncate font-mono text-text-primary">{model.modelName}</div>
-              </>
+              <GripVertical size={16} />
             )}
           </div>
+          {props.provider && props.onNavigateToProviderAnalytics ? (
+            <button
+              type="button"
+              className="group/provider inline-flex min-w-0 items-center gap-0.5 rounded-sm text-left text-text-primary outline-none transition-colors hover:text-primary focus-visible:bg-accent focus-visible:text-primary"
+              title={t('logicalModels.row.viewAnalytics', { provider: props.provider.name })}
+              aria-label={t('logicalModels.row.viewAnalytics', { provider: props.provider.name })}
+              onClick={event => {
+                event.stopPropagation()
+                props.onNavigateToProviderAnalytics?.(model.providerId)
+              }}
+            >
+              <span className="min-w-0 truncate">{props.provider.name}</span>
+              <span className="shrink-0 text-text-quaternary" aria-hidden="true">·</span>
+              <span className="min-w-0 truncate font-mono text-text-primary">{model.modelName}</span>
+              <ChevronRight size={13} aria-hidden="true" className="shrink-0 text-text-quaternary transition-transform group-hover/provider:translate-x-0.5 group-hover/provider:text-primary group-focus-visible/provider:text-primary" />
+            </button>
+          ) : (
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="min-w-0 truncate text-text-primary">{props.provider?.name ?? t('logicalModels.row.unknownProvider')}</div>
+              <span className="shrink-0 text-text-quaternary" aria-hidden="true">·</span>
+              <div className="min-w-0 truncate font-mono text-text-primary">{model.modelName}</div>
+            </div>
+          )}
         </div>
-        <div className="mt-1 flex min-w-0 items-center gap-2 system-2xs-regular text-text-tertiary">
+        {/* 指标行与「供应商 · 模型名」同一起点：手柄撑开多宽（26px）这里就补多少内边距，
+            过渡与手柄同速，于是手柄收起时两行都贴左、浮入时两行一起右移。 */}
+        <div className={cn(
+          'mt-1 flex min-w-0 items-center gap-2 system-2xs-regular text-text-tertiary transition-[padding]',
+          props.mode !== 'auto' || props.dragging ? 'pl-6.5' : 'group-hover/row:pl-6.5',
+        )}>
           <ProtocolIcons endpoints={model.endpoints} />
           <span className="shrink-0 text-text-quaternary" aria-hidden="true">·</span>
           <span className="inline-flex items-center gap-1"><Zap size={10} aria-hidden />TPS {formatAverageTps(props.metrics?.avgTps)}</span>
@@ -191,12 +201,19 @@ export function ProviderModelRow(props: ProviderModelRowProps) {
           <ModelHealth providerHealth={props.providerHealth} providerModelHealth={props.providerModelHealth} />
         </div>
       </div>
-      <div className="relative flex min-w-20 items-center justify-end">
+      <div className="flex min-w-20 shrink-0 items-center justify-end">
         <Badge variant={props.cooling ? 'destructive' : model.enabled ? 'success' : 'muted'}>{props.cooling ? t('logicalModels.row.cooling') : model.enabled ? (props.selected ? t('logicalModels.row.selected') : t('logicalModels.row.standby')) : t('common.state.disabled')}</Badge>
-        <div className="absolute top-1/2 right-0 flex -translate-y-1/2 translate-x-3 items-center gap-1 rounded-md border-[0.5px] border-components-panel-border bg-components-panel-bg-blur px-1.5 py-0.5 backdrop-blur-[5px] opacity-0 transition-all group-hover/row:translate-x-0 group-hover/row:opacity-100 focus-within:translate-x-0 focus-within:opacity-100">
-          <Switch checked={model.enabled} onCheckedChange={props.onToggleEnabled} onClick={event => event.stopPropagation()} aria-label={t('logicalModels.row.enabledState', { model: model.modelName })} />
-          <Button variant="ghost" size="icon-sm" onClick={event => { event.stopPropagation(); props.onRemove() }} aria-label={t('logicalModels.row.removeAria', { model: model.modelName })} title={t('logicalModels.row.removeTitle')}><Trash2 size={16} /></Button>
-        </div>
+      </div>
+      {/* 操作直接落在一条模糊的遮罩上，而不是滑进来一张带边框的小白卡片：
+          遮罩铺满整行高度、左缘渐变淡出，被盖住的指标与徽标只是在模糊里淡出，没有新的卡片边界。 */}
+      <div
+        className={cn(
+          'pointer-events-none absolute inset-y-0 right-0 flex items-center gap-1 bg-linear-to-l from-components-panel-bg-blur from-55% to-transparent pl-10 pr-3 opacity-0 backdrop-blur-[5px] transition-opacity',
+          'group-hover/row:pointer-events-auto group-hover/row:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100',
+        )}
+      >
+        <Switch checked={model.enabled} onCheckedChange={props.onToggleEnabled} onClick={event => event.stopPropagation()} aria-label={t('logicalModels.row.enabledState', { model: model.modelName })} />
+        <Button variant="ghost" size="icon-sm" onClick={event => { event.stopPropagation(); props.onRemove() }} aria-label={t('logicalModels.row.removeAria', { model: model.modelName })} title={t('logicalModels.row.removeTitle')}><Trash2 size={16} /></Button>
       </div>
     </div>
   )

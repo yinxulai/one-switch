@@ -24,7 +24,8 @@ const pagePaths = {
 
 function App() {
   const pathname = useRouterState({ select: state => state.location.pathname })
-  const activePage = (pathname.split('/').filter(Boolean)[0] || 'logicalModels') as PageKey
+  // 兜底高亮与 `routing.tsx` 的默认首页保持一致：智能路由是应用入口。
+  const activePage = (pathname.split('/').filter(Boolean)[0] || 'router') as PageKey
   const navigate = useNavigate()
   const themeMode = useAppUiStore(state => state.themeMode)
   const setThemeMode = useAppUiStore(state => state.setThemeMode)
@@ -55,12 +56,12 @@ function App() {
           <AppLayout
             sidebar={(
               <AppSidebar
+              theme={theme}
                 activePage={activePage}
-                theme={theme}
-                proxyRunning={proxyStatus?.running ?? false}
-                proxyPort={proxyStatus?.port}
-                onNavigate={page => void navigate({ to: pagePaths[page] })}
                 onToggleTheme={toggleTheme}
+                proxyPort={proxyStatus?.port}
+                proxyRunning={proxyStatus?.running ?? false}
+                onNavigate={page => void navigate({ to: pagePaths[page] })}
               />
             )}
           >

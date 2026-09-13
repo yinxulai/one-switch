@@ -155,10 +155,9 @@ describe('database lifecycle', () => {
     expect(indexes.map(index => (index as { name: string }).name)).toEqual(
       expect.arrayContaining(['idx_scheduling_policies_route', 'idx_request_attempts_request_order', 'idx_request_attributes_key_value', 'idx_runtime_logs_timestamp', 'idx_workflows_type_version', 'idx_provider_model_request_rewrite_rule_priority_active']),
     )
-    // 历史遗留：早期迁移建过一个不带 `deletedTime IS NULL` 的全量唯一索引，它与当前设计
-    // 使用的部分唯一索引语义冲突，会挡住「软删除旧绑定后在同 priority 绑定新规则」。
-    // 那条索引已经随历史一起删掉了（首发基线只建部分唯一索引），断言保留是为了防止有人重新
-    // 生成基线时又把它带回来——它只会在运行期以写入失败的形式暴露。
+    // 唯一性只能由**部分**唯一索引表达（只约束未删除的行），这里断言不存在全量唯一索引：
+    // 它会把「软删除旧绑定后在同 priority 绑定新规则」这条最常见的换绑路径堵死，
+    // 而且只会在运行期以写入失败的形式暴露。
     expect(indexes.map(index => (index as { name: string }).name)).not.toContain('idx_model_request_rewrite_rule_priority')
   })
 })

@@ -38,9 +38,8 @@ export const PROTOCOL_AUTH_PRESETS: Readonly<Record<Protocol, ProtocolAuthPreset
 
 /**
  * 构造指定协议的认证头。
- * 配置了自定义认证头时只使用该头承载密钥，且不再附加固定头——这是既有行为
- * （Anthropic 的版本固定头会因此一并省略）。本次重构保持行为不变，是否修正见
- * product/proxy-engine.md 的开放问题。
+ * 配置了自定义认证头时只使用该头承载密钥，不附加固定头
+ * （因此 Anthropic 的版本固定头也会一并省略）。
  */
 export function createProtocolAuthHeaders(protocol: Protocol, apiKey: string | null, customAuthHeader: string | null): Record<string, string> {
   const preset = PROTOCOL_AUTH_PRESETS[protocol]

@@ -1,4 +1,5 @@
 import { ALL_TRANSPORT_KINDS, type TransportKind } from '@common/schemas'
+import { requestBodyField, type RequestBodyFieldRole } from './request-shape'
 import {
   ALL_WORKFLOW_PROTOCOLS,
   PATH_WILDCARD_SUFFIX,
@@ -147,7 +148,6 @@ function createEmptyRoute(): RouteDecision {
     transport: 'http',
     modelIds: [],
     fallback: false,
-    requestedModel: '',
     controls: {},
   }
 }
@@ -197,7 +197,6 @@ function normalizeInputPayload(inputPayload: unknown): RouteContextEnvelope {
 
   const logicalModels = readLogicalModels(normalized.logicalModels)
 
-  const requestedModel = typeof request.body?.model === 'string' ? request.body.model.trim() : ''
   const traceId = typeof metadata.traceId === 'string' && metadata.traceId.trim() ? metadata.traceId : generateTraceId()
 
   /**
@@ -205,15 +204,16 @@ function normalizeInputPayload(inputPayload: unknown): RouteContextEnvelope {
    * 路由自己产生的数据（决策 + 决策依据）统一写在 `route` 命名空间下，
    * 过程性数据（协议归一化结果、节点判定明细）只进 trace。
    *
-   * 「可用逻辑模型 id」不再单独落盘：它是 `logicalModels` 的投影，
-   * 需要时用通配投影取值（`logicalModels[*].id`）即可。
+   * 不写派生冗余字段：
+   * - 「请求模型」就是请求自己的字段（`request.body.model`，写在哪由协议决定），
+   *   再存一份副本只会多出第二个事实源；入口节点也不报它 —— 要它就问协议发现节点；
+   * - 「可用逻辑模型 id」是 `logicalModels` 的投影，需要时用通配投影（`logicalModels[*].id`）现算。
    */
   normalized.route = {
     ...createEmptyRoute(),
     traceId,
     protocol: readKnownProtocol(normalized),
     transport: readKnownTransport(normalized),
-    requestedModel,
     controls: objectField(normalized, 'controls'),
   } satisfies RouteDecision
 
@@ -526,6 +526,8 @@ function discoverProtocol(_node: ProtocolDiscoveryNode, payload: Record<string, 
   const path = String(getByPath(payload, 'request.path') ?? '').toLowerCase()
   const headers = readRequestHeaders(payload)
 
+  // 走到这里说明调用方没给协议，只能靠形状猜：此刻**一条声明都没有**，
+  // 所以这里允许直接看原始请求体。协议一旦定下，读体就一律走声明表（`requestBodyField`）。
   const providerHeader = getHeader(headers, 'x-provider').toLowerCase()
   const modelId = String(getByPath(payload, 'request.body.model') ?? '').toLowerCase()
 
@@ -573,22 +575,31 @@ function normalizeProtocolMessages(candidate: unknown): Array<Record<string, unk
   })
 }
 
+/**
+ * 协议发现节点的归一化视图：这次请求按**命中的协议**解析出来的那一层。
+ *
+ * 模型名与消息列表的路径都取自声明表（`requestBodyField`），不在这里再写一遍
+ *「先找 messages、找不到找 input」—— 那是声明表的第二份副本，换个协议就静默跑偏。
+ * 认不出协议时什么都没有声明，这里就如实给空值，不退回「按某一种协议猜」。
+ *
+ * 这份视图只进 trace，不写回 payload（它是解析过程的产物，不是一手事实）。
+ */
 function buildNormalizedProtocolOutput(protocol: WorkflowProtocol, transport: TransportKind, payload: Record<string, unknown>): Record<string, unknown> {
-  const requestBody = (getByPath(payload, 'request.body') ?? {}) as Record<string, unknown>
-  const model = typeof requestBody.model === 'string' ? requestBody.model : ''
-  const bodyMessages = Array.isArray(requestBody.messages)
-    ? requestBody.messages
-    : Array.isArray(requestBody.input)
-      ? requestBody.input
-      : []
+  const model = readDeclaredField(payload, protocol, 'model')
 
   return {
     protocol,
     transport,
-    model,
-    messages: normalizeProtocolMessages(bodyMessages),
-    raw: requestBody,
+    model: typeof model === 'string' ? model : '',
+    messages: normalizeProtocolMessages(readDeclaredField(payload, protocol, 'messages')),
+    raw: (getByPath(payload, 'request.body') ?? {}) as Record<string, unknown>,
   }
+}
+
+/** 按声明表读某个角色的字段取值；这个协议没声明该角色时返回 `undefined`。 */
+function readDeclaredField(payload: Record<string, unknown>, protocol: WorkflowProtocol, role: RequestBodyFieldRole): unknown {
+  const field = requestBodyField(protocol, role)
+  return field ? getByPath(payload, field.path) : undefined
 }
 
 /**
@@ -776,10 +787,10 @@ export async function runWorkflow(graph: WorkflowGraph, inputPayload: unknown, o
       }
 
       if (current.kind === 'input') {
-        // 输入节点的输出就是它交给下游的入口数据：请求模型与本次可见的逻辑模型。
-        // 「可用逻辑模型 id」不再单列，需要时用 `logicalModels[*].id` 投影取值。
-        const route = routeOf(outputPayload)
-        addNodeOutput(nodeOutputs, current.id, '请求模型', route.requestedModel)
+        // 输入节点只报它**保证得了**的东西：本次可见的逻辑模型列表（`logicalModels`）。
+        // 请求体里的任何东西都不在它这儿 —— 包括模型名。那是协议层的事实，
+        // 路径由协议发现节点按命中的协议声明（§2.3 / §4.1）；在这里读 `request.body.model`
+        // 就等于要求输入节点兼容所有协议，而它连「体是什么格式」都不声称。
         addNodeOutput(nodeOutputs, current.id, '逻辑模型', envelope.context.logicalModels.map(model => model.id))
         trace.push({ nodeId: current.id, nodeName: current.name, kind: current.kind, success: true, message: '输入进入路由流程' })
         currentId = edgeTarget(edges, current.id)
@@ -806,6 +817,9 @@ export async function runWorkflow(graph: WorkflowGraph, inputPayload: unknown, o
         const normalized = writeRouteProtocol(outputPayload, protocol, discovered.transport)
         addNodeOutput(nodeOutputs, current.id, '协议', protocol)
         addNodeOutput(nodeOutputs, current.id, '传输形态', discovered.transport)
+        // 请求模型显示在这道节点上，不在输入节点上：这个节点才知道模型名写在哪。
+        // 值就是归一化视图里的那个（两者同源），认不出协议时如实是空串。
+        addNodeOutput(nodeOutputs, current.id, '请求模型', normalized.model)
         trace.push({
           nodeId: current.id,
           nodeName: current.name,
@@ -1138,9 +1152,9 @@ export function createRouteContextInput(payload: RouteContextInput): RouteContex
 }
 
 /**
- * 从一次运行的产出里取路由决策本身（协议 / 传输 / 交付方式 / 落点）。
+ * 从一次运行的产出里取路由决策本身（协议 / 传输形态 / 落点）。
  *
- * 调用方（代理入口）读到的应该是**同一份**决策，而不是自己在入口再算一遍协议与交付方式：
+ * 调用方（代理入口）读到的应该是**同一份**决策，而不是自己在入口再算一遍协议与传输形态：
  * 图里的协议发现节点可能把协议判成 `unknown`，也可能有节点改写落点，
  * 两套依据各算一遍迟早会分叉。还没走到该写决策的节点时返回 `null`。
  */

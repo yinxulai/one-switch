@@ -108,6 +108,9 @@ export function ConditionPanel(props: NodePanelProps) {
           <div className="grid gap-2">
             {conditionCase.conditions.map((rule, ruleIndex) => {
               const available = conditionFieldHints.some(field => field.path === rule.fieldPath)
+              /** 比较字段同样要能指回真实上游；指不到就提示，而不是只显示一个空的下拉。 */
+              const compareFieldAvailable = !rule.valueFieldPath
+                || conditionFieldHints.some(field => field.path === rule.valueFieldPath)
               const fieldType = fieldTypeOf(rule.fieldPath, rule.valueType)
               const operators = getOperatorsByType(fieldType)
 
@@ -131,7 +134,7 @@ export function ConditionPanel(props: NodePanelProps) {
                 && rule.operator !== 'empty'
                 && rule.operator !== 'notEmpty'
 
-              /** 比较值可以来自另一个字段，例如 `route.requestedModel in logicalModels[*].id`。 */
+              /** 比较值可以来自另一个字段，例如 `request.body.model in logicalModels[*].id`。 */
               const supportsFieldOperand = FIELD_OPERAND_OPERATORS.includes(rule.operator)
               const usesFieldOperand = supportsFieldOperand && rule.valueSource === 'field'
 
@@ -277,6 +280,12 @@ export function ConditionPanel(props: NodePanelProps) {
                         </SelectContent>
                       </Select>
                     </NodePanelField>
+                  )}
+
+                  {needsExpectedValue && usesFieldOperand && !compareFieldAvailable && (
+                    <NodePanelHint tone="warning">
+                      {t('router.panel.compareFieldMissing', { path: rule.valueFieldPath ?? '' })}
+                    </NodePanelHint>
                   )}
 
                   {needsExpectedValue && usesFieldOperand && (

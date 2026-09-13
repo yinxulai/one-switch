@@ -21,7 +21,7 @@ import { AddProviderModelDialog } from './components/add-provider-model-dialog'
 import { CreateLogicalModelDialog } from './components/create-logical-model-dialog'
 import { schedulingPolicyApi } from '@/api/models'
 import { unwrap } from '@/api/unwrap'
-import type { ProviderModelRoute } from '@common/schemas'
+import { isBuiltInDefaultLogicalModel, type LogicalModel, type ProviderModelRoute } from '@common/schemas'
 
 interface LogicalModelsPageProps {
   onNavigateToModels?: () => void
@@ -30,16 +30,15 @@ interface LogicalModelsPageProps {
 }
 
 interface LogicalModelColumnProps {
-  logicalModelId: string
-  logicalModelName: string
+  logicalModel: LogicalModel
   onNavigateToProviderAnalytics?: (providerId: string) => void
   dragHandleProps?: Record<string, unknown>
   dragging?: boolean
 }
 
 function LogicalModelColumn(props: LogicalModelColumnProps) {
-  const { logicalModelId, logicalModelName, onNavigateToProviderAnalytics, dragHandleProps, dragging } = props
-  const service = useLogicalModelControlService(logicalModelId)
+  const { logicalModel, onNavigateToProviderAnalytics, dragHandleProps, dragging } = props
+  const service = useLogicalModelControlService(logicalModel.id)
   const confirm = useConfirm()
   const toast = useToast()
   const t = useTranslation()
@@ -47,13 +46,13 @@ function LogicalModelColumn(props: LogicalModelColumnProps) {
   const removeModel = async (model: ProviderModelRoute) => {
     const confirmed = await confirm({
       title: t('logicalModels.remove.title'),
-      description: t('logicalModels.remove.description', { name: logicalModelName, model: model.modelName }),
+      description: t('logicalModels.remove.description', { name: logicalModel.name, model: model.modelName }),
       confirmLabel: t('logicalModels.remove.confirm'),
       variant: 'destructive',
     })
     if (!confirmed) return
     try {
-      await unwrap(schedulingPolicyApi.remove(logicalModelId, model.id))
+      await unwrap(schedulingPolicyApi.remove(logicalModel.id, model.id))
       await service.reload()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t('logicalModels.remove.failed'))
@@ -62,7 +61,9 @@ function LogicalModelColumn(props: LogicalModelColumnProps) {
   return (
     <>
       <LogicalModelCard
-        logicalModelName={logicalModelName}
+        logicalModelName={logicalModel.name}
+        logicalModelDescription={logicalModel.description}
+        builtIn={isBuiltInDefaultLogicalModel(logicalModel)}
         models={service.models}
         providers={service.providers}
         health={service.health}
@@ -82,7 +83,7 @@ function LogicalModelColumn(props: LogicalModelColumnProps) {
         dragHandleProps={dragHandleProps}
         dragging={dragging}
       />
-      <AddProviderModelDialog open={addModelOpen} logicalModelId={logicalModelId} onOpenChange={setAddModelOpen} onAdded={() => void service.reload()} />
+      <AddProviderModelDialog open={addModelOpen} logicalModelId={logicalModel.id} onOpenChange={setAddModelOpen} onAdded={() => void service.reload()} />
     </>
   )
 }
@@ -183,8 +184,7 @@ export function LogicalModelsPage(props: LogicalModelsPageProps) {
                       <SortableLogicalModel id={model.id}>
                         {(handleProps, dragging) => (
                           <LogicalModelColumn
-                            logicalModelId={model.id}
-                            logicalModelName={model.name}
+                            logicalModel={model}
                             onNavigateToProviderAnalytics={onNavigateToProviderAnalytics}
                             dragHandleProps={handleProps}
                             dragging={dragging}

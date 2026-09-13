@@ -96,7 +96,7 @@ describe('resolveRoute', () => {
   it('传输形态是入口写下的，不从协议或落点推导', async () => {
     useDefaultPolicy([model('default')])
 
-    // 同一个协议上两种传输形态都成立 —— 这正是把 SSE 做成一档载体、或者再拆成两根轴会丢掉的信息。
+    // 同一个协议上两种传输形态都成立 —— 这正是把 SSE 做成另一档连接、或者再拆成两根轴会丢掉的信息。
     expect((await resolveWithBody({ model: 'default' }, 'http-stream')).transport).toBe('http-stream')
     expect((await resolveWithBody({ model: 'default' }, 'http')).transport).toBe('http')
   })

@@ -8,10 +8,9 @@ import type { Modifier, ModifierContext, ModifierFrameMode, ModifierScope } from
  * **不取决于上游回了什么**，因此可以在上游回话之前一次算完；
  * `match` 可能依赖 `upstreamHead`（例如「收到头帧之后才介入」），所以在每一帧上现算。
  *
- * 两者一旦混在一起，筛选结果就会随「头帧到了没有」而变，管道必须重筛一次——那正是
- * `frame-pipe` 里曾经那段 `selected === null || (upstreamHead !== null && !selectedWithHead)`
- * 的来历。声明 `scope` 之后，「这种形态下根本没有它能做的事」由数据表达，
- * 修改器自己不必再去判断这两根轴，也就不会有人忘了判断或判错。
+ * 两者一旦混在一起，筛选结果就会随「头帧到了没有」而变，管道就得重筛一次。声明 `scope` 之后，
+ * 「这种形态下根本没有它能做的事」由数据表达，修改器自己不必再去判断这两根轴，
+ * 也就不会有人忘了判断或判错。
  */
 export function selectCandidates(modifiers: readonly Modifier[], context: ModifierContext, frameMode: ModifierFrameMode): readonly Modifier[] {
   return modifiers

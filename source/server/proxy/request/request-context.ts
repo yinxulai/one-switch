@@ -12,7 +12,7 @@ export interface RequestContext {
    * 传输形态决定「线上的字节长什么样」。整条请求链（交换投影、修改器上下文）共用它。
    *
    * 它与上游跳无关：上游用哪种形态由那个端点的地址决定，客户端说要 WebSocket 也改变不了
-   * 一个 `https://` 端点。把客户端的取值传下去当上游取值用，就是 §2.3.1 那条被删掉的耦合链。
+   * 一个 `https://` 端点。`PlannerInput` 里根本没有传输字段，客户端偏好因此在类型上就没有到达上游侧的路（§2.3.1）。
    */
   readonly transport: TransportKind
   readonly method: string

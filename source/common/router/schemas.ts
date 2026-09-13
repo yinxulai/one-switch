@@ -62,7 +62,7 @@ const ConditionRuleSchema = z.object({
   fieldPath: z.string().min(1),
   valueType: z.enum(['string', 'number', 'boolean', 'enum', 'array', 'object', 'unknown']),
   operator: z.enum(['equals', 'notEquals', 'contains', 'notContains', 'startsWith', 'endsWith', 'in', 'notIn', 'regex', 'gt', 'gte', 'lt', 'lte', 'between', 'isTrue', 'isFalse', 'empty', 'notEmpty', 'exists']),
-  // 旧版本保存的图没有这两项，默认按字面量比较。
+  // 省略时按字面量比较。
   valueSource: z.enum(['literal', 'field']).default('literal'),
   valueFieldPath: z.string().default(''),
   value: z.string().optional(),
@@ -84,7 +84,7 @@ const ConditionNodeSchema = WorkflowNodeBaseSchema.extend({
 
 const ModelSelectNodeSchema = WorkflowNodeBaseSchema.extend({
   kind: z.literal('model-select'),
-  // 旧版本保存的图没有这些字段，用默认值补齐，避免历史版本全部失效。
+  // 省略时用默认值补齐。
   source: z.enum(['fixed', 'variable']).default('fixed'),
   variablePath: z.string().default(''),
   // 允许空数组：刚插入、尚未选择逻辑模型的节点是合法的编辑中间态，
@@ -95,7 +95,7 @@ const ModelSelectNodeSchema = WorkflowNodeBaseSchema.extend({
 
 const IterationNodeSchema = WorkflowNodeBaseSchema.extend({
   kind: z.literal('iteration'),
-  // 旧版本保存的图没有这些字段，用默认值补齐（与 model-select 的处理保持一致）。
+  // 省略时用默认值补齐（与 model-select 的处理保持一致）。
   // 遍历来源：支持通配投影（`logicalModels[*].id`）；数组按元素、对象按键值对遍历。
   sourcePath: z.string().default(''),
   // 每轮结束后读取这条路径判断本轮是否命中；空值视为未命中。
@@ -154,52 +154,14 @@ export const WorkflowEdgeSchema = z.object({
 })
 
 /**
- * 历史数据迁移：老图与历史版本里的字段名会在这里改写成当前命名，
- * 确保 localStorage 里的工作副本与已保存版本不会因为重命名而失效。
- *
- * - `queue-select` → `model-select`；
- * - `mode: 'follow-request-model'` → `source: 'variable'` + `variablePath`；
- * - `queueIds` / `fallbackQueueIds` → `modelIds` / `fallbackModelIds`。
+ * 画布上的图、版本列表里的图与代理运行时生效的图读的是**同一个 schema**：
+ * 「界面看到的那张图」与「真正生效的那张图」因此不可能有两种解释。
  */
-function migrateGraphInput(raw: unknown): unknown {
-  if (!raw || typeof raw !== 'object') return raw
-
-  const graph = raw as Record<string, unknown>
-  if (!Array.isArray(graph.nodes)) return raw
-
-  let changed = false
-  const nodes = graph.nodes.map((item) => {
-    if (!item || typeof item !== 'object') return item
-    const node = item as Record<string, unknown>
-    if (node.kind !== 'queue-select') return item
-
-    changed = true
-    const rest: Record<string, unknown> = { ...node, kind: 'model-select' }
-    if ('queueIds' in rest) {
-      rest.modelIds = rest.queueIds
-      delete rest.queueIds
-    }
-    if ('fallbackQueueIds' in rest) {
-      rest.fallbackModelIds = rest.fallbackQueueIds
-      delete rest.fallbackQueueIds
-    }
-
-    if (!('mode' in rest)) return rest
-    delete rest.mode
-    if (node.mode === 'follow-request-model') {
-      return { ...rest, source: 'variable', variablePath: 'route.requestedModel' }
-    }
-    return { ...rest, source: 'fixed' }
-  })
-
-  return changed ? { ...graph, nodes } : raw
-}
-
-export const WorkflowGraphSchema = z.preprocess(migrateGraphInput, z.object({
+export const WorkflowGraphSchema = z.object({
   version: z.literal(1),
   nodes: z.array(WorkflowNodeModelSchema),
   edges: z.array(WorkflowEdgeSchema),
-}))
+})
 
 export const RouteContextInputSchema = z.object({
   request: RequestPayloadSchema,

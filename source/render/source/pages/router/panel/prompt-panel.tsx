@@ -11,6 +11,7 @@ import {
 import type { NodePanelProps } from '../node-data'
 import { useTranslation } from '@/i18n/provider'
 import { PROMPT_TIMEOUT_LIMIT, type PromptNode } from '@common/router/types'
+import { readCandidates } from './field-candidates'
 import { PanelCodeEditor } from './panel-code-editor'
 import {
   NodePanelField,
@@ -41,9 +42,9 @@ export function PromptPanel(props: NodePanelProps) {
     update(current => current.kind === 'prompt' ? { ...current, ...patchValue } : current)
   }, [update])
 
-  /** 提示词模板变量候选：数组 / 对象塞进提示词没有意义，只列标量字段。 */
+  /** 提示词模板变量候选：`${}` 对非标量做 JSON 序列化，所以整体字段（如 request.body）也能拼。 */
   const templateFields = useMemo(
-    () => conditionFieldHints.filter(field => field.valueType !== 'object' && field.valueType !== 'array'),
+    () => readCandidates('prompt', conditionFieldHints),
     [conditionFieldHints],
   )
 

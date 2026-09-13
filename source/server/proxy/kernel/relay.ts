@@ -177,8 +177,8 @@ async function runRelay(input: RelayConnectedInput): Promise<RelayAttemptResult>
  * `upstreamHead` 起手为 `null`，由帧管道收到头帧后逐帧补齐——请求方向同样如此，因为上行帧
  * 跑在响应头之前。
  *
- * 刻意**不**带 `transport` 的副本：那次交换的形态在 `exchange` 上已经有了，再拷一份
- * 就会出现「同一件事两个字段」的错位风险（上一版的 `transport` 字段正是如此：写三处、读零处）。
+ * 刻意**不**带 `transport` 的副本：那次交换的形态在 `exchange` 上已经有了，再拷一份就会留下
+ * 「同一件事两个字段」的错位风险——写上三处、读到零处的那一份迟早与事实分叉。
  * 修改器要判断形态时读 `exchange`，或者在自己身上声明 `scope` 让内核代判。
  */
 function createModifierContext(input: RelayConnectedInput, direction: ModifierDirection): ModifierContext {

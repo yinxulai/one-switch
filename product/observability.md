@@ -151,14 +151,14 @@
 
 **一、一请求多行的表必须先按请求聚合，再连接回去，不能逐请求回查。**
 
-`request_attributes`（一请求两行）、`request_usages` / `attempt_usages`（一请求或一尝试五行）都是「实体 × 类型」的窄表。原先的写法是在主表上写相关子查询：
+`request_attributes`（一请求两行）、`request_usages` / `attempt_usages`（一请求或一尝试五行）都是「实体 × 类型」的窄表。**在主表上写相关子查询是反面写法**：
 
 ```sql
 SELECT coalesce((SELECT value FROM request_attributes a WHERE a.requestId = r.id AND a.key = 'request.source'), 'unknown')
 FROM request_logs r WHERE r.createdTime >= ?
 ```
 
-主表有多少行就回查多少次。30 天窗口下 `getRequestSourceStats` 因此要 1016 ms。改成「先在窄表里按 `requestId` / `attemptId` 分组聚成一行，再 `LEFT JOIN` 回主表」后降到 432 ms；同一改动用在用量透视上，`getUsageTrend` 从 547 ms 降到 294 ms。
+主表有多少行就回查多少次：30 天窗口下 `getRequestSourceStats` 要 1016 ms，而「先在窄表里按 `requestId` / `attemptId` 分组聚成一行，再 `LEFT JOIN` 回主表」只要 432 ms；同一改动用在用量透视上，`getUsageTrend` 从 547 ms 降到 294 ms。
 
 透视列要显式列出（`sum(case when type = 'inputTokens' ...).as('inputTokens')` 写五遍），不要在运行时循环拼接：列集合必须是静态已知的字段。
 
@@ -175,15 +175,15 @@ SELECT ... FROM request_attempts a
 WHERE a.createdTime >= ? GROUP BY a.providerId
 ```
 
-`getProviderStats` 因此从 366 ms 降到 117 ms（30 天）。`getModelStats` 除了用量之外没有任何指标来自请求表，整个 `JOIN request_logs` 都可以删掉。
+`getProviderStats` 因此是 117 ms 而不是 366 ms（30 天）。`getModelStats` 除了用量之外没有任何指标来自请求表，那个 `JOIN request_logs` 本就不必要。
 
 **三、能在 SQL 里分桶就不要把样本搬进内存。**
 
-`getLatencyDistribution` 原先取回窗口内每一个 TTFT 到 JS 里排序分桶——为一张直方图搬运并排序十几万个整数。改成在 SQL 里 `CASE ... END AS bucket` + `GROUP BY bucket` 后，返回行数从样本数（30 天 12.7 万行）降到桶数（最多 8 行）。同一进程内交替测量两轮、每轮取三次最小值：7 天 25.1 ms vs 30.2 ms，30 天 117.9 ms vs 125.1 ms——耗时只是小幅领先，真正的收益是把「搬运并排序全部样本」这件事从查询里去掉，返回量不再随时间窗增长。
+`getLatencyDistribution` 若取回窗口内每一个 TTFT 到 JS 里排序分桶，就是「为一张直方图搬运并排序十几万个整数」；在 SQL 里 `CASE ... END AS bucket` + `GROUP BY bucket` 后，返回行数从样本数（30 天 12.7 万行）降到桶数（最多 8 行）。实测耗时只是小幅领先（同一进程内交替测量两轮、每轮取三次最小值：7 天 25.1 ms vs 30.2 ms，30 天 117.9 ms vs 125.1 ms），真正的收益是把「搬运并排序全部样本」从查询里去掉：返回量不再随时间窗增长。
 
 **但「时间窗下推到自己的时间列」这条经验不能无条件套用。** 延迟分布的时间窗必须留在 `request_logs.createdTime` 上：它的过滤条件里还有请求级状态 `request_logs.status = 'success'`，把时间窗下推到 `request_attempts.createdTime` 后，规划器只能用 `idx_request_logs_status_created_time` 的状态列、丢掉时间范围，7 天窗口实测从 25 ms 恶化到 106 ms。成立条件是「这张表的时间列索引能被独立使用」——用量与尝试统计的过滤条件全在尝试表上，所以它们适用；延迟分布不适用。
 
-**索引是逐条论证后选择的，不是一次加满。** 实测中一次性加上四个「看起来该有」的索引后，多数查询耗时持平，`getModelStats` 反而从 136 ms 涨到 306 ms（7 天）、`getLatencyDistribution` 从 23 ms 涨到 333 ms（30 天）——规划器被多出来的选项带到了更差的路径上。最终只保留三个经实测确认的改动：
+**索引要逐条论证，不能一次加满。** 一次性加上四个「看起来该有」的索引后，多数查询耗时持平，`getModelStats` 反而从 136 ms 涨到 306 ms（7 天）、`getLatencyDistribution` 从 23 ms 涨到 333 ms（30 天）——规划器被多出来的选项带到了更差的路径上。下表是实测确认保留的三个：
 
 | 索引 | 服务什么 | 为什么必须这样 |
 | --- | --- | --- |
