@@ -8,12 +8,14 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/components/ui/toast'
 import { Plug, Plus } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
+import { Link } from '@tanstack/react-router'
 import { useTranslation } from '@/i18n/provider'
 import { DndContext, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { restrictToWindowEdges } from '@dnd-kit/modifiers'
 import { SortableContext, arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import { useLogicalModelControlService } from './service'
 import { useLogicalModels, useLogicalModelsActions } from '@/features/logical-models/hooks'
+import { routePaths } from '@/routes'
 import { LogicalModelCard } from './components/logical-model-card'
 import { LogicalModelSummary } from './components/logical-model-summary'
 import { SortableLogicalModel } from './components/sortable-logical-model'
@@ -23,21 +25,14 @@ import { schedulingPolicyApi } from '@/api/models'
 import { unwrap } from '@/api/unwrap'
 import { isBuiltInDefaultLogicalModel, type LogicalModel, type ProviderModelRoute } from '@common/schemas'
 
-interface LogicalModelsPageProps {
-  onNavigateToModels?: () => void
-  onNavigateToAccess?: () => void
-  onNavigateToProviderAnalytics?: (providerId: string) => void
-}
-
 interface LogicalModelColumnProps {
   logicalModel: LogicalModel
-  onNavigateToProviderAnalytics?: (providerId: string) => void
   dragHandleProps?: Record<string, unknown>
   dragging?: boolean
 }
 
 function LogicalModelColumn(props: LogicalModelColumnProps) {
-  const { logicalModel, onNavigateToProviderAnalytics, dragHandleProps, dragging } = props
+  const { logicalModel, dragHandleProps, dragging } = props
   const service = useLogicalModelControlService(logicalModel.id)
   const confirm = useConfirm()
   const toast = useToast()
@@ -77,7 +72,6 @@ function LogicalModelColumn(props: LogicalModelColumnProps) {
         onSelectManualModel={service.selectManualModel}
         onToggleEnabled={service.updateEnabled}
         onDragEnd={service.handleDragEnd}
-        onNavigateToProviderAnalytics={onNavigateToProviderAnalytics}
         onAddModel={() => setAddModelOpen(true)}
         onRemoveModel={model => void removeModel(model)}
         dragHandleProps={dragHandleProps}
@@ -88,8 +82,7 @@ function LogicalModelColumn(props: LogicalModelColumnProps) {
   )
 }
 
-export function LogicalModelsPage(props: LogicalModelsPageProps) {
-  const { onNavigateToAccess, onNavigateToProviderAnalytics } = props
+export function LogicalModelsPage() {
   const toast = useToast()
   const logicalModels = useLogicalModels()
   const { refresh: refreshLogicalModels, reorder: reorderLogicalModels } = useLogicalModelsActions()
@@ -128,11 +121,11 @@ export function LogicalModelsPage(props: LogicalModelsPageProps) {
             <Button onClick={() => setCreateLogicalModelOpen(true)}>
               <Plus size={13} /> {t('logicalModels.create.open')}
             </Button>
-            {onNavigateToAccess && (
-              <Button variant="outline" onClick={onNavigateToAccess}>
+            <Button asChild variant="outline">
+              <Link to={routePaths.accessConfig}>
                 <Plug size={13} /> {t('logicalModels.goToAccess')}
-              </Button>
-            )}
+              </Link>
+            </Button>
             <ProxyToggleButton running={proxyRunning} onToggle={service.toggleProxy} />
           </div>
         )}
@@ -185,7 +178,6 @@ export function LogicalModelsPage(props: LogicalModelsPageProps) {
                         {(handleProps, dragging) => (
                           <LogicalModelColumn
                             logicalModel={model}
-                            onNavigateToProviderAnalytics={onNavigateToProviderAnalytics}
                             dragHandleProps={handleProps}
                             dragging={dragging}
                           />

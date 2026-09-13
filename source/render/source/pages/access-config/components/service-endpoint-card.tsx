@@ -1,10 +1,12 @@
 import { Check, Copy, Server } from 'lucide-react'
+import { useNavigate } from '@tanstack/react-router'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { SettingsCardHeader } from '@/components/settings-card-header'
 import { useTranslation, type AppTranslator } from '@/i18n/provider'
 import { cn } from '@/lib/utils'
+import { routePaths } from '@/routes'
 
 interface EndpointEntry {
   key: string
@@ -27,7 +29,6 @@ interface ServiceEndpointCardProps {
   wildcardHost: boolean
   copiedKey: string | null
   onCopy: (key: string, value: string) => void
-  onNavigateToSettings?: () => void
 }
 
 /**
@@ -91,7 +92,8 @@ function EndpointRow(props: EndpointRowProps) {
 }
 
 export function ServiceEndpointCard(props: ServiceEndpointCardProps) {
-  const { running, host, port, baseUrl, wildcardHost, copiedKey, onCopy, onNavigateToSettings } = props
+  const { running, host, port, baseUrl, wildcardHost, copiedKey, onCopy } = props
+  const navigate = useNavigate()
   const t = useTranslation()
   return (
     <Card>
@@ -101,9 +103,7 @@ export function ServiceEndpointCard(props: ServiceEndpointCardProps) {
         description={describeListening(t, host, port, wildcardHost)}
         actions={(
           <div className="flex shrink-0 items-center gap-2">
-            {onNavigateToSettings && (
-              <Button variant="ghost" size="xs" onClick={onNavigateToSettings}>{t('access.endpoint.changeHost')}</Button>
-            )}
+            <Button variant="ghost" size="xs" onClick={() => void navigate({ to: routePaths.runtimeSettings })}>{t('access.endpoint.changeHost')}</Button>
             <Badge variant={running ? 'success' : 'muted'}>
               <span className={cn('size-1.5 rounded-full', running ? 'bg-success-foreground motion-safe:animate-pulse' : 'bg-text-quaternary')} />
               {running ? t('access.endpoint.running') : t('access.endpoint.stopped')}

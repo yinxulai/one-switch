@@ -1,9 +1,11 @@
 import { Check, Copy, KeyRound } from 'lucide-react'
+import { useNavigate } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { FormRow } from '@/components/form-kit'
 import { SettingsCardHeader } from '@/components/settings-card-header'
 import { useTranslation } from '@/i18n/provider'
+import { routePaths } from '@/routes'
 
 /**
  * 客户端强制要求填写、但本地服务并不校验的两个值。
@@ -23,7 +25,6 @@ interface CopyableValueProps {
 interface ClientSetupCardProps {
   copiedKey: string | null
   onCopy: (key: string, value: string) => void
-  onNavigateToModels?: () => void
 }
 
 /** 可复制的样例值：等宽文本 + 就地复制按钮，反馈留在按钮上。 */
@@ -42,7 +43,8 @@ function CopyableValue(props: CopyableValueProps) {
 }
 
 export function ClientSetupCard(props: ClientSetupCardProps) {
-  const { copiedKey, onCopy, onNavigateToModels } = props
+  const { copiedKey, onCopy } = props
+  const navigate = useNavigate()
   const t = useTranslation()
   return (
     <Card>
@@ -77,8 +79,8 @@ export function ClientSetupCard(props: ClientSetupCardProps) {
         <FormRow
           title={t('access.client.upstream.title')}
           description={t('access.client.upstream.description')}
-          control={onNavigateToModels && (
-            <Button variant="outline" size="sm" onClick={onNavigateToModels}>{t('access.client.goToModels')}</Button>
+          control={(
+            <Button variant="outline" size="sm" onClick={() => void navigate({ to: routePaths.modelManagement })}>{t('access.client.goToModels')}</Button>
           )}
         />
       </CardContent>

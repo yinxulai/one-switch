@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { Braces, Check, ChevronRight, Copy, Route, ScrollText } from 'lucide-react'
-import { useNavigate } from '@tanstack/react-router'
+import { Link } from '@tanstack/react-router'
 import type {
   ProxyServerStatus,
   RequestContent,
@@ -15,6 +15,7 @@ import { useToast } from '@/components/ui/toast'
 import { useProxyStatus } from '@/features/proxy/hooks'
 import { useLocale, useTranslation, type AppTranslator } from '@/i18n/provider'
 import { cn } from '@/lib/utils'
+import { routePaths } from '@/routes'
 import { buildCurl } from '../lib/build-curl'
 import {
   PROTOCOL_LABEL,
@@ -220,23 +221,22 @@ function MetaFact(props: MetaFactProps) {
 
 function RequestLogIdLink(props: RequestLogIdLinkProps) {
   const t = useTranslation()
-  const navigate = useNavigate()
 
   // 「查看日志」原来是个无边框的小幽灵按钮，飘在大块留白里，与标题不成一体。
-  // 改成与标题同一行的 outline 按钮，并沿用侧边栏对 /logs 的称呼。
+  // 改成与标题同一行的 outline 按钮，并沿用侧边栏对 `/logs` 的称呼。
+  // 用 `Link` 而不是 `navigate()`：深链本身可被中键/右键新开，跳转语义正确。
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      className="shrink-0"
-      title={t('requestLogs.detail.viewRuntimeLogsTitle')}
-      onClick={event => {
-        event.stopPropagation()
-        void navigate({ to: '/logs', search: { q: props.requestId } })
-      }}
-    >
-      <ScrollText size={13} aria-hidden />
-      {t('requestLogs.detail.viewRuntimeLogs')}
+    <Button asChild variant="outline" size="sm" className="shrink-0">
+      <Link
+        to={routePaths.logs}
+        search={{ q: props.requestId }}
+        title={t('requestLogs.detail.viewRuntimeLogsTitle')}
+        // 点击链接不应该顺带选中/展开这一行。
+        onClick={event => event.stopPropagation()}
+      >
+        <ScrollText size={13} aria-hidden />
+        {t('requestLogs.detail.viewRuntimeLogs')}
+      </Link>
     </Button>
   )
 }

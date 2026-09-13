@@ -1,5 +1,6 @@
 import { AlertTriangle, RefreshCw } from 'lucide-react'
 import type { AnalyticsRange } from '@common/schemas'
+import { getRouteApi, useNavigate, useParams } from '@tanstack/react-router'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PageContent, PageHeader, PageLayout } from '@/components/layout'
 import { Card } from '@/components/ui/card'
@@ -8,6 +9,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/i18n/provider'
 import { cn } from '@/lib/utils'
+import { routePaths } from '@/routes'
 import { useOverviewService, useProviderAnalyticsDetail } from './service'
 import { StatsGrid } from './components/stats-grid'
 import { TrendChart } from './components/trend-chart'
@@ -17,19 +19,23 @@ import { ModelRanking } from './components/model-ranking'
 import { LatencyDistribution } from './components/latency-distribution'
 import { FailureReasons } from './components/failure-reasons'
 
-interface OverviewPageProps {
-  range: AnalyticsRange
-  providerId?: string
-  onRangeChange: (range: AnalyticsRange) => void
-  onSelectProvider: (providerId?: string) => void
-}
+/**
+ * 索引页与供应商下钻页共用同一个组件，两者的 search schema 定义在 `/overview` 父路由上。
+ * 用 `getRouteApi` 按路径取 hook，而不是 import 路由对象，避免与 `routing.tsx` 形成循环依赖。
+ */
+const overviewRouteApi = getRouteApi(routePaths.overview)
 
-export function OverviewPage(props: OverviewPageProps) {
-  const { data, loading, refreshing, error, refresh } = useOverviewService(props.range)
-  const providerDetail = useProviderAnalyticsDetail(props.providerId ?? null, props.range)
+export function OverviewPage() {
+  const { range } = overviewRouteApi.useSearch()
+  // `/overview` 索引页没有该参数，`strict: false` 拿到整个路由树的参数并集。
+  const { providerId } = useParams({ strict: false })
+  // `from` 固定到父路由：切 range 时保持当前层级（列表页或某个供应商下钻页）。
+  const navigate = useNavigate({ from: routePaths.overview })
+  const { data, loading, refreshing, error, refresh } = useOverviewService(range)
+  const providerDetail = useProviderAnalyticsDetail(providerId ?? null, range)
   const t = useTranslation()
   const selectedProviderName = providerDetail.data?.summary.providerName
-    ?? data?.providerStats.find(provider => provider.providerId === props.providerId)?.providerName
+    ?? data?.providerStats.find(provider => provider.providerId === providerId)?.providerName
 
   const renderLoading = () => (
     <div className="space-y-4">
@@ -110,11 +116,11 @@ export function OverviewPage(props: OverviewPageProps) {
       )
     }
     if (!providerDetail.data) return null
-    return <ProviderDetail detail={providerDetail.data} range={props.range} />
+    return <ProviderDetail detail={providerDetail.data} range={range} />
   }
 
   const renderContent = () => {
-    if (props.providerId) return renderProviderDetail()
+    if (providerId) return renderProviderDetail()
     if (error) {
       return (
         <Card>
@@ -133,8 +139,16 @@ export function OverviewPage(props: OverviewPageProps) {
       <>
         <StatsGrid summary={data.summary} />
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_2fr]">
-          <ProviderDistribution stats={data.providerStats} onSelectProvider={provider => props.onSelectProvider(provider.providerId)} />
-          <TrendChart trend={data.trend} range={props.range} stretchToRow />
+          {/* 点击供应商 = 跳到 `/overview/$providerId`，range 原样带过去。 */}
+          <ProviderDistribution
+            stats={data.providerStats}
+            onSelectProvider={provider => void navigate({
+              to: routePaths.overviewProvider,
+              params: { providerId: provider.providerId },
+              search: { range },
+            })}
+          />
+          <TrendChart trend={data.trend} range={range} stretchToRow />
         </div>
         <ModelRanking stats={data.modelStats} />
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -146,22 +160,27 @@ export function OverviewPage(props: OverviewPageProps) {
   }
 
   const renderBody = () => {
-    if (!props.providerId && loading) return renderLoading()
+    if (!providerId && loading) return renderLoading()
     return renderContent()
   }
 
-  const activeRefreshing = props.providerId ? providerDetail.refreshing : refreshing
-  const refreshActiveView = () => props.providerId ? providerDetail.refresh() : refresh()
+  const activeRefreshing = providerId ? providerDetail.refreshing : refreshing
+  const refreshActiveView = () => providerId ? providerDetail.refresh() : refresh()
 
   return (
     <PageLayout>
       <PageHeader
-        title={props.providerId ? t('overview.provider.title', { provider: selectedProviderName ?? t('overview.provider.unknown') }) : t('overview.title')}
-        description={props.providerId ? t('overview.provider.description') : t('overview.description')}
-        breadcrumbs={props.providerId ? [{ label: t('overview.provider.breadcrumb'), onClick: () => props.onSelectProvider() }, { label: selectedProviderName ?? t('overview.provider.unknown') }] : undefined}
+        title={providerId ? t('overview.provider.title', { provider: selectedProviderName ?? t('overview.provider.unknown') }) : t('overview.title')}
+        description={providerId ? t('overview.provider.description') : t('overview.description')}
+        breadcrumbs={providerId
+          ? [
+              { label: t('overview.provider.breadcrumb'), onClick: () => void navigate({ to: routePaths.overview, search: { range } }) },
+              { label: selectedProviderName ?? t('overview.provider.unknown') },
+            ]
+          : undefined}
         actions={(
           <div className="flex items-center gap-2">
-            <Tabs value={props.range} onValueChange={value => props.onRangeChange(value as AnalyticsRange)}>
+            <Tabs value={range} onValueChange={value => void navigate({ search: { range: value as AnalyticsRange } })}>
               <TabsList>
                 <TabsTrigger value="today" className="px-2.5 text-xs">{t('overview.range.today')}</TabsTrigger>
                 <TabsTrigger value="7d" className="px-2.5 text-xs">{t('overview.range.7d')}</TabsTrigger>

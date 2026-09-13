@@ -1,32 +1,17 @@
 import { useEffect, useState } from 'react'
-import { Outlet, useNavigate, useRouterState } from '@tanstack/react-router'
+import { Outlet, useRouterState } from '@tanstack/react-router'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ToastProvider } from '@/components/ui/toast'
 import { ConfirmProvider } from '@/components/ui/confirm-dialog'
 import { AppLayout } from '@/components/layout'
 import { ErrorBoundary, ErrorFallback } from '@/components/error-boundary'
-import { AppSidebar, type PageKey, type Theme } from '@/components/app-sidebar'
+import { AppSidebar, type Theme } from '@/components/app-sidebar'
 import { useAppUiStore } from '@/store/app-ui-store'
 import { useTranslation } from '@/i18n/provider'
 import { useProxyStatus } from './features/proxy/hooks'
 
-const pagePaths = {
-  logicalModels: '/logical-models',
-  providers: '/providers',
-  access: '/access',
-  rules: '/rules',
-  router: '/router',
-  overview: '/overview',
-  requests: '/requests',
-  settings: '/settings',
-  logs: '/logs',
-} as const satisfies Record<PageKey, string>
-
 function App() {
   const pathname = useRouterState({ select: state => state.location.pathname })
-  // 兜底高亮与 `routing.tsx` 的默认首页保持一致：智能路由是应用入口。
-  const activePage = (pathname.split('/').filter(Boolean)[0] || 'router') as PageKey
-  const navigate = useNavigate()
   const themeMode = useAppUiStore(state => state.themeMode)
   const setThemeMode = useAppUiStore(state => state.setThemeMode)
   const [systemTheme, setSystemTheme] = useState<Theme>('light')
@@ -56,12 +41,10 @@ function App() {
           <AppLayout
             sidebar={(
               <AppSidebar
-              theme={theme}
-                activePage={activePage}
+                theme={theme}
                 onToggleTheme={toggleTheme}
                 proxyPort={proxyStatus?.port}
                 proxyRunning={proxyStatus?.running ?? false}
-                onNavigate={page => void navigate({ to: pagePaths[page] })}
               />
             )}
           >

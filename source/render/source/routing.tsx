@@ -6,12 +6,12 @@ import {
   Navigate,
   Outlet,
   redirect,
-  useNavigate,
   type ErrorComponentProps,
 } from '@tanstack/react-router'
 import type { AnalyticsRange } from '@common/schemas'
 import App from './App'
 import { ErrorFallback } from './components/error-boundary'
+import { routePaths } from './routes'
 import { useTranslation } from './i18n/provider'
 import { LogicalModelsPage } from './pages/logical-models/page'
 import { ModelManagementPage } from './pages/model-management/page'
@@ -37,114 +37,37 @@ function RootErrorComponent(props: ErrorComponentProps) {
 
 const rootRoute = createRootRoute({ component: App, errorComponent: RootErrorComponent })
 
+// 首页只做一次重定向：智能路由是应用的默认落点。
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
-  beforeLoad: () => { throw redirect({ to: '/router', replace: true }) },
+  beforeLoad: () => { throw redirect({ to: routePaths.router, replace: true }) },
 })
 
-const logicalModelsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/logical-models',
-  component: LogicalModelsRoute,
-})
-
-function LogicalModelsRoute() {
-  const navigate = useNavigate()
-  return (
-    <LogicalModelsPage
-      onNavigateToModels={() => void navigate({ to: '/providers' })}
-      onNavigateToAccess={() => void navigate({ to: '/access' })}
-      onNavigateToProviderAnalytics={providerId => void navigate({ to: '/overview/$providerId', params: { providerId }, search: { range: '7d' } })}
-    />
-  )
-}
-
-const providersRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/providers',
-  component: ProvidersRoute,
-})
-
-function ProvidersRoute() {
-  const navigate = useNavigate()
-  return <ModelManagementPage onNavigateToProviderAnalytics={providerId => void navigate({ to: '/overview/$providerId', params: { providerId }, search: { range: '7d' } })} />
-}
+const logicalModelsRoute = createRoute({ getParentRoute: () => rootRoute, path: routePaths.logicalModels, component: LogicalModelsPage })
+const modelManagementRoute = createRoute({ getParentRoute: () => rootRoute, path: routePaths.modelManagement, component: ModelManagementPage })
+const accessConfigRoute = createRoute({ getParentRoute: () => rootRoute, path: routePaths.accessConfig, component: AccessConfigPage })
+const requestRewriteRulesRoute = createRoute({ getParentRoute: () => rootRoute, path: routePaths.requestRewriteRules, component: RequestRewriteRulesPage })
+const routerRoute = createRoute({ getParentRoute: () => rootRoute, path: routePaths.router, component: RouterPage })
+const requestLogsRoute = createRoute({ getParentRoute: () => rootRoute, path: routePaths.requestLogs, component: RequestLogsPage })
+const runtimeSettingsRoute = createRoute({ getParentRoute: () => rootRoute, path: routePaths.runtimeSettings, component: RuntimeSettingsPage })
 
 interface OverviewSearch {
   range: AnalyticsRange
 }
 
-export const overviewRoute = createRoute({
+// `range` 定义在父路由上，索引页与供应商详情页共用同一套 search schema（页面自己读取）。
+const overviewRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/overview',
+  path: routePaths.overview,
   validateSearch: (search: Record<string, unknown>): OverviewSearch => ({
     range: search.range === 'today' || search.range === '30d' ? search.range : '7d',
   }),
   component: Outlet,
 })
 
-const overviewIndexRoute = createRoute({
-  getParentRoute: () => overviewRoute,
-  path: '/',
-  component: OverviewIndexRoute,
-})
-
-function OverviewIndexRoute() {
-  const { range } = overviewRoute.useSearch()
-  const navigate = useNavigate({ from: overviewIndexRoute.fullPath })
-  return (
-    <OverviewPage
-      range={range}
-      onRangeChange={nextRange => void navigate({ search: { range: nextRange } })}
-      onSelectProvider={providerId => {
-        if (providerId) void navigate({ to: '/overview/$providerId', params: { providerId }, search: { range } })
-      }}
-    />
-  )
-}
-
-const overviewProviderRoute = createRoute({
-  getParentRoute: () => overviewRoute,
-  path: '$providerId',
-  component: OverviewProviderRoute,
-})
-
-function OverviewProviderRoute() {
-  const { range } = overviewRoute.useSearch()
-  const { providerId } = overviewProviderRoute.useParams()
-  const navigate = useNavigate({ from: overviewProviderRoute.fullPath })
-  return (
-    <OverviewPage
-      range={range}
-      providerId={providerId}
-      onRangeChange={nextRange => void navigate({ search: { range: nextRange } })}
-      onSelectProvider={nextProviderId => {
-        if (nextProviderId) {
-          void navigate({ to: '/overview/$providerId', params: { providerId: nextProviderId }, search: { range } })
-        } else {
-          void navigate({ to: '/overview', search: { range } })
-        }
-      }}
-    />
-  )
-}
-
-const accessRoute = createRoute({ getParentRoute: () => rootRoute, path: '/access', component: AccessConfigRoute })
-
-function AccessConfigRoute() {
-  const navigate = useNavigate()
-  return (
-    <AccessConfigPage
-      onNavigateToModels={() => void navigate({ to: '/providers' })}
-      onNavigateToSettings={() => void navigate({ to: '/settings' })}
-    />
-  )
-}
-
-const rulesRoute = createRoute({ getParentRoute: () => rootRoute, path: '/rules', component: RequestRewriteRulesPage })
-const routerRoute = createRoute({ getParentRoute: () => rootRoute, path: '/router', component: RouterPage })
-const requestsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/requests', component: RequestLogsPage })
+const overviewIndexRoute = createRoute({ getParentRoute: () => overviewRoute, path: '/', component: OverviewPage })
+const overviewProviderRoute = createRoute({ getParentRoute: () => overviewRoute, path: '$providerId', component: OverviewPage })
 
 interface LogsSearch {
   q?: string
@@ -152,43 +75,31 @@ interface LogsSearch {
 
 const logsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/logs',
+  path: routePaths.logs,
   validateSearch: (search: Record<string, unknown>): LogsSearch => ({
     q: typeof search.q === 'string' && search.q.trim() ? search.q.trim() : undefined,
   }),
-  component: LogsRoute,
+  component: LogsPage,
 })
-
-function LogsRoute() {
-  const { q } = logsRoute.useSearch()
-  return <LogsPage q={q} />
-}
-const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/settings', component: SettingsRoute })
-
-function SettingsRoute() {
-  return <RuntimeSettingsPage />
-}
-
-const overviewRouteTree = overviewRoute.addChildren([overviewIndexRoute, overviewProviderRoute])
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
   logicalModelsRoute,
-  providersRoute,
-  accessRoute,
-  rulesRoute,
+  modelManagementRoute,
+  accessConfigRoute,
+  requestRewriteRulesRoute,
   routerRoute,
-  overviewRouteTree,
-  requestsRoute,
+  overviewRoute.addChildren([overviewIndexRoute, overviewProviderRoute]),
+  requestLogsRoute,
   logsRoute,
-  settingsRoute,
+  runtimeSettingsRoute,
 ])
 
 export const router = createRouter({
   routeTree,
   history: createHashHistory(),
   defaultPreload: 'intent',
-  defaultNotFoundComponent: () => <Navigate to="/router" replace />,
+  defaultNotFoundComponent: () => <Navigate to={routePaths.router} replace />,
 })
 
 declare module '@tanstack/react-router' {

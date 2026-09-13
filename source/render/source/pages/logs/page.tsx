@@ -1,16 +1,18 @@
+import { getRouteApi } from '@tanstack/react-router'
 import { PageContent, PageHeader, PageLayout } from '@/components/layout'
 import { TablePager } from '@/components/table-primitives'
 import { useTranslation } from '@/i18n/provider'
+import { routePaths } from '@/routes'
 import { LogsTable } from './components/logs-table'
 import { LogsToolbar } from './components/logs-toolbar'
 import { useLogsModel } from './hooks/use-logs-model'
 
-interface LogsPageProps {
-  q?: string
-}
+const logsRouteApi = getRouteApi(routePaths.logs)
 
-export function LogsPage(props: LogsPageProps) {
-  const model = useLogsModel(props.q)
+export function LogsPage() {
+  // `q` 来自其他页面跳转时的深链（例如从请求记录跳到该请求的运行日志），由路由 search 提供初始搜索词。
+  const { q } = logsRouteApi.useSearch()
+  const model = useLogsModel(q)
   const t = useTranslation()
   const totalPages = model.totalPages
   const showPager = !model.loading && model.total > model.pageSize

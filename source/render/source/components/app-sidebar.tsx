@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from '@tanstack/react-router'
 import {
   ChartColumnIncreasing,
   ClipboardList,
@@ -15,38 +16,37 @@ import { cn } from '@/lib/utils'
 import { AnimatedThemeToggler } from '@/components/ui/animated-theme-toggler'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useTranslation } from '@/i18n/provider'
+import { routePaths, type AppNavPath } from '@/routes'
 import type { UiCatalogKey } from '@common/i18n/catalogs'
 
-export type PageKey = 'logicalModels' | 'providers' | 'access' | 'rules' | 'router' | 'overview' | 'requests' | 'settings' | 'logs'
 export type Theme = 'light' | 'dark'
 export type ThemeMode = 'system' | Theme
 
 interface NavItem {
-  key: PageKey
+  /** 目标路由路径；同时作为 React key 与键盘聚焦态的身份。 */
+  to: AppNavPath
   labelKey: UiCatalogKey
   icon: LucideIcon
   sectionKey: UiCatalogKey
 }
 
 interface AppSidebarProps {
-  activePage: PageKey
   theme: Theme
   proxyRunning: boolean
   proxyPort?: number
-  onNavigate: (page: PageKey) => void
   onToggleTheme: () => void
 }
 
 const baseNavItems: NavItem[] = [
-  { key: 'router', labelKey: 'nav.page.router', icon: GitBranch, sectionKey: 'nav.section.primary' },
-  { key: 'logicalModels', labelKey: 'nav.page.logicalModels', icon: ListOrdered, sectionKey: 'nav.section.primary' },
-  { key: 'providers', labelKey: 'nav.page.providers', icon: Database, sectionKey: 'nav.section.primary' },
-  { key: 'overview', labelKey: 'nav.page.overview', icon: ChartColumnIncreasing, sectionKey: 'nav.section.data' },
-  { key: 'requests', labelKey: 'nav.page.requests', icon: ClipboardList, sectionKey: 'nav.section.data' },
-  { key: 'rules', labelKey: 'nav.page.rules', icon: SlidersHorizontal, sectionKey: 'nav.section.advanced' },
-  { key: 'access', labelKey: 'nav.page.access', icon: Plug, sectionKey: 'nav.section.system' },
-  { key: 'logs', labelKey: 'nav.page.logs', icon: ScrollText, sectionKey: 'nav.section.system' },
-  { key: 'settings', labelKey: 'nav.page.settings', icon: Cog, sectionKey: 'nav.section.system' },
+  { to: routePaths.router, labelKey: 'nav.page.router', icon: GitBranch, sectionKey: 'nav.section.primary' },
+  { to: routePaths.logicalModels, labelKey: 'nav.page.logicalModels', icon: ListOrdered, sectionKey: 'nav.section.primary' },
+  { to: routePaths.modelManagement, labelKey: 'nav.page.providers', icon: Database, sectionKey: 'nav.section.primary' },
+  { to: routePaths.overview, labelKey: 'nav.page.overview', icon: ChartColumnIncreasing, sectionKey: 'nav.section.data' },
+  { to: routePaths.requestLogs, labelKey: 'nav.page.requests', icon: ClipboardList, sectionKey: 'nav.section.data' },
+  { to: routePaths.requestRewriteRules, labelKey: 'nav.page.rules', icon: SlidersHorizontal, sectionKey: 'nav.section.advanced' },
+  { to: routePaths.accessConfig, labelKey: 'nav.page.access', icon: Plug, sectionKey: 'nav.section.system' },
+  { to: routePaths.logs, labelKey: 'nav.page.logs', icon: ScrollText, sectionKey: 'nav.section.system' },
+  { to: routePaths.runtimeSettings, labelKey: 'nav.page.settings', icon: Cog, sectionKey: 'nav.section.system' },
 ]
 
 /**
@@ -69,7 +69,7 @@ export function AppSidebar(props: AppSidebarProps) {
   // 展开态用 JS 而不是 CSS `:hover`：标记淡入要延时（需要知道状态），
   // 而且键盘 Tab 到图标时要给 tooltip —— tooltip 只在鼠标不在轨道里时才该出现。
   const [expanded, setExpanded] = useState(false)
-  const [focusedKey, setFocusedKey] = useState<PageKey | null>(null)
+  const [focusedKey, setFocusedKey] = useState<AppNavPath | null>(null)
   const navSections = baseNavItems.reduce<Array<{ key: UiCatalogKey; items: NavItem[] }>>((sections, item) => {
     const currentSection = sections.at(-1)
     if (currentSection?.key === item.sectionKey) {
@@ -115,40 +115,47 @@ export function AppSidebar(props: AppSidebarProps) {
             <div className="space-y-0.5">
               {section.items.map(item => {
                 const ItemIcon = item.icon
-                const active = props.activePage === item.key
                 return (
-                  <Tooltip key={item.key} open={!expanded && focusedKey === item.key}>
+                  <Tooltip key={item.to} open={!expanded && focusedKey === item.to}>
                     <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={() => props.onNavigate(item.key)}
-                        aria-current={active ? 'page' : undefined}
+                      {/*
+                       * 导航交给 router 的 `Link`：目标路径直接写在 `to` 上，
+                       * active 状态与 `aria-current` 由 Link 根据当前路由自动注入，
+                       * 不再由父级传 `activePage` / `onNavigate`。
+                       * `includeSearch: false`：`/overview` 这类页面带 `?range=`，搜索参数变化不应影响高亮。
+                       */}
+                      <Link
+                        to={item.to}
+                        activeOptions={{ includeSearch: false }}
                         aria-label={t(item.labelKey)}
                         onFocus={event => {
                           // 只认键盘聚焦：鼠标点出来的聚焦由 hover 展开接管，不需要 tooltip。
-                          if (event.currentTarget.matches(':focus-visible')) setFocusedKey(item.key)
+                          if (event.currentTarget.matches(':focus-visible')) setFocusedKey(item.to)
                         }}
-                        onBlur={() => setFocusedKey(current => (current === item.key ? null : current))}
-                        onPointerLeave={() => setFocusedKey(current => (current === item.key ? null : current))}
+                        onBlur={() => setFocusedKey(current => (current === item.to ? null : current))}
+                        onPointerLeave={() => setFocusedKey(current => (current === item.to ? null : current))}
                         className={cn(
                           'relative flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 outline-none transition-colors',
                           'focus-visible:ring-2 focus-visible:ring-state-accent-solid',
-                          active
-                            ? 'bg-sidebar-accent system-xs-semibold text-sidebar-accent-foreground'
-                            : 'system-xs-medium text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground hover:inset-ring-[0.5px] hover:inset-ring-sidebar-border',
                         )}
+                        activeProps={{ className: 'bg-sidebar-accent system-xs-semibold text-sidebar-accent-foreground' }}
+                        inactiveProps={{ className: 'system-xs-medium text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground hover:inset-ring-[0.5px] hover:inset-ring-sidebar-border' }}
                       >
-                        {/* 激活指示条挂在轨道左缘（`-left-1.5` 抵消 nav 的 padding），不挤图标、也不靠背景色单独表意 */}
-                        <span
-                          aria-hidden="true"
-                          className={cn(
-                            'absolute -left-1.5 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-sidebar-primary transition-opacity duration-150 motion-reduce:transition-none',
-                            active ? 'opacity-100' : 'opacity-0',
-                          )}
-                        />
-                        <ItemIcon className="size-4 shrink-0" aria-hidden="true" />
-                        <span className={revealClassName(expanded)}>{t(item.labelKey)}</span>
-                      </button>
+                        {({ isActive }) => (
+                          <>
+                            {/* 激活指示条挂在轨道左缘（`-left-1.5` 抵消 nav 的 padding），不挤图标、也不靠背景色单独表意 */}
+                            <span
+                              aria-hidden="true"
+                              className={cn(
+                                'absolute -left-1.5 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-sidebar-primary transition-opacity duration-150 motion-reduce:transition-none',
+                                isActive ? 'opacity-100' : 'opacity-0',
+                              )}
+                            />
+                            <ItemIcon className="size-4 shrink-0" aria-hidden="true" />
+                            <span className={revealClassName(expanded)}>{t(item.labelKey)}</span>
+                          </>
+                        )}
+                      </Link>
                     </TooltipTrigger>
                     <TooltipContent side="right" sideOffset={8}>{t(item.labelKey)}</TooltipContent>
                   </Tooltip>

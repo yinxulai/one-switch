@@ -1,8 +1,10 @@
 import { BarChart3, Download, Pencil, Trash2 } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/i18n/provider'
+import { routePaths } from '@/routes'
 import { ProviderIcon } from './provider-icon'
 import { findPresetByName } from '../lib/provider-presets'
 import type { Provider } from '@common/schemas'
@@ -13,7 +15,6 @@ interface ProviderDetailHeaderProps {
   onEditProvider: () => void
   onExportProvider: () => void
   onRemoveProvider: () => void
-  onNavigateToAnalytics?: () => void
 }
 
 export function ProviderDetailHeader(props: ProviderDetailHeaderProps) {
@@ -49,11 +50,11 @@ export function ProviderDetailHeader(props: ProviderDetailHeaderProps) {
         <Button variant="outline" onClick={onExportProvider}>
           <Download size={13} /> {t('providers.action.export')}
         </Button>
-        {props.onNavigateToAnalytics && (
-          <Button variant="outline" onClick={props.onNavigateToAnalytics}>
+        <Button asChild variant="outline">
+          <Link to={routePaths.overviewProvider} params={{ providerId: provider.id }} search={{ range: '7d' }}>
             <BarChart3 size={13} /> {t('providers.action.analytics')}
-          </Button>
-        )}
+          </Link>
+        </Button>
         <Button variant="outline" onClick={onEditProvider}>
           <Pencil size={13} /> {t('providers.action.edit')}
         </Button>

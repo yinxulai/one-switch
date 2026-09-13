@@ -11,11 +11,13 @@ import {
   Zap,
 } from 'lucide-react'
 import type { Provider, ProviderHealth, ProviderModelHealth, ProviderModelRoute } from '@common/schemas'
+import { Link } from '@tanstack/react-router'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ProtocolIcons } from '@/components/protocol-icons'
 import { Switch } from '@/components/ui/switch'
 import { useTranslation, type AppTranslator } from '@/i18n/provider'
+import { routePaths } from '@/routes'
 import { cn } from '@/lib/utils'
 import type { ProviderModelMetrics } from '../lib/model-metrics'
 
@@ -32,7 +34,6 @@ interface ProviderModelRowProps {
   dragHandleProps: Record<string, unknown>
   onSelect: () => void
   onToggleEnabled: (enabled: boolean) => void
-  onNavigateToProviderAnalytics?: (providerId: string) => void
   onRemove: () => void
 }
 
@@ -164,25 +165,25 @@ export function ProviderModelRow(props: ProviderModelRowProps) {
               <GripVertical size={16} />
             )}
           </div>
-          {props.provider && props.onNavigateToProviderAnalytics ? (
-            <button
-              type="button"
+          {props.provider ? (
+            <Link
+              to={routePaths.overviewProvider}
+              params={{ providerId: model.providerId }}
+              search={{ range: '7d' }}
               className="group/provider inline-flex min-w-0 items-center gap-0.5 rounded-sm text-left text-text-primary outline-none transition-colors hover:text-primary focus-visible:bg-accent focus-visible:text-primary"
               title={t('logicalModels.row.viewAnalytics', { provider: props.provider.name })}
               aria-label={t('logicalModels.row.viewAnalytics', { provider: props.provider.name })}
-              onClick={event => {
-                event.stopPropagation()
-                props.onNavigateToProviderAnalytics?.(model.providerId)
-              }}
+              // 行本身可选/可拖：点击链接不能顺带把行也选中。
+              onClick={event => event.stopPropagation()}
             >
               <span className="min-w-0 truncate">{props.provider.name}</span>
               <span className="shrink-0 text-text-quaternary" aria-hidden="true">·</span>
               <span className="min-w-0 truncate font-mono text-text-primary">{model.modelName}</span>
               <ChevronRight size={13} aria-hidden="true" className="shrink-0 text-text-quaternary transition-transform group-hover/provider:translate-x-0.5 group-hover/provider:text-primary group-focus-visible/provider:text-primary" />
-            </button>
+            </Link>
           ) : (
             <div className="flex min-w-0 items-center gap-2">
-              <div className="min-w-0 truncate text-text-primary">{props.provider?.name ?? t('logicalModels.row.unknownProvider')}</div>
+              <div className="min-w-0 truncate text-text-primary">{t('logicalModels.row.unknownProvider')}</div>
               <span className="shrink-0 text-text-quaternary" aria-hidden="true">·</span>
               <div className="min-w-0 truncate font-mono text-text-primary">{model.modelName}</div>
             </div>

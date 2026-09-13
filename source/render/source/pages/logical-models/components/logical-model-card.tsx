@@ -47,7 +47,6 @@ interface LogicalModelCardProps {
   onSelectManualModel: (model: ProviderModelRoute) => void
   onToggleEnabled: (model: ProviderModelRoute, enabled: boolean) => void
   onDragEnd: (event: DragEndEvent) => void
-  onNavigateToProviderAnalytics?: (providerId: string) => void
   onAddModel?: () => void
   onRemoveModel?: (model: ProviderModelRoute) => void
   dragHandleProps?: Record<string, unknown>
@@ -72,7 +71,6 @@ export function LogicalModelCard(props: LogicalModelCardProps) {
     onSelectManualModel,
     onToggleEnabled,
     onDragEnd,
-    onNavigateToProviderAnalytics,
     onAddModel,
     onRemoveModel,
     dragHandleProps,
@@ -169,7 +167,6 @@ export function LogicalModelCard(props: LogicalModelCardProps) {
                   dragHandleProps={handleProps}
                   onSelect={() => void onSelectManualModel(row.model)}
                   onToggleEnabled={enabled => void onToggleEnabled(row.model, enabled)}
-                  onNavigateToProviderAnalytics={onNavigateToProviderAnalytics}
                   onRemove={() => onRemoveModel?.(row.model)}
                 />
               )}
