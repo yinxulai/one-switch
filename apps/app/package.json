@@ -1,0 +1,20 @@
+{
+  "name": "@one-switch/app",
+  "version": "1.0.0-rc.8",
+  "private": true,
+  "type": "module",
+  "description": "桌面宿主：Electron 主进程与 preload，只做宿主适配，不写业务逻辑。",
+  "main": "dist/command/index.js",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "node scripts/build.mjs",
+    "package": "node scripts/build.mjs --package",
+    "package:mac": "node scripts/build.mjs --package --mac --arm64 --x64",
+    "package:win": "node scripts/build.mjs --package --win --arm64 --x64",
+    "package:linux": "node scripts/build.mjs --package --linux --arm64 --x64"
+  },
+  "dependencies": {
+    "@one-switch/contracts": "workspace:*",
+    "@one-switch/core": "workspace:*"
+  }
+}

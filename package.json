@@ -4,24 +4,29 @@
   "version": "1.0.0-rc.8",
   "author": "yinxulai <yinxulai@hotmail.com>",
   "type": "module",
-  "main": "dist/command/index.js",
+  "main": "apps/app/dist/command/index.js",
+  "packageManager": "pnpm@11.8.0",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "dev": "node scripts/dev.mjs",
-    "dev:preview": "node scripts/dev.mjs --preview",
-    "build": "node scripts/build.mjs",
-    "release:mac": "node scripts/build.mjs --mac --arm64 --x64",
-    "release:win": "node scripts/build.mjs --win --arm64 --x64",
-    "release:linux": "node scripts/build.mjs --linux --arm64 --x64",
-    "lint": "node scripts/lint.mjs",
-    "lint:layers": "node scripts/check-proxy-layers.mjs",
-    "db": "node scripts/db.mjs",
-    "db:generate": "node scripts/db.mjs generate",
-    "db:migrate": "node scripts/db.mjs migrate",
-    "db:studio": "node scripts/db.mjs studio",
-    "test": "node scripts/test.mjs",
-    "test:server": "node scripts/test.mjs",
-    "test:coverage": "node scripts/test.mjs --coverage",
-    "typecheck": "node scripts/typecheck.mjs"
+    "dev": "turbo run dev",
+    "dev:preview": "pnpm --filter @one-switch/console run dev",
+    "build": "turbo run build",
+    "release:mac": "pnpm build && pnpm --filter @one-switch/app run package:mac",
+    "release:win": "pnpm build && pnpm --filter @one-switch/app run package:win",
+    "release:linux": "pnpm build && pnpm --filter @one-switch/app run package:linux",
+    "lint": "node packages/toolkit/scripts/lint.mjs",
+    "lint:layers": "node packages/core/scripts/check-proxy-layers.mjs",
+    "db": "node packages/core/scripts/db.mjs",
+    "db:generate": "node packages/core/scripts/db.mjs generate",
+    "db:migrate": "node packages/core/scripts/db.mjs migrate",
+    "db:studio": "node packages/core/scripts/db.mjs studio",
+    "test": "node packages/toolkit/scripts/test.mjs",
+    "test:server": "node packages/toolkit/scripts/test.mjs",
+    "test:coverage": "node packages/toolkit/scripts/test.mjs --coverage",
+    "typecheck": "node packages/toolkit/scripts/typecheck.mjs",
+    "version:set": "node apps/app/scripts/version.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
@@ -95,10 +100,9 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "shadcn": "^4.19.0",
+    "turbo": "^2.6.3",
     "typescript": "^5.5.0",
     "vite": "^8.2.1",
-    "vite-plugin-electron": "^1.1.1",
-    "vite-plugin-electron-renderer": "^0.14.5",
     "vitest": "^4.1.10"
   }
 }

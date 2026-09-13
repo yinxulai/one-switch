@@ -10,31 +10,31 @@ export default defineConfig({
   define: { __APP_VERSION__: JSON.stringify(appVersion) },
   resolve: {
     alias: {
-      '@common': fileURLToPath(new URL('./source/common', import.meta.url)),
-      '@server': fileURLToPath(new URL('./source/server', import.meta.url)),
-      '@render': fileURLToPath(new URL('./source/render', import.meta.url)),
-      '@': fileURLToPath(new URL('./source/render/source', import.meta.url)),
+      '@common': fileURLToPath(new URL('./packages/contracts/source', import.meta.url)),
+      '@server': fileURLToPath(new URL('./packages/core/source', import.meta.url)),
+      '@render': fileURLToPath(new URL('./packages/console', import.meta.url)),
+      '@': fileURLToPath(new URL('./packages/console/source', import.meta.url)),
     },
   },
   test: {
     environment: 'node',
-    setupFiles: ['./vitest.setup.ts'],
+    setupFiles: ['./packages/console/scripts/vitest.setup.ts'],
     // 注意：必须同时覆盖 .ts 与 .tsx，否则组件测试（jsdom + Testing Library）
     // 会被静默跳过，套件仍显示全绿。
     include: [
-      'source/command/**/*.test.{ts,tsx}',
-      'source/server/**/*.test.{ts,tsx}',
-      'source/common/**/*.test.{ts,tsx}',
-      'source/render/**/*.test.{ts,tsx}',
+      'apps/app/source/**/*.test.{ts,tsx}',
+      'packages/core/source/**/*.test.{ts,tsx}',
+      'packages/contracts/source/**/*.test.{ts,tsx}',
+      'packages/console/source/**/*.test.{ts,tsx}',
     ],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'text-summary', 'json', 'html'],
       reportsDirectory: './coverage',
       include: [
-        'source/command/updater.ts',
-        'source/server/**/*.ts',
-        'source/common/**/*.ts',
+        'apps/app/source/updater.ts',
+        'packages/core/source/**/*.ts',
+        'packages/contracts/source/**/*.ts',
       ],
       exclude: ['**/*.test.ts', '**/*.test.tsx', '**/types.ts', '**/schemas.ts', '**/test-support.ts'],
     },

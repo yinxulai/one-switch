@@ -4,16 +4,21 @@
     "composite": false,
     "noEmit": true
   },
+  // 比 `tsconfig.json` 多出「不该被业务代码 import、但必须单独成立」的文件：
+  // 两个构建配置、测试配置和 drizzle 配置都在这个程序里一起检查。
   "include": [
-    "source/common/**/*.ts",
-    "source/server/**/*.ts",
-    "source/render/source/**/*.ts",
-    "source/render/source/**/*.tsx",
-    "source/command/**/*.ts",
-    "vite.config.ts",
+    "packages/contracts/source/**/*.ts",
+    "packages/core/source/**/*.ts",
+    "packages/console/source/**/*.ts",
+    "packages/console/source/**/*.tsx",
+    "apps/app/source/**/*.ts",
+    "packages/console/vite.config.ts",
+    "packages/core/drizzle.config.ts",
+    "apps/app/vite.config.ts",
+    "apps/app/vite.preload.config.ts",
+    "apps/app/vite.shared.ts",
     "vitest.config.ts",
-    "vitest.setup.ts",
-    "electron-builder.config.ts"
+    "packages/console/scripts/vitest.setup.ts"
   ],
   "references": []
 }

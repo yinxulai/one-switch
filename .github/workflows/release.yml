@@ -34,16 +34,8 @@ jobs:
           ref: ${{ github.ref }}
           fetch-depth: 0
 
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 9.6.0
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: pnpm
+      - name: Set up environment
+        uses: ./.github/actions/setup
 
       - name: Validate version
         id: version
@@ -65,13 +57,13 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Update package version
+      # 版本号必须同时写进六个 manifest：渲染层的 `__APP_VERSION__` 读仓库根，
+      # `app.getVersion()` 与 electron-builder 的产物名读 `apps/app`，数据文件名又按
+      # 应用版本命名。只改根 manifest 会让产物名与数据文件名悄悄对不上。
+      - name: Update package versions
         env:
           VERSION: ${{ steps.version.outputs.version }}
-        run: npm version "$VERSION" --no-git-tag-version --allow-same-version
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: node apps/app/scripts/version.mjs "$VERSION"
 
       - name: Run release checks
         run: |
@@ -86,7 +78,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package.json pnpm-lock.yaml
+          git add package.json pnpm-lock.yaml packages/*/package.json apps/app/package.json
           if ! git diff --cached --quiet; then
             git commit -m "chore(release): $VERSION"
             git push origin HEAD:${{ github.ref_name }}
@@ -121,20 +113,11 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.commit }}
 
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 9.6.0
+      - name: Set up environment
+        uses: ./.github/actions/setup
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
+      # `pnpm release:*` = `turbo run build` + electron-builder。
+      # 矩阵里的三个系统各存各的 Turbo 缓存（key 里带 runner.os），不会互相覆盖。
       - name: Build installer
         run: ${{ runner.os == 'macOS' && 'pnpm release:mac' || runner.os == 'Windows' && 'pnpm release:win' || 'pnpm release:linux' }}
 

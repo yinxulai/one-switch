@@ -20,19 +20,8 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v5
 
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 9.6.0
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Set up environment
+        uses: ./.github/actions/setup
 
       - name: Run typecheck
         run: pnpm typecheck
@@ -44,48 +33,25 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v5
 
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 9.6.0
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Set up environment
+        uses: ./.github/actions/setup
 
       - name: Run lint
         run: pnpm lint
 
   test:
-    name: Server tests
+    name: Tests
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
 
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 9.6.0
+      - name: Set up environment
+        uses: ./.github/actions/setup
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Run server tests
-        run: pnpm test:server
-
-      - name: Run coverage
+      # 只跑一次：`test:coverage` 本身就是「跑全部测试 + 收集覆盖率」，
+      # 再单独跑一遍 `test:server` 等于把 1100 个用例执行两遍。
+      - name: Run tests with coverage
         run: pnpm test:coverage
 
       - name: Upload coverage report
@@ -104,20 +70,11 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v5
 
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 9.6.0
+      - name: Set up environment
+        uses: ./.github/actions/setup
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
+      # `pnpm build` 就是 `turbo run build`：按包依赖顺序构建，
+      # 并且 `typecheck` / `test` 已经跑过一遍的包在这里会直接命中缓存。
       - name: Build application
         run: pnpm build
 
@@ -125,8 +82,10 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: one-switch-build
+          # 渲染层与宿主各自构建到自己的包目录里，仓库根不再有 `dist/`。
           path: |
-            dist/
+            packages/console/dist/
+            apps/app/dist/
             release/**/*.AppImage
           if-no-files-found: error
           retention-days: 7

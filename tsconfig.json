@@ -1,34 +1,21 @@
 {
+  "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "skipLibCheck": true,
-    "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true,
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "jsx": "react-jsx",
-    "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true,
-    "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",
+    // 别名保留 S0 之前的名字（`@common` / `@server` / `@render` / `@`），只把目标改到 `source/`。
+    // 改名会同时动上千处 import 和 `product/*.md` 里的说明，却换不来任何能力，不做。
     "paths": {
-      "@/*": ["source/render/source/*"],
-      "@common/*": ["source/common/*"],
-      "@server/*": ["source/server/*"],
-      "@render/*": ["source/render/*"]
+      "@/*": ["packages/console/source/*"],
+      "@common/*": ["packages/contracts/source/*"],
+      "@server/*": ["packages/core/source/*"],
+      "@render/*": ["packages/console/*"]
     }
   },
   "include": [
-    "source/common/**/*.ts",
-    "source/server/**/*.ts",
-    "source/render/source/**/*.ts",
-    "source/render/source/**/*.tsx",
-    "source/command/**/*.ts"
-  ],
-  "references": [{ "path": "./tsconfig.node.json" }]
+    "packages/contracts/source/**/*.ts",
+    "packages/core/source/**/*.ts",
+    "packages/console/source/**/*.ts",
+    "packages/console/source/**/*.tsx",
+    "apps/app/source/**/*.ts"
+  ]
 }

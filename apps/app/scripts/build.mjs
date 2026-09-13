@@ -1,0 +1,56 @@
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { log } from '../../../packages/toolkit/scripts/lib/log.mjs'
+import { run } from '../../../packages/toolkit/scripts/lib/run.mjs'
+
+// 宿主构建。
+//
+//   node scripts/build.mjs                    只构建主进程与 preload
+//   node scripts/build.mjs --package          构建后交给 electron-builder 打包
+//   node scripts/build.mjs --package --win    打包指定平台（其余参数原样透传）
+//
+// 清空输出目录由这里负责而不是交给 Vite 的 `emptyOutDir`：主进程与 preload 是两次
+// `vite build`，共用 `dist/command`，任何一次对自己做 emptyOutDir 都会抹掉另一次的产物
+// （`--watch` 下尤其明显：改主进程会把 preload.js 删掉而不会重建）。
+
+const appDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const distDirectory = path.join(appDirectory, 'dist')
+
+const arguments_ = process.argv.slice(2)
+const shouldPackage = arguments_.includes('--package')
+const electronBuilderArguments = arguments_.filter(argument => argument !== '--package')
+
+// 两次构建：主进程（ESM）与 preload（CJS）。顺序不重要，但都在清空目录之后。
+const viteSteps = [
+  { label: 'main process', args: ['exec', 'vite', 'build'] },
+  { label: 'preload', args: ['exec', 'vite', 'build', '--config', 'vite.preload.config.ts'] },
+]
+
+const main = async () => {
+  log.title('Building One Switch host')
+
+  fs.rmSync(distDirectory, { recursive: true, force: true })
+  for (const step of viteSteps) {
+    await run('pnpm', step.args, { cwd: appDirectory })
+    log.info(`${step.label} built`)
+  }
+  log.success('Main process and preload built')
+
+  if (!shouldPackage) return
+
+  // electron-builder 以本包为 projectDir，所以必须在 `apps/app` 下运行：
+  // 配置里的图标、`afterPack`、输出目录都是相对它解析的。
+  // 渲染层静态产物由 `packages/console` 构建，配置里用 `files` 映射进 asar。
+  await run(
+    'pnpm',
+    ['exec', 'electron-builder', '--config', 'electron-builder.config.cjs', '--publish', 'never', ...electronBuilderArguments],
+    { cwd: appDirectory },
+  )
+  log.success('Package created')
+}
+
+main().catch(error => {
+  log.error(error.message)
+  process.exit(1)
+})

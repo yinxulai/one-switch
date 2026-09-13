@@ -13,6 +13,7 @@ dist-ssr
 dist-electron
 release
 .native-build
+.turbo
 *.local
 
 # Editor directories and files
@@ -29,3 +30,5 @@ release
 # TypeScript
 *.tsbuildinfo
 coverage
+
+.turbo

@@ -1,0 +1,11 @@
+{
+  "name": "@one-switch/contracts",
+  "version": "1.0.0-rc.8",
+  "private": true,
+  "type": "module",
+  "description": "共享契约：Zod schema、协议表、错误码、i18n 语言目录、宿主适配接口。只描述形状，不依赖任何实现。",
+  "exports": {
+    ".": "./source/index.ts",
+    "./*": "./source/*.ts"
+  }
+}

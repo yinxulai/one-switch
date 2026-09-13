@@ -1,0 +1,31 @@
+name: Set up Node and pnpm
+description: 安装 pnpm / Node、恢复 Turbo 缓存并安装依赖，供各 job 复用。
+
+runs:
+  using: composite
+  steps:
+    # 不写 `version:`——根 `package.json` 的 `packageManager` 是唯一的 pnpm 版本权威，
+    # 在两处各写一遍就会出现「CI 装 9、本地跑 11」这种只在 CI 上暴露的差异。
+    - name: Set up pnpm
+      uses: pnpm/action-setup@v6
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v5
+      with:
+        node-version: 22
+        cache: pnpm
+
+    # Turbo 的任务缓存是内容寻址的：命中同一个 key 就能跳过没变的包。
+    # key 里的 sha 让每次运行都能存一份新缓存，`restore-keys` 前缀匹配则保证
+    # 即使 sha 变了也先从最近一次恢复——这才是增量构建真正生效的地方。
+    - name: Restore Turbo cache
+      uses: actions/cache@v4
+      with:
+        path: .turbo
+        key: turbo-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
+        restore-keys: |
+          turbo-${{ runner.os }}-${{ github.job }}-
+
+    - name: Install dependencies
+      shell: bash
+      run: pnpm install --frozen-lockfile

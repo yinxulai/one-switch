@@ -1,0 +1,20 @@
+{
+  "name": "@one-switch/core",
+  "version": "1.0.0-rc.8",
+  "private": true,
+  "type": "module",
+  "description": "核心能力：runtime / management / proxy / database / infrastructure / security。纯 Node，不含任何宿主依赖。",
+  "exports": {
+    ".": "./source/index.ts",
+    "./*": "./source/*.ts"
+  },
+  "scripts": {
+    "db:generate": "node scripts/db.mjs generate",
+    "db:migrate": "node scripts/db.mjs migrate",
+    "db:studio": "node scripts/db.mjs studio",
+    "lint:layers": "node scripts/check-proxy-layers.mjs"
+  },
+  "dependencies": {
+    "@one-switch/contracts": "workspace:*"
+  }
+}

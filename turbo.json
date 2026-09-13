@@ -1,0 +1,22 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "ui": "stream",
+  "globalDependencies": ["tsconfig.base.json", "package.json", "pnpm-lock.yaml"],
+  "tasks": {
+    // 顺序由依赖图决定，不靠人记：「谁先构建」这个问题只允许有一个答案。
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"]
+    },
+    // 类型检查同样按依赖顺序：上游没通过时下游的报错只是噪音。
+    "typecheck": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    // 校验类任务跨包独立，可以并行——它们不写任何产物。
+    "lint": { "outputs": [] },
+    "test": { "dependsOn": ["^build"], "outputs": [] },
+    // 长驻进程：不缓存、不结束。
+    "dev": { "cache": false, "persistent": true }
+  }
+}
