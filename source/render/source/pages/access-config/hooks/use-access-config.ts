@@ -3,8 +3,11 @@ import { useProxyStatus } from '@/features/proxy/hooks'
 import { useProxyToggle } from '../../logical-models/hooks/use-proxy-toggle'
 
 /**
- * 接入配置页的数据源：把监听 host / port 拼成客户端能直接使用的地址。
+ * 接入配置页的数据源：把监听 host / port 收敛成客户端能直接使用的**服务根地址**。
+ *
  * 监听通配地址时它本身不是可访问地址，回落到 127.0.0.1，并把情况告诉调用方。
+ * 这里只产出根地址（`http://host:port`）：各协议的 Base URL / 完整接口地址是
+ * 「根地址 + 协议路径」的纯拼接，属于展示逻辑，放在卡片里算，不在这里预拼。
  */
 export function useAccessConfig() {
   const proxyStatus = useProxyStatus()
@@ -14,12 +17,12 @@ export function useAccessConfig() {
   const port = proxyStatus?.port ?? null
 
   return {
-    running: proxyStatus?.running ?? false,
     host,
     port,
+    running: proxyStatus?.running ?? false,
     wildcardHost: isWildcardHost(host),
     // 地址拼不出来时给空串：调用方（复制按钮）用空值判断要不要禁用。
-    baseUrl: resolveProxyOrigin(host, port) ?? '',
+    origin: resolveProxyOrigin(host, port) ?? '',
     toggleProxy,
   }
 }

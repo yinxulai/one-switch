@@ -17,6 +17,8 @@ const SaveRouterGraphSchema = z.object({
   graph: WorkflowGraphSchema,
   /** 版本名；留空时按版本号自动命名。 */
   name: z.string().max(60).optional(),
+  /** 版本说明；留空表示不写。 */
+  description: z.string().max(200).optional(),
 })
 
 const RouterGraphVersionSchema = z.object({
@@ -46,5 +48,5 @@ async function handleGetRouterGraphVersion(_req: IncomingMessage, res: ServerRes
 
 async function handleSaveRouterGraph(_req: IncomingMessage, res: ServerResponse, body: unknown): Promise<void> {
   const input = SaveRouterGraphSchema.parse(body)
-  sendSuccess(res, await saveRouterGraphVersion(input.graph, input.name))
+  sendSuccess(res, await saveRouterGraphVersion(input.graph, input.name, input.description))
 }

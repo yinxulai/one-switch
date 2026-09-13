@@ -17,7 +17,7 @@ type EdgeLinearGradientProps = {
 
 /**
  * 运行中的连线渐变。
- * 逐行复制自 Dify `app/components/workflow/custom-edge-linear-gradient-render.tsx`，
+ * 逐行复制自上游 `app/components/workflow/custom-edge-linear-gradient-render.tsx`，
  * 只把 props 类型换成具名 type（仓库 lint 约定）。
  */
 export function EdgeLinearGradient(props: EdgeLinearGradientProps) {

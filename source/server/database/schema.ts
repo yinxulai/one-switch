@@ -192,6 +192,7 @@ export const workflows = sqliteTable(
     type: text('type').notNull(),
     version: integer('version').notNull(),
     name: text('name').notNull(),
+    description: text('description').notNull().default(''),
     definition: text('definition').notNull(),
     createdTime: integer('createdTime').notNull(),
     updatedTime: integer('updatedTime').notNull(),

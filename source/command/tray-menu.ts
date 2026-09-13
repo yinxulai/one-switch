@@ -14,11 +14,16 @@ export interface TrayProxySnapshot {
 }
 
 /**
- * 托盘提供的两个接入基址，与「接入配置」页同口径。
+ * 托盘列出的两个接入基址，与「接入配置」页同口径。
  *
- * 路径是协议专有名词（协议名不进文案表），所以这些标签是拼出来的动态文本。
+ * 这里给的是**客户端要填的 Base URL**，不是完整接口地址：OpenAI 兼容客户端要带 `/v1`，
+ * Anthropic 客户端只填到端口（它自己会补上 `/v1/messages`）。
+ * 协议名是专有名词，不进文案表，所以标签是拼出来的动态文本。
  */
-export const TRAY_ENDPOINT_PATHS = ['/v1', '/v1/messages'] as const
+export const TRAY_ENDPOINTS = [
+  { label: 'OpenAI', path: '/v1' },
+  { label: 'Anthropic', path: '' },
+] as const
 
 export interface TrayMenuActions {
   copyEndpoint: (endpoint: string) => void
@@ -46,7 +51,13 @@ export function buildTrayMenuTemplate(context: TrayMenuContext): MenuItemConstru
   const { snapshot, t, actions, platform } = context
   const { running, host, port } = snapshot
   const origin = resolveProxyOrigin(host, port)
-  const endpoints = origin === null ? [] : TRAY_ENDPOINT_PATHS.map(path => `${origin}${path}`)
+  const endpoints =
+    origin === null
+      ? []
+      : TRAY_ENDPOINTS.map(endpoint => ({
+          label: `${endpoint.label} · ${origin}${endpoint.path}`,
+          url: `${origin}${endpoint.path}`,
+        }))
 
   const template: MenuItemConstructorOptions[] = []
 
@@ -65,12 +76,12 @@ export function buildTrayMenuTemplate(context: TrayMenuContext): MenuItemConstru
     },
     {
       // 地址放在子菜单里逐条列出，而不是把一长串 URL 塞进菜单项：
-      // 顶层保持短行，同时又能看清到底复制的是哪一个基址。
+      // 顶层保持短行，同时又能看清到底复制的是哪一个客户端的 Base URL。
       label: t('native.tray.copyEndpoint'),
       enabled: endpoints.length > 0,
-      submenu: endpoints.map(endpoint => ({
-        label: endpoint,
-        click: () => actions.copyEndpoint(endpoint),
+      submenu: endpoints.map(entry => ({
+        label: entry.label,
+        click: () => actions.copyEndpoint(entry.url),
       })),
     },
     {

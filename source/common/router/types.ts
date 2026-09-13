@@ -625,8 +625,10 @@ export const FIELD_OPERAND_OPERATORS: ConditionOperator[] = ['equals', 'notEqual
 export interface RouterGraphVersionSummary {
   /** 单调递增的版本号（v1、v2 …），也就是「恢复这个版本」时要传的号 */
   version: number
-  /** 这次保存给版本起的名字 */
+  /** 用户给这一版起的名字；没起名时是空字符串（版本的身份是 `version`，不需要唯一的名字） */
   name: string
+  /** 这次保存给版本写的说明；没写时是空字符串 */
+  description: string
   /** 保存时间（epoch 毫秒） */
   savedAt: number
   /** 该版本的节点数量，用于列表摘要 */

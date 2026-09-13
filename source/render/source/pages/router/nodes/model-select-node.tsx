@@ -6,7 +6,7 @@ import { useTranslation } from '@/i18n/provider'
 import type { RouteNodeProps } from '../node-data'
 import type { ModelSelectNode } from '@common/router/types'
 
-/** 逻辑模型选择节点视图：展示取值来源与落点逻辑模型，行结构对齐 Dify `nodes/start/node.tsx` 的变量行。 */
+/** 逻辑模型选择节点视图：展示取值来源与落点逻辑模型，行结构对齐上游 `nodes/start/node.tsx` 的变量行。 */
 export function ModelSelectNodeView(props: RouteNodeProps) {
   const { id, data } = props
   const model = data.model as ModelSelectNode

@@ -94,7 +94,8 @@ Input -> ModelSelect -> Output
 - 配置保存前必须做类型校验与可执行性校验；
 - schema 变化后要能明确报出「这条配置不再成立」，不做静默降级；
 - 字段路径选择器支持层级浏览、搜索与最近使用，候选表（`field-hints.ts`）与运行时取值（`engine.ts`）共用同一套路径语法；
-- 保存前给出静态校验结果，并用示例输入模拟执行一次。
+- 保存前给出静态校验结果，并用示例输入模拟执行一次；
+- **每个节点的面板里只有一条「这个节点是什么」的定位句**：由面板外壳统一渲染（`node-meta.ts` 的 `nodePanelHint` → `router.panelHint.*`），面板正文只写与当前配置项直接相关的补充说明和告警，同一件事不在一个节点里说两遍（`components/workflow-node-panel.test.tsx` 会逐节点比对定位句与正文说明）。
 
 ### 2.6 输出契约：`route` 命名空间
 
@@ -287,6 +288,7 @@ Input ─▶ 协议发现 ─▶ Condition（request.body.model in logicalModels
 - **手动指定的供应商模型优先**：落点逻辑模型上有人工切换时，该落点的候选直接换成手动指定的 ProviderModel；它不可用时返回 409 `MANUAL_MODEL_UNAVAILABLE`——手动是不愿被绕过的人为选择，静默换一个上游比报错更糟；
 - **图存服务端一份**：`workflows` 表 `type = 'router'`，每次保存生成一个递增版本（最多保留 30 版），代理读的永远是「最新保存的那一版」；一版都没保存过时用 `createDefaultPolicyGraph()` 现场生成内建默认策略来跑，于是「开箱可用」与「用户保存的图」走同一段执行路径，不存在第二套写死的规则；
 - **画布不做本地缓存**：页头「保存」= 发布新版本，代理立即按它路由；从「历史版本」载入某一版只是拿到编辑起点，不保存就不影响线上行为；
+- **版本可以带名字与说明**：保存时弹窗收集的 `name` / `description` 是给这一版写的人类注记，存进 `workflows` 表并展示在历史版本列表里，不参与任何运行时判定；**版本号有自己的字段，不塞进名字里** —— 版本的身份是 `version`（列表里的 `v{n}`），名字不要求唯一，同名多版靠版本号区分，两者都留空就存空串（不会自动填成 `Version N`），内容与最新版一致时不生成版本、这两项也一并丢弃；
 - **脚本与提示词节点在主进程执行**：试跑接口与代理入口共用同一份能力集合（`createRouteCapabilities()`：脚本走 `node:vm` 沙箱、提示词走真实上游调用），因此画布上的试跑结果与线上行为一致。
 
 相关实现位置：图存储 `source/server/database/router-graph-store.ts`；路由求解 `source/server/proxy/routing/route-resolver.ts`；落点→候选 `source/server/proxy/routing/landing-planner.ts`；能力集合 `source/server/proxy/capabilities/route-capabilities.ts`。
@@ -358,6 +360,7 @@ Input ─▶ 协议发现 ─▶ Condition（request.body.model in logicalModels
 - 输入端口可以多，但必须是清晰的上下文对象。
 
 配置体验：
+- 面板只读列出上表：每条字段的路径、类型，带说明的再附一句；清单与候选表同源（`pages/router/input-shape.ts`），面板上看到的就是下游能选的。请求体里的字段不在这里，接上协议发现节点后才会出现在下游；
 - request / headers / metadata 提供结构化编辑器与字段补全；
 - 示例请求只用于**模拟运行**（试跑节点、预览判定结果），不再用来反推候选字段：候选表由节点自己在图上声明，不从某一份示例 payload 里猜；
 - 必填字段缺失时在节点上直接标记错误。
@@ -496,6 +499,7 @@ Input ─▶ 协议发现 ─▶ Condition（request.body.model in logicalModels
 
 配置体验：
 - 逻辑模型下拉直接列出当前可用逻辑模型，并对「已停用」「已不存在」给出提示；
+- 下拉下方常驻一条**选型建议**：这类 LLM 决策任务推荐用**上下文窗口大、速度极快的本地小模型**处理——节点几乎每个请求都要跑一次，本地模型延迟更低、不占云端配额，判定质量也够用（文案见 `router.panel.promptModelAdvice`）；
 - 系统提示词 / 提示词分别编辑，提示词支持「插入字段」生成 `${路径}`；
 - 插值对非标量做 JSON 序列化，所以候选表列的是**上游声明过的全部字段**：`${request.body}` 这类整体字段是正常用法（让模型读整段请求体），不因为它们不是标量就从补全里消失；
 - 温度（0–2）、最大回复长度、超时（上限 `PROMPT_TIMEOUT_LIMIT`）可调；

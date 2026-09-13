@@ -29,17 +29,19 @@ describe('workflow store', () => {
       type: 'router',
       version: 1,
       name: 'Router v1',
+      description: '第一版',
       definition: { nodes: [] },
     })
     const second = await createWorkflow({
       type: 'router',
       version: 2,
       name: 'Router v2',
+      description: '',
       definition: { nodes: [{ id: 'input' }] },
     })
 
-    expect(await getWorkflow('router', 1)).toMatchObject({ id: first.id, type: 'router', version: 1, name: 'Router v1', definition: { nodes: [] } })
-    expect(await getWorkflow('router', 2)).toMatchObject({ id: second.id, type: 'router', version: 2, name: 'Router v2', definition: { nodes: [{ id: 'input' }] } })
+    expect(await getWorkflow('router', 1)).toMatchObject({ id: first.id, type: 'router', version: 1, name: 'Router v1', description: '第一版', definition: { nodes: [] } })
+    expect(await getWorkflow('router', 2)).toMatchObject({ id: second.id, type: 'router', version: 2, name: 'Router v2', description: '', definition: { nodes: [{ id: 'input' }] } })
     expect(await getLatestWorkflow('router')).toMatchObject({ id: second.id, version: 2 })
     expect(await listWorkflows()).toHaveLength(2)
   })
@@ -51,15 +53,17 @@ describe('workflow store', () => {
       type: 'router',
       version: 1,
       name: 'Router draft',
+      description: '草稿',
       definition: { nodes: [] },
     })
 
     const updated = await updateWorkflow(workflow.id, {
       name: 'Router published',
+      description: '已发布',
       definition: { nodes: [{ id: 'input' }, { id: 'output' }] },
     })
 
-    expect(updated).toMatchObject({ id: workflow.id, type: 'router', version: 1, name: 'Router published', definition: { nodes: [{ id: 'input' }, { id: 'output' }] } })
-    expect(await getWorkflow('router', 1)).toMatchObject({ name: 'Router published' })
+    expect(updated).toMatchObject({ id: workflow.id, type: 'router', version: 1, name: 'Router published', description: '已发布', definition: { nodes: [{ id: 'input' }, { id: 'output' }] } })
+    expect(await getWorkflow('router', 1)).toMatchObject({ name: 'Router published', description: '已发布' })
   })
 })

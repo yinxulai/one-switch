@@ -15,7 +15,7 @@ import { EDGE_STROKE_HANDLE, EDGE_STROKE_NORMAL, edgeRunStatusStroke } from '../
 import { EdgeLinearGradient } from './edge-linear-gradient'
 import { NodeSelector } from './node-selector'
 
-/** 渐变端点必须处在“已完成”与“已开始”的状态组合上，判定与 Dify 一致。 */
+/** 渐变端点必须处在“已完成”与“已开始”的状态组合上，判定与上游一致。 */
 function canRenderGradient(sourceStatus: string, targetStatus: string): boolean {
   const sourceDone = sourceStatus === 'succeeded' || sourceStatus === 'failed'
   const targetStarted = targetStatus === 'succeeded' || targetStatus === 'failed' || targetStatus === 'running'
@@ -24,7 +24,7 @@ function canRenderGradient(sourceStatus: string, targetStatus: string): boolean 
 
 /**
  * 自定义连线。
- * 路径、渐变与状态着色复制自 Dify `app/components/workflow/custom-edge.tsx`
+ * 路径、渐变与状态着色复制自上游 `app/components/workflow/custom-edge.tsx`
  * 与 `custom-edge-linear-gradient-render.tsx`：两端各内缩 8px + `curvature: 0.16`，
  * 线宽固定 2，中点悬浮出现插入按钮。
  */

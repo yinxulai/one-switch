@@ -42,8 +42,9 @@ import { useTranslation } from '@/i18n/provider'
 import { cn } from '@/lib/utils'
 
 import { NodeSelector } from './components/node-selector'
-import { DifyButton } from './components/dify-button'
+import { WorkflowButton } from './components/workflow-button'
 import { PolicyMenu } from './components/policy-menu'
+import { SaveVersionDialog, type RouterGraphVersionDraft } from './components/save-version-dialog'
 import { VersionMenu } from './components/version-menu'
 import { WorkflowConnectionLine } from './components/workflow-connection-line'
 import { WorkflowNodePanel } from './components/workflow-node-panel'
@@ -79,6 +80,9 @@ import type { AppendableKind, NodePosition, WorkflowGraph, WorkflowNodeModel, Wo
 
 /** 这些元素自身消费删除键，画布的键盘删除需要跳过。 */
 const EDITABLE_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT'])
+
+/** 画布内容没有来源版本（空白起点、套用预设）时，保存弹窗的输入初值。 */
+const EMPTY_VERSION_DRAFT: RouterGraphVersionDraft = { name: '', description: '' }
 
 /** 单条节点输出的值转成一行文本：字符串直出，数组用逗号连接，其余走 JSON。 */
 function formatNodeOutputValue(value: unknown): string {
@@ -150,6 +154,14 @@ function WorkflowStudioCanvas() {
   const [activeGraph, setActiveGraph] = useState<WorkflowGraph | null>(null)
   const [graphLoaded, setGraphLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false)
+  /**
+   * 保存弹窗的输入初值 —— 「画布上这份内容改自哪一版」的名字与说明。
+   *
+   * 只跟着画布的来源走：首屏载入是当前生效的那一版，载入历史版本就是载入的那一版，
+   * 套用预设则清空（预设不是从任何一版改来的）。
+   */
+  const [versionDraftDefaults, setVersionDraftDefaults] = useState<RouterGraphVersionDraft>(EMPTY_VERSION_DRAFT)
 
   /**
    * 首屏从服务端拉一次「当前生效的图」与版本列表。
@@ -171,7 +183,11 @@ function WorkflowStudioCanvas() {
           setGraph(canvasGraph)
           setActiveGraph(canvasGraph)
         }
-        setVersions(toRouterGraphVersions(summaries))
+        const loadedVersions = toRouterGraphVersions(summaries)
+        setVersions(loadedVersions)
+        // 画布铺的就是这一版（一版都没保存过时列表为空、初值也是空串）。
+        const baseline = loadedVersions[0]
+        setVersionDraftDefaults({ name: baseline?.name ?? '', description: baseline?.description ?? '' })
       } catch (error) {
         if (cancelled) return
         toast.error(error instanceof Error ? error.message : t('router.error.loadGraph'))
@@ -529,19 +545,26 @@ function WorkflowStudioCanvas() {
    * 保存 = 发布一个新版本。
    * 服务端把这一版落库并让它立刻对代理生效（没保存过时代理跑的是内建默认策略）；
    * 内容与最新版本一致时不会重复生成，避免连点保存堆出一串重复版本。
+   *
+   * 名字与说明是这一次保存的注记，只在真的生成新版本时才会落库（内容没变时一并丢弃）。
+   * 出错时故意不关弹窗：用户刚敲进去的东西不能因为一次网络失败就没地方找回来。
    */
-  const saveWorkflow = useCallback(async () => {
+  const saveWorkflow = useCallback(async (draft: RouterGraphVersionDraft) => {
     const graphToSave = graphRef.current
     setSaving(true)
     try {
-      const result = await unwrap(routerApi.saveGraph(graphToSave))
+      const result = await unwrap(routerApi.saveGraph(graphToSave, draft.name, draft.description))
       // 存下去的这一版立刻对代理生效，它同时成为「有无改动」的新基线。
       setActiveGraph(graphToSave)
+      setSaveDialogOpen(false)
+      // 画布的来源换成了刚存的这一版，下次打开弹窗要带出来的就是它。
+      const savedVersion = toRouterGraphVersion(result)
+      setVersionDraftDefaults({ name: savedVersion.name, description: savedVersion.description })
       if (!result.created) {
         toast.info(t('router.toast.identicalToLatest', { version: result.version }))
         return
       }
-      setVersions(current => [toRouterGraphVersion(result), ...current])
+      setVersions(current => [savedVersion, ...current])
       toast.success(t('router.toast.versionSaved', { version: result.version }))
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t('router.error.saveFailed'))
@@ -566,6 +589,8 @@ function WorkflowStudioCanvas() {
       setGraph(toCanvasGraph(snapshot.graph))
       setSelectedNodeId(null)
       setRunResult(null)
+      // 画布换成这一版了，保存时默认接着用它的名字与说明。
+      setVersionDraftDefaults({ name: version.name, description: version.description })
       toast.success(t('router.toast.versionLoaded', { sequence: version.sequence }))
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t('router.error.restoreFailed'))
@@ -574,12 +599,14 @@ function WorkflowStudioCanvas() {
 
   /**
    * 套用内置策略：整张画布换成预设内容。
-   * 预设里没有用户的改动，所以不需要额外确认，但会清掉选中态与上次运行结果。
+   * 预设里没有用户的改动，所以不需要额外确认，但会清掉选中态、上次运行结果，
+   * 以及保存弹窗的初值 —— 预设不是从任何一版改来的，沿用上一版的名字只会误导。
    */
   const applyPolicy = useCallback((preset: RouterPolicyPreset) => {
     setGraph(preset.createGraph(runtimeLogicalModels))
     setSelectedNodeId(null)
     setRunResult(null)
+    setVersionDraftDefaults(EMPTY_VERSION_DRAFT)
     const textKeys = policyPresetTextKeys(preset.id)
     toast.success(t('router.toast.policyApplied', { name: textKeys ? t(textKeys.name) : preset.id }))
   }, [runtimeLogicalModels, toast, t])
@@ -598,6 +625,16 @@ function WorkflowStudioCanvas() {
    */
   const canSaveWorkflow = graphLoaded && !saving && (activeGraph === null || !isSameGraph(activeGraph, graph))
 
+  /**
+   * 这一次保存会拿到的版本号。
+   *
+   * 取自本地版本列表的第一项（服务端按新的在前返回）而不是 `activeGraph`：后者在「一版都没存过」
+   * 时是 `null`，取不到号。列表为空时就是首版。
+   *
+   * 它也是保存弹窗初值所属的那一版：两者都以「最新保存的一版」为准。
+   */
+  const nextVersion = (versions[0]?.sequence ?? 0) + 1
+
   const draggable = dragEnabled && dockMode === 'select'
 
   return (
@@ -611,12 +648,12 @@ function WorkflowStudioCanvas() {
           // 标题栏不提供 gap，两个按钮直接放在 Fragment 里会贴在一起。
           <div className="flex items-center gap-2">
             <PolicyMenu activePolicyId={activePolicyId} onApply={applyPolicy} />
-            <DifyButton size="medium" onClick={() => setTestDrawerOpen(true)}>
+            <WorkflowButton size="medium" onClick={() => setTestDrawerOpen(true)}>
               <CirclePlay className="size-3.5" aria-hidden /> {t('router.run')}
-            </DifyButton>
-            <DifyButton size="medium" variant="primary" onClick={saveWorkflow} disabled={!canSaveWorkflow}>
+            </WorkflowButton>
+            <WorkflowButton size="medium" variant="primary" onClick={() => setSaveDialogOpen(true)} disabled={!canSaveWorkflow}>
               <Save className="size-3.5" aria-hidden /> {t('router.save')}
-            </DifyButton>
+            </WorkflowButton>
             <VersionMenu versions={versions} onRestore={restoreVersion} />
           </div>
         )}
@@ -661,9 +698,9 @@ function WorkflowStudioCanvas() {
                 onNodeMouseLeave={handleNodeMouseLeave}
                 onNodeClick={(_event, node) => setSelectedNodeId(node.id)}
                 onPaneClick={() => setSelectedNodeId(null)}
-                className="workflow-reactflow workflow-dify-surface"
+                className="workflow-reactflow workflow-ui-surface"
               >
-                {/* 点阵参数与底色逐字复制自 Dify `workflow/index.tsx` 的 <Background>。 */}
+                {/* 点阵参数与底色逐字复制自上游 `workflow/index.tsx` 的 <Background>。 */}
                 <Background
                   gap={[14, 14]}
                   size={2}
@@ -674,8 +711,8 @@ function WorkflowStudioCanvas() {
               </ReactFlow>
 
               <div className="pointer-events-none absolute inset-x-0 bottom-3 z-20 flex justify-center px-3">
-                {/* 容器样式对齐 Dify `workflow/operator/control.tsx` 的悬浮控制条：
-                    actionbar 底色与画布只差一档明度，因此保留 Dify 的 0.5px 描边、省略阴影。 */}
+                {/* 容器样式对齐上游 `workflow/operator/control.tsx` 的悬浮控制条：
+                    actionbar 底色与画布只差一档明度，因此保留上游的 0.5px 描边、省略阴影。 */}
                 <div className="pointer-events-auto inline-flex max-w-full items-center gap-0.5 rounded-lg border-[0.5px] border-components-actionbar-border bg-components-actionbar-bg p-0.5 text-text-tertiary backdrop-blur-[5px]">
                   <NodeSelector
                     placement="top"
@@ -760,7 +797,7 @@ function WorkflowStudioCanvas() {
       </PageContent>
 
       <Drawer open={testDrawerOpen} onOpenChange={setTestDrawerOpen} direction="right">
-        <DrawerContent className="workflow-test-drawer workflow-dify-surface h-full w-208! max-w-[90vw]! border-l-[0.5px] border-components-panel-border bg-components-panel-bg">
+        <DrawerContent className="workflow-test-drawer workflow-ui-surface h-full w-208! max-w-[90vw]! border-l-[0.5px] border-components-panel-border bg-components-panel-bg">
           <DrawerHeader>
             <DrawerTitle className="flex items-center gap-2"><ArrowRight className="size-4" /> {t('router.run')}</DrawerTitle>
             <DrawerDescription>{t('router.runPanel.description')}</DrawerDescription>
@@ -845,11 +882,22 @@ function WorkflowStudioCanvas() {
           </div>
 
           <DrawerFooter className="flex-row justify-end">
-            <DifyButton size="medium" variant="primary" onClick={runLocalTest}>{t('router.runPanel.run')}</DifyButton>
-            <DifyButton size="medium" onClick={() => setTestDrawerOpen(false)}>{t('common.action.close')}</DifyButton>
+            <WorkflowButton size="medium" variant="primary" onClick={runLocalTest}>{t('router.runPanel.run')}</WorkflowButton>
+            <WorkflowButton size="medium" onClick={() => setTestDrawerOpen(false)}>{t('common.action.close')}</WorkflowButton>
           </DrawerFooter>
         </DrawerContent>
       </Drawer>
+
+      {/* 弹窗挂在画布之外：它只负责收集名字与说明，图数据仍然由页面这一层持有。 */}
+      <SaveVersionDialog
+        open={saveDialogOpen}
+        nextVersion={nextVersion}
+        initialName={versionDraftDefaults.name}
+        initialDescription={versionDraftDefaults.description}
+        saving={saving}
+        onOpenChange={setSaveDialogOpen}
+        onConfirm={draft => void saveWorkflow(draft)}
+      />
     </PageLayout>
   )
 }

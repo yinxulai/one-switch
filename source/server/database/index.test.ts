@@ -150,7 +150,7 @@ describe('database lifecycle', () => {
       expect.arrayContaining(['providerModelId', 'providerName', 'providerModelName', 'url', 'httpStatus', 'retryable', 'upstreamTransport', 'ttftMilliseconds', 'requestRewriteRuleIds', 'responseRewriteRuleIds']),
     )
     expect(workflowColumns.map(column => (column as { name: string }).name).sort()).toEqual([
-      'createdTime', 'definition', 'deletedTime', 'id', 'name', 'type', 'updatedTime', 'version',
+      'createdTime', 'definition', 'deletedTime', 'description', 'id', 'name', 'type', 'updatedTime', 'version',
     ])
     expect(indexes.map(index => (index as { name: string }).name)).toEqual(
       expect.arrayContaining(['idx_scheduling_policies_route', 'idx_request_attempts_request_order', 'idx_request_attributes_key_value', 'idx_runtime_logs_timestamp', 'idx_workflows_type_version', 'idx_provider_model_request_rewrite_rule_priority_active']),

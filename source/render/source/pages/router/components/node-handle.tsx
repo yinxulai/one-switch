@@ -17,15 +17,15 @@ type NodeHandleProps = {
   isConnectable?: boolean
 }
 
-/** 端口竖条按运行状态着色，对应 Dify 的 workflow-link-line-*-handle 变量。 */
+/** 端口竖条按运行状态着色，对应上游的 workflow-link-line-*-handle 变量。 */
 const runStatusBarClassName: Partial<Record<NodeRunStatus, string>> = {
   succeeded: 'after:bg-workflow-link-line-success-handle',
   failed: 'after:bg-workflow-link-line-error-handle',
 }
 
 /**
- * 端口（逐字复制自 Dify `nodes/_base/components/node-handle.tsx`）。
- * Dify 用 `after:bg-workflow-link-line-handle` 着色竖条，这里复用同一份 token。
+ * 端口（逐字复制自上游 `nodes/_base/components/node-handle.tsx`）。
+ * 上游用 `after:bg-workflow-link-line-handle` 着色竖条，这里复用同一份 token。
  */
 export const NodeHandle = memo(function NodeHandle(props: NodeHandleProps) {
   const {
@@ -62,7 +62,7 @@ export const NodeHandle = memo(function NodeHandle(props: NodeHandleProps) {
       data-connected={connected ? 'true' : 'false'}
       onClick={handleClick}
       className={cn(
-        // 逐字对齐 Dify `nodes/_base/components/node-handle.tsx` 的端口样式：
+        // 逐字对齐上游 `nodes/_base/components/node-handle.tsx` 的端口样式：
         // 16px 透明热区 + 2px × 8px 的 after 竖条（`after:bg-workflow-link-line-handle`）。多出的
         // transform-none! 是为了让下面的 left/right 偏移直接生效，不再叠加 react-flow 默认的
         // translate(±50%)。

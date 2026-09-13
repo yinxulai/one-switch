@@ -3,12 +3,12 @@ import type { ReactNode } from 'react'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 
-/** 浮层面板外观，复制自 Dify `packages/dify-ui/src/overlay-shared.ts` 的 `menuPopupSurfaceClassName`。
-   *  `workflow-dify-surface` 用于在浮层（被 portal 到 body）内还原 Dify 的圆角刻度。 */
+/** 浮层面板外观，复制自上游 UI 包的 `overlay-shared.ts` 的 `menuPopupSurfaceClassName`。
+   *  `workflow-ui-surface` 用于在浮层（被 portal 到 body）内还原上游的圆角刻度。 */
   export const PANEL_POPUP_SURFACE_CLASSNAME =
-    'workflow-dify-surface rounded-xl border-[0.5px] border-components-panel-border bg-components-panel-bg-blur p-1 ring-0 shadow-none backdrop-blur-[5px] focus:ring-0 focus:shadow-none'
+    'workflow-ui-surface rounded-xl border-[0.5px] border-components-panel-border bg-components-panel-bg-blur p-1 ring-0 shadow-none backdrop-blur-[5px] focus:ring-0 focus:shadow-none'
 
-/** 浮层菜单项，复制自 Dify `overlay-shared.ts` 的 `menuItemClassName`。 */
+/** 浮层菜单项，复制自上游 `overlay-shared.ts` 的 `menuItemClassName`。 */
 export const PANEL_POPUP_ITEM_CLASSNAME =
   'mx-1 h-8 gap-1 rounded-lg px-2 text-[13px] leading-4 text-text-secondary focus:bg-state-base-hover focus:text-text-primary not-data-[variant=destructive]:focus:**:text-text-primary'
 
@@ -17,12 +17,13 @@ type NodePanelHintProps = {
   tone?: 'muted' | 'warning'
 }
 
-/** 面板里的说明条。 */
+/** 面板里的说明条。`role="note"` 是「旁注」语义，同时也是「同一节点里说了几遍」的检查入口。 */
 export function NodePanelHint(props: NodePanelHintProps) {
   const { children, tone = 'muted' } = props
 
   return (
     <div
+      role="note"
       className={cn(
         'rounded-lg border border-module-border px-2.5 py-2 system-xs-regular',
         tone === 'warning'
@@ -58,7 +59,7 @@ export function NodePanelField(props: NodePanelFieldProps) {
 
   return (
     <div className={cn('grid gap-1.5', className)}>
-      {/* 不用 shadcn Label：它的 `text-sm leading-none` 会盖过 Dify 的 system-sm-medium。 */}
+      {/* 不用 shadcn Label：它的 `text-sm leading-none` 会盖过面板的 system-sm-medium。 */}
       <label className="w-fit py-1 system-sm-medium text-text-secondary">{label}</label>
       {children}
     </div>

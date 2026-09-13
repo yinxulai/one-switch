@@ -6,7 +6,7 @@ import { conditionOperatorMeta, type ConditionNode } from '@common/router/types'
 
 /**
  * 条件节点视图。
- * 逐行对齐 Dify `nodes/if-else/node.tsx`：
+ * 逐行对齐上游 `nodes/if-else/node.tsx`：
  * 分支行（CASE n / IF|ELIF）+ 行内条件条目（`bg-muted` 圆角容器 + 变量 + 操作符 + 值），
  * 多条件之间按逻辑操作符插入 AND / OR 标记，最后一行固定为 ELSE。
  */
@@ -53,7 +53,7 @@ export function ConditionNodeView(props: RouteNodeProps) {
                 <div key={`${condition.fieldPath}-${conditionIndex}`} className="relative">
                   <NodeConditionChip className="h-6">
                     {/* 变量名可收缩截断，操作符固定宽度，值占满剩余空间：
-                        三者都不换行，保证条件条目恒定单行 24px，与 Dify `condition-value.tsx` 一致。 */}
+                        三者都不换行，保证条件条目恒定单行 24px，与上游 `condition-value.tsx` 一致。 */}
                     <span className="min-w-0 truncate px-1 system-xs-medium text-text-secondary">
                       {condition.fieldPath}
                     </span>

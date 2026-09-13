@@ -14,7 +14,7 @@ import { ScriptNodeView } from './script-node'
 
 /**
  * 节点种类 → 节点内部视图。
- * 对应 Dify `app/components/workflow/nodes/index.tsx` 里的 NodeComponentMap：
+ * 对应上游 `app/components/workflow/nodes/index.tsx` 里的 NodeComponentMap：
  * 外壳（标题、端口、悬浮操作条）由 `components/workflow-node.tsx` 统一提供。
  */
 export const NODE_COMPONENT_MAP: Record<WorkflowNodeKind, ComponentType<RouteNodeProps>> = {

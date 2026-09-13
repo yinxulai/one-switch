@@ -14,7 +14,7 @@ import { ScriptPanel } from './script-panel'
 
 /**
  * 节点种类 → 右侧面板内容。
- * 对应 Dify `app/components/workflow/nodes/index.tsx` 里的 PanelComponentMap。
+ * 对应上游 `app/components/workflow/nodes/index.tsx` 里的 PanelComponentMap。
  */
 export const PANEL_COMPONENT_MAP: Record<WorkflowNodeKind, ComponentType<NodePanelProps>> = {
   input: InputPanel,

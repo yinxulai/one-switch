@@ -15,6 +15,10 @@ export interface RouterGraphVersion {
   id: string
   /** 单调递增的版本号（v1、v2 …），也是「恢复这一版」时要传的号 */
   sequence: number
+  /** 用户给这一版起的名字；没起名时为空串（列表就只显示版本号）。 */
+  name: string
+  /** 用户给这一版写的说明；没写时为空串。 */
+  description: string
   /** 保存时间（ISO 8601） */
   savedAt: string
   /** 该版本的节点数量，用于列表摘要 */
@@ -26,6 +30,8 @@ export function toRouterGraphVersion(summary: RouterGraphVersionSummary): Router
   return {
     id: `version-${summary.version}`,
     sequence: summary.version,
+    name: summary.name,
+    description: summary.description,
     savedAt: new Date(summary.savedAt).toISOString(),
     nodeCount: summary.nodeCount,
   }

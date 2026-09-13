@@ -28,6 +28,7 @@ function toSummary(record: WorkflowRecord, graph: WorkflowGraph): RouterGraphVer
   return {
     version: record.version,
     name: record.name,
+    description: record.description,
     savedAt: record.updatedTime,
     nodeCount: graph.nodes.length,
   }
@@ -93,8 +94,13 @@ export async function resolveRouterGraph(): Promise<RouterGraphSnapshot> {
  *
  * 内容与最新版本完全一致时不再新增版本，把最新版本号原样回给调用方：
  * 「保存」的语义是「留下一个可回滚的版本」，内容没变还存一版只会把版本列表灌满噪音。
+ * 此时用户这次填的名字与说明也一并丢弃 —— 它们描述的是「这一次改动」，而这次并没有改动可描述。
+ *
+ * 名字与说明都是注记，可以留空（落库即空串）：**版本的身份是 `version` 这个字段，不是名字**。
+ * 库里不需要「唯一的名字」，同名了靠版本号区分；所以这里也不生成 `Version 3` 这类兜底名去占位 ——
+ * 那样等于把版本号又抄进名字一份，读的人还得反过来从名字里抠版本号。
  */
-export async function saveRouterGraphVersion(graph: WorkflowGraph, name: string | undefined): Promise<RouterGraphSaveResult> {
+export async function saveRouterGraphVersion(graph: WorkflowGraph, name: string | undefined, description: string | undefined): Promise<RouterGraphSaveResult> {
   const latest = await getLatestWorkflow(ROUTER_GRAPH_TYPE)
   const latestGraph = latest ? parseGraph(latest) : null
   if (latest && latestGraph && isSameGraph(latestGraph, graph)) {
@@ -105,7 +111,8 @@ export async function saveRouterGraphVersion(graph: WorkflowGraph, name: string 
   const record = await createWorkflow({
     type: ROUTER_GRAPH_TYPE,
     version,
-    name: name?.trim() || `Version ${version}`,
+    name: name?.trim() ?? '',
+    description: description?.trim() ?? '',
     definition: graph,
   })
   await pruneRouterGraphVersions()

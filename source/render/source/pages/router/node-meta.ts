@@ -59,7 +59,7 @@ export interface NodeKindMeta {
   /** 一句话说明的目录键，用于选择器与节点面板 */
   hintKey: UiCatalogKey
   icon: NodeKindIcon
-  /** 图标色块底色（对齐 Dify `block-icon.tsx` 的 util-colors-*-500 纯色块，前景固定白色） */
+  /** 图标色块底色（对齐上游 `block-icon.tsx` 的 util-colors-*-500 纯色块，前景固定白色） */
   tone: string
 }
 
@@ -205,15 +205,15 @@ export function isProtectedNode(model: WorkflowNodeModel): boolean {
 
 /**
  * 连线在“无状态、无交互”时的颜色。
- * 对应 Dify 的 `--color-workflow-link-line-normal`。
- * Dify 只有一种灰，这里保留按上游分支区分颜色，属于 One Switch 的信息增强，
- * 分支色取自 Dify 的 util-colors 色板，保证明暗两套主题下都与节点图标同色系。
+ * 对应上游的 `--color-workflow-link-line-normal`。
+ * 上游只有一种灰，本仓库额外按分支区分颜色，属于 One Switch 的信息增强，
+ * 分支色取自 util-colors 色板，保证明暗两套主题下都与节点图标同色系。
  */
 export const EDGE_STROKE_NORMAL = 'var(--color-workflow-link-line-normal)'
 
 /**
  * 连线被选中 / 悬浮 / 连接节点被悬浮时的颜色。
- * 对应 Dify 的 `--color-workflow-link-line-handle`。
+ * 对应上游的 `--color-workflow-link-line-handle`。
  */
 export const EDGE_STROKE_HANDLE = 'var(--color-workflow-link-line-handle)'
 
@@ -241,7 +241,7 @@ export function edgeStrokeColor(sourceKind: WorkflowNodeKind, sourcePort: string
 }
 
 /**
- * 运行状态对应的连线颜色，对应 Dify `app/components/workflow/utils/edge.ts` 的 `getEdgeColor`。
+ * 运行状态对应的连线颜色，对应上游 `app/components/workflow/utils/edge.ts` 的 `getEdgeColor`。
  * 未运行过（`idle`）时返回 undefined，交给调用方回落到分支色。
  */
 export function edgeRunStatusStroke(status: NodeRunStatus | undefined): string | undefined {

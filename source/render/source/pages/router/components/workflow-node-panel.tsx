@@ -13,7 +13,7 @@ import { isProtectedNode, nodePanelHint } from '../node-meta'
 import type { NodePanelUpdate, NodePanelProps as NodePanelBodyProps } from '../node-data'
 import type { WorkflowNodeModel } from '@common/router/types'
 import { BlockIcon } from './block-icon'
-import { DifyButton } from './dify-button'
+import { WorkflowButton } from './workflow-button'
 
 /** 面板最小宽度。 */
 const MIN_PANEL_WIDTH = 380
@@ -31,11 +31,11 @@ export function computeMaxPanelWidth(canvasWidth: number): number {
  * 里会挡住内联宽度的默认值——`data-[side=right]:w-3/4`（被内联 style 压过）与
  * `data-[side=right]:sm:max-w-sm`（384px 上限，靠 `!` 顶掉，否则拉宽到 420px 以上会被压回去）。
  *
- * `workflow-node-panel` / `workflow-dify-surface` 两个作用域类必须挂在浮层元素自己身上：
- * `index.css` 里 Dify 的输入框刻度靠它们生效，而浮层会被 portal 到 body，拿不到画布的祖先作用域。
+ * `workflow-node-panel` / `workflow-ui-surface` 两个作用域类必须挂在浮层元素自己身上：
+ * `index.css` 里节点面板的输入框/圆角刻度靠它们生效，而浮层会被 portal 到 body，拿不到画布的祖先作用域。
  */
 const NODE_PANEL_CLASSNAME = cn(
-  'workflow-node-panel workflow-dify-surface outline-hidden',
+  'workflow-node-panel workflow-ui-surface outline-hidden',
   'max-w-[calc(100vw-2rem)]! gap-0! border-l-[0.5px] border-components-panel-border bg-components-panel-bg!',
 )
 
@@ -59,7 +59,7 @@ type WorkflowNodePanelProps = {
  * 面板本体用公共 `Sheet`（右侧 `side="right"`）承载：浮层被 portal 到 body、
  * 自带遮罩与进出场动画，画布与页面布局完全不动——窗口级 `fixed` 面板会去挤标题栏按钮。
  *
- * 内部分段沿用 Dify `app/components/workflow/panel/index.tsx` +
+ * 内部分段沿用上游 `app/components/workflow/panel/index.tsx` +
  * `nodes/_base/components/workflow-panel/index.tsx`：标题行 / 描述 / 滚动正文 / 删除。
  */
 export function WorkflowNodePanel(props: WorkflowNodePanelProps) {
@@ -213,13 +213,13 @@ export function WorkflowNodePanel(props: WorkflowNodePanelProps) {
 
         {!protectedNode && (
           <div className="flex shrink-0 items-center justify-end px-3 pt-2 pb-3">
-            <DifyButton
+            <WorkflowButton
               variant="ghost-destructive"
               size="medium"
               onClick={() => onDelete(model.id)}
             >
               <Trash2 className="size-3.5" aria-hidden /> {t('router.nodeAction.delete')}
-            </DifyButton>
+            </WorkflowButton>
           </div>
         )}
       </SheetContent>

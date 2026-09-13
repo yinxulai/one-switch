@@ -155,26 +155,26 @@ describe('托盘菜单结构', () => {
     }
   })
 
-  it('复制接入地址：子菜单列出两个基址，通配监听地址回落到回环地址', async () => {
+  it('复制接入地址：子菜单按客户端类型列出两个 Base URL，通配监听地址回落到回环地址', async () => {
     mocks.getProxyServerStatus.mockResolvedValue({ running: true, host: '0.0.0.0', port: 19300 })
     manager = await initRunning()
 
     const copyItem = findItem('复制接入地址')
     expect(copyItem.enabled).not.toBe(false)
     expect((copyItem.submenu as MenuItem[]).map(item => item.label)).toEqual([
-      'http://127.0.0.1:19300/v1',
-      'http://127.0.0.1:19300/v1/messages',
+      'OpenAI · http://127.0.0.1:19300/v1',
+      'Anthropic · http://127.0.0.1:19300',
     ])
   })
 
-  it('点一个基址就把它写进剪贴板，并借用 tooltip 给出回执', async () => {
+  it('点一条 Base URL 就把它写进剪贴板，并借用 tooltip 给出回执', async () => {
     mocks.getProxyServerStatus.mockResolvedValue({ running: true, host: '127.0.0.1', port: 19300 })
     manager = await initRunning()
 
     const endpointItem = (findItem('复制接入地址').submenu as MenuItem[])[1]
     click(endpointItem)
 
-    expect(mocks.clipboard.writeText).toHaveBeenCalledWith('http://127.0.0.1:19300/v1/messages')
+    expect(mocks.clipboard.writeText).toHaveBeenCalledWith('http://127.0.0.1:19300')
     expect(mocks.tray.setToolTip).toHaveBeenLastCalledWith('接入地址已复制')
   })
 })

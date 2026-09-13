@@ -39,7 +39,7 @@ export function RulePresetMenu(props: RulePresetMenuProps) {
         * Radix 拿不到浮层锚点 → `isPositioned` 永远为 false → 内容被 `translate(0, -200%)` 挪到视口外，
         * 表现就是「点按钮没反应」。
         * 把按钮类名交给 Radix、让它渲染自己的 `<button>`，ref 才一定生效
-        * （同 `pages/router/components/dify-button.tsx` 里关于 forwardRef 的说明）。
+        * （同 `pages/router/components/workflow-button.tsx` 里关于 forwardRef 的说明）。
         */}
       <DropdownMenuTrigger className={cn(buttonVariants())}>
         <Plus aria-hidden />

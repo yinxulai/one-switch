@@ -74,7 +74,7 @@ source/render/source/pages/router/
 │   ├── workflow-edge.tsx
 │   ├── workflow-connection-line.tsx
 │   ├── edge-linear-gradient.tsx
-│   ├── block-icon.tsx / dify-button.tsx
+│   ├── block-icon.tsx / workflow-button.tsx
 │   └── policy-menu.tsx / version-menu.tsx
 ├── nodes/                        # 九种节点，清单见 route-design.md §4
 └── panel/                        # 与节点一一对应的配置面板

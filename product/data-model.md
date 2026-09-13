@@ -1029,6 +1029,7 @@ CREATE TABLE workflows (
   type TEXT NOT NULL,
   version INTEGER NOT NULL,
   name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
   definition TEXT NOT NULL,
   createdTime INTEGER NOT NULL,
   updatedTime INTEGER NOT NULL,
@@ -1047,7 +1048,7 @@ CREATE INDEX idx_workflows_deleted_time
 - `request_attributes` 保存请求的客户端/网络属性（来源 UA、入口地址等）。值一律是字符串——采集侧只产出字符串，因此没有「值类型」维度。
 - `runtime_logs` 是应用运行时日志，与配置和请求生命周期无关，按 `timestamp` 保留和清理；日志级别与保留策略见 [observability.md](./observability.md)。
 - `request_rewrite_rules` 是可复用的规则定义，`match` 与 `actions` 是 JSON 文本；`provider_model_request_rewrite_rules` 把规则绑定到 ProviderModel，生效顺序由 `priority` 表达。匹配条件、动作语义与四阶段执行次序见 [request-rewrite-rules.md](./request-rewrite-rules.md)。
-- `workflows` 按 `type + version` 唯一保存工作流定义，`definition` 是 JSON 文本，`version` 即路由工作台策略图的版本号。图的节点与端口语义见 [route-design.md](./route-design.md)，执行模型见 [workflow-engine.md](./workflow-engine.md)。
+- `workflows` 按 `type + version` 唯一保存工作流定义，`definition` 是 JSON 文本，`version` 即路由工作台策略图的版本号；`name` 与 `description` 是用户在保存时给这一版写的人类注记，不参与任何运行时判定，也不承担唯一性 ——**版本的身份是 `version` 本身**，同名多版完全正常，两者留空即空串（不会自动填成 `Version N`）。图的节点与端口语义见 [route-design.md](./route-design.md)，执行模型见 [workflow-engine.md](./workflow-engine.md)。
 
 ## 4. JSON 文档版本
 

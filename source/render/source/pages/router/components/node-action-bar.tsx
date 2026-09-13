@@ -14,7 +14,7 @@ type NodeActionBarProps = {
 
 /**
  * 节点悬浮操作条。
- * 结构复制自 Dify `nodes/_base/components/node-control.tsx`，
+ * 结构复制自上游 `nodes/_base/components/node-control.tsx`，
  * 去掉插件安装锁与帮助入口，只保留复制 / 删除。
  */
 export function NodeActionBar(props: NodeActionBarProps) {
@@ -29,8 +29,8 @@ export function NodeActionBar(props: NodeActionBarProps) {
         selected ? 'visible' : 'invisible group-hover/node:visible',
       )}
     >
-      {/* 对齐 Dify node-control.tsx 的内层类名：操作条压在节点卡片上，
-          亮色下 actionbar 底色与节点底色几乎一致，因此保留 Dify 的 0.5px 描边、省掉 shadow-md。 */}
+      {/* 对齐上游 node-control.tsx 的内层类名：操作条压在节点卡片上，
+          亮色下 actionbar 底色与节点底色几乎一致，因此保留上游的 0.5px 描边、省掉 shadow-md。 */}
       <div className="nodrag nopan nowheel flex h-6 items-center rounded-lg border-[0.5px] border-components-actionbar-border bg-components-actionbar-bg px-0.5 text-text-tertiary backdrop-blur-[5px]">
         {canDuplicate && (
           <button

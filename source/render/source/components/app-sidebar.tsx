@@ -179,8 +179,12 @@ export function AppSidebar(props: AppSidebarProps) {
         >
           <span className={revealClassName(expanded)}>{props.theme === 'dark' ? t('nav.theme.toLight') : t('nav.theme.toDark')}</span>
         </AnimatedThemeToggler>
-        {/* 服务状态是一个带边框的信息块：折叠时只剩居中的运行点，展开时补上端口 */}
-        <div className="flex h-9 items-center gap-2.5 overflow-hidden rounded-lg border border-sidebar-border px-2.5">
+        {/*
+         * 运行状态不单独圈框：它和上面的主题切换是同一族的脚注行，用一模一样的
+         * `h-9 / px-2.5 / gap-2.5` 外壳 + `size-4` 前导图标盒。折叠态下小圆点就落在这条轨道的
+         * 图标中线上（边框会额外吃掉 1px，圆点会整体右偏、和上面的图标错开）。
+         */}
+        <div className="flex h-9 w-full items-center gap-2.5 px-2.5">
           <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden="true">
             <span className={cn('size-2 rounded-full', props.proxyRunning ? 'animate-pulse bg-success motion-reduce:animate-none' : 'bg-sidebar-foreground/30')} />
           </span>

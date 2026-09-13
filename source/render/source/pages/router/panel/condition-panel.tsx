@@ -12,7 +12,7 @@ import {
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/provider'
 import { createConditionCase, createConditionRule, getOperatorsByType } from '@common/router/presets'
-import { DifyButton } from '../components/dify-button'
+import { WorkflowButton } from '../components/workflow-button'
 import type { NodePanelProps } from '../node-data'
 import {
   CONDITION_OPERATOR_META,
@@ -59,7 +59,7 @@ export function ConditionPanel(props: NodePanelProps) {
           <NodePanelGroupHeader
             title={t('router.panel.ifBranch', { index: caseIndex + 1 })}
             action={(
-              <DifyButton
+              <WorkflowButton
                 variant="ghost-destructive"
                 disabled={node.cases.length <= 1}
                 onClick={() => update(current => current.kind === 'condition'
@@ -67,7 +67,7 @@ export function ConditionPanel(props: NodePanelProps) {
                   : current)}
               >
                 {t('router.panel.deleteBranch')}
-              </DifyButton>
+              </WorkflowButton>
             )}
           />
 
@@ -143,7 +143,7 @@ export function ConditionPanel(props: NodePanelProps) {
                   <NodePanelGroupHeader
                     title={t('router.panel.conditionIndex', { index: ruleIndex + 1 })}
                     action={(
-                      <DifyButton
+                      <WorkflowButton
                         variant="ghost-destructive"
                         disabled={conditionCase.conditions.length <= 1}
                         onClick={() => update(current => current.kind === 'condition'
@@ -159,7 +159,7 @@ export function ConditionPanel(props: NodePanelProps) {
                           : current)}
                       >
                         {t('router.panel.delete')}
-                      </DifyButton>
+                      </WorkflowButton>
                     )}
                   />
 
@@ -318,7 +318,7 @@ export function ConditionPanel(props: NodePanelProps) {
             })}
           </div>
 
-          <DifyButton
+          <WorkflowButton
             onClick={() => update(current => current.kind === 'condition'
               ? {
                 ...current,
@@ -329,17 +329,17 @@ export function ConditionPanel(props: NodePanelProps) {
               : current)}
           >
             <Plus className="size-3.5" aria-hidden /> {t('router.panel.addCondition')}
-          </DifyButton>
+          </WorkflowButton>
         </NodePanelCard>
       ))}
 
-      <DifyButton
+      <WorkflowButton
         onClick={() => update(current => current.kind === 'condition'
           ? { ...current, cases: [...current.cases, createConditionCase()] }
           : current)}
       >
         <Plus className="size-3.5" aria-hidden /> {t('router.panel.addBranch')}
-      </DifyButton>
+      </WorkflowButton>
 
       <NodePanelHint>
         {t('router.panel.conditionFooter')}

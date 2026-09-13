@@ -10,7 +10,7 @@ import type { IterationNode } from '@common/router/types'
 /**
  * 遍历迭代节点视图。
  *
- * Dify 的 iteration 节点没有纵向的 body 端口，靠隐式子图表达循环体；
+ * 上游的 iteration 节点没有纵向的 body 端口，靠隐式子图表达循环体；
  * 这里复用条件节点的「分支行 + 行尾端口」结构，把 `body`（循环体）和 `out`（完成）
  * 两个端口做成两行，回边由用户自己从循环体末端连回来，图的拓扑完全显式。
  */

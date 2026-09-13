@@ -14,10 +14,10 @@ CREATE TABLE `attempt_contents` (
 );
 --> statement-breakpoint
 CREATE TABLE `attempt_usages` (
-	`attemptId` text NOT NULL,
 	`type` text NOT NULL,
 	`value` real,
 	`rawValue` text,
+	`attemptId` text NOT NULL,
 	`createdTime` integer NOT NULL,
 	CONSTRAINT `attempt_usages_pk` PRIMARY KEY(`attemptId`, `type`),
 	CONSTRAINT `fk_attempt_usages_attemptId_request_attempts_id_fk` FOREIGN KEY (`attemptId`) REFERENCES `request_attempts`(`id`),
@@ -29,6 +29,7 @@ CREATE TABLE `logical_models` (
 	`id` text PRIMARY KEY,
 	`name` text NOT NULL UNIQUE,
 	`enabled` integer DEFAULT true NOT NULL,
+	`sortOrder` integer DEFAULT 0 NOT NULL,
 	`description` text DEFAULT '' NOT NULL,
 	`createdTime` integer NOT NULL,
 	`updatedTime` integer NOT NULL,
@@ -37,9 +38,9 @@ CREATE TABLE `logical_models` (
 --> statement-breakpoint
 CREATE TABLE `protocol_converters` (
 	`id` text PRIMARY KEY,
-	`providerModelEndpointId` text NOT NULL,
-	`clientProtocol` text NOT NULL,
 	`enabled` integer DEFAULT false NOT NULL,
+	`clientProtocol` text NOT NULL,
+	`providerModelEndpointId` text NOT NULL,
 	`createdTime` integer NOT NULL,
 	`updatedTime` integer NOT NULL,
 	`deletedTime` integer,
@@ -48,10 +49,10 @@ CREATE TABLE `protocol_converters` (
 --> statement-breakpoint
 CREATE TABLE `provider_endpoints` (
 	`id` text PRIMARY KEY,
-	`providerId` text NOT NULL,
-	`protocol` text NOT NULL,
 	`url` text NOT NULL,
 	`enabled` integer DEFAULT true NOT NULL,
+	`protocol` text NOT NULL,
+	`providerId` text NOT NULL,
 	`createdTime` integer NOT NULL,
 	`updatedTime` integer NOT NULL,
 	`deletedTime` integer,
@@ -60,20 +61,20 @@ CREATE TABLE `provider_endpoints` (
 --> statement-breakpoint
 CREATE TABLE `provider_health` (
 	`providerId` text PRIMARY KEY,
-	`consecutiveFailures` integer DEFAULT 0 NOT NULL,
-	`cooldownUntilTime` integer,
+	`updatedTime` integer NOT NULL,
 	`lastSuccessTime` integer,
 	`lastFailureTime` integer,
-	`updatedTime` integer NOT NULL,
+	`cooldownUntilTime` integer,
+	`consecutiveFailures` integer DEFAULT 0 NOT NULL,
 	CONSTRAINT `fk_provider_health_providerId_providers_id_fk` FOREIGN KEY (`providerId`) REFERENCES `providers`(`id`)
 );
 --> statement-breakpoint
 CREATE TABLE `provider_model_endpoints` (
 	`id` text PRIMARY KEY,
-	`providerModelId` text NOT NULL,
-	`providerEndpointId` text NOT NULL,
 	`url` text,
 	`enabled` integer DEFAULT true NOT NULL,
+	`providerModelId` text NOT NULL,
+	`providerEndpointId` text NOT NULL,
 	`createdTime` integer NOT NULL,
 	`updatedTime` integer NOT NULL,
 	`deletedTime` integer,
@@ -83,19 +84,19 @@ CREATE TABLE `provider_model_endpoints` (
 --> statement-breakpoint
 CREATE TABLE `provider_model_health` (
 	`providerModelId` text PRIMARY KEY,
-	`consecutiveFailures` integer DEFAULT 0 NOT NULL,
-	`cooldownUntilTime` integer,
+	`updatedTime` integer NOT NULL,
 	`lastSuccessTime` integer,
 	`lastFailureTime` integer,
-	`updatedTime` integer NOT NULL,
+	`cooldownUntilTime` integer,
+	`consecutiveFailures` integer DEFAULT 0 NOT NULL,
 	CONSTRAINT `fk_provider_model_health_providerModelId_provider_models_id_fk` FOREIGN KEY (`providerModelId`) REFERENCES `provider_models`(`id`)
 );
 --> statement-breakpoint
 CREATE TABLE `provider_model_request_rewrite_rules` (
+	`enabled` integer DEFAULT true NOT NULL,
+	`priority` integer NOT NULL,
 	`providerModelId` text NOT NULL,
 	`requestRewriteRuleId` text NOT NULL,
-	`priority` integer NOT NULL,
-	`enabled` integer DEFAULT true NOT NULL,
 	`createdTime` integer NOT NULL,
 	`updatedTime` integer NOT NULL,
 	`deletedTime` integer,
@@ -106,9 +107,9 @@ CREATE TABLE `provider_model_request_rewrite_rules` (
 --> statement-breakpoint
 CREATE TABLE `provider_models` (
 	`id` text PRIMARY KEY,
-	`providerId` text NOT NULL,
-	`modelName` text NOT NULL,
 	`enabled` integer DEFAULT true NOT NULL,
+	`modelName` text NOT NULL,
+	`providerId` text NOT NULL,
 	`createdTime` integer NOT NULL,
 	`updatedTime` integer NOT NULL,
 	`deletedTime` integer,
@@ -116,10 +117,10 @@ CREATE TABLE `provider_models` (
 );
 --> statement-breakpoint
 CREATE TABLE `provider_settings` (
-	`providerId` text NOT NULL,
 	`key` text NOT NULL,
 	`value` text NOT NULL,
 	`valueType` text DEFAULT 'string' NOT NULL,
+	`providerId` text NOT NULL,
 	`updatedTime` integer NOT NULL,
 	CONSTRAINT `provider_settings_pk` PRIMARY KEY(`providerId`, `key`),
 	CONSTRAINT `fk_provider_settings_providerId_providers_id_fk` FOREIGN KEY (`providerId`) REFERENCES `providers`(`id`)
@@ -128,8 +129,8 @@ CREATE TABLE `provider_settings` (
 CREATE TABLE `providers` (
 	`id` text PRIMARY KEY,
 	`name` text NOT NULL,
-	`description` text DEFAULT '' NOT NULL,
 	`enabled` integer DEFAULT true NOT NULL,
+	`description` text DEFAULT '' NOT NULL,
 	`createdTime` integer NOT NULL,
 	`updatedTime` integer NOT NULL,
 	`deletedTime` integer
@@ -162,9 +163,9 @@ CREATE TABLE `request_attempts` (
 );
 --> statement-breakpoint
 CREATE TABLE `request_attributes` (
-	`requestId` text NOT NULL,
 	`key` text NOT NULL,
 	`value` text NOT NULL,
+	`requestId` text NOT NULL,
 	`createdTime` integer NOT NULL,
 	CONSTRAINT `request_attributes_pk` PRIMARY KEY(`requestId`, `key`),
 	CONSTRAINT `fk_request_attributes_requestId_request_logs_id_fk` FOREIGN KEY (`requestId`) REFERENCES `request_logs`(`id`)
@@ -190,8 +191,8 @@ CREATE TABLE `request_contents` (
 CREATE TABLE `request_logs` (
 	`id` text PRIMARY KEY,
 	`status` text NOT NULL,
-	`clientProtocol` text,
 	`transport` text DEFAULT 'http' NOT NULL,
+	`clientProtocol` text,
 	`logicalModelId` text,
 	`totalDurationMilliseconds` integer DEFAULT 0 NOT NULL,
 	`createdTime` integer NOT NULL,
@@ -215,10 +216,10 @@ CREATE TABLE `request_rewrite_rules` (
 );
 --> statement-breakpoint
 CREATE TABLE `request_usages` (
-	`requestId` text NOT NULL,
 	`type` text NOT NULL,
 	`value` real,
 	`rawValue` text,
+	`requestId` text NOT NULL,
 	`createdTime` integer NOT NULL,
 	CONSTRAINT `request_usages_pk` PRIMARY KEY(`requestId`, `type`),
 	CONSTRAINT `fk_request_usages_requestId_request_logs_id_fk` FOREIGN KEY (`requestId`) REFERENCES `request_logs`(`id`),
@@ -234,12 +235,12 @@ CREATE TABLE `runtime_logs` (
 );
 --> statement-breakpoint
 CREATE TABLE `scheduling_policies` (
-	`logicalModelId` text NOT NULL,
-	`providerModelId` text NOT NULL,
-	`strategy` text DEFAULT 'priority' NOT NULL,
-	`priority` integer DEFAULT 0 NOT NULL,
 	`weight` integer DEFAULT 100 NOT NULL,
 	`enabled` integer DEFAULT true NOT NULL,
+	`strategy` text DEFAULT 'priority' NOT NULL,
+	`priority` integer DEFAULT 0 NOT NULL,
+	`logicalModelId` text NOT NULL,
+	`providerModelId` text NOT NULL,
 	`createdTime` integer NOT NULL,
 	`updatedTime` integer NOT NULL,
 	`deletedTime` integer,
@@ -257,9 +258,10 @@ CREATE TABLE `settings` (
 --> statement-breakpoint
 CREATE TABLE `workflows` (
 	`id` text PRIMARY KEY,
+	`name` text NOT NULL,
 	`type` text NOT NULL,
 	`version` integer NOT NULL,
-	`name` text NOT NULL,
+	`description` text DEFAULT '' NOT NULL,
 	`definition` text NOT NULL,
 	`createdTime` integer NOT NULL,
 	`updatedTime` integer NOT NULL,

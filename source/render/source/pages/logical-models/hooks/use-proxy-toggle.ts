@@ -1,4 +1,5 @@
 import { useCallback } from 'react'
+import { resolveProxyOrigin } from '@common/proxy-origin'
 import { useToast } from '@/components/ui/toast'
 import { useTranslation } from '@/i18n/provider'
 import { useProxyActions, useProxyStatus } from '@/features/proxy/hooks'
@@ -20,7 +21,8 @@ export function useProxyToggle() {
     toast.success(result.data.running ? t('logicalModels.proxy.started') : t('logicalModels.proxy.stopped'))
   }, [proxyActions, proxyStatus, t, toast])
 
-  const proxyBaseUrl = proxyStatus ? `http://${proxyStatus.host}:${proxyStatus.port}` : ''
+  // 监听 0.0.0.0 时这个 host 不是能给客户端用的地址，统一走 @common 的回落逻辑。
+  const proxyBaseUrl = proxyStatus ? resolveProxyOrigin(proxyStatus.host, proxyStatus.port) ?? '' : ''
 
   return { proxyStatus, proxyBaseUrl, toggleProxy }
 }

@@ -9,7 +9,7 @@ import { NodeActionBar } from './node-action-bar'
 import { NodeHandle } from './node-handle'
 import { NodeDescription, NodeHeaderMeta } from './node-sections'
 
-/** 运行状态边框，对应 Dify 的 border-state-*-solid!。 */
+/** 运行状态边框，对应上游的 border-state-*-solid!。 */
 const runStatusBorderClassName: Partial<Record<NodeRunStatus, string>> = {
   running: 'border-state-accent-solid!',
   succeeded: 'border-state-success-solid!',
@@ -17,10 +17,10 @@ const runStatusBorderClassName: Partial<Record<NodeRunStatus, string>> = {
 }
 
 /**
- * 节点外壳，结构与类名逐行对齐 Dify `app/components/workflow/nodes/_base/node.tsx`：
+ * 节点外壳，结构与类名逐行对齐上游 `app/components/workflow/nodes/_base/node.tsx`：
  * 外层容器 `rounded-2xl border` 负责选中 / 运行状态边框，内层 `rounded-[15px] bg-workflow-block-bg`
  * 负责卡面与端口。
- * 唯一偏离：Dify 用 `shadow-xs` 与 `hover:shadow-lg` 表达卡面与悬浮层次，
+ * 唯一偏离：上游用 `shadow-xs` 与 `hover:shadow-lg` 表达卡面与悬浮层次，
  * 按仓库偏好改成 `bg-workflow-block-bg-hover` 这一档明度台阶。
  */
 export const WorkflowNode = memo(function WorkflowNode(props: RouteNodeProps) {
@@ -30,7 +30,7 @@ export const WorkflowNode = memo(function WorkflowNode(props: RouteNodeProps) {
   const isSelected = Boolean(selected) || data.isSelected
   const protectedNode = isProtectedNode(model)
   const canDelete = !protectedNode
-  // Dify 的 getNodeStatusBorders：被选中时不再叠加运行状态边框，避免双重描边。
+  // 上游的 getNodeStatusBorders：被选中时不再叠加运行状态边框，避免双重描边。
   const statusBorder = isSelected ? undefined : runStatusBorderClassName[data.runStatus]
 
   return (
@@ -53,7 +53,7 @@ export const WorkflowNode = memo(function WorkflowNode(props: RouteNodeProps) {
         }}
         className={cn(
           'group/node relative w-60 rounded-[15px] border border-transparent bg-workflow-block-bg pb-1 transition-colors outline-none',
-          // Dify 的 `!data._runningStatus && 'hover:shadow-lg'`：运行中不再悬浮提亮，避免和状态边框打架。
+          // 上游的 `!data._runningStatus && 'hover:shadow-lg'`：运行中不再悬浮提亮，避免和状态边框打架。
           !data.runStatus && 'hover:bg-workflow-block-bg-hover',
           statusBorder,
         )}

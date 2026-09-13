@@ -11,7 +11,7 @@ type NodeHeaderMetaProps = {
   enabled: boolean
 }
 
-/** 标题行右侧的状态标记（复制自 Dify `nodes/_base/node-sections.tsx` 的 NodeHeaderMeta）。 */
+/** 标题行右侧的状态标记（复制自上游 `nodes/_base/node-sections.tsx` 的 NodeHeaderMeta）。 */
 export function NodeHeaderMeta(props: NodeHeaderMetaProps) {
   const { status, enabled } = props
   if (!enabled) return <TriangleAlert className="size-3.5 shrink-0 text-text-warning" aria-hidden />
@@ -33,7 +33,7 @@ type NodeDescriptionProps = {
   className?: string
 }
 
-/** 节点描述，类名对齐 Dify 的 `px-3 pt-1 pb-2 system-xs-regular wrap-break-word whitespace-pre-line text-text-tertiary`。 */
+/** 节点描述，类名对齐上游的 `px-3 pt-1 pb-2 system-xs-regular wrap-break-word whitespace-pre-line text-text-tertiary`。 */
 export function NodeDescription(props: NodeDescriptionProps) {
   const { model, className } = props
   if (!model.description) return null
@@ -50,22 +50,22 @@ interface NodeBodyProps {
   children: ReactNode
 }
 
-/** 节点主体容器，对应 Dify 各节点视图里的 `px-3` 包裹层。 */
+/** 节点主体容器，对应上游各节点视图里的 `px-3` 包裹层。 */
 export function NodeBody(props: NodeBodyProps) {
   const { className, children } = props
   return <div className={cn('px-3', className)}>{children}</div>
 }
 
-/** 主体内的行列表，对应 Dify `space-y-0.5`。 */
+/** 主体内的行列表，对应上游 `space-y-0.5`。 */
 export function NodeRowList(props: NodeBodyProps) {
   const { className, children } = props
   return <div className={cn('space-y-0.5', className)}>{children}</div>
 }
 
 interface NodeBranchRowProps {
-  /** 右侧分支关键字，对应 Dify if-else 的 IF / ELIF / ELSE */
+  /** 右侧分支关键字，对应上游 if-else 的 IF / ELIF / ELSE */
   label: string
-  /** 左侧小字说明，对应 Dify if-else 的 CASE n */
+  /** 左侧小字说明，对应上游 if-else 的 CASE n */
   caption?: string
   className?: string
   /** 行尾的分支端口 */
@@ -73,7 +73,7 @@ interface NodeBranchRowProps {
 }
 
 /**
- * 分支行，结构逐行对齐 Dify `nodes/if-else/node.tsx`：
+ * 分支行，结构逐行对齐上游 `nodes/if-else/node.tsx`：
  * `relative flex h-6 items-center px-1` + 内层 `justify-between`，端口挂在行尾。
  */
 export function NodeBranchRow(props: NodeBranchRowProps) {
@@ -95,8 +95,8 @@ interface NodeConditionChipProps {
   children: ReactNode
 }
 
-/** 条件条目，对应 Dify `nodes/if-else/components/condition-value.tsx` 的圆角浅底容器。
- *  Dify 依赖变量标签自带的最大宽度避免折行；我们改成 `flex-nowrap` + 变量/值两侧截断，
+/** 条件条目，对应上游 `nodes/if-else/components/condition-value.tsx` 的圆角浅底容器。
+ *  上游依赖变量标签自带的最大宽度避免折行；我们改成 `flex-nowrap` + 变量/值两侧截断，
  *  保证条目恒定 24px 单行，不会撑破 `h-6` 的分支行。 */
 export function NodeConditionChip(props: NodeConditionChipProps) {
   const { className, children } = props
@@ -113,7 +113,7 @@ interface NodeRowProps {
   meta?: ReactNode
 }
 
-/** 主体内的信息行，对齐 Dify `nodes/start/node.tsx` 的行结构（h-6 圆角浅底）。 */
+/** 主体内的信息行，对齐上游 `nodes/start/node.tsx` 的行结构（h-6 圆角浅底）。 */
 export function NodeRow(props: NodeRowProps) {
   const { className, icon, name, meta } = props
 

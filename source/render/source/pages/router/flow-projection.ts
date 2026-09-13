@@ -76,9 +76,9 @@ export type WorkflowEdgeData = {
   /** 上游 / 下游节点的运行状态，用于渐变与状态着色 */
   sourceRunStatus: NodeRunStatus
   targetRunStatus: NodeRunStatus
-  /** 连线任意一端是当前悬浮的节点（对应 Dify 的 `_connectedNodeIsHovering`） */
+  /** 连线任意一端是当前悬浮的节点（对应上游的 `_connectedNodeIsHovering`） */
   highlighted: boolean
-  /** 任意一端节点被禁用时整条线降透明度（对应 Dify 的 `_dimmed`） */
+  /** 任意一端节点被禁用时整条线降透明度（对应上游的 `_dimmed`） */
   dimmed: boolean
   /** 是否允许在连线上插入节点 */
   canInsert: boolean

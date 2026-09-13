@@ -5,7 +5,7 @@ import type { RouteNodeProps } from '../node-data'
 
 /**
  * 协议发现节点视图。
- * 分支行逐行对齐 Dify `nodes/if-else/node.tsx`：左侧小字为协议 id，右侧为 IF / ELIF / ELSE，
+ * 分支行逐行对齐上游 `nodes/if-else/node.tsx`：左侧小字为协议 id，右侧为 IF / ELIF / ELSE，
  * 端口挂在行尾，偏移量由 NodeHandle 的 align="row" 统一处理。
  */
 export function ProtocolDiscoveryNodeView(props: RouteNodeProps) {

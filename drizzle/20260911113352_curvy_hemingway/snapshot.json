@@ -288,6 +288,16 @@
       "type": "integer",
       "notNull": true,
       "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "sortOrder",
+      "entityType": "columns",
+      "table": "logical_models"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
       "default": null,
       "generated": null,
       "name": "createdTime",
@@ -1751,6 +1761,16 @@
       "default": null,
       "generated": null,
       "name": "name",
+      "entityType": "columns",
+      "table": "workflows"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "''",
+      "generated": null,
+      "name": "description",
       "entityType": "columns",
       "table": "workflows"
     },

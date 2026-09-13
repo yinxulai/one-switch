@@ -8,6 +8,8 @@ export interface WorkflowRecord {
   type: string
   version: number
   name: string
+  /** 用户给这一版写的说明；留空表示没写（不是「未设置」）。 */
+  description: string
   definition: unknown
   createdTime: number
   updatedTime: number
@@ -22,6 +24,7 @@ function parseWorkflow(row: WorkflowRow): WorkflowRecord {
     type: row.type,
     version: row.version,
     name: row.name,
+    description: row.description,
     definition: JSON.parse(row.definition) as unknown,
     createdTime: Number(row.createdTime),
     updatedTime: Number(row.updatedTime),
@@ -51,6 +54,7 @@ export async function createWorkflow(input: Omit<WorkflowRecord, 'id' | 'created
     type: input.type,
     version: input.version,
     name: input.name,
+    description: input.description,
     definition: input.definition,
     createdTime: time,
     updatedTime: time,
@@ -61,6 +65,7 @@ export async function createWorkflow(input: Omit<WorkflowRecord, 'id' | 'created
     type: workflow.type,
     version: workflow.version,
     name: workflow.name,
+    description: workflow.description,
     definition: JSON.stringify(workflow.definition),
     createdTime: workflow.createdTime,
     updatedTime: workflow.updatedTime,
@@ -82,6 +87,7 @@ export async function updateWorkflow(id: string, updates: Partial<Omit<WorkflowR
   }
   getDb().update(workflows).set({
     name: next.name,
+    description: next.description,
     definition: JSON.stringify(next.definition),
     updatedTime: next.updatedTime,
     deletedTime: next.deletedTime,

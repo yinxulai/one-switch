@@ -14,7 +14,7 @@ import { useTranslation } from '@/i18n/provider'
 import { ROUTER_POLICY_PRESETS, type RouterPolicyPreset } from '@common/router/presets'
 import { PANEL_POPUP_SURFACE_CLASSNAME } from '../panel/panel-fields'
 import { policyPresetTextKeys } from '../policy-preset-text'
-import { DifyButton } from './dify-button'
+import { WorkflowButton } from './workflow-button'
 
 type PolicyMenuProps = {
   /** 当前画布与某个预设一致时高亮它；不一致时为 `null`。 */
@@ -25,7 +25,7 @@ type PolicyMenuProps = {
 /**
  * 策略下拉：随时把画布换成内置策略，第一项是系统默认策略。
  *
- * 与 `VersionMenu` 同一套浮层样式（去阴影、去描边、复用 Dify 圆角还原标记）。
+ * 与 `VersionMenu` 同一套浮层样式（去阴影、去描边、复用圆角还原标记）。
  */
 export function PolicyMenu(props: PolicyMenuProps) {
   const { activePolicyId, onApply } = props
@@ -35,11 +35,11 @@ export function PolicyMenu(props: PolicyMenuProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <DifyButton size="medium" aria-label={t('router.policy.aria')}>
+        <WorkflowButton size="medium" aria-label={t('router.policy.aria')}>
           <Sparkles className="size-3.5" aria-hidden />
           {activePresetId ? t(activePresetId.name) : t('router.policy.fallbackName')}
           <ChevronDown className="size-3.5" aria-hidden />
-        </DifyButton>
+        </WorkflowButton>
       </DropdownMenuTrigger>
 
       <DropdownMenuContent

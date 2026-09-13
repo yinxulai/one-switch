@@ -5,7 +5,7 @@ import { WorkflowNode } from './components/workflow-node'
 
 /**
  * 画布节点类型注册表。
- * 对应 Dify `app/components/workflow/nodes/index.tsx` 的 `NodeComponentMap`：
+ * 对应上游 `app/components/workflow/nodes/index.tsx` 的 `NodeComponentMap`：
  * 六种节点共用一个外壳组件 `WorkflowNode`，内部再按 `model.kind` 渲染各自的内容。
  */
 const workflowNodeTypes = {

@@ -44,7 +44,7 @@ function SelectTrigger({
       data-slot="select-trigger"
       data-size={size}
       className={cn(
-        // 触发器外观对齐 router 节点面板（Dify `selectTriggerVariants`）。
+        // 触发器外观对齐 router 节点面板（上游的 `selectTriggerVariants`）。
         "flex w-fit items-center justify-between gap-1.5 rounded-lg border border-transparent bg-components-input-bg-normal py-2 pr-2 pl-3 text-[13px] leading-4 text-components-input-text-filled whitespace-nowrap transition-colors outline-none select-none",
         "data-placeholder:text-components-input-text-placeholder data-[size=default]:h-8 data-[size=sm]:h-7",
         "hover:bg-state-base-hover-alt focus-visible:ring-2 focus-visible:ring-state-accent-solid",
@@ -78,7 +78,7 @@ function SelectContent({
         data-slot="select-content"
         data-align-trigger={position === "item-aligned"}
         className={cn(
-          // 浮层取消阴影与亮色描边，改用 Dify 面板色 + 0.5px 描边（对齐 router 的下拉外观）。
+          // 浮层取消阴影与亮色描边，改用面板色 + 0.5px 描边（对齐 router 的下拉外观）。
           "relative z-50 max-h-(--radix-select-content-available-height) min-w-36 origin-(--radix-select-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-lg border-[0.5px] border-components-panel-border bg-components-panel-bg-blur p-1 text-text-primary ring-0 shadow-none backdrop-blur-[5px] duration-100 data-[align-trigger=true]:animate-none data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           position === "popper" && "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
           className

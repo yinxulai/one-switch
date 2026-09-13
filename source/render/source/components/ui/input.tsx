@@ -3,7 +3,7 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 
 /**
- * 输入框外观对齐 router 节点面板（Dify `packages/dify-ui/src/input/index.tsx`）：
+ * 输入框外观对齐 router 节点面板（上游 UI 包的 `input/index.tsx`）：
  * 透明描边 → 悬停/聚焦才显形，底色走 `components-input-*` token，排版用 13px。
  */
 function Input({ className, type, ...props }: React.ComponentProps<"input">) {

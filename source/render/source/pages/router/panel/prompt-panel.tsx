@@ -93,6 +93,9 @@ export function PromptPanel(props: NodePanelProps) {
         <NodePanelHint tone="warning">{t('router.panel.warnModelDisabled', { name: selectedModel.name })}</NodePanelHint>
       )}
 
+      {/* 纯选型建议，不是本节点的必要配置，放在告警之后、具体配置项之前。 */}
+      <NodePanelHint>{t('router.panel.promptModelAdvice')}</NodePanelHint>
+
       <NodePanelField label={t('router.panel.systemPrompt')}>
         <PanelCodeEditor
           language="template"
