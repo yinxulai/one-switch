@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm'
 import { check, index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import { storedBody } from './stored-body'
 
 /**
  * 数据库（`one-switch-data-v1.db`）：**系统写的东西**（观测数据）。
@@ -238,6 +239,10 @@ export const requestAttempts = sqliteTable(
  * 每个请求恰好一行（`requestId` 唯一）。
  *
  * 列名不带 `client` 前缀——表本身就代表客户端视角。
+ *
+ * 两个正文列是 {@link storedBody}：存进去的正文一律**完整**保存，落库时压缩、
+ * 读取时还原，读写两侧看到的都是原样的文本。压缩是存储细节，列名、查询与
+ * 消费方都感觉不到它。
  */
 export const requestContents = sqliteTable(
   'request_contents',
@@ -248,11 +253,11 @@ export const requestContents = sqliteTable(
     requestMethod: text('requestMethod').notNull(),
     requestPath: text('requestPath').notNull(),
     requestHeaders: text('requestHeaders'),
-    requestBody: text('requestBody'),
+    requestBody: storedBody('requestBody'),
     /** 最终返回给客户端的 HTTP 状态码；为 `null` 表示客户端未收到任何响应。 */
     responseStatus: integer('responseStatus'),
     responseHeaders: text('responseHeaders'),
-    responseBody: text('responseBody'),
+    responseBody: storedBody('responseBody'),
 
     createdTime: integer('createdTime').notNull(),
     updatedTime: integer('updatedTime').notNull(),
@@ -277,10 +282,10 @@ export const attemptContents = sqliteTable(
     attemptId: text('attemptId').notNull().references(() => requestAttempts.id),
     captureStatus: text('captureStatus').notNull(),
     requestHeaders: text('requestHeaders'),
-    requestBody: text('requestBody'),
+    requestBody: storedBody('requestBody'),
     responseStatus: integer('responseStatus'),
     responseHeaders: text('responseHeaders'),
-    responseBody: text('responseBody'),
+    responseBody: storedBody('responseBody'),
 
     createdTime: integer('createdTime').notNull(),
     updatedTime: integer('updatedTime').notNull(),

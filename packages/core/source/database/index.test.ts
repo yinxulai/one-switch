@@ -226,6 +226,18 @@ describe('schema split', () => {
     expect(columnNames(data, 'request_logs').sort()).toEqual([
       'clientProtocol', 'createdTime', 'id', 'logicalModelId', 'status', 'totalDurationMilliseconds', 'transport',
     ])
+    // 正文列存的是压缩后落库、读取时还原的字节，但列亲和性仍是 `text`：压缩是列定义里的
+    // 细节，不产生 schema 变更，所以这两张表的物理列与首发基线完全一致。这里断言的是
+    // **迁移链**真的跑过一遍：只比 schema 声明的话，「schema 改了但没生成迁移」会一路绿到运行期才炸。
+    expect(columnNames(data, 'request_contents').sort()).toEqual([
+      'captureStatus', 'createdTime', 'id', 'requestBody', 'requestHeaders', 'requestId',
+      'requestMethod', 'requestPath', 'responseBody', 'responseHeaders', 'responseStatus',
+      'updatedTime',
+    ])
+    expect(columnNames(data, 'attempt_contents').sort()).toEqual([
+      'attemptId', 'captureStatus', 'createdTime', 'id', 'requestBody', 'requestHeaders',
+      'responseBody', 'responseHeaders', 'responseStatus', 'updatedTime',
+    ])
     expect(columnNames(config, 'settings')).toEqual(['key', 'value', 'valueType', 'updatedTime'])
     expect(columnNames(data, 'request_attempts')).toEqual(
       expect.arrayContaining(['providerModelId', 'providerName', 'providerModelName', 'url', 'httpStatus', 'retryable', 'upstreamTransport', 'ttftMilliseconds', 'requestRewriteRuleIds', 'responseRewriteRuleIds']),

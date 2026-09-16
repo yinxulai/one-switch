@@ -499,13 +499,13 @@ export const RequestContentSchema = z.object({
   requestPath: z.string(),
   /** 客户端原始请求头（脱敏后的 JSON 字符串）。 */
   requestHeaders: z.string().nullable(),
-  /** 客户端原始请求体。 */
+  /** 客户端原始请求体。完整保存，一字不差。 */
   requestBody: z.string().nullable(),
   /** 最终返回给客户端的 HTTP 状态码。 */
   responseStatus: z.number().int().nullable(),
   /** 最终返回给客户端的响应头（脱敏后的 JSON 字符串）。 */
   responseHeaders: z.string().nullable(),
-  /** 最终返回给客户端的响应体。 */
+  /** 最终返回给客户端的响应体。完整保存，一字不差。 */
   responseBody: z.string().nullable(),
   createdTime: z.number().int(),
   updatedTime: z.number().int(),
@@ -525,13 +525,13 @@ export const AttemptContentSchema = z.object({
   captureStatus: RequestContentCaptureStatusSchema,
   /** 发往上游的请求头（脱敏后的 JSON 字符串），含改写与协议转换的结果。 */
   requestHeaders: z.string().nullable(),
-  /** 发往上游的请求体，含改写与协议转换的结果。 */
+  /** 发往上游的请求体，含改写与协议转换的结果。完整保存，一字不差。 */
   requestBody: z.string().nullable(),
   /** 上游返回的 HTTP 状态码。 */
   responseStatus: z.number().int().nullable(),
   /** 上游返回的响应头（脱敏后的 JSON 字符串）。 */
   responseHeaders: z.string().nullable(),
-  /** 上游返回的响应体。 */
+  /** 上游返回的响应体。完整保存，一字不差。 */
   responseBody: z.string().nullable(),
   createdTime: z.number().int(),
   updatedTime: z.number().int(),

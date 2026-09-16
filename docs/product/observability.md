@@ -190,18 +190,24 @@ $$\text{TPS} = \frac{\text{输出 Token}}{\text{尝试耗时}}$$
 | 请求日志（请求身份、逐次尝试、用量与指标） | `captureRequestLogs`（默认开） | `requestLogRetentionDays` | **`0` = 永久保留** |
 | 请求与响应正文（客户端与上游两个视角） | `captureRequestContent`（默认开） | `contentRetentionDays` | **7 天** |
 
+正文没有大小上限，也没有截断，只有一套写入前的无损压缩。
+
 - **`0` 表示永久保留，不是「零天」。** 输入框里的 `0` 会把单位位置换成「永久」，避免被读成「马上删除」。默认值刻意不对称：指标行很小、且是历史统计与故障回溯的唯一来源，永久保留；正文会随请求长度线性膨胀，过期正文留 7 天就够了。
 - **正文开关失效于日志开关**：关掉 `captureRequestLogs` 后新请求只走代理链路、不落库，正文行也随之无处归属。关掉采集**不会**自动删除已有数据，删除只由保留策略与手动清理负责。
 - **正文过期只删正文。** `contentRetentionDays` 到期只删 `request_contents` 与 `attempt_contents`（协议转换前后的两个视角一起删），`request_logs`、`request_attempts` 与 `request_usages` / `attempt_usages` 全部保留：历史用量与延迟统计不会因为正文被清理而失真。
+- **正文只压缩，不裁剪。** 正文是观测库里唯一随请求长度线性膨胀的部分，而它膨胀得极不平均：实测一份 6.9 GB 的观测库里，大于 1 MB 的响应体只有 337 条（占 5.5% 的行），却吃掉了 811 MB。但大正文恰恰是复盘时唯一有用的东西：报错不一定在开头，流式响应要看完整的事件序列，被拒的报文必须一字不差。因此上限被整个去掉了，改成一个不丢字节的措施——写库前用 `node:zlib` 的 deflate（等级 1）压成字节，读取时还原，列名与列亲和性不变，消费方拿到的永远是原样文本。同一份数据上四个正文列合计由 6.92 GB 降到 1.29 GB（18.7%），约 5.4 倍；等级 1 而非更高等级，是因为它不到一半的 CPU 就拿到了接近的收益（等级 6 是 16.5%，`brotli` 质量 5 是 14.7%）。
+- **需要压缩的正文其实很少，但很胖。** 大于 512 字节的正文才压，小于门槛的保持纯文本，让 `sqlite3` 命令行能直接看；压不下去时原样保留，不让「压缩」变成膨胀。请求体之所以大，是因为重复的系统提示词（实测最大一条 1.3 MB）；响应体之所以能压到 2.5%，是因为流式响应被存成 `{"chunks":["data: …", …]}` 这种高度自相似的形状。
+- **存储细节不改变 schema。** 压缩列声明为 `text`，SQLite 的列亲和性不会改写 `BLOB`，因此同一列可以既放纯文本（旧行、小正文）又放压缩后的字节，靠 `typeof` 区分，不需要标志位列、不需要数据迁移，也不会因此产生新的迁移文件。
+- **正文完整性与可重放。** 详情页生成的 curl 直接拿正文当 `--data-raw`，因为落库的就是完整正文，所以生成出来的命令可以原样重放，不做任何提示。正文是原样的字节，不存在多字节字符被切开的问题。
 - **请求日志过期是级联删除。** `requestLogRetentionDays` 到期依次删除 `attempt_contents`、`attempt_usages`、`request_contents`、`request_usages`、`request_attributes`、`request_attempts`，最后删除 `request_logs`，不留孤儿行。
 - 没有「保留最近 N 条」的条数上限：清理口径只有一个，即时间窗。
 - **手动清理与自动保留是两回事。** 设置页的“清理历史日志”可以分别输入「请求日志保留天数」和「请求响应正文保留天数」，即刻执行一次、不改动自动保留设置；单项填 `0` 表示本次跳过该项，两项都是 `0` 时不执行。接口 `PruneRequestLogsParams`（`requestLogRetentionDays?` / `contentRetentionDays?`）返回 `{ deletedLogs, deletedContents }`，两个数量分别对应两条删除路径。
 - **删除后的展示不能变形。** 正文被清理的记录仍是完整的一条请求记录，详情面板显式提示“正文已按保留策略清理”，而不是显示成空正文；列表、统计与分页在正文缺失时保持同一套布局。
-- 默认保存完整请求体和响应体；关闭 `captureRequestContent` 后不再采集新正文
 - 记录客户端原始请求与最终响应（`request_contents`），以及每次 upstream 尝试的请求/响应（`attempt_contents`）。
 - 协议转换不单独存储：展示时直接比较 `request_logs.clientProtocol` 与 `request_attempts.upstreamProtocol`，上游跳以什么形态作答读 `request_attempts.upstreamTransport`，耗时读 `request_attempts.durationMilliseconds`。转换前后的 Header 与正文分别由 `request_contents`（客户端侧）与 `attempt_contents`（上游侧）唯一提供。upstream 可以是供应商，也可以是协议转换器所在的中间目标。
 - **被拒的请求同样落库。** 协议无法识别、model 非法、没有可用逻辑模型、手动模型不可用、找不到上游目标、客户端中断——这些分支在建立执行上下文之前就返回了，但它们是用户真实发出的请求。不写日志会让「日志里查不到」被误读成「没发过这个请求」。
-- 正文与请求日志索引分开存储；单次正文不设置大小限制并完整读取、保存，以支持超长上下文和大体积请求。极大正文可能增加内存和数据库占用，但不应因日志记录失败影响代理请求。
+- 正文与请求日志索引分开存储；单次正文完整落库，写入前无损压缩、读取时还原，不设大小上限、不裁剪
+- 正文采集与压缩不得影响代理请求：失败只影响这一条日志的完整性
 - 日志清理依次删除 `attempt_contents`、`attempt_usages`、`request_contents`、`request_usages`、`request_attributes`、`request_attempts`，最后删除 `request_logs`；只清理正文时仅走 `request_contents` / `attempt_contents` 这一步
 - Authorization、API Key、Cookie 等敏感请求头始终脱敏，正文自身不视为已脱敏
 - 日志存储在本地应用数据目录
@@ -314,7 +320,7 @@ WHERE a.createdTime >= ? GROUP BY a.providerId
 | `idx_request_attempts_created_time(createdTime)` | 不带供应商/模型条件的全量统计 | `(providerId, createdTime)` 与 `(providerModelId, createdTime)` 的最左列都不是时间，服务不了全量排行 |
 | `idx_request_usages_created_time` / `idx_attempt_usages_created_time` | 用量聚合 | 过滤条件永远只有时间窗（五种类型总是一起取），`(type, createdTime)` 的最左列用不上 |
 
-**连接与 PRAGMA 层面的调优同样重要。** 这些调优全部落在**数据文件**上（观测数据都住在 `one-switch-data-<n>.db`）——`initDatabases` 设定 `temp_store = MEMORY`（聚合的 `GROUP BY` / `ORDER BY` 临时 B 树不再落盘）、`cache_size = -64000`（默认页缓存仅 2 MB，扫一遍日志表就被冲干净）、`synchronous = NORMAL`（WAL 下不会因进程崩溃丢已提交数据）、`auto_vacuum = INCREMENTAL`（保留策略删掉的页能被 `reclaimUnusedSpace()` 逐步回收），并在迁移后执行一次 `PRAGMA optimize` 让规划器拿到统计信息——没有统计信息时它按「所有索引一样好」估计，实测正是这一点让它给带时间窗的聚合选了更差的路径。配置库刻意用 `synchronous = FULL`：那里每次写入都是用户资产，不值得为一点写入速度换掉「断电也不丢」。
+**连接与 PRAGMA 层面的调优同样重要。** 这些调优全部落在**数据文件**上（观测数据都��在 `one-switch-data-<n>.db`）——`initDatabases` 设定 `temp_store = MEMORY`（聚合的 `GROUP BY` / `ORDER BY` 临时 B 树不再落盘）、`cache_size = -64000`（默认页缓存仅 2 MB，扫一遍日志表就被冲干净）、`synchronous = NORMAL`（WAL 下不会因进程崩溃丢已提交数据）、`auto_vacuum = INCREMENTAL`（保留策略删掉的页能被 `reclaimUnusedSpace()` 逐步回收），并在迁移后执行一次 `PRAGMA optimize` 让规划器拿到统计信息——没有统计信息时它按「所有索引一样好」估计，实测正是这一点让它给带时间窗的聚合选了更差的路径。配置库刻意用 `synchronous = FULL`：那里每次写入都是用户资产，不值得为一点写入速度换掉「断电也不丢」。
 
 结果：分析页一次完整加载从 1403 ms 降到 550 ms（7 天）、从 3088 ms 降到 1479 ms（30 天）；供应商详情页 30 天从 744 ms 降到 206 ms。
 

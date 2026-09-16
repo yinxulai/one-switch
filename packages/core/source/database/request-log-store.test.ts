@@ -158,6 +158,33 @@ describe('request log store persistence', () => {
     })])
   })
 
+  it('正文不管多大都完整落库：压缩是透明的，读回来的字节与写进去的一模一样', async () => {
+    const log = await createLog('req_large_body')
+    // 造一段真实世界会遇到的正文：远超压缩门槛，重复结构 + 中文 + 表情。
+    const largeBody = JSON.stringify({
+      messages: Array.from({ length: 400 }, (_, index) => ({ role: index % 2 === 0 ? 'user' : 'assistant', content: `第 ${index} 段内容，请原样返回 🌍` })),
+    })
+    const content = await createRequestContent({
+      requestId: log.id,
+      captureStatus: 'captured',
+      requestMethod: 'POST',
+      requestPath: '/v1/chat/completions',
+      requestHeaders: '{}',
+      requestBody: largeBody,
+    })
+    await updateRequestContent(content.id, { responseBody: largeBody })
+
+    // 库里躺的是压缩后的字节，而不是被裁过的文本——这是「不丢内容」的物理证据。
+    const storedRow = getDataDb().$client.prepare('SELECT requestBody, responseBody FROM request_contents WHERE id = ?').get(content.id) as { requestBody: unknown; responseBody: unknown }
+    for (const stored of [storedRow.requestBody, storedRow.responseBody]) {
+      expect(stored).toBeInstanceOf(Uint8Array)
+      expect((stored as Uint8Array).length).toBeLessThan(Buffer.byteLength(largeBody, 'utf8'))
+    }
+
+    // 而消费方只看得到原文：写入路径与更新路径都必须还原得一字不差。
+    expect((await listRequestContents(log.id))[0]).toMatchObject({ requestBody: largeBody, responseBody: largeBody })
+  })
+
   it('updates request outcome fields and prunes all related rows', async () => {
     const log = await createLog('req_prunable', 'pending')
     await updateRequestLogStatus(log.id, { status: 'success', totalDurationMilliseconds: 20 })

@@ -64,6 +64,8 @@ One Switch 的配置内容会持续增加，尤其是供应商、模型端点、
 
 **三、写放大与 PRAGMA 档位不同。** 配置库每次写入都很重要，用 `WAL + synchronous = FULL`；观测库每次写都很小但很频繁，用 `WAL + synchronous = NORMAL`、`cache_size = -64000`、`temp_store = MEMORY`，并开启 `auto_vacuum = INCREMENTAL` 让保留策略删掉的页能被逐步回收。合成一个库时只能取两者之间更保守的那个值。
 
+`auto_vacuum` 的**位置**是它能否生效的一部分：这条 PRAGMA 只对「还没建表的空库」生效，而 `journal_mode = WAL` 会写库头、让文件不再算空库，因此 `auto_vacuum` 必须排在 WAL **之前**（见 `applyPragmas`）。顺序反了不会报错，只会静默失效——`PRAGMA auto_vacuum` 读回 0，`incremental_vacuum` 随之变成空操作。
+
 **四、边界可以被静态断言。** 哪些表属于哪个库写成了显式清单，`packages/core/scripts/check-database-boundaries.mjs` 在 `pnpm lint` 里断言「每个 store 只碰自己那个库、两个 schema 文件不互相引用、表不重复出现在两个库里」。合库时这类越界只能靠评审发现，拆库后它变成一条会失败的检查。
 
 代价是**跨库外键不可能**（SQLite 的外键只能在同一个文件内生效，事务也不能跨 ATTACH 的文件）。所以：
@@ -793,18 +795,20 @@ CREATE INDEX idx_attempt_usages_created_time
 
 - `requestMethod` / `requestPath`：客户端请求的方法与路径。请求级信息天然属于客户端视角，因此只存在于本表；
 - `requestHeaders`：客户端请求头（脱敏后）；
-- `requestBody`：客户端请求正文；
+- `requestBody`：客户端请求正文，**完整保存**；
 - `responseStatus`：最终返回给客户端的状态码；
 - `responseHeaders`：最终返回给客户端的响应头（脱敏后）。只有真正写出客户端时才有值，未写出时为 `NULL`，绝不回落到上游响应头；
-- `responseBody`：最终返回给客户端的响应正文（协议转换后的形态）。
+- `responseBody`：最终返回给客户端的响应正文（协议转换后的形态），**完整保存**。
 
 `attempt_contents` 列定义：
 
 - `requestHeaders`：实际发往上游的请求头（脱敏后，已完成改写与协议转换）；
-- `requestBody`：实际发往上游的请求正文；
+- `requestBody`：实际发往上游的请求正文，**完整保存**；
 - `responseStatus`：上游返回的状态码；
 - `responseHeaders`：上游返回的响应头（脱敏后）；
-- `responseBody`：上游返回的响应正文（协议转换前的原始形态）。
+- `responseBody`：上游返回的响应正文（协议转换前的原始形态），**完整保存**。
+
+四列正文都不做任何截断。观测数据的价值在于事后复盘，而复盘时最需要的那一段往往就在尾部（出错信息、最后一个 chunk、被拒的真实报文）；一条无法复现现场的大正文比没有正文更糟，因为它会让人以为已经看全了。因此正文一律整份落库，体积问题交给**无损压缩**：写入前用 `node:zlib` 的 deflate（等级 1）压成字节，读取时还原，列名与列亲和性都不变，消费方拿到的一律是原样文本。压缩是存储层的内部细节（见 `packages/core/source/database/stored-body.ts`），既不产生 schema 变更、不需要迁移，也不构成新的语义；正文小于 512 字节时不压，让 `sqlite3` 命令行依然可读。实测在真实数据集上四个正文列合计由 6.92 GB 降到 1.29 GB，约 5.4 倍。
 
 `attempt_contents` **只保存载荷**。改写规则 id、上游跳形态、TTFT 都是事实，写在 `request_attempts` 上：规则按 ProviderModel 匹配，归属单位是「尝试」；而事实必须在采集开关关闭时依然完整落库，不能和正文挤在同一张表里。日志详情页需要的规则集合由 `request_attempts.requestRewriteRuleIds` ∪ `responseRewriteRuleIds` 聚合而成。
 
@@ -1195,7 +1199,7 @@ Token、缓存 Token 和其他协议用量 -> `request_usages` / `attempt_usages
 
 1. 创建数据目录（`<用户主目录>/.one-switch`，开发档是 `<用户主目录>/.one-switch-development`，见 [packaging.md](./packaging.md) §5.5）；
 2. 打开 `one-switch-config-<v>.db` 与 `one-switch-data-<v>.db`（版本号取自 `DATABASE_SCHEMA_VERSIONS`，同名文件存在就直接复用）；
-3. 按角色设置 PRAGMA：两个库都开 `foreign_keys = ON` 并切 WAL；配置库 `synchronous = FULL`，数据库 `synchronous = NORMAL` + `cache_size = -64000` + `temp_store = MEMORY` + `auto_vacuum = INCREMENTAL`（`auto_vacuum` 必须在建表之前设定才生效）；
+3. 按角色设置 PRAGMA：两个库都开 `foreign_keys = ON` 并切 WAL；配置库 `synchronous = FULL`，数据库 `synchronous = NORMAL` + `cache_size = -64000` + `temp_store = MEMORY` + `auto_vacuum = INCREMENTAL`（`auto_vacuum` 必须在建表之前设定才生效，且要排在 `journal_mode = WAL` **之前**：WAL 一写库头，文件就不再算「空库」，这条 PRAGMA 会被静默忽略）；
 4. 应用该角色的 migration 链，创建全部表和索引；
 5. 配置库专有：按默认值批量插入 `settings` 配置项（使用 `INSERT OR IGNORE`，仅插入不存在的 key，永不覆盖已有值，保证幂等）、插入默认逻辑模型；
 6. 数据库专有：执行一次 `PRAGMA optimize`，让规划器拿到统计信息；
