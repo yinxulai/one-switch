@@ -122,7 +122,8 @@ export async function closeDatabases(): Promise<void> {
 /**
  * 打开一个库：PRAGMA → 迁移 → 角色专属收尾 → 统计信息。
  *
- * 顺序不能挪：`auto_vacuum` 必须在建表之前给（见 `applyPragmas`）。
+ * 顺序不能挪：PRAGMA 全部要给在 `migrate` 之前，其中 `auto_vacuum` 还额外要求排在
+ * `journal_mode = WAL` 之前（见 `applyPragmas`）。
  */
 function openDatabase(role: DatabaseRole, dataDir: string): OpenedDatabase {
   const filePath = path.join(dataDir, createDatabaseFileName(role))
@@ -172,6 +173,19 @@ function applyPragmas(role: DatabaseRole, client: DatabaseSync): void {
   // 「日志写不进去」或「启动失败」。5s 与 SQLite 生态里的常见取值一致。
   client.exec('PRAGMA busy_timeout = 5000')
 
+  // `auto_vacuum` 必须排在 `journal_mode = WAL` **之前**。观测数据只增不减，删掉旧日志后
+  // 腾出来的页要能还给文件系统，否则文件只会越来越大——这条 PRAGMA 就是那件事的开关，
+  // 配套的回收动作见 `reclaimUnusedSpace`。
+  //
+  // 它只在「库还是空的」那一刻生效，而 `journal_mode = WAL` 一执行就会写库头、把库变成非空。
+  // 顺序反了**不会报错**：先 WAL 再设 `auto_vacuum` 会被静默忽略（`PRAGMA auto_vacuum`
+  // 读回来仍是 0），`incremental_vacuum` 变成一次空操作，「删了正文但文件一点
+  // 没小」会一直真实发生却没有任何信号。实测同一份 117 MB 的观测库：顺序反了回收后仍是 117.3 MB，
+  // 顺序对了回收后是 0.0 MB。
+  //
+  // 只给观测库设：配置库只增几十行，没有需要回收的空间。
+  if (role === 'data') client.exec('PRAGMA auto_vacuum = INCREMENTAL')
+
   // WAL 两边都要：读不被写挡住。分析页在跑长聚合时，代理仍在写日志——回滚日志模式下这两件事
   // 会互相阻塞，而 WAL 下写只追加、读走快照。两个库都是「一边读一边写」的形态。
   client.exec('PRAGMA journal_mode = WAL')
@@ -192,10 +206,6 @@ function applyPragmas(role: DatabaseRole, client: DatabaseSync): void {
   // 默认页缓存只有 2MB，150k 行的日志表随便扫一遍就把它冲干净了，而分析查询又会连着访问
   // 同样的页。64MB 上限对桌面应用是可接受的开销。
   client.exec('PRAGMA cache_size = -64000')
-  // 观测数据只增不减，删掉旧日志后腾出来的页如果不回收，文件只会越来越大。
-  // 这条 PRAGMA **只在建表之前生效**（`sqlite_master` 为空时），所以位置必须在 `migrate` 之前
-  // ——这就是它在 `openDatabase` 里被排在迁移之前的原因。配套的回收动作见 `reclaimUnusedSpace`。
-  client.exec('PRAGMA auto_vacuum = INCREMENTAL')
 }
 
 function finishRoleSpecificInitialization(role: DatabaseRole, client: DatabaseSync): void {
