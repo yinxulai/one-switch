@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { closeDatabases, initDatabases } from './index'
 import { createLogicalModel, deleteLogicalModel, listLogicalModels, listSchedulingPolicies, reorderLogicalModels, updateLogicalModel, upsertSchedulingPolicy } from './logical-model-store'
 import { createProvider } from './provider-store'
-import { createProviderModelRoute } from './model-store'
+import { createProviderModelRoute, updateProviderModelRoute } from './model-store'
 
 let temporaryDirectory: string
 
@@ -89,6 +89,51 @@ describe('logical model store', () => {
     expect(await listLogicalModels(true)).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'default', deletedTime: expect.any(Number) }),
     ]))
+  })
+
+  // issue #14：模型本体被停用时，不允许再从逻辑模型里把它打开——
+  // 打开也永远不会被调度（`getAvailableModels` 要求模型本体也是启用的），
+  // 界面上的「已启用」只是一句谎话。
+  it('refuses to enable a binding whose provider model is disabled', async () => {
+    const provider = await createProvider({
+      name: 'Disabled Model Provider',
+      apiKeyReference: 'key_disabled_model_provider',
+      timeoutMilliseconds: 15_000,
+      enabled: true,
+    })
+    const model = await createProviderModelRoute({
+      providerId: provider.id,
+      modelName: 'switched-off-model',
+      priority: 1,
+      enabled: false,
+      endpoints: [{
+        protocol: 'openai-completions',
+        endpointUrl: 'https://example.com/v1/chat/completions',
+        customAuthHeader: null,
+        protocolConversionEnabled: false,
+      }],
+    })
+
+    // 关着加进来是允许的：绑定可以先存在，等模型本体启用后再打开。
+    expect(await upsertSchedulingPolicy({ logicalModelId: 'default', providerModelId: model.id, priority: 1, enabled: false }))
+      .toMatchObject({ enabled: false })
+
+    await expect(upsertSchedulingPolicy({ logicalModelId: 'default', providerModelId: model.id, priority: 1, enabled: true }))
+      .rejects.toMatchObject({
+        code: 'PROVIDER_MODEL_DISABLED',
+        statusCode: 400,
+        details: { modelName: 'switched-off-model' },
+      })
+
+    // 被拒绝之后绑定仍旧是关着的，不能留下半个打开的状态。
+    expect(await listSchedulingPolicies('default')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ providerModelId: model.id, enabled: false }),
+    ]))
+
+    // 模型本体重新启用后，同一个绑定可以被打开。
+    await updateProviderModelRoute(model.id, { enabled: true })
+    expect(await upsertSchedulingPolicy({ logicalModelId: 'default', providerModelId: model.id, priority: 1, enabled: true }))
+      .toMatchObject({ enabled: true })
   })
 
   it('persists the dragged logical model order across reads', async () => {

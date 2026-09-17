@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, inArray, isNull, notInArray } from 'drizzle-orm'
 import { ProtocolConverterSchema, ProviderModelEndpointSchema } from '@common/schemas'
 import type {
+  LogicalModelProviderModel,
   ProtocolConverter,
   ProviderModel,
   ProviderModelEndpoint,
@@ -36,10 +37,13 @@ export async function listProviderModels(includeDeleted = false): Promise<Provid
   return rows.map(mapProviderModelView)
 }
 
-export async function listProviderModelsForLogicalModel(logicalModelId: string, includeDeleted = false, includeDisabled = false): Promise<ProviderModelRoute[]> {
-  // 不能把 `scheduling_policies` 整行嵌进 select：它和 `provider_models` 都有 `enabled`，
-  // node:sqlite 的 JOIN 结果按列名折叠，`policy.enabled` 会被模型本体的值盖掉。
-  // 逻辑模型页的开关写的是绑定开关，列表必须读同一列，否则刷新会把已关闭的绑定弹回去。
+export async function listProviderModelsForLogicalModel(logicalModelId: string, includeDeleted = false, includeDisabled = false): Promise<LogicalModelProviderModel[]> {
+  // 这里必须分开取「绑定开关」与「模型本体开关」：两列同名（`scheduling_policies.enabled`
+  // 与 `provider_models.enabled`），把策略行整行嵌进 select 时后者会被前者盖住——不是
+  // node:sqlite 折叠了列名，而是早先的实现直接写了 `enabled: model.enabled`。
+  // 逻辑模型页的开关写的是绑定开关，列表要读同一列，否则刷新会把已关闭的绑定弹回去；
+  // 同时还要把模型本体的开关带出去，界面才能把「模型已停用」和「这个逻辑模型没启用它」
+  // 分开画——前者不会被调度。
   const rows = getConfigDb().select({
     model: providerModels,
     policyEnabled: schedulingPolicies.enabled,
@@ -56,6 +60,7 @@ export async function listProviderModelsForLogicalModel(logicalModelId: string, 
       ...mapProviderModelRoute(model),
       priority: policyPriority,
       enabled: policyEnabled,
+      modelEnabled: model.enabled,
     }))
 }
 
@@ -109,6 +114,12 @@ export async function updateProviderModelRoute(id: string, updates: Partial<Omit
       ...(updates.deletedTime !== undefined ? { deletedTime: updates.deletedTime } : {}),
       updatedTime: time,
     }).where(eq(providerModels.id, id)).run()
+    if (updates.enabled === false) {
+      // 关闭模型时，把它在所有逻辑模型里的调度绑定一并禁用：
+      // 模型已经不可用了，绑定仍「开启」会让人误以为它还会参与调度。
+      transaction.update(schedulingPolicies).set({ enabled: false, updatedTime: time })
+        .where(and(eq(schedulingPolicies.providerModelId, id), isNull(schedulingPolicies.deletedTime))).run()
+    }
     if (updates.endpoints !== undefined) {
       // 端点集合变化交给 `replaceRouteEndpoints` 做差异更新：没变的绑定原地保留
       // （连同它的 id），只对增减做软删除/新增。

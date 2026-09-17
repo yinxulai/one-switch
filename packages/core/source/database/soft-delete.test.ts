@@ -165,6 +165,9 @@ describe('soft deletion', () => {
     ])
 
     // 主键不含 deletedTime，所以「重新把模型加回逻辑模型」是同一行复活，而不是插一条新策略。
+    // 模型行上一步已被级联停用，而禁用状态的模型不允许再打开绑定（见 issue #14），
+    // 所以复活绑定之前先把模型本体复活并启用。
+    await updateProviderModelRoute(route.id, { enabled: true, deletedTime: null })
     await upsertSchedulingPolicy({ logicalModelId: logicalModel.id, providerModelId: route.id, priority: 1, weight: 50, enabled: true })
     expect(schedulingPolicyRows(logicalModel.id)).toHaveLength(1)
     expect(await listSchedulingPolicies(logicalModel.id)).toEqual([

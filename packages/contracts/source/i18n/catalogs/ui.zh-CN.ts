@@ -470,6 +470,8 @@ export const uiZhCN: Record<keyof typeof uiEn, MessageValue> = {
   'logicalModels.row.enabledState': '{model} 启用状态',
   'logicalModels.row.removeAria': '从逻辑模型移除 {model}',
   'logicalModels.row.removeTitle': '从逻辑模型移除',
+  'logicalModels.row.modelDisabled': '模型已停用',
+  'logicalModels.row.modelDisabledHint': '该模型已在模型管理中停用，不会参与调度。请先在模型管理里启用它，再打开这个绑定。',
   'logicalModels.proxy.title': '服务接入配置',
   'logicalModels.proxy.description': '本地代理服务，统一入口转发到各上游提供商',
   'logicalModels.proxy.endpoint': '完整接口地址',
@@ -1365,6 +1367,7 @@ export const uiZhCN: Record<keyof typeof uiEn, MessageValue> = {
   'errors.TRANSPORT_NOT_IMPLEMENTED': '该传输形态尚未实现',
   'errors.ENDPOINT_URL_MISSING': '供应商「{providerName}」还没有配置 {protocols} 协议的上游地址：请先在供应商里填写该协议的地址，或者给模型填写自定义地址',
   'errors.ENDPOINT_URL_IN_USE': '供应商「{providerName}」的 {protocols} 协议还有 {count} 个模型在用（{models}）：这里没有可用的地址，这些模型会一起失去该协议，请先给模型填写自定义地址，或者保留这个地址',
+  'errors.PROVIDER_MODEL_DISABLED': '模型「{modelName}」已在模型管理中被停用：请先在模型管理里启用它，再打开这个绑定',
 
   // ========== 设置页 ==========
   'settings.title': '设置',

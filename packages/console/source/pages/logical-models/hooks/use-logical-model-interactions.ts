@@ -4,9 +4,9 @@ import { arrayMove } from '@dnd-kit/sortable'
 import { schedulingPolicyApi } from '@/api/models'
 import { useToast } from '@/components/ui/toast'
 import { useTranslation } from '@/i18n/provider'
-import type { ProviderModelRoute } from '@common/schemas'
+import type { LogicalModelProviderModel } from '@common/schemas'
 
-export function useLogicalModelInteractions(logicalModelId: string, models: ProviderModelRoute[], updateModels: (update: (models: ProviderModelRoute[]) => ProviderModelRoute[]) => void, loadModels: () => Promise<boolean>, proxyBaseUrl: string) {
+export function useLogicalModelInteractions(logicalModelId: string, models: LogicalModelProviderModel[], updateModels: (update: (models: LogicalModelProviderModel[]) => LogicalModelProviderModel[]) => void, loadModels: () => Promise<boolean>, proxyBaseUrl: string) {
   const toast = useToast()
   const t = useTranslation()
   const [copied, setCopied] = useState(false)

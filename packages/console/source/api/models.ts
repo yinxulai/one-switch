@@ -1,4 +1,4 @@
-import type { LogicalModel, Protocol, ProviderModel, ProviderModelRequestRewriteRule, ProviderModelRoute, ProviderModelRouteEndpoint, RequestRewriteRuleTestCase, RequestRewriteRule, SchedulingPolicy } from '@common/schemas'
+import type { LogicalModel, LogicalModelProviderModel, Protocol, ProviderModel, ProviderModelRequestRewriteRule, ProviderModelRouteEndpoint, RequestRewriteRuleTestCase, RequestRewriteRule, SchedulingPolicy } from '@common/schemas'
 import { request } from './client'
 
 type CreateLogicalModelInput = { id: string; description?: string; name?: string; enabled?: boolean }
@@ -32,7 +32,7 @@ export const providerModelApi = {
   get: (id: string) => request<ProviderModelView>('/provider-model/get', { id }),
   create: (data: ProviderModelCreateInput) => request<ProviderModelView>('/provider-model/create', data),
   update: (id: string, updates: ProviderModelUpdateInput) => request<ProviderModelView>('/provider-model/update', { id, ...updates }),
-  listByLogicalModel: (logicalModelId = 'default') => request<ProviderModelRoute[]>('/provider-model/list-by-logical-model', { logicalModelId }),
+  listByLogicalModel: (logicalModelId = 'default') => request<LogicalModelProviderModel[]>('/provider-model/list-by-logical-model', { logicalModelId }),
   remove: (id: string) => request<{ id: string }>('/provider-model/delete', { id }),
   requestRewriteRules: (providerModelId: string) => request<ProviderModelRequestRewriteRule[]>('/request-rewrite-rule/bindings', { providerModelId }),
   replaceRequestRewriteRules: (providerModelId: string, bindings: RequestRewriteRuleBindingInput[]) => request<ProviderModelRequestRewriteRule[]>('/request-rewrite-rule/replace-bindings', { providerModelId, bindings }),

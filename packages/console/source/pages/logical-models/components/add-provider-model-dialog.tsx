@@ -56,8 +56,9 @@ export function AddProviderModelDialog(props: AddProviderModelDialogProps) {
         if (cancelled) return
         const providerNameById = new Map(providersResult.map(provider => [provider.id, provider.name]))
         const policies = new Set(policiesResult.map(policy => policy.providerModelId))
+        // 全局停用的模型不进候选：加了也只能是一条关着的绑定，服务端也会拒绝为它打开绑定。
         setModels(modelsResult
-          .filter(model => model.deletedTime === null && !policies.has(model.id))
+          .filter(model => model.deletedTime === null && model.enabled && !policies.has(model.id))
           .map(model => ({ id: model.id, providerId: model.providerId, providerName: providerNameById.get(model.providerId) ?? model.providerId, modelName: model.modelName })))
         setSelectedIds([])
         setSearch('')

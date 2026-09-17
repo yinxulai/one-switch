@@ -115,3 +115,22 @@ export function endpointUrlInUseError(providerName: string, protocols: readonly 
     },
   )
 }
+
+/**
+ * 「模型本体被全局停用了，这个绑定不许打开」。
+ *
+ * 绑定开关（`scheduling_policies.enabled`）与模型本体开关（`provider_models.enabled`）是两件事，
+ * 但调度只看后者：`getAvailableModels` 要求模型本体也是启用的。所以允许把一个停用模型的绑定
+ * 打开，只会得到「界面说它待命、请求却永远不落到它上面」——正是 PR #13 修掉的那类症状。
+ *
+ * 因此这里直接拒绝，而不是静默把绑定改成停用：用户点的是「打开」，得到一次明确的解释比
+ * 开关自己弹回去更好懂。界面侧同时把这个开关置灰，这里是兜底（含并发与其它调用方）。
+ */
+export function providerModelDisabledError(modelName: string): AppError {
+  return new AppError(
+    'PROVIDER_MODEL_DISABLED',
+    400,
+    `Provider model ${modelName} is disabled and cannot be enabled in a logical model`,
+    { details: { modelName } },
+  )
+}

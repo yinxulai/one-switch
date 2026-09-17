@@ -22,7 +22,7 @@ import { SortableProviderModel } from './sortable-provider-model'
 import { ProviderModelRow } from './provider-model-row'
 import { providerModelMetricKey, type ProviderModelMetrics } from '../lib/model-metrics'
 import { BUILT_IN_DEFAULT_LOGICAL_MODEL_DESCRIPTION } from '@common/schemas'
-import type { ProviderModelRoute, Provider, ProviderHealth, ProviderModelHealth } from '@common/schemas'
+import type { LogicalModelProviderModel, Provider, ProviderHealth, ProviderModelHealth } from '@common/schemas'
 
 export type ProviderMap = Record<string, Provider>
 export type HealthMap = Record<string, ProviderHealth>
@@ -34,7 +34,7 @@ interface LogicalModelCardProps {
   logicalModelDescription: string
   /** 内建兜底逻辑模型（请求未命中任何其他逻辑模型时的落点）。 */
   builtIn?: boolean
-  models: ProviderModelRoute[]
+  models: LogicalModelProviderModel[]
   providers: ProviderMap
   health: HealthMap
   providerModelHealth: ProviderModelHealthMap
@@ -44,11 +44,11 @@ interface LogicalModelCardProps {
   switchingMode: boolean
   isCooling: (providerId: string, providerModelId: string) => boolean
   onModeChange: (mode: 'auto' | 'manual') => void
-  onSelectManualModel: (model: ProviderModelRoute) => void
-  onToggleEnabled: (model: ProviderModelRoute, enabled: boolean) => void
+  onSelectManualModel: (model: LogicalModelProviderModel) => void
+  onToggleEnabled: (model: LogicalModelProviderModel, enabled: boolean) => void
   onDragEnd: (event: DragEndEvent) => void
   onAddModel?: () => void
-  onRemoveModel?: (model: ProviderModelRoute) => void
+  onRemoveModel?: (model: LogicalModelProviderModel) => void
   /** 改名称与说明（卡片头上的编辑入口）。 */
   onEdit?: () => void
   /** 删除整个逻辑模型（软删除；内建默认不提供，它是请求的兜底落点）。 */

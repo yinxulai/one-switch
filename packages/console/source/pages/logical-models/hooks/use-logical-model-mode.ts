@@ -2,12 +2,12 @@ import { useCallback } from 'react'
 import { useToast } from '@/components/ui/toast'
 import { useTranslation } from '@/i18n/provider'
 import { useLogicalModelModeQuery, useSwitchManualModelMutation } from '../queries'
-import type { ProviderHealth, ProviderModelHealth, ProviderModelRoute } from '@common/schemas'
+import type { LogicalModelProviderModel, ProviderHealth, ProviderModelHealth } from '@common/schemas'
 
 type HealthMap = Record<string, ProviderHealth>
 type ProviderModelHealthMap = Record<string, ProviderModelHealth>
 
-export function useLogicalModelMode(logicalModelId: string, models: ProviderModelRoute[], health: HealthMap, providerModelHealth: ProviderModelHealthMap) {
+export function useLogicalModelMode(logicalModelId: string, models: LogicalModelProviderModel[], health: HealthMap, providerModelHealth: ProviderModelHealthMap) {
   const toast = useToast()
   const t = useTranslation()
   const query = useLogicalModelModeQuery(logicalModelId)
@@ -35,7 +35,7 @@ export function useLogicalModelMode(logicalModelId: string, models: ProviderMode
     try { await mutation.mutateAsync(initialModelId) } catch (error) { toast.error(error instanceof Error ? error.message : String(error)) }
   }, [manualModelId, mode, models, mutation, t, toast])
 
-  const selectManualModel = useCallback(async (model: ProviderModelRoute) => {
+  const selectManualModel = useCallback(async (model: LogicalModelProviderModel) => {
     if (mutation.isPending || mode !== 'manual') return
     try { await mutation.mutateAsync(model.id) } catch (error) { toast.error(error instanceof Error ? error.message : String(error)) }
   }, [mode, mutation, toast])

@@ -24,7 +24,7 @@ import { CreateLogicalModelDialog } from './components/create-logical-model-dial
 import { EditLogicalModelDialog } from './components/edit-logical-model-dialog'
 import { logicalModelApi, schedulingPolicyApi } from '@/api/models'
 import { unwrap } from '@/api/unwrap'
-import { isBuiltInDefaultLogicalModel, type LogicalModel, type ProviderModelRoute } from '@common/schemas'
+import { isBuiltInDefaultLogicalModel, type LogicalModel, type LogicalModelProviderModel } from '@common/schemas'
 
 interface LogicalModelColumnProps {
   logicalModel: LogicalModel
@@ -43,7 +43,7 @@ function LogicalModelColumn(props: LogicalModelColumnProps) {
   const [addModelOpen, setAddModelOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const builtIn = isBuiltInDefaultLogicalModel(logicalModel)
-  const removeModel = async (model: ProviderModelRoute) => {
+  const removeModel = async (model: LogicalModelProviderModel) => {
     const confirmed = await confirm({
       title: t('logicalModels.remove.title'),
       description: t('logicalModels.remove.description', { name: logicalModel.name, model: model.modelName }),
