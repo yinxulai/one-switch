@@ -328,7 +328,7 @@ WHERE a.createdTime >= ? GROUP BY a.providerId
 | `idx_request_attempts_created_time(createdTime)` | 不带供应商/模型条件的全量统计 | `(providerId, createdTime)` 与 `(providerModelId, createdTime)` 的最左列都不是时间，服务不了全量排行 |
 | `idx_request_usages_created_time` / `idx_attempt_usages_created_time` | 用量聚合 | 过滤条件永远只有时间窗（五种类型总是一起取），`(type, createdTime)` 的最左列用不上 |
 
-**连接与 PRAGMA 层面的调优同样重要。** 这些调优全部落在**数据文件**上（观测数据都存在 `one-switch-data-<n>.db`）——`initDatabases` 设定 `temp_store = MEMORY`（聚合的 `GROUP BY` / `ORDER BY` 临时 B 树不再落盘）、`cache_size = -64000`（默认页缓存仅 2 MB，扫一遍日志表就被冲干净）、`synchronous = NORMAL`（WAL 下不会因进程崩溃丢已提交数据）、`auto_vacuum = INCREMENTAL`（保留策略删掉的页能被 `reclaimUnusedSpace()` 逐步回收），并在迁移后执行一次 `PRAGMA optimize` 让规划器拿到统计信息——没有统计信息时它按「所有索引一样好」估计，实测正是这一点让它给带时间窗的聚合选了更差的路径。配置库刻意用 `synchronous = FULL`：那里每次写入都是用户资产，不值得为一点写入速度换掉「断电也不丢」。
+**连接与 PRAGMA 层面的调优同样重要。** 这些调优全部落在**数据文件**上（观测数据都存在 `one-switch-data-<n>.db`）——`initDatabases` 设定 `temp_store = MEMORY`（聚合的 `GROUP BY` / `ORDER BY` 临时 B 树不再落盘）、`cache_size = -64000`（默认页缓存仅 2 MB，扫一遍日志表就被冲干净）、`synchronous = NORMAL`（WAL 下不会因进程崩溃丢已提交数据）、`auto_vacuum = INCREMENTAL`（保留策略删掉的页能被 `reclaimUnusedSpace()` 逐步回收），并在迁移后执行一次 `PRAGMA optimize` 让规划器拿到统计信息——没有统计信息时它按「所有索引一样好」估计，实测正是这一点让它给带时间窗的聚合选了更差的路径。配置库刻意用 `synchronous = FULL`：那里每次写入都是用户资产，不值得为一点写入速度换掉「断电也不丢」。`auto_vacuum` 只在空库上生效，所以顺序修正之前建出的观测库不会自愈，仍需手工执行一次 `PRAGMA auto_vacuum = INCREMENTAL; VACUUM;` 才能转成 INCREMENTAL（启动时不自动执行，见 [data-model.md](./data-model.md) §6）。
 
 结果：分析页一次完整加载从 1403 ms 降到 550 ms（7 天）、从 3088 ms 降到 1479 ms（30 天）；供应商详情页 30 天从 744 ms 降到 206 ms。
 

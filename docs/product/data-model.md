@@ -1205,6 +1205,8 @@ Token、缓存 Token 和其他协议用量 -> `request_usages` / `attempt_usages
 6. 数据库专有：执行一次 `PRAGMA optimize`，让规划器拿到统计信息；
 7. 两个角色都完成之后：`pruneOrphanHealthRows(config, data)` 删掉配置库里已经不存在的健康行。
 
+**修复前建出的观测库不会自愈。** `auto_vacuum` 只对空库生效，所以旧 `one-switch-data-<v>.db`（在顺序修正前创建）仍然停在 `auto_vacuum = 0`，`incremental_vacuum` 对它依旧是一次空操作。转换是**刻意的运维动作**，不在启动路径上自动执行：手工跑一次 `PRAGMA auto_vacuum = INCREMENTAL; VACUUM;`，`VACUUM` 会顺带把文件压实（需要与库体量相当的临时空间）。新库不受影响——`applyPragmas` 已把这条 PRAGMA 排在 WAL 之前，建库那一刻就生效。
+
 **没有一步是「创建 Provider 时初始化健康状态」**：健康行惰性创建（见 §3.8），所以配置写入路径永远不会碰观测库。
 
 `packages/core/source/database/index.ts` 负责把两个库的边界钉死：
