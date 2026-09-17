@@ -1,7 +1,7 @@
 {
   "name": "one-switch",
   "private": true,
-  "version": "1.1.0-beta.12",
+  "version": "1.1.0-beta.13",
   "author": "yinxulai <yinxulai@hotmail.com>",
   "type": "module",
   "packageManager": "pnpm@11.8.0",
