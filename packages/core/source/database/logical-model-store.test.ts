@@ -75,6 +75,16 @@ describe('logical model store', () => {
       expect.objectContaining({ providerModelId: model.id, priority: 3, weight: 80 }),
     ]))
 
+    // 关开关只传 enabled：优先级和权重必须留在原处。拖排序只传 priority：不得把 enabled 打开。
+    await upsertSchedulingPolicy({ logicalModelId: 'default', providerModelId: model.id, enabled: false })
+    expect(await listSchedulingPolicies('default')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ providerModelId: model.id, priority: 3, weight: 80, enabled: false }),
+    ]))
+    await upsertSchedulingPolicy({ logicalModelId: 'default', providerModelId: model.id, priority: 5 })
+    expect(await listSchedulingPolicies('default')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ providerModelId: model.id, priority: 5, weight: 80, enabled: false }),
+    ]))
+
     await deleteLogicalModel('default')
     expect(await listLogicalModels(true)).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'default', deletedTime: expect.any(Number) }),

@@ -138,11 +138,21 @@ export async function upsertSchedulingPolicy(input: UpsertSchedulingPolicyInput)
     updatedTime: time,
     deletedTime: null,
   }
+  // 缺省值只用于新插入。冲突更新只写调用方给的字段：逻辑模型页关开关只传
+  // `enabled`，拖排序只传 `priority`；把没传的列填成默认值会把优先级打成 0，
+  // 或把已经关掉的绑定重新打开。
   getConfigDb().insert(schedulingPolicies).values(values).onConflictDoUpdate({
     target: [schedulingPolicies.logicalModelId, schedulingPolicies.providerModelId],
     // 主键不含 `deletedTime`，所以「重新把模型加回逻辑模型」就是让同一行复活：
     // 命中被软删除的历史行时把 `deletedTime` 清掉，而不是再插一条。
-    set: { strategy: values.strategy, priority: values.priority, weight: values.weight, enabled: values.enabled, updatedTime: time, deletedTime: null },
+    set: {
+      updatedTime: time,
+      deletedTime: null,
+      ...(input.strategy !== undefined ? { strategy: values.strategy } : {}),
+      ...(input.priority !== undefined ? { priority: values.priority } : {}),
+      ...(input.weight !== undefined ? { weight: values.weight } : {}),
+      ...(input.enabled !== undefined ? { enabled: values.enabled } : {}),
+    },
   }).run()
   return mapSchedulingPolicy(getConfigDb().select().from(schedulingPolicies).where(and(eq(schedulingPolicies.logicalModelId, input.logicalModelId), eq(schedulingPolicies.providerModelId, input.providerModelId))).get()!)
 }

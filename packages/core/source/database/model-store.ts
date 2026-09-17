@@ -37,20 +37,25 @@ export async function listProviderModels(includeDeleted = false): Promise<Provid
 }
 
 export async function listProviderModelsForLogicalModel(logicalModelId: string, includeDeleted = false, includeDisabled = false): Promise<ProviderModelRoute[]> {
-  const rows = getConfigDb().select({ model: providerModels, policy: schedulingPolicies })
+  // 不能把 `scheduling_policies` 整行嵌进 select：它和 `provider_models` 都有 `enabled`，
+  // node:sqlite 的 JOIN 结果按列名折叠，`policy.enabled` 会被模型本体的值盖掉。
+  // 逻辑模型页的开关写的是绑定开关，列表必须读同一列，否则刷新会把已关闭的绑定弹回去。
+  const rows = getConfigDb().select({
+    model: providerModels,
+    policyEnabled: schedulingPolicies.enabled,
+    policyPriority: schedulingPolicies.priority,
+  })
     .from(schedulingPolicies)
     .innerJoin(providerModels, eq(schedulingPolicies.providerModelId, providerModels.id))
     .where(and(eq(schedulingPolicies.logicalModelId, logicalModelId), isNull(schedulingPolicies.deletedTime)))
     .orderBy(asc(schedulingPolicies.priority), desc(schedulingPolicies.weight), asc(schedulingPolicies.createdTime), asc(schedulingPolicies.providerModelId))
     .all()
   return rows
-    .filter(({ model }) => (includeDeleted || model.deletedTime === null) && (includeDisabled || model.enabled))
-    .map(({ model, policy }) => ({
+    .filter(({ model, policyEnabled }) => (includeDeleted || model.deletedTime === null) && (includeDisabled || (model.enabled && policyEnabled)))
+    .map(({ model, policyEnabled, policyPriority }) => ({
       ...mapProviderModelRoute(model),
-      priority: policy.priority,
-      // enabled 反映模型自身状态：管理页需要展示被禁用的模型，
-      // 调度筛选已在上面的 filter 中完成，不能被策略的 enabled 覆盖。
-      enabled: model.enabled,
+      priority: policyPriority,
+      enabled: policyEnabled,
     }))
 }
 

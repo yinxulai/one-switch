@@ -228,4 +228,38 @@ describe('model store', () => {
     expect((await getProviderModel(route.id))?.endpoints[0]).toMatchObject({ url: 'https://example.com/anthropic' })
     expect((await getProviderModelRoute(route.id))?.endpoints[0]).toMatchObject({ endpointUrl: 'https://example.com/anthropic' })
   })
+
+  // 回归：逻辑模型页开关写的是 scheduling_policies.enabled。JOIN 两表都有 enabled
+  // 列时，嵌套 select 会把策略上的 false 读成模型本体的 true，刷新就把开关弹回去。
+  it('reports the binding enabled flag, not the provider model flag, for a logical model', async () => {
+    const provider = await createProvider({
+      name: 'Binding Enabled Provider',
+      apiKeyReference: 'key_binding_enabled_provider',
+      timeoutMilliseconds: 20_000,
+      enabled: true,
+    })
+    const enabledRoute = await createProviderModelRoute({
+      providerId: provider.id,
+      modelName: 'binding-on',
+      priority: 1,
+      endpoints: [{ protocol: 'openai-completions', endpointUrl: 'https://example.com/v1/chat/completions', customAuthHeader: null, protocolConversionEnabled: false }],
+    })
+    const disabledRoute = await createProviderModelRoute({
+      providerId: provider.id,
+      modelName: 'binding-off',
+      priority: 2,
+      endpoints: [{ protocol: 'openai-completions', endpointUrl: 'https://example.com/v1/chat/completions', customAuthHeader: null, protocolConversionEnabled: false }],
+    })
+    const logicalModel = await createLogicalModel({ id: 'binding-enabled', name: 'binding-enabled' })
+    await upsertSchedulingPolicy({ logicalModelId: logicalModel.id, providerModelId: enabledRoute.id, priority: 1, enabled: true })
+    await upsertSchedulingPolicy({ logicalModelId: logicalModel.id, providerModelId: disabledRoute.id, priority: 2, enabled: false })
+
+    expect(await listProviderModelsForLogicalModel(logicalModel.id)).toEqual([
+      expect.objectContaining({ id: enabledRoute.id, enabled: true, priority: 1 }),
+    ])
+    expect(await listProviderModelsForLogicalModel(logicalModel.id, false, true)).toEqual([
+      expect.objectContaining({ id: enabledRoute.id, enabled: true, priority: 1 }),
+      expect.objectContaining({ id: disabledRoute.id, enabled: false, priority: 2 }),
+    ])
+  })
 })

@@ -211,8 +211,9 @@ describe('schema split', () => {
     client.prepare('INSERT INTO scheduling_policies (logicalModelId, providerModelId, priority, weight, createdTime, updatedTime) VALUES (?, ?, ?, ?, ?, ?)').run('default', 'pm_disabled', 0, 100, time, time)
 
     await expect(listProviderModelsForLogicalModel('default')).resolves.toEqual([])
+    // 管理列表仍要露出全局停用的模型；`enabled` 是绑定开关（默认开），不是模型本体。
     await expect(listProviderModelsForLogicalModel('default', false, true)).resolves.toMatchObject([
-      { id: 'pm_disabled', enabled: false, priority: 0 },
+      { id: 'pm_disabled', enabled: true, priority: 0 },
     ])
   })
 
