@@ -1,6 +1,6 @@
 {
   "name": "@one-switch/toolkit",
-  "version": "1.1.0-beta.11",
+  "version": "1.1.0-beta.12",
   "private": true,
   "type": "module",
   "description": "跨包的开发脚本与静态守卫：任务编排、包边界校验、脚本运行库。不含任何运行时代码。"
