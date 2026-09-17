@@ -257,6 +257,21 @@ export const ProviderModelRouteSchema = z.object({
 })
 export type ProviderModelRoute = z.infer<typeof ProviderModelRouteSchema>
 
+/**
+ * 逻辑模型页的条目：在 `ProviderModelRoute` 之上多带一个「模型本体开关」。
+ *
+ * 这里的 `enabled` 是**这个逻辑模型里的绑定开关**（`scheduling_policies.enabled`），
+ * `modelEnabled` 才是供应商那边的模型本体开关（`provider_models.enabled`）。
+ *
+ * 两个开关必须分开：`getAvailableModels` 要求模型本体也是启用的，所以一个被全局停用的模型
+ * 无论绑定怎么摆都不会被调度。只回一个 `enabled` 时，界面只能把「停用」画成「待命」，
+ * 用户看到的是「看着开着、却永远不参与调度」。
+ */
+export const LogicalModelProviderModelSchema = ProviderModelRouteSchema.extend({
+  modelEnabled: z.boolean(),
+})
+export type LogicalModelProviderModel = z.infer<typeof LogicalModelProviderModelSchema>
+
 // ========== Provider Health ==========
 
 export const ProviderHealthSchema = z.object({
@@ -594,6 +609,7 @@ export const ApiErrorCodeSchema = z.enum([
   // 供应商/模型端点配置：保存与探测时就能判定，不必等到发出请求
   'ENDPOINT_URL_MISSING',
   'ENDPOINT_URL_IN_USE',
+  'PROVIDER_MODEL_DISABLED',
   // 存储
   'DATABASE_UNAVAILABLE',
   'SECRET_STORE_UNAVAILABLE',

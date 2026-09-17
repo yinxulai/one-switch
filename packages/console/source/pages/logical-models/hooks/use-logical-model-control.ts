@@ -3,7 +3,7 @@ import { useToast } from '@/components/ui/toast'
 import { useUpdateProviderModelMutation } from '../queries'
 import { useHealth } from '@/features/health/hooks'
 import { useProviders } from '@/features/providers/hooks'
-import type { ProviderModelRoute } from '@common/schemas'
+import type { LogicalModelProviderModel } from '@common/schemas'
 import { useProxyToggle } from './use-proxy-toggle'
 import { useLogicalModelInteractions } from './use-logical-model-interactions'
 import { useLogicalModelMetrics } from './use-logical-model-metrics'
@@ -34,7 +34,10 @@ export function useLogicalModelControl(logicalModelId: string) {
     [providers],
   )
 
-  const updateEnabled = useCallback(async (model: ProviderModelRoute, enabled: boolean) => {
+  const updateEnabled = useCallback(async (model: LogicalModelProviderModel, enabled: boolean) => {
+    // 模型本体被全局停用时不允许打开绑定：打开的绑定不会被调度，只会让这一行看着可用。
+    // 界面里这个开关已经置灰，这里是万一被别的入口调到时的一致处理。
+    if (enabled && !model.modelEnabled) return
     try {
       const updated = await updateModelMutation.mutateAsync({ id: model.id, enabled })
       modelsState.updateEnabledModel(model.id, updated.enabled)

@@ -14,7 +14,7 @@ import {
   updateProviderModelEndpoint,
   updateProviderModelRoute,
 } from './model-store'
-import { createLogicalModel, upsertSchedulingPolicy } from './logical-model-store'
+import { createLogicalModel, listSchedulingPolicies, upsertSchedulingPolicy } from './logical-model-store'
 import { createProvider, createProviderEndpoint, listProviderEndpoints } from './provider-store'
 
 let temporaryDirectory: string
@@ -229,8 +229,9 @@ describe('model store', () => {
     expect((await getProviderModelRoute(route.id))?.endpoints[0]).toMatchObject({ endpointUrl: 'https://example.com/anthropic' })
   })
 
-  // 回归：逻辑模型页开关写的是 scheduling_policies.enabled。JOIN 两表都有 enabled
-  // 列时，嵌套 select 会把策略上的 false 读成模型本体的 true，刷新就把开关弹回去。
+  // 回归：逻辑模型页开关读写的是 scheduling_policies.enabled，而模型管理开关写的是
+  // provider_models.enabled。最初的实现在这里错写了 `enabled: model.enabled`，
+  // 于是刷新就把用户关掉的开关又弹开。两个开关必须分别返回。
   it('reports the binding enabled flag, not the provider model flag, for a logical model', async () => {
     const provider = await createProvider({
       name: 'Binding Enabled Provider',
@@ -255,11 +256,60 @@ describe('model store', () => {
     await upsertSchedulingPolicy({ logicalModelId: logicalModel.id, providerModelId: disabledRoute.id, priority: 2, enabled: false })
 
     expect(await listProviderModelsForLogicalModel(logicalModel.id)).toEqual([
-      expect.objectContaining({ id: enabledRoute.id, enabled: true, priority: 1 }),
+      expect.objectContaining({ id: enabledRoute.id, enabled: true, modelEnabled: true, priority: 1 }),
     ])
     expect(await listProviderModelsForLogicalModel(logicalModel.id, false, true)).toEqual([
-      expect.objectContaining({ id: enabledRoute.id, enabled: true, priority: 1 }),
-      expect.objectContaining({ id: disabledRoute.id, enabled: false, priority: 2 }),
+      expect.objectContaining({ id: enabledRoute.id, enabled: true, modelEnabled: true, priority: 1 }),
+      expect.objectContaining({ id: disabledRoute.id, enabled: false, modelEnabled: true, priority: 2 }),
     ])
+
+    // 模型本体被停用后，绑定会级联关闭（见下一个用例），管理接口仍要分别报出两个开关的真实状态。
+    await updateProviderModelRoute(enabledRoute.id, { enabled: false })
+    expect(await listProviderModelsForLogicalModel(logicalModel.id, false, true)).toEqual([
+      expect.objectContaining({ id: enabledRoute.id, enabled: false, modelEnabled: false, priority: 1 }),
+      expect.objectContaining({ id: disabledRoute.id, enabled: false, modelEnabled: true, priority: 2 }),
+    ])
+  })
+
+  // 关闭模型是一个全局开关：它一旦不可用，所有逻辑模型里指向它的调度绑定都该跟着禁用，
+  // 否则绑定看起来「开着」，但请求根本不会落到这个模型上。
+  it('disables every logical binding when a model is turned off', async () => {
+    const provider = await createProvider({
+      name: 'Disable Cascade Provider',
+      apiKeyReference: 'key_disable_cascade',
+      timeoutMilliseconds: 20_000,
+      enabled: true,
+    })
+    const route = await createProviderModelRoute({
+      providerId: provider.id,
+      modelName: 'disable-cascade-model',
+      priority: 1,
+      endpoints: [{ protocol: 'openai-completions', endpointUrl: 'https://example.com/v1/chat/completions', customAuthHeader: null, protocolConversionEnabled: false }],
+    })
+    const other = await createProviderModelRoute({
+      providerId: provider.id,
+      modelName: 'disable-cascade-other',
+      priority: 2,
+      endpoints: [{ protocol: 'openai-completions', endpointUrl: 'https://example.com/v1/chat/completions', customAuthHeader: null, protocolConversionEnabled: false }],
+    })
+    const first = await createLogicalModel({ id: 'disable-cascade-a', name: 'disable-cascade-a' })
+    const second = await createLogicalModel({ id: 'disable-cascade-b', name: 'disable-cascade-b' })
+    await upsertSchedulingPolicy({ logicalModelId: first.id, providerModelId: route.id, priority: 1, enabled: true })
+    await upsertSchedulingPolicy({ logicalModelId: second.id, providerModelId: route.id, priority: 1, enabled: true })
+    await upsertSchedulingPolicy({ logicalModelId: first.id, providerModelId: other.id, priority: 2, enabled: true })
+
+    await updateProviderModelRoute(route.id, { enabled: false })
+
+    // 被关闭的模型，在所有逻辑模型里的绑定都被禁用（行还在，只是不可调度）。
+    expect(await listSchedulingPolicies(first.id)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ providerModelId: route.id, enabled: false, deletedTime: null }),
+    ]))
+    expect(await listSchedulingPolicies(second.id)).toEqual([
+      expect.objectContaining({ providerModelId: route.id, enabled: false }),
+    ])
+    // 同一个逻辑模型里其它模型的绑定不受影响，也不会被误删。
+    expect(await listSchedulingPolicies(first.id)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ providerModelId: other.id, enabled: true, deletedTime: null }),
+    ]))
   })
 })

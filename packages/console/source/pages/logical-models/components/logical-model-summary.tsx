@@ -2,12 +2,12 @@ import { Activity, Clock3, Layers3, Zap } from 'lucide-react'
 import { MetricGrid } from '@/components/metric-grid'
 import { NumberTicker } from '@/components/ui/number-ticker'
 import { useTranslation } from '@/i18n/provider'
-import type { ProviderModelRoute } from '@common/schemas'
+import type { LogicalModelProviderModel } from '@common/schemas'
 import { millisecondsDisplayParts, outputSpeedDecimalPlaces } from '@common/metrics'
 import type { LogicalModelSummaryMetrics } from '../lib/model-metrics'
 
 interface LogicalModelSummaryProps {
-  models: ProviderModelRoute[]
+  models: LogicalModelProviderModel[]
   summaryMetrics?: LogicalModelSummaryMetrics
 }
 

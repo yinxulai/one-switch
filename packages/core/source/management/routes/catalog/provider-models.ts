@@ -70,7 +70,9 @@ async function handleCreateProviderModel(_req: IncomingMessage, res: ServerRespo
     priority: input.priority,
     enabled: input.enabled,
   })
-  await upsertSchedulingPolicy({ logicalModelId: input.logicalModelId, providerModelId: model.id, priority: input.priority })
+  // 新模型的第一条绑定跟着模型本体走：模型建出来就是停用的，绑定不能默认打开
+  // （`upsertSchedulingPolicy` 会拒绝为停用模型打开绑定）。
+  await upsertSchedulingPolicy({ logicalModelId: input.logicalModelId, providerModelId: model.id, priority: input.priority, enabled: model.enabled })
   sendSuccess(res, await getProviderModel(model.id) ?? model)
 }
 

@@ -1,8 +1,9 @@
 import { and, asc, desc, eq, isNull, max } from 'drizzle-orm'
 import type { LogicalModel, SchedulingPolicy } from '@common/schemas'
 import { now } from '@common/utils'
+import { providerModelDisabledError } from '../errors'
 import { getConfigDb } from './index'
-import { logicalModels, schedulingPolicies } from './config-schema'
+import { logicalModels, providerModels, schedulingPolicies } from './config-schema'
 
 export async function listLogicalModels(includeDeleted = false): Promise<LogicalModel[]> {
   const db = getConfigDb()
@@ -126,6 +127,14 @@ export type UpsertSchedulingPolicyInput = Pick<SchedulingPolicy, 'logicalModelId
 export async function upsertSchedulingPolicy(input: UpsertSchedulingPolicyInput): Promise<SchedulingPolicy> {
   if (input.strategy !== undefined && input.strategy !== 'priority') throw new Error('unsupported scheduling policy strategy')
   if (input.weight !== undefined && (!Number.isInteger(input.weight) || input.weight < 1)) throw new Error('scheduling policy weight must be positive')
+  // 显式要求打开绑定时，先看模型本体还在不在：模型被全局停用后，打开的绑定不会被调度，
+  // 只会让逻辑模型页看起来「可用」。新建行时需要的是同一个判断，所以调用方必须把模型
+  // 本体的开关透传进来（`enabled`），而不是依赖这里的默认值 true。
+  if (input.enabled === true) {
+    const model = getConfigDb().select({ modelName: providerModels.modelName, enabled: providerModels.enabled })
+      .from(providerModels).where(eq(providerModels.id, input.providerModelId)).get()
+    if (model && !model.enabled) throw providerModelDisabledError(model.modelName)
+  }
   const time = now()
   const values = {
     logicalModelId: input.logicalModelId,

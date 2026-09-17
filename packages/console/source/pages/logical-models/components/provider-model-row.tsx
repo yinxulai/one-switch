@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  Ban,
   CheckCircle2,
   Circle,
   CircleDot,
@@ -10,7 +11,7 @@ import {
   Trash2,
   Zap,
 } from 'lucide-react'
-import type { Provider, ProviderHealth, ProviderModelHealth, ProviderModelRoute } from '@common/schemas'
+import type { LogicalModelProviderModel, Provider, ProviderHealth, ProviderModelHealth } from '@common/schemas'
 import { formatMilliseconds, formatOutputSpeed } from '@common/metrics'
 import { Link } from '@tanstack/react-router'
 import { Badge } from '@/components/ui/badge'
@@ -23,7 +24,7 @@ import { cn } from '@/lib/utils'
 import type { ProviderModelMetrics } from '../lib/model-metrics'
 
 interface ProviderModelRowProps {
-  model: ProviderModelRoute
+  model: LogicalModelProviderModel
   provider?: Provider
   providerHealth?: ProviderHealth
   providerModelHealth?: ProviderModelHealth
@@ -190,11 +191,19 @@ export function ProviderModelRow(props: ProviderModelRowProps) {
           <span className="shrink-0 text-text-quaternary" aria-hidden="true">·</span>
           <span className="inline-flex items-center gap-1"><Zap size={10} aria-hidden />TPS {formatOutputSpeed(props.metrics?.avgTps)}</span>
           <span className="inline-flex items-center gap-1"><Timer size={10} aria-hidden />TTFT {formatMilliseconds(props.metrics?.avgTtftMilliseconds)}</span>
-          <ModelHealth providerHealth={props.providerHealth} providerModelHealth={props.providerModelHealth} />
+          {/* 模型本体被停用时，健康度已经没有意义（它永远不会被调度），这里换成「为什么不能开」。 */}
+          {model.modelEnabled
+            ? <ModelHealth providerHealth={props.providerHealth} providerModelHealth={props.providerModelHealth} />
+            : (
+              <span className="inline-flex min-w-0 items-center gap-1 text-text-quaternary" title={t('logicalModels.row.modelDisabledHint')}>
+                <Ban size={11} aria-hidden className="shrink-0" />
+                <span className="truncate">{t('logicalModels.row.modelDisabledHint')}</span>
+              </span>
+            )}
         </div>
       </div>
       <div className="flex min-w-20 shrink-0 items-center justify-end">
-        <Badge variant={props.cooling ? 'destructive' : model.enabled ? 'success' : 'muted'}>{props.cooling ? t('logicalModels.row.cooling') : model.enabled ? (props.selected ? t('logicalModels.row.selected') : t('logicalModels.row.standby')) : t('common.state.disabled')}</Badge>
+        <Badge variant={!model.modelEnabled ? 'muted' : props.cooling ? 'destructive' : model.enabled ? 'success' : 'muted'}>{!model.modelEnabled ? t('logicalModels.row.modelDisabled') : props.cooling ? t('logicalModels.row.cooling') : model.enabled ? (props.selected ? t('logicalModels.row.selected') : t('logicalModels.row.standby')) : t('common.state.disabled')}</Badge>
       </div>
       {/* 操作直接落在一条模糊的遮罩上，而不是滑进来一张带边框的小白卡片：
           遮罩铺满整行高度、左缘渐变淡出，被盖住的指标与徽标只是在模糊里淡出，没有新的卡片边界。 */}
@@ -204,7 +213,16 @@ export function ProviderModelRow(props: ProviderModelRowProps) {
           'group-hover/row:pointer-events-auto group-hover/row:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100',
         )}
       >
-        <Switch checked={model.enabled} onCheckedChange={props.onToggleEnabled} onClick={event => event.stopPropagation()} aria-label={t('logicalModels.row.enabledState', { model: model.modelName })} />
+        {/* 模型本体被全局停用时，绑定开关置灰：打开的绑定不会被调度（`getAvailableModels`
+            要求模型本体也是启用的），所以这里不能只画成「待命」。 */}
+        <Switch
+          checked={model.enabled}
+          disabled={!model.modelEnabled}
+          onCheckedChange={props.onToggleEnabled}
+          onClick={event => event.stopPropagation()}
+          aria-label={model.modelEnabled ? t('logicalModels.row.enabledState', { model: model.modelName }) : t('logicalModels.row.modelDisabledHint')}
+          title={model.modelEnabled ? undefined : t('logicalModels.row.modelDisabledHint')}
+        />
         <Button variant="ghost" size="icon-sm" onClick={event => { event.stopPropagation(); props.onRemove() }} aria-label={t('logicalModels.row.removeAria', { model: model.modelName })} title={t('logicalModels.row.removeTitle')}><Trash2 size={16} /></Button>
       </div>
     </div>

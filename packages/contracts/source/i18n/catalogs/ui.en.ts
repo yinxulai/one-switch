@@ -465,6 +465,8 @@ export const uiEn = {
   'logicalModels.row.enabledState': '{model} enabled',
   'logicalModels.row.removeAria': 'Remove {model} from the logical model',
   'logicalModels.row.removeTitle': 'Remove from the logical model',
+  'logicalModels.row.modelDisabled': 'Model disabled',
+  'logicalModels.row.modelDisabledHint': 'This model is disabled in Model Management, so it is never scheduled. Enable it there before turning on this binding.',
   'logicalModels.proxy.title': 'Service access config',
   'logicalModels.proxy.description': 'Local proxy service with one entry point that forwards to every upstream provider',
   'logicalModels.proxy.endpoint': 'Full endpoint URL',
@@ -1366,6 +1368,7 @@ export const uiEn = {
   'errors.TRANSPORT_NOT_IMPLEMENTED': 'This transport is not implemented yet',
   'errors.ENDPOINT_URL_MISSING': 'No upstream url is configured for {protocols} on provider {providerName}: set the address on the provider, or give the model a custom address',
   'errors.ENDPOINT_URL_IN_USE': 'The {protocols} protocol on provider {providerName} is still used by {count} model(s) ({models}): without an address here those models lose the protocol too — give the models their own address first, or keep this address',
+  'errors.PROVIDER_MODEL_DISABLED': 'Model {modelName} is disabled in Model Management: enable the model there first, then turn on this binding',
 
   // ========== 设置页 ==========
   'settings.title': 'Settings',
