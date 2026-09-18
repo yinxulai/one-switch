@@ -1,0 +1,37 @@
+name: ✨ 功能建议 / Feature Request
+description: 建议一个新功能或改进 — Suggest an idea or improvement
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢建议！请用中文或英文填写以下信息（中英混合亦可）。
+        Thanks for your idea! Please fill in the fields below in Chinese or English (mixing is fine too).
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你遇到的问题 / Problem
+      description: 你想要解决什么问题？ / What problem are you trying to solve?
+      placeholder: |
+        描述场景与痛点 / Describe the scenario and pain point...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: 期望的解决方案 / Proposed Solution
+      description: 你希望功能如何工作？ / How do you want it to work?
+      placeholder: |
+        描述你期望的行为 / Describe the expected behavior...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 备选方案 / Alternatives
+      description: 你考虑过的其他方案（可选） / Alternatives you considered (optional).
+      placeholder: |
+        其他方案或变通办法 / Other options or workarounds...

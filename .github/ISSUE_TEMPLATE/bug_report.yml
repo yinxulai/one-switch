@@ -1,0 +1,52 @@
+name: 🐛 Bug 报告 / Bug Report
+description: 报告一个缺陷 — Report a bug
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！请用中文或英文填写以下信息（中英混合亦可）。
+        Thanks for reporting! Please fill in the fields below in Chinese or English (mixing is fine too).
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述 / Description
+      description: 发生了什么？期望是什么？ / What happened, and what did you expect?
+      placeholder: |
+        简要描述问题 / Briefly describe the problem...
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤 / Steps to Reproduce
+      placeholder: |
+        1. 打开 / Open ...
+        2. 点击 / Click ...
+        3. 观察到 / Observe ...
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: 截图 / Screenshots
+      description: 如果方便请附上截图或录屏 / Attach screenshots or recordings if possible.
+      placeholder: 将图片拖拽到此处 / Drag images here...
+
+  - type: input
+    id: version
+    attributes:
+      label: 版本 / Version
+      description: 应用版本号 / App version number
+      placeholder: 例如 1.1.0-beta.13 / e.g. 1.1.0-beta.13
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 运行环境 / Environment
+      placeholder: |
+        操作系统 / OS: Windows / macOS / Linux
+        其他信息 / Other info...
