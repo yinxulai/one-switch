@@ -1,8 +1,14 @@
-# One Switch
+<p align="center">
+  <img src="./docs/design/brand/png/icon-256.png" width="128" height="128" alt="One Switch" />
+</p>
 
-**Put every LLM channel you own behind one local address. When one goes down, the next one takes over.**
+<h1 align="center">One Switch</h1>
 
-English | [简体中文](./README.zh-CN.md)
+<p align="center">
+  <strong>Put every LLM channel you own behind one local address. When one goes down, the next one takes over.</strong>
+</p>
+
+<p align="center">English | <a href="./README.zh-CN.md">简体中文</a></p>
 
 One Switch runs a proxy on your machine. You register all the channels you have — different providers, different accounts, different models — put them in the order you want them tried, and point every AI client at a single local address. From then on it does the work: identify the protocol, pick a channel, send the request, move on when a channel fails, and record exactly what happened.
 

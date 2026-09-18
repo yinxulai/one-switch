@@ -1,8 +1,14 @@
-# One Switch
+<p align="center">
+  <img src="./docs/design/brand/png/icon-256.png" width="128" height="128" alt="One Switch" />
+</p>
 
-**把你手上所有的大模型渠道，合成一个本地地址。当前渠道挂了，自动换下一个。**
+<h1 align="center">One Switch</h1>
 
-[English](./README.md) | 简体中文
+<p align="center">
+  <strong>把你手上所有的大模型渠道，合成一个本地地址。当前渠道挂了，自动换下一个。</strong>
+</p>
+
+<p align="center"><a href="./README.md">English</a> | 简体中文</p>
 
 One Switch 在本机跑一个代理服务。你把能用的渠道都配进来（不同供应商、不同账号、不同模型），排好优先级，然后让所有 AI 客户端统一指向一个本地地址。剩下的事它自己做：识别协议、按顺序挑渠道、把请求送出去、失败就换下一个，并把真实发生的一切记录清楚。
 
