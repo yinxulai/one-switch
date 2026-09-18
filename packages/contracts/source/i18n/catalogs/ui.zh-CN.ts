@@ -1369,6 +1369,42 @@ export const uiZhCN: Record<keyof typeof uiEn, MessageValue> = {
   'errors.ENDPOINT_URL_IN_USE': '供应商「{providerName}」的 {protocols} 协议还有 {count} 个模型在用（{models}）：这里没有可用的地址，这些模型会一起失去该协议，请先给模型填写自定义地址，或者保留这个地址',
   'errors.PROVIDER_MODEL_DISABLED': '模型「{modelName}」已在模型管理中被停用：请先在模型管理里启用它，再打开这个绑定',
 
+  // ========== 新用户引导 ==========
+  // 引导是一条三步直线：怎么选路 → 拿什么跑 → 填到哪里，顺序不可换（前一步的产物是后一步的前提）。
+  // 步骤名在步进器里单独出现、没有上下文，所以 label 要能独立成词；title 才是那一屏的完整问法。
+  'onboarding.eyebrow': '新手引导',
+  'onboarding.title': '三步搭好本地网关',
+  'onboarding.progressLabel': '引导进度',
+  'onboarding.action.previous': '上一步',
+  'onboarding.action.next': '下一步',
+  'onboarding.action.skip': '跳过',
+  'onboarding.action.finish': '完成',
+  'onboarding.topbar.language': '界面语言',
+  'onboarding.step.routeMode.label': '选路',
+  'onboarding.step.routeMode.title': '请求按什么选路？',
+  'onboarding.step.routeMode.description': '两种模式选一个。两份配置各自独立保存，来回切换不会丢掉在另一边配好的东西。',
+  'onboarding.step.routeMode.planTitle': '内置方案',
+  'onboarding.step.routeMode.planDescription':
+    '挑一套直接用。点一下立刻生效，之后想改去「路由」页接着编。',
+  'onboarding.step.routeMode.planApplied': '已套用「{name}」并保存为 v{version}',
+  'onboarding.step.models.label': '模型',
+  'onboarding.step.models.title': '请求发到哪里？',
+  'onboarding.step.models.description': '添加一个上游供应商：选预设把地址填好，再填上 API Key，然后拉取并勾选要用的模型。',
+  'onboarding.step.configure.label': '接工具',
+  'onboarding.step.configure.title': '把工具指到这个地址',
+  'onboarding.step.configure.description': '把下面几个值填进你正在用的客户端，请求就会经过本地服务。',
+  'onboarding.models.presetHint': '选个预设会自动填好地址，也可以从零新建一个供应商。',
+  'onboarding.models.customProvider': '自定义供应商',
+  'onboarding.models.addModel': '添加模型',
+  'onboarding.models.addModelHint': '先在上面的对话框里选好供应商——模型是挂在供应商下面的。',
+  'onboarding.models.connectedTitle': '已接入的供应商',
+  'onboarding.models.empty': '还没有供应商。先在上面选一个预设，把第一个加上。',
+  'onboarding.models.modelCount': '{count} 个模型',
+  'onboarding.configure.openAccess': '打开接入配置',
+  'onboarding.settings.restart': '重新运行引导',
+  'onboarding.settings.restartDescription': '再走一遍这三步的配置引导。',
+  'onboarding.settings.restartAction': '重新运行',
+
   // ========== 设置页 ==========
   'settings.title': '设置',
   'settings.description': '管理应用行为、网络连接、故障恢复与本地数据',

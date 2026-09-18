@@ -1370,6 +1370,42 @@ export const uiEn = {
   'errors.ENDPOINT_URL_IN_USE': 'The {protocols} protocol on provider {providerName} is still used by {count} model(s) ({models}): without an address here those models lose the protocol too — give the models their own address first, or keep this address',
   'errors.PROVIDER_MODEL_DISABLED': 'Model {modelName} is disabled in Model Management: enable the model there first, then turn on this binding',
 
+  // ========== 新用户引导 ==========
+  // 引导是一条三步直线：怎么选路 → 拿什么跑 → 填到哪里，顺序不可换（前一步的产物是后一步的前提）。
+  // 步骤名在步进器里单独出现、没有上下文，所以 label 要能独立成词；title 才是那一屏的完整问法。
+  'onboarding.eyebrow': 'Getting started',
+  'onboarding.title': 'A working gateway in three steps',
+  'onboarding.progressLabel': 'Onboarding progress',
+  'onboarding.action.previous': 'Back',
+  'onboarding.action.next': 'Next',
+  'onboarding.action.skip': 'Skip',
+  'onboarding.action.finish': 'Finish',
+  'onboarding.topbar.language': 'Interface language',
+  'onboarding.step.routeMode.label': 'Routing',
+  'onboarding.step.routeMode.title': 'How are requests routed?',
+  'onboarding.step.routeMode.description': 'Pick one of the two modes. Each keeps its own configuration, so switching back and forth never discards what you set up on the other side.',
+  'onboarding.step.routeMode.planTitle': 'Built-in plans',
+  'onboarding.step.routeMode.planDescription':
+    'Start from one of these. Clicking one applies it right away; refine it later on the Routing page.',
+  'onboarding.step.routeMode.planApplied': 'Applied “{name}” and saved as v{version}',
+  'onboarding.step.models.label': 'Models',
+  'onboarding.step.models.title': 'Where do requests go?',
+  'onboarding.step.models.description': 'Add an upstream provider: pick a preset to fill in the address, enter the API key, then fetch and select the models to use.',
+  'onboarding.step.configure.label': 'Tools',
+  'onboarding.step.configure.title': 'Point your tools at this address',
+  'onboarding.step.configure.description': 'Fill these values into the client you already use. Requests then go out through the local service.',
+  'onboarding.models.presetHint': 'Pick a preset to fill in the address, or create a provider from scratch.',
+  'onboarding.models.customProvider': 'Custom provider',
+  'onboarding.models.addModel': 'Add model',
+  'onboarding.models.addModelHint': 'Pick a provider in the dialog first \u2014 models belong to a provider.',
+  'onboarding.models.connectedTitle': 'Connected providers',
+  'onboarding.models.empty': 'No provider yet. Pick a preset above to add the first one.',
+  'onboarding.models.modelCount': { one: '{count} model', other: '{count} models' },
+  'onboarding.configure.openAccess': 'Open access configuration',
+  'onboarding.settings.restart': 'Run the guide again',
+  'onboarding.settings.restartDescription': 'Walk through the three-step setup guide again.',
+  'onboarding.settings.restartAction': 'Run again',
+
   // ========== 设置页 ==========
   'settings.title': 'Settings',
   'settings.description': 'Manage application behavior, network, failover and local data',

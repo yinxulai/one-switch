@@ -14,6 +14,14 @@ interface ToastContextValue {
 
 interface ToastProviderProps {
   children: ReactNode
+  /**
+   * toast 距视口底部的距离（px）。不传就用 sonner 的默认值。
+   *
+   * 给「页面底部有一条常驻操作条」的界面用（引导页的「上一步 / 跳过 / 下一步」）：
+   * toast 固定在右下角，正好压在那条操作条的主按钮上。抬到操作条之上是唯一干净的做法 ——
+   * 让操作条躲 toast（加内边距、换位置）会把那条线在整屏里推得上不着天下不着地。
+   */
+  bottomOffset?: number
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null)
@@ -41,10 +49,16 @@ const TOAST_VALUE: ToastContextValue = {
 }
 
 export function ToastProvider(props: ToastProviderProps) {
+  const offset = props.bottomOffset === undefined ? undefined : { bottom: props.bottomOffset }
+
   return (
     <ToastContext.Provider value={TOAST_VALUE}>
       {props.children}
-      <Toaster position="bottom-right" />
+      {/*
+       * `mobileOffset` 必须单独传一份：窄屏下 sonner 读的是 `--mobile-offset`，
+       * 只给 `offset` 的话手机上还是压在操作条上。
+       */}
+      <Toaster position="bottom-right" offset={offset} mobileOffset={offset} />
     </ToastContext.Provider>
   )
 }

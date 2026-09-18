@@ -15,6 +15,7 @@ const leafMatch = (path: string, search: Record<string, unknown> = {}) => {
 describe('路由路径契约', () => {
   it('每个声明过的路径都解析到自己', () => {
     const cases: Array<[string, string]> = [
+      [routePaths.onboarding, routePaths.onboarding],
       [routePaths.router, routePaths.router],
       [routePaths.logicalModels, routePaths.logicalModels],
       [routePaths.modelManagement, routePaths.modelManagement],

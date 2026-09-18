@@ -1,12 +1,16 @@
 import { useMemo } from 'react'
-import { MonitorCog } from 'lucide-react'
+import { useNavigate } from '@tanstack/react-router'
+import { MonitorCog, RotateCcw } from 'lucide-react'
 import type { LanguagePreference } from '@common/schemas'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { SettingsCardHeader } from '@/components/settings-card-header'
 import { FormRow, FormSelect, type FormOption } from '@/components/form-kit'
 import { Switch } from '@/components/ui/switch'
 import type { ThemeMode } from '@/components/app-sidebar'
 import { useTranslation } from '@/i18n/provider'
+import { routePaths } from '@/routes'
+import { useAppUiStore } from '@/store/app-ui-store'
 
 interface GeneralCardProps {
   autoLaunch: boolean
@@ -30,6 +34,20 @@ const LANGUAGE_LABELS = {
 export function GeneralCard(props: GeneralCardProps) {
   const { autoLaunch, onAutoLaunchChange, themeMode, onThemeModeChange, language, onLanguageChange } = props
   const t = useTranslation()
+  const navigate = useNavigate()
+  const setOnboardingComplete = useAppUiStore(state => state.setOnboardingComplete)
+
+  /**
+   * 重走引导：先清掉完成标记再跳过去。
+   *
+   * 顺序不能反：`/onboarding` 是能直接打开的普通路由，标记只决定「启动时去哪」，
+   * 所以先清标记只是为了下次启动还会落到引导，而不是跳转的前置条件 ——
+   * 但反过来先跳再清，万一跳转未被处理，标记就已经被改了，下次启动会莫名其妙地又进引导。
+   */
+  const restartOnboarding = () => {
+    setOnboardingComplete(false)
+    void navigate({ to: routePaths.onboarding })
+  }
 
   const themeOptions = useMemo<FormOption[]>(() => [
     { value: 'system', label: t('settings.appearance.theme.system') },
@@ -81,6 +99,16 @@ export function GeneralCard(props: GeneralCardProps) {
           title={t('settings.appearance.autoLaunch')}
           description={t('settings.appearance.autoLaunchDescription')}
           control={<Switch checked={autoLaunch} onCheckedChange={onAutoLaunchChange} />}
+        />
+        <FormRow
+          title={t('onboarding.settings.restart')}
+          description={t('onboarding.settings.restartDescription')}
+          control={(
+            <Button variant="outline" size="sm" onClick={restartOnboarding}>
+              <RotateCcw />
+              {t('onboarding.settings.restartAction')}
+            </Button>
+          )}
         />
       </CardContent>
     </Card>

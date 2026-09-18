@@ -13,6 +13,8 @@ import App from './App'
 import { ErrorFallback } from './components/error-boundary'
 import { routePaths } from './routes'
 import { useTranslation } from './i18n/provider'
+import { OnboardingPage } from './pages/onboarding/page'
+import { useAppUiStore } from './store/app-ui-store'
 import { LogicalModelsPage } from './pages/logical-models/page'
 import { ModelManagementPage } from './pages/model-management/page'
 import { OverviewPage } from './pages/overview/page'
@@ -37,12 +39,19 @@ function RootErrorComponent(props: ErrorComponentProps) {
 
 const rootRoute = createRootRoute({ component: App, errorComponent: RootErrorComponent })
 
-// 首页只做一次重定向：智能路由是应用的默认落点。
+// 首页是应用的默认落点：没走过引导先去引导，走过了直接进智能路由。
+// 标记读的是持久化 store 的当前快照（localStorage 同步回填），所以首屏不会先闪一下再跳。
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
-  beforeLoad: () => { throw redirect({ to: routePaths.router, replace: true }) },
+  beforeLoad: () => {
+    const { onboardingComplete } = useAppUiStore.getState()
+    throw redirect({ to: onboardingComplete ? routePaths.router : routePaths.onboarding, replace: true })
+  },
 })
+
+// 引导页由 `App.tsx` 渲染成整屏覆盖层（无侧边栏），所以它不挂在 `AppLayout` 那支上。
+const onboardingRoute = createRoute({ getParentRoute: () => rootRoute, path: routePaths.onboarding, component: OnboardingPage })
 
 const logicalModelsRoute = createRoute({ getParentRoute: () => rootRoute, path: routePaths.logicalModels, component: LogicalModelsPage })
 const modelManagementRoute = createRoute({ getParentRoute: () => rootRoute, path: routePaths.modelManagement, component: ModelManagementPage })
@@ -84,6 +93,7 @@ const logsRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
+  onboardingRoute,
   logicalModelsRoute,
   modelManagementRoute,
   accessConfigRoute,

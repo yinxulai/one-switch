@@ -6,10 +6,13 @@ import { ConfirmProvider } from '@/components/ui/confirm-dialog'
 import { AppLayout } from '@/components/layout'
 import { ErrorBoundary, ErrorFallback } from '@/components/error-boundary'
 import { AppSidebar, type Theme } from '@/components/app-sidebar'
+import { OnboardingTopbar } from '@/pages/onboarding/onboarding-topbar'
+import { ONBOARDING_ACTION_BAR_CLEARANCE } from '@/pages/onboarding/page'
 import { useAppUiStore } from '@/store/app-ui-store'
 import { useTranslation } from '@/i18n/provider'
 import { RouteModeDialog } from './features/route-mode/route-mode-dialog'
 import { useProxyStatus } from './features/proxy/hooks'
+import { routePaths } from './routes'
 
 function App() {
   const pathname = useRouterState({ select: state => state.location.pathname })
@@ -35,40 +38,67 @@ function App() {
 
   const toggleTheme = () => setThemeMode(theme === 'dark' ? 'light' : 'dark')
 
+  // 引导页是覆盖整个应用的「特殊层」：不带侧边栏、右上角固定主题与语言切换。
+  // 不经过 AppLayout，因此它压在任何普通页面之上。
+  const isOnboarding = pathname === routePaths.onboarding
+
   return (
-    <ToastProvider>
+    <ToastProvider bottomOffset={isOnboarding ? ONBOARDING_ACTION_BAR_CLEARANCE : undefined}>
       <ConfirmProvider>
         <TooltipProvider>
-          <AppLayout
-            sidebar={(
-              <AppSidebar
-                theme={theme}
-                onToggleTheme={toggleTheme}
-                proxyPort={proxyStatus?.port}
-                proxyRunning={proxyStatus?.running ?? false}
-              />
-            )}
-          >
-            {/*
-             * 内层再兜一道：路由级错误会被这里拦截，侧栏与顶部导航继续可用，
-             * 用户切到别的页面就自动恢复（`resetKeys` 是当前路径）。
-             * `routing.tsx` 里的根路由 `errorComponent` 是外层保险，
-             * 作用于 App 自身（包括侧栏、各种 Provider）抛错的情况。
-             */}
-            <ErrorBoundary
-              resetKeys={[pathname]}
-              fallback={fallbackProps => (
-                <ErrorFallback
-                  {...fallbackProps}
-                  embedded
-                  title={t('common.error.pageTitle')}
-                  description={t('common.error.pageDescription')}
+          {isOnboarding ? (
+            <>
+              <div className="fixed inset-0 z-40 overflow-auto bg-background text-foreground">
+                <div className="fixed right-4 top-4 z-50">
+                  <OnboardingTopbar theme={theme} onToggleTheme={toggleTheme} />
+                </div>
+                <ErrorBoundary
+                  resetKeys={[pathname]}
+                  fallback={fallbackProps => (
+                    <ErrorFallback
+                      {...fallbackProps}
+                      embedded
+                      title={t('common.error.pageTitle')}
+                      description={t('common.error.pageDescription')}
+                    />
+                  )}
+                >
+                  <Outlet />
+                </ErrorBoundary>
+              </div>
+            </>
+          ) : (
+            <AppLayout
+              sidebar={(
+                <AppSidebar
+                  theme={theme}
+                  onToggleTheme={toggleTheme}
+                  proxyPort={proxyStatus?.port}
+                  proxyRunning={proxyStatus?.running ?? false}
                 />
               )}
             >
-              <Outlet />
-            </ErrorBoundary>
-          </AppLayout>
+              {/*
+               * 内层再兜一道：路由级错误会被这里拦截，侧栏与顶部导航继续可用，
+               * 用户切到别的页面就自动恢复（`resetKeys` 是当前路径）。
+               * `routing.tsx` 里的根路由 `errorComponent` 是外层保险，
+               * 作用于 App 自身（包括侧栏、各种 Provider）抛错的情况。
+               */}
+              <ErrorBoundary
+                resetKeys={[pathname]}
+                fallback={fallbackProps => (
+                  <ErrorFallback
+                    {...fallbackProps}
+                    embedded
+                    title={t('common.error.pageTitle')}
+                    description={t('common.error.pageDescription')}
+                  />
+                )}
+              >
+                <Outlet />
+              </ErrorBoundary>
+            </AppLayout>
+          )}
 
           {/*
            * 路由模式弹窗挂在这里，而不挂在某个页面上：它的入口分布在不相关的两处
