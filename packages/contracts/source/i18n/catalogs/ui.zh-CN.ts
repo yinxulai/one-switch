@@ -34,7 +34,7 @@ export const uiZhCN: Record<keyof typeof uiEn, MessageValue> = {
   'nav.theme.toLight': '浅色模式',
   'nav.theme.toDark': '深色模式',
   'nav.sidebar.pin': '固定侧边栏',
-  'nav.sidebar.unpin': '取消固定侧边栏',
+  'nav.sidebar.unpin': '取消固定',
   'nav.breadcrumb': '面包屑导航',
 
   // ========== 通用 ==========
