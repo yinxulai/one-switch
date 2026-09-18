@@ -31,6 +31,10 @@ export const uiEn = {
   'nav.status.stopped': 'Service stopped',
   'nav.theme.toLight': 'Light mode',
   'nav.theme.toDark': 'Dark mode',
+  // 按钮文字点名「接下来做什么」：`Pin ...` = 点一下会钉住，`Unpin ...` = 点一下会取消；
+  // 后缀 `sidebar` 是必须的 —— 单说 `Pin` 读不出钉的是谁。
+  'nav.sidebar.pin': 'Pin sidebar',
+  'nav.sidebar.unpin': 'Unpin sidebar',
   'nav.breadcrumb': 'Breadcrumb',
 
   // ========== 通用 ==========

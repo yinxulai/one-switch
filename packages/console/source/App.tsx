@@ -18,6 +18,8 @@ function App() {
   const pathname = useRouterState({ select: state => state.location.pathname })
   const themeMode = useAppUiStore(state => state.themeMode)
   const setThemeMode = useAppUiStore(state => state.setThemeMode)
+  const sidebarPinned = useAppUiStore(state => state.sidebarPinned)
+  const setSidebarPinned = useAppUiStore(state => state.setSidebarPinned)
   const [systemTheme, setSystemTheme] = useState<Theme>('light')
   const proxyStatus = useProxyStatus()
   const t = useTranslation()
@@ -69,12 +71,15 @@ function App() {
             </>
           ) : (
             <AppLayout
+              sidebarPinned={sidebarPinned}
               sidebar={(
                 <AppSidebar
                   theme={theme}
                   onToggleTheme={toggleTheme}
                   proxyPort={proxyStatus?.port}
                   proxyRunning={proxyStatus?.running ?? false}
+                  pinned={sidebarPinned}
+                  onTogglePinned={() => setSidebarPinned(!sidebarPinned)}
                 />
               )}
             >

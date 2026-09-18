@@ -7,6 +7,8 @@ import {
   Database,
   GitBranch,
   ListOrdered,
+  Pin,
+  PinOff,
   Plug,
   ScrollText,
   SlidersHorizontal,
@@ -35,6 +37,9 @@ interface AppSidebarProps {
   proxyRunning: boolean
   proxyPort?: number
   onToggleTheme: () => void
+  /** 钉住时侧栏不再跟鼠标进出，一直保持推开。见 `AppUiState.sidebarPinned`。 */
+  pinned: boolean
+  onTogglePinned: () => void
 }
 
 const baseNavItems: NavItem[] = [
@@ -68,7 +73,12 @@ export function AppSidebar(props: AppSidebarProps) {
   const t = useTranslation()
   // 展开态用 JS 而不是 CSS `:hover`：标记淡入要延时（需要知道状态），
   // 而且键盘 Tab 到图标时要给 tooltip —— tooltip 只在鼠标不在轨道里时才该出现。
-  const [expanded, setExpanded] = useState(false)
+  //
+  // 名字叫 `hovered` 而不是 `expanded`：它只是「鼠标在不在这里」这一个事实，
+  // 真正决定推开与否的是「钉住」和它两者之一 —— 钉住跟鼠标进出无关，
+  // 所以两个状态分开存，展开态是它们的**合成结果**，而不是谁去覆盖谁。
+  const [hovered, setHovered] = useState(false)
+  const expanded = props.pinned || hovered
   const [focusedKey, setFocusedKey] = useState<AppNavPath | null>(null)
   const navSections = baseNavItems.reduce<Array<{ key: UiCatalogKey; items: NavItem[] }>>((sections, item) => {
     const currentSection = sections.at(-1)
@@ -84,8 +94,9 @@ export function AppSidebar(props: AppSidebarProps) {
     <div
       data-slot="app-sidebar"
       data-expanded={expanded ? 'true' : undefined}
-      onPointerEnter={() => setExpanded(true)}
-      onPointerLeave={() => setExpanded(false)}
+      data-pinned={props.pinned ? 'true' : undefined}
+      onPointerEnter={() => setHovered(true)}
+      onPointerLeave={() => setHovered(false)}
       className={cn(
         'absolute inset-y-0 left-0 flex min-h-0 w-12 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar text-sidebar-foreground',
         'transition-[width] duration-200 ease-out motion-reduce:transition-none',
@@ -167,6 +178,30 @@ export function AppSidebar(props: AppSidebarProps) {
       </nav>
 
       <div className="shrink-0 space-y-1 p-1.5">
+        {/**
+         * 钉住开关长在脚注区最上面一行，和主题、运行状态同一族外壳（`h-9 / px-2.5 / gap-2.5 / size-4`）：
+         * 它管的是这个侧栏自己，而上面那三组管的是页面 —— 既然不是同类，就归到脚注里。
+         *
+         * 钉住时它用和导航项激活态一样的那套（`bg-sidebar-accent` + `semibold`）：
+         * 「现在钉着」是一个持续生效的状态，得一直看得见，而不是只在按下那一瞬间给个反馈；
+         * 图标同时换成 `PinOff`（点一下会取消），所以状态和动作各有一个说法，不靠颜色单独表意。
+         */}
+        <button
+          type="button"
+          aria-pressed={props.pinned}
+          aria-label={t(props.pinned ? 'nav.sidebar.unpin' : 'nav.sidebar.pin')}
+          onClick={props.onTogglePinned}
+          className={cn(
+            'flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 outline-none transition-colors [&_svg]:size-4 [&_svg]:shrink-0',
+            'focus-visible:ring-2 focus-visible:ring-state-accent-solid',
+            props.pinned
+              ? 'bg-sidebar-accent system-xs-semibold text-sidebar-accent-foreground'
+              : 'system-xs-medium text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground',
+          )}
+        >
+          {props.pinned ? <PinOff aria-hidden="true" /> : <Pin aria-hidden="true" />}
+          <span className={revealClassName(expanded)}>{t(props.pinned ? 'nav.sidebar.unpin' : 'nav.sidebar.pin')}</span>
+        </button>
         <AnimatedThemeToggler
           theme={props.theme}
           onThemeChange={() => props.onToggleTheme()}

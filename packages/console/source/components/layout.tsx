@@ -36,13 +36,30 @@ interface PageContentProps {
 
 interface AppLayoutProps {
   sidebar: ReactNode
+  /**
+   * 侧边栏是否被钉住。
+   *
+   * 不钉时轨道只留 48px，展开的那 14rem 由侧栏自己 `absolute` 铺出去盖在内容上 —— 这是对的：
+   * 扫一眼就收起的浮层不该把正文挤走。钉住则刚好相反，用户要的是它**一直在**，
+   * 那就得让轨道真的占宽，否则侧栏永远盖住左边 176px 的内容。
+   *
+   * 轨道宽度跟着一起过渡：侧栏自己的宽度是 200ms 过渡的，轨道若瞬移就会出现
+   * 「内容已经让开了、侧栏还没推到位」的那一帧空档，两边同一个时长就同步了。
+   */
+  sidebarPinned?: boolean
   children: ReactNode
 }
 
 export function AppLayout(props: AppLayoutProps) {
-  const { sidebar, children } = props
+  const { sidebar, sidebarPinned = false, children } = props
   return (
-    <div className="grid h-screen w-full grid-cols-[3rem_minmax(0,1fr)] overflow-hidden bg-background text-foreground">
+    <div
+      className={cn(
+        'grid h-screen w-full overflow-hidden bg-background text-foreground',
+        'transition-[grid-template-columns] duration-200 ease-out motion-reduce:transition-none',
+        sidebarPinned ? 'grid-cols-[14rem_minmax(0,1fr)]' : 'grid-cols-[3rem_minmax(0,1fr)]',
+      )}
+    >
       <aside className="relative z-30 min-h-0 overflow-visible border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
         {sidebar}
       </aside>
