@@ -16,6 +16,32 @@ Your client only ever sees the attempt that succeeded.
 
 ---
 
+## Install
+
+Download the installer for your platform from the [latest release](https://github.com/yinxulai/one-switch/releases/latest). Every asset follows `One-Switch-<version>-<os>-<arch>.<ext>`, and each installer ships a matching `.sha256` file you can verify.
+
+| Platform | Architecture | File to download |
+| --- | --- | --- |
+| macOS | Apple silicon | `One-Switch-<version>-mac-arm64.dmg` |
+| macOS | Intel | `One-Switch-<version>-mac-x64.dmg` |
+| Windows | x64 | `One-Switch-<version>-win-x64.exe` |
+| Windows | ARM64 | `One-Switch-<version>-win-arm64.exe` |
+| Linux | x64 | `One-Switch-<version>-linux-x86_64.AppImage` |
+| Linux | ARM64 | `One-Switch-<version>-linux-arm64.AppImage` |
+
+1. **macOS** — open the `.dmg` and drag **One Switch** into *Applications*. Builds are ad-hoc signed and not notarized, so if macOS blocks the first launch, allow it under **System Settings → Privacy & Security**, or right-click the app in Finder and choose **Open**.
+2. **Windows** — run the `.exe`. If SmartScreen warns about an unknown publisher, choose **More info → Run anyway**.
+3. **Linux** — make the AppImage executable and run it:
+
+   ```bash
+   chmod +x One-Switch-*-linux-*.AppImage
+   ./One-Switch-*-linux-*.AppImage
+   ```
+
+Once installed, One Switch lives in the system tray and checks for updates itself. Windows and Linux download and install updates in place; on macOS the ad-hoc signature means it can only check for updates and open the DMG download page.
+
+Next: [Up and running in three steps](#up-and-running-in-three-steps).
+
 ## Why it's worth installing
 
 - **Configure once, use it everywhere.** Every client points at one local address. Swapping providers, accounts or models later means editing One Switch, not hunting through each tool's settings.
@@ -159,16 +185,6 @@ A few more things worth knowing:
 - **Body capture is on by default.** The full request, response and streamed content are stored locally, including both sides of any protocol conversion. Headers are redacted automatically (`authorization`, `x-api-key`, `cookie` and friends); bodies are not — which is exactly why it can debug any request, and why the logs may contain sensitive content. Bodies are kept for 7 days by default while the request records themselves are kept forever. Turn capture off, change the retention windows, or clear history from **Settings → Data → Request Logs**.
 - To support very long contexts properly, neither the proxy nor body capture caps request size; the body is read into memory in full. Enormous bodies will cost real memory and disk. That is a deliberate trade-off in this version.
 - There is no cloud sync, no account and no remote relay. Requests only go to the upstreams you configured.
-
-## Install
-
-Download the installer for your platform from [GitHub Releases](https://github.com/yinxulai/one-switch/releases):
-
-- **macOS**: `.dmg`, one for Apple Silicon and one for Intel (plus a `.zip`, which the updater uses)
-- **Windows**: `.exe` installer, x64 and ARM64
-- **Linux**: `.AppImage`, x64 and ARM64
-
-macOS builds are ad-hoc signed and not notarized. If the system blocks the first launch, allow it under System Settings → Privacy & Security, or right-click the app in Finder and choose Open. The same signature situation is why macOS can only check for updates and open the DMG download page, while Windows and Linux download and install in place.
 
 ## Not supported yet
 

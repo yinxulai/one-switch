@@ -16,6 +16,32 @@ One Switch 在本机跑一个代理服务。你把能用的渠道都配进来（
 
 ---
 
+## 安装
+
+到 [最新版本](https://github.com/yinxulai/one-switch/releases/latest) 下载对应平台的安装包。产物命名统一是 `One-Switch-<版本>-<平台>-<架构>.<后缀>`，每个安装包都配一个 `.sha256` 校验文件。
+
+| 平台 | 架构 | 下载哪个文件 |
+| --- | --- | --- |
+| macOS | Apple Silicon | `One-Switch-<版本>-mac-arm64.dmg` |
+| macOS | Intel | `One-Switch-<版本>-mac-x64.dmg` |
+| Windows | x64 | `One-Switch-<版本>-win-x64.exe` |
+| Windows | ARM64 | `One-Switch-<版本>-win-arm64.exe` |
+| Linux | x64 | `One-Switch-<版本>-linux-x86_64.AppImage` |
+| Linux | ARM64 | `One-Switch-<版本>-linux-arm64.AppImage` |
+
+1. **macOS** —— 打开 `.dmg`，把 **One Switch** 拖进「应用程序」。构建目前是 ad-hoc 签名且未公证，首次打开若被系统拦下，去「系统设置 → 隐私与安全性」放行，或在 Finder 里右键应用选「打开」。
+2. **Windows** —— 直接运行 `.exe`。若 SmartScreen 提示未知发布者，点「更多信息 → 仍要运行」。
+3. **Linux** —— 给 AppImage 加执行权限再运行：
+
+   ```bash
+   chmod +x One-Switch-*-linux-*.AppImage
+   ./One-Switch-*-linux-*.AppImage
+   ```
+
+装好后 One Switch 常驻系统托盘，并会自己检查更新。Windows / Linux 上是下载后就地安装；macOS 因为签名状态，只能检查更新并跳到 DMG 下载页。
+
+装完接着看下面的[三步上手](#三步上手)。
+
 ## 为什么值得装
 
 - **配一次，到处能用。** 所有客户端只填一个本地地址。以后换供应商、换账号、换模型，都只改 One Switch，不用再去翻每个工具的设置。
@@ -161,16 +187,6 @@ curl http://127.0.0.1:9300/v1/models
 - **正文捕获默认开启**，本机会保存完整的请求、响应和流式内容（包括协议转换前后的内容）。其中 Header 会自动脱敏（`authorization`、`x-api-key`、`cookie` 等），正文不会 —— 所以它能让你排查任何一次请求，也意味着日志里可能有敏感内容。正文默认只保留 7 天（请求记录本身默认永久保留），不想要的话可以在 **设置 → 数据 → 请求日志** 里关掉采集、调整保留天数，或立刻清理历史。
 - 为了完整支持超长上下文，代理和正文记录都不限制单次正文大小，会在内存里完整读一遍请求体 —— 极大正文会明显吃内存和磁盘，这是当前版本有意为之的取舍。
 - One Switch 没有云同步、账号体系或远程中转，请求只会发往你配置的上游地址。
-
-## 安装
-
-到 [GitHub Releases](https://github.com/yinxulai/one-switch/releases) 下载对应平台的安装包：
-
-- **macOS**：`.dmg`，Apple Silicon 与 Intel 各一个（另有 `.zip`，自动更新用它）
-- **Windows**：`.exe` 安装程序，x64 与 ARM64 各一个
-- **Linux**：`.AppImage`，x64 与 ARM64 各一个
-
-macOS 构建目前是 ad-hoc 签名且未公证。如果系统拦下了首次打开，去「系统设置 → 隐私与安全性」里确认放行，或者在 Finder 里右键应用选「打开」。也正因为这个签名状态，macOS 上只能检查更新并跳到 DMG 下载页，Windows / Linux 则是下载后在应用内直接安装。
 
 ## 现在还不支持
 
