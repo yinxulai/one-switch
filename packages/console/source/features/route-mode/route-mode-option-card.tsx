@@ -22,6 +22,12 @@ export interface RouteModeOptionCardProps {
  * 选中态只靠**边框 + 图标底色 + 角标**：弹窗底色本身就是白，再刷一层白块等于没画；
  * 而刷一层灰块，两栏就成了一屏里最重的两块灰 —— 层次应该由边框给，不由底色给。
  *
+ * 焦点态与选中态**必须长得不一样**：这里原本用 `ring-2 ring-state-accent-solid`，
+ * 那是贴着卡片边缘、和选中边框同一个颜色的一圈实线 —— 弹窗打开时 Radix 会把焦点
+ * 送到第一栏（未必是生效的那一栏），于是屏幕上出现两张「被描了黑边的卡片」，
+ * 谁也说不清哪个才是当前生效的。改成仓库全局那套键盘焦点写法（1px `ring`、外扩 2px），
+ * 它和贴着边缘的选中边框在**形态**上就分得开：一个是描边，一个是离了一圈的细线。
+ *
  * 从 `route-mode-dialog.tsx` 抽出来共享：模式弹窗与新手引导是**同一张卡片**，
  * 两处若各写一份，改文案或改选中态就得记着改两遍。
  */
@@ -34,7 +40,7 @@ export function RouteModeOptionCard(props: RouteModeOptionCardProps) {
     <label
       className={cn(
         'flex flex-col gap-3 rounded-lg border p-3.5 transition-colors',
-        'focus-within:ring-2 focus-within:ring-state-accent-solid',
+        'focus-within:outline-1 focus-within:outline-offset-2 focus-within:outline-ring',
         active ? 'border-state-accent-solid' : 'border-module-border hover:border-text-quaternary',
         switching ? 'cursor-progress' : 'cursor-pointer',
       )}

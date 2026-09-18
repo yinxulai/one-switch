@@ -33,7 +33,23 @@ export function RouteModeDialog() {
 
   return (
     <Dialog open={open} onOpenChange={setDialogOpen}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent
+        className="sm:max-w-2xl"
+        /*
+         * Radix 默认把焦点送到整个弹窗里第一个可聚焦元素，也就是**第一栏**那张卡片 ——
+         * 而它未必是当前生效的那一栏。这样打开弹窗就同时有「被聚焦的」和「被选中的」
+         * 两张卡片亮着，恰好把这弹窗最要紧的信息（现在哪个在生效）糊掉了。
+         * 所以这里把焦点改送到生效的那一栏：焦点跟选中重合，屏幕上只强调一处。
+         */
+        onOpenAutoFocus={event => {
+          const target = (event.currentTarget as HTMLElement | null)?.querySelector<HTMLInputElement>(
+            'input[type="radio"]:checked',
+          )
+          if (!target) return
+          event.preventDefault()
+          target.focus()
+        }}
+      >
         <DialogHeader>
           <DialogTitle>{t('router.mode.dialog.title')}</DialogTitle>
           <DialogDescription>{t('router.mode.hint')}</DialogDescription>
