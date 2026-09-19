@@ -1,4 +1,3 @@
 export { settingsRoutes } from './settings'
 export { runtimeControlRoutes } from './runtime-control'
-export { telemetryRoutes } from './telemetry'
 export { developmentRoutes } from './development'

@@ -4,6 +4,15 @@
 
 隐私总原则见 [security-privacy.md](./security-privacy.md)；本文是该原则下唯一允许出站的非模型流量，其余非模型流量一律不出站。
 
+> **状态：客户端上报已下线（2026-09）。**
+>
+> 在 apis（`apps/apis/` Worker）下游方案定稿前，**客户端（core / console / 设置项 / 引导同意步骤）的上报实现已整体移除**，应用不再产生任何出站统计流量。
+>
+> - **保留**：`packages/contracts/source/telemetry.ts`（契约层，客户端与 Worker 共用的唯一一份定义）与 `apps/apis/`（Worker 源码与配置）。
+> - **移除**：`packages/core/source/telemetry/`、`packages/core/source/management/routes/operations/telemetry.ts`、`SettingsSchema` 的 `telemetryEnabled` / `telemetryEndpoint`、console 的预览卡片与引导同意步骤、以及相关 i18n 文案。
+>
+> 本文其余部分描述的是**目标设计**：它仍是重新落地时的规范来源，但当前仓库内已无对应客户端实现。重新落地前请先解决 §6 与 §8.3 记录的下游问题（真实 `session_id` / `engagement_time_msec` 语义、服务端会话拼接）。
+
 ## 1. 定位与边界
 
 ### 为什么要有它
@@ -344,13 +353,13 @@ core 是纯 Node 进程，拿不到渲染层的 `__APP_VERSION__`，也没有 `e
 
 | 落点 | 内容 |
 |------|------|
-| `packages/contracts/source/telemetry.ts` | 事件名闭集、公共字段 schema、属性枚举与长度约束、端点常量。**客户端与 Worker 共用的唯一一份定义** |
-| `packages/contracts/source/schemas.ts` | `telemetryEnabled` 设置项 |
-| `packages/core/source/telemetry/` | 安装标识读写、内存队列、批量发送、直连连接器 |
-| `packages/core/source/runtime/server-runtime.ts` | 启动后启动上报循环，关闭前停掉（与实例锁心跳同一套「返回 stop 函数」的写法） |
-| `packages/core/source/management/routes/operations/telemetry.ts` | 预览接口（返回即将发送的报文）与统计状态 |
-| `packages/console/source/pages/runtime-settings/components/` | 统计开关与预览卡片 |
-| `packages/console/source/pages/onboarding/` | 同意步骤 |
+| `packages/contracts/source/telemetry.ts` | 事件名闭集、公共字段 schema、属性枚举与长度约束、端点常量。**客户端与 Worker 共用的唯一一份定义（保留）** |
+| ~~`packages/contracts/source/schemas.ts`~~ | `telemetryEnabled` / `telemetryEndpoint` 设置项 —— **已移除** |
+| ~~`packages/core/source/telemetry/`~~ | 安装标识读写、内存队列、批量发送、直连连接器 —— **已移除** |
+| ~~`packages/core/source/runtime/server-runtime.ts`~~ | 启动上报循环与停机清理 —— **已移除** |
+| ~~`packages/core/source/management/routes/operations/telemetry.ts`~~ | 预览接口与统计状态 —— **已移除** |
+| ~~`packages/console/source/pages/runtime-settings/components/`~~ | 统计开关与预览卡片 —— **已移除** |
+| ~~`packages/console/source/pages/onboarding/`~~ | 同意步骤 —— **已移除** |
 | `apps/apis/` | Worker 源码（严格校验、白名单削平 、补地区、限流、写 GA）与 `wrangler.toml`（secret 与路由）。域名上**只有 `POST /v1/track` 一条路径**（§7） |
 | GA 后台（不在仓库里） | 建数据流、取 measurement id 与 api secret、**把 `version` 与 `arch` 注册成用户级自定义维度**（§7、§11） |
 

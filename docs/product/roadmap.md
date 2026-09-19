@@ -185,14 +185,11 @@
 
 默认关闭的匿名使用统计：事件白名单、匿名标识口径、上报链路与分析口径见 [telemetry.md](./telemetry.md)。
 
+**状态：客户端上报已下线（2026-09）。** 在 apis（`apps/apis/` Worker）下游方案定稿前，客户端侧实现（core 上报链路、`SettingsSchema` 统计字段、管理接口、控制台开关与预览卡片、引导同意步骤及相关 i18n）已整体移除；仅保留契约层 `packages/contracts/source/telemetry.ts` 与 `apps/apis/` Worker。重新落地前需先解决 telemetry.md §6 / §8.3 记录的下游问题。
+
 - [x] 设计定稿：事件目录（13 个事件）、公共字段、稳定不轮换的 `installId` 与保留期取舍、端点恒定与后端可换、首版只对接 GA4（不自建存储）、Worker 职责与 GA 能力边界、分析口径
-- [ ] `packages/contracts/source/telemetry.ts`：事件名闭集、属性枚举与长度约束、端点常量
-- [ ] `SettingsSchema`：`telemetryEnabled`（默认 `false`）与 `telemetryEndpoint`（仅开发档使用）
-- [ ] core：安装标识读写（`telemetry-id`）、内存队列、批量发送、独立直连连接器，接入启动 / 关闭生命周期
-- [ ] 宿主注入应用版本（core 不自己解析版本）
-- [ ] 管理接口：预告报文（「预览即将发送的内容」）与统计状态
-- [ ] 控制台：统计开关与同屏预览卡片
-- [ ] 引导页同意步骤（默认不勾选，跳过不等于同意）
+- [ ] **（暂缓）** 客户端上报链路：`SettingsSchema` 统计字段、core 安装标识 / 队列 / 直连连接器与生命周期接线、宿主注入版本、管理接口预告报文、控制台开关与预览卡片、引导页同意步骤 —— 已移除，待下游方案定稿后重新设计
+- [ ] `packages/contracts/source/telemetry.ts`：事件名闭集、属性枚举与长度约束、端点常量（保留）
 - [ ] `apps/apis/`：严格校验、白名单削平、把真实客户端 IP 作为 `ip_override` 交给 GA 解析地理位置、限流、单批 25 条硬上限、转发 GA4 Measurement Protocol
 - [ ] `apps/apis/` 自动部署：push 到 `main` 且 `apps/apis/**` 变更时发布，支持手动触发
 

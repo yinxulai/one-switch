@@ -1,24 +1,9 @@
 import type { HealthSnapshot, OutboundProxyMode, ProxyServerStatus, Settings } from '@common/schemas'
-import type { TelemetryEventInput, TelemetryPreview } from '@common/telemetry'
 import { request } from './client'
-import { unwrap } from './unwrap'
 
 export const settingsApi = {
   get: () => request<Settings>('/settings/get'),
   update: (updates: Partial<Settings>) => request<Settings>('/settings/update', updates),
-}
-
-export const telemetryApi = {
-  preview: (signal?: AbortSignal) => unwrap(request<TelemetryPreview>('/telemetry/preview', undefined, { signal })),
-  /**
-   * 把界面侧发生的事交给 core 上报（队列在 core，界面不持有第二套）。
-   *
-   * 不返回也不抛：上报失败**不该**让触发它的那次操作表现成失败，所以这里连 `catch` 都不需要——
-   * `request` 自己就把网络错误转成了 `{ success: false }`，没有任何东西会拒绝。
-   */
-  report: (event: TelemetryEventInput) => {
-    void request<{ accepted: boolean }>('/telemetry/report', event)
-  },
 }
 
 export interface OutboundProxyTestInput {

@@ -7,12 +7,10 @@ import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/provider'
 import { routePaths } from '@/routes'
 import { useAppUiStore } from '@/store/app-ui-store'
-import { settingsApi, telemetryApi } from '@/api/runtime'
 import type { UiCatalogKey } from '@common/i18n/catalogs'
 import { RouteModeStep } from './steps/route-mode-step'
 import { AddModelStep } from './steps/add-model-step'
 import { ConfigureStep } from './steps/configure-step'
-import { TelemetryStep } from './steps/telemetry-step'
 
 interface OnboardingStep {
   labelKey: UiCatalogKey
@@ -26,7 +24,6 @@ interface OnboardingStep {
  *
  * 顺序不可换：没有模型时「填到哪里」没有意义，没选模式时「拿什么跑」也说不清会怎么被选中。
  * 每一步的产物都是下一步的前提，所以这里是一条直线，不是可自由勾选的清单。
- * （第四步是统计同意，它不进这个数组，理由见 `CONSENT_STEP`。）
  *
  * 每一步的内容都**复用正式页面的组件**（模式卡片、模型管理链路、接入配置卡片），
  * 引导页只负责串场和收尾。这样引导里做的每个动作，在正式页面里都已经是生效的结果 ——
@@ -54,19 +51,6 @@ const STEPS: OnboardingStep[] = [
 ]
 
 /**
- * 统计同意那一步的文案。
- *
- * 它的内容不在这里给，因为它是四步里唯一带**本地状态**的：开关不落库，走完才写设置，
- * 所以只能由组件自己渲染（见 `OnboardingPage`）。文案仍留在同一个数组旁边，是因为顺序
- * 只有一个出处，不能在别处再排一遍。
- */
-const CONSENT_STEP = {
-  labelKey: 'onboarding.step.consent.label',
-  titleKey: 'onboarding.step.consent.title',
-  descriptionKey: 'onboarding.step.consent.description',
-} as const satisfies Omit<OnboardingStep, 'render'>
-
-/**
  * 引导页底部操作条要占掉的高度，供浮在右下角的 toast 避让（见 `App` 传给 `ToastProvider` 的值）。
  *
  * 组成：操作条 `py-4`（16 × 2）+ `size="sm"` 按钮 28px + 1px 上边框 = 61px，再加 15px 呼吸。
@@ -86,34 +70,18 @@ export const ONBOARDING_ACTION_BAR_CLEARANCE = 76
  */
 export function OnboardingPage() {
   const [index, setIndex] = useState(0)
-  const [telemetryEnabled, setTelemetryEnabled] = useState(false)
   const navigate = useNavigate()
   const setOnboardingComplete = useAppUiStore(state => state.setOnboardingComplete)
   const t = useTranslation()
 
-  /**
-   * 统计同意放在最后一步，是因为前一步的产物（填进客户端的地址）是它的语境：
-   * 本地已经跑通了，再问「愿不愿意发统计」就是一个具体的选择，而不是开工前的弹窗。
-   */
-  const steps: OnboardingStep[] = [
-    ...STEPS,
-    { ...CONSENT_STEP, render: () => <TelemetryStep enabled={telemetryEnabled} onEnabledChange={setTelemetryEnabled} /> },
-  ]
-
+  const steps = STEPS
   const step = steps[index]
   const isLast = index === steps.length - 1
 
   /**
-   * 收尾。「跳过」与「完成」走同一条路，区别只在 `skipped`：把不能跳过的东西做成引导，
-   * 只会让人以为程序坏了。
-   *
-   * 统计开关**只有被真的打开过才写库**。界面上的初值恒为 `false`，所以「值为 true」本身
-   * 就证明了手真的碰过它——跳过引导时该字段保持 `false`（telemetry.md §13），靠的是这条
-   * 性质，不是靠在这里区分是点了跳过还是点了完成。
+   * 收尾。「跳过」与「完成」走同一条路：把不能跳过的东西做成引导，只会让人以为程序坏了。
    */
-  const finish = (skipped: boolean) => {
-    if (telemetryEnabled) void settingsApi.update({ telemetryEnabled: true })
-    telemetryApi.report({ name: 'onboarding_finished', skipped: skipped ? 'true' : 'false' })
+  const finish = () => {
     setOnboardingComplete(true)
     void navigate({ to: routePaths.router, replace: true })
   }
@@ -185,12 +153,12 @@ export function OnboardingPage() {
           <ArrowLeft />
           {t('onboarding.action.previous')}
         </Button>
-        <Button variant="ghost" size="sm" onClick={() => finish(true)}>
+        <Button variant="ghost" size="sm" onClick={() => finish()}>
           {t('onboarding.action.skip')}
         </Button>
         <div className="ml-auto">
           {isLast ? (
-            <Button size="sm" onClick={() => finish(false)}>
+            <Button size="sm" onClick={() => finish()}>
               {t('onboarding.action.finish')}
             </Button>
           ) : (

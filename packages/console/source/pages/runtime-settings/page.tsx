@@ -10,7 +10,6 @@ import { ListenConfigCard } from './components/listen-config-card'
 import { OutboundProxyCard } from './components/outbound-proxy-card'
 import { FailoverCard } from './components/failover-card'
 import { LogRetentionCard } from './components/log-retention-card'
-import { TelemetryCard } from './components/telemetry-card'
 import { RouteModeCard } from './components/route-mode-card'
 import { GeneralCard } from './components/general-card'
 import { DevelopmentCard } from './components/development-card'
@@ -115,10 +114,6 @@ export function RuntimeSettingsPage() {
                 onCaptureRequestContentChange={value => service.updateField('captureRequestContent', value)}
                 onContentRetentionDaysChange={value => service.updateField('contentRetentionDays', value)}
                 onPrune={service.pruneLogs}
-              />
-              <TelemetryCard
-                enabled={service.settings.telemetryEnabled}
-                onEnabledChange={value => service.updateField('telemetryEnabled', value)}
               />
               {import.meta.env.DEV && (
                 <DevelopmentCard onSeedDevelopment={() => void service.seedDevelopmentData()} />

@@ -1,7 +1,6 @@
 import type { Server } from 'node:http'
 import type { RuntimeConfig } from '@common/runtime-config'
 import type { SecretStore } from '@common/secret-store'
-import type { TelemetryServiceFailureReason } from '@common/telemetry'
 import { closeDatabases, initDatabases } from '../database'
 import { configureSettingsDefaults, getSettings } from '@server/database/settings-store'
 import { configureSecretStore } from '@server/infrastructure/secrets/secret-store'
@@ -12,10 +11,6 @@ import { configureShutdownHandshake, type ShutdownHandshake } from '../managemen
 import { startManagementServer, stopManagementServer } from '../management/server'
 import { resetManualModels } from '../proxy/routing/manual-routing'
 import { startProxyServer, stopProxyServer } from '../proxy/runtime/server'
-import {
-  reportTelemetryStartFailure,
-  startTelemetry,
-} from '../telemetry'
 import {
   acquireInstanceLock,
   InstanceLockError,
@@ -52,7 +47,6 @@ export class ServerRuntime {
   private endpoints: ServerEndpoints | null = null
   private instanceLock: InstanceLock | null = null
   private stopLockHeartbeat: (() => void) | null = null
-  private stopTelemetry: (() => void) | null = null
 
   constructor(private readonly options: ServerRuntimeOptions) {}
 
@@ -99,9 +93,6 @@ export class ServerRuntime {
       console.info(`[runtime] management server started listening=${this.managementServer.listening}`)
       console.info(`[runtime] starting proxy server host=${settings.listenHost} port=${settings.listenPort}`)
       await startProxyServer({ host: settings.listenHost, port: settings.listenPort })
-      // 统计在**监听成功之后**才启动：它不该在启动流程里插一脚，「启动完成」这件事也是
-      // 它要报的第一条事件（见 `../telemetry`）。
-      this.stopTelemetry = startTelemetry(config)
       this.endpoints = {
         managementHost: config.managementHost,
         managementPort: config.managementPort,
@@ -114,8 +105,6 @@ export class ServerRuntime {
       return this.endpoints
     } catch (error) {
       console.error(`[runtime] start failed state=${this.state}`, error)
-      // 归因补发要在拆资源之前：数据库还开着，设置才读得出来。
-      await reportTelemetryStartFailure(config, classifyStartFailure(error))
       try {
         await this.stopResources()
       } catch (cleanupError) {
@@ -143,8 +132,6 @@ export class ServerRuntime {
 
   private async stopResources(): Promise<void> {
     console.info('[runtime] stopping resources')
-    this.stopTelemetry?.()
-    this.stopTelemetry = null
     const names = ['proxy', 'management'] as const
     const results = await Promise.allSettled([stopProxyServer(), stopManagementServer()])
     results.forEach((result, index) => {
@@ -195,20 +182,4 @@ export class ServerRuntime {
       console.error('[runtime] failed to release the instance lock', error)
     }
   }
-}
-
-/**
- * 启动失败的归因分桶。
- *
- * 三条能**确定**的写死，剩下的落到 `other`：归因不是真相的替代品，猜出来的桶会让「启动失败」
- * 这张图失去意义。所以这里只认自己抛的类型与自己设的错误码，不做文本匹配。
- *
- * `ERR_SQLITE_ERROR` 是 `node:sqlite` 抛出的错误码（见 `../database`），不是从消息里抠出来的。
- */
-function classifyStartFailure(error: unknown): TelemetryServiceFailureReason {
-  if (error instanceof InstanceLockError) return 'instance_lock'
-  const code = (error as NodeJS.ErrnoException | null)?.code
-  if (code === 'EADDRINUSE') return 'port'
-  if (typeof code === 'string' && code.startsWith('ERR_SQLITE')) return 'database'
-  return 'other'
 }
