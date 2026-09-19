@@ -3,7 +3,7 @@ import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 import packageJson from '../../package.json' with { type: 'json' }
 
-// 命令行宿主。单入口 ESM，产物 `dist/index.js` 就是 `bin` 指向的文件
+// 命令行宿主。单入口 ESM，产物 `output/index.js` 就是 `bin` 指向的文件
 // （见 docs/product/packaging.md §5.8、§6）。
 //
 // 与 `apps/app/vite.config.ts` 同源但**不能共用**它的 `vite.shared.ts`：那份配置里的
@@ -35,8 +35,8 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: fileURLToPath(new URL('./dist', import.meta.url)),
-    // 清空输出目录由 `scripts/build.mjs` 负责：`dist/web` 是同一个构建脚本拷进去的
+    outDir: fileURLToPath(new URL('./output', import.meta.url)),
+    // 清空输出目录由 `scripts/build.mjs` 负责：`output/web` 是同一个构建脚本拷进去的
     // 控制台产物，交给 Vite 的 `emptyOutDir` 会把不属于本次 Vite 构建的东西删掉。
     emptyOutDir: false,
     target: 'node22',
@@ -54,10 +54,10 @@ export default defineConfig({
       external: [...builtinModules, /^node:/],
       platform: 'node',
       output: {
-        // 入口文件名固定：`bin` 精确寻址 `dist/index.js`，默认的哈希名会让命令直接不可用。
+        // 入口文件名固定：`bin` 精确寻址 `output/index.js`，默认的哈希名会让命令直接不可用。
         entryFileNames: '[name].js',
         // 分包保持平铺（与入口同级）。`source/host.ts` 用 `import.meta.url` 定位包内
-        // 的 `dist/web`，多一层子目录就会算错——这个偏差只在运行期暴露。
+        // 的 `output/web`，多一层子目录就会算错——这个偏差只在运行期暴露。
         chunkFileNames: '[name]-[hash].js',
         assetFileNames: '[name]-[hash][extname]',
       },

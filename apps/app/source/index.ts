@@ -20,7 +20,7 @@ const __dirname = path.dirname(__filename)
 
 // The built directory structure
 //
-// ├─┬ dist
+// ├─┬ output
 // │ ├─┬ command
 // │ │ ├── index.js          > Electron Main
 // │ │ ├── preload.js        > Preload
@@ -35,7 +35,7 @@ const __dirname = path.dirname(__filename)
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL)
 const runtimeProfile = getRuntimeProfile(isDevelopment ? 'development' : 'production')
 
-process.env.DIST = path.join(__dirname, '..')
+process.env.OUTPUT = path.join(__dirname, '..')
 
 // 数据目录固定落在用户主目录，与命令行形态同一处（见 `docs/product/packaging.md` §5.5）：两种形态
 // 共用同一份配置与同一对数据库文件，所以「先用命令行跑起来、再开桌面端」不会看到两套空数据。
@@ -243,7 +243,7 @@ function logStartupBanner() {
 
 function resolveWindowIcon() {
   // Vite 把 ?url 解析为 data URL，开发/打包后均可直接使用，
-  // 避免生产环境下 build/ 目录未被复制到 dist 的路径问题。
+  // 避免生产环境下 build/ 目录未被复制到 output 的路径问题。
   // Windows 任务栏/窗口图标接受 PNG；exe/安装包图标由 electron-builder 使用 icon.ico。
   return nativeImage.createFromDataURL(windowIconPng)
 }
@@ -354,7 +354,7 @@ function createWindow() {
     })
     win.webContents.openDevTools()
   } else {
-    void win.loadFile(path.join(process.env.DIST!, 'render', 'index.html')).catch(error => {
+    void win.loadFile(path.join(process.env.OUTPUT!, 'render', 'index.html')).catch(error => {
       showStartupError(error)
       app.quit()
     })

@@ -10,12 +10,12 @@ import { run } from '../../../packages/toolkit/scripts/lib/run.mjs'
 //   node scripts/build.mjs --package          构建后交给 electron-builder 打包
 //   node scripts/build.mjs --package --win    打包指定平台（其余参数原样透传）
 //
-// 清空输出目录由这里负责而不是交给 Vite 的 `emptyOutDir`：三次构建共用 `dist/command`，
+// 清空输出目录由这里负责而不是交给 Vite 的 `emptyOutDir`：三次构建共用 `output/command`，
 // 任何一次对自己做 emptyOutDir 都会抹掉另两次的产物
 // （`--watch` 下尤其明显：改主进程会把 preload.js 删掉而不会重建）。
 
 const appDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const distDirectory = path.join(appDirectory, 'dist')
+const outputDirectory = path.join(appDirectory, 'output')
 
 const arguments_ = process.argv.slice(2)
 const shouldPackage = arguments_.includes('--package')
@@ -33,7 +33,7 @@ const viteSteps = [
 const main = async () => {
   log.title('Building OSW host')
 
-  fs.rmSync(distDirectory, { recursive: true, force: true })
+  fs.rmSync(outputDirectory, { recursive: true, force: true })
   for (const step of viteSteps) {
     await run('pnpm', step.args, { cwd: appDirectory })
     log.info(`${step.label} built`)

@@ -47,10 +47,10 @@ export function resolveDataDirectory(input: string | null): string {
 }
 
 /**
- * 控制台静态产物的根目录：包内的 `dist/web`。
+ * 控制台静态产物的根目录：包内的 `output/web`。
  *
  * 用 `import.meta.url` 而不是 `import.meta.dirname`：Vite 会把模块拆进分包，
- * 两个形态（入口/分包）都要求**平铺**在 `dist/` 下，`./web` 才指向同一个目录
+ * 两个形态（入口/分包）都要求**平铺**在 `output/` 下，`./web` 才指向同一个目录
  * （`vite.config.ts` 里 `chunkFileNames` 保持平铺就是为它）。这是「按固定层数定位资源」
  * 的一处假设，所以只在 `--web` 时才解析，并且由 `commands/start.ts` 校验 `index.html`
  * 是否真的在——缺产物时报一句能看懂的错，而不是启动一个打开是空白页的服务。

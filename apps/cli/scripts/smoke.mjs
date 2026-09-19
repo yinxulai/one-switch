@@ -22,8 +22,8 @@ import { fileURLToPath } from 'node:url'
 import { log } from '../../../packages/toolkit/scripts/lib/log.mjs'
 
 const cliDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const entryPath = path.join(cliDirectory, 'dist/index.js')
-const webIndexPath = path.join(cliDirectory, 'dist/web/index.html')
+const entryPath = path.join(cliDirectory, 'output/index.js')
+const webIndexPath = path.join(cliDirectory, 'output/web/index.html')
 
 /**
  * 一个「肯定不存在」的 pid，用来伪造崩溃残留。

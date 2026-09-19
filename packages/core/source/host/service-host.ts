@@ -35,7 +35,7 @@ export interface ServiceHostOptions {
   runtimeConfig: RuntimeConfig
   secretStore: SecretStore
   systemProxyResolver: SystemProxyResolver
-  /** 服务进程入口产物（`dist/command/service-main.mjs`）。 */
+  /** 服务进程入口产物（`output/command/service-main.mjs`）。 */
   serviceEntry: string
   /**
    * 怎么起这个进程。**没有默认值**，理由见文件头。桌面端用 `utilityProcess`，

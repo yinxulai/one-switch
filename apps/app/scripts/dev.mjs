@@ -8,13 +8,13 @@ import { log } from '../../../packages/toolkit/scripts/lib/log.mjs'
 // 宿主开发会话。
 //
 // 拆成两个包之后，「开发」不再是单个 `vite` 能搞定的事：渲染层由 `packages/console` 的
-// dev server 提供，主进程、preload 与服务进程由本包构建成 `dist/command`，最后 Electron 把三者接起来。
+// dev server 提供，主进程、preload 与服务进程由本包构建成 `output/command`，最后 Electron 把三者接起来。
 // 顺序在 turbo 里表达不出来——`dev` 是长驻任务，turbo 只会并行启动它，不会等对方就绪——
 // 所以「等控制台起来了再启动 Electron」这件事由这个脚本负责。
 
 const appDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const repositoryRoot = path.resolve(appDirectory, '..', '..')
-const outputDirectory = path.join(appDirectory, 'dist', 'command')
+const outputDirectory = path.join(appDirectory, 'output', 'command')
 const mainBundlePath = path.join(outputDirectory, 'index.js')
 // preload 与服务进程的入口也必须在，两个名字都是运行期约定（由各自的 vite 配置钉死）：
 // preload 缺了窗口没有桥，服务脚本缺了核心起不来。

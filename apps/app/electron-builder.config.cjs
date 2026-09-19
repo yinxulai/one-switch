@@ -11,33 +11,33 @@ module.exports = {
   artifactName: 'OSW-${version}-${os}-${arch}.${ext}',
   // projectDir 就是本包（`apps/app`），所以这里的路径一律相对它解析；
   // 两个 `{ from, to }` 把「不是本包构建出来的」产物抬进 asar，落到主进程代码反推的位置上：
-  //   `dist/render`           ← 渲染层静态产物（`__dirname/../render`）
+  //   `output/render`        ← 渲染层静态产物（`__dirname/../render`）
   //   `packages/core/drizzle` ← 两条迁移链 `config/` 与 `data/`（`__dirname/../../packages/core/drizzle`）
   // 这两条映射和 `apps/app/vite.shared.ts` 里 `outputDirectory` 的命名是一组，改一处必须改全部。
   //
-  // 核心服务进程的产物（`dist/command/service-main.mjs` 与它的 chunk）**不在这里单独列出**：
-  // 它就在 `dist` 里，跟着一起进 asar。上一版之所以要把它连同迁移基线一起抬到
+  // 核心服务进程的产物（`output/command/service-main.mjs` 与它的 chunk）**不在这里单独列出**：
+  // 它就在 `output` 里，跟着一起进 asar。上一版之所以要把它连同迁移基线一起抬到
   // `app.asar.unpacked`，是因为服务当时跑在 `worker_threads` 线程里、线程读不了 asar
   // （Electron 只给主进程的 `fs` 装了 asar 解析）。现在服务是个真的 `utilityProcess`，
   // 走主进程同一套模块加载，asar 里的入口与它的 ESM 分包都能直接加载，于是整套
   // `extraResources` 都可以删掉——产物只剩一份，路径推导也只剩一种布局。
   files: [
-    // `dist` 与两个 `!` 必须**挨在一起**：electron-builder 会把连续的字符串项归一化成
+    // `output` 与两个 `!` 必须**挨在一起**：electron-builder 会把连续的字符串项归一化成
     // 同一个 file set 的 `filter` 列表，而每个 `{ from, to }` 项各自独立成一个 set。
     // 一旦排除项和它要排除的正向模式被拆进两个 set，前者就退化成「只有排除项」的 set
     // ——`minimatchAll` 是逐个模式累进判定的，没有前置正向模式时排除项全部被跳过，
     // 于是静默失效。
-    'dist',
-    '!dist/**/*.map',
+    'output',
+    '!output/**/*.map',
     // `node_modules` 整棵树都是死的：`vite.shared.ts` 的 `nodeExternals` 只外部化
     // `node:` 内置模块与 `electron`，工作区包（`@osw/*`）全部被 Vite 打进
-    // `dist/command/*.mjs`。但工作区包同时写在 `dependencies` 里（turbo 靠它排序构建），
+    // `output/command/*.mjs`。但工作区包同时写在 `dependencies` 里（turbo 靠它排序构建），
     // electron-builder 于是照单收下——实测 asar 里这棵树有 3.0 MB、全是 TypeScript 源码
     // 与 `*.test.ts`，占整个 asar 的 29%。产物里没有任何一处 `import '@osw/...'`
     // 会活到运行期，所以整棵排掉。
     // 将来若真的引入一个必须留在外部的运行期依赖，要同时改 `nodeExternals` 和这里。
     '!node_modules',
-    { from: '../../packages/console/dist', to: 'dist/render' },
+    { from: '../../packages/console/output', to: 'output/render' },
     { from: '../../packages/core/drizzle', to: 'packages/core/drizzle' },
   ],
   // electron-updater 使用 GitHub Releases 作为更新源。

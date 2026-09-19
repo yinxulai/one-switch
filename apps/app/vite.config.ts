@@ -16,11 +16,11 @@ export default defineConfig({
       // 「Calling require for "fs" in an environment that doesn't expose the require function」。
       // 它只管解析条件与 CJS 互操作，**不负责外部化**——内置模块仍要在 `external` 里显式列出
       // （见 `vite.shared.ts`）。这个值也不会让依赖变成外部依赖：产物依旧是自包含的
-      // （`electron-builder.config.cjs` 只打包 `dist`）。
+      // （`electron-builder.config.cjs` 只打包 `output`）。
       platform: 'node',
-      // 入口文件名必须固定。Electron 是用 `package.json#main`（`dist/command/index.js`）
+      // 入口文件名必须固定。Electron 是用 `package.json#main`（`output/command/index.js`）
       // 精确寻址这个文件的，默认的 `assets/index-<hash>.js` 会让应用直接启动失败。
-      // 分包保持平铺，与 `dist/command` 里其他产物同级，方便按目录整体搬走。
+      // 分包保持平铺，与 `output/command` 里其他产物同级，方便按目录整体搬走。
       output: {
         entryFileNames: '[name].js',
         chunkFileNames: '[name]-[hash].js',

@@ -6,7 +6,7 @@
   "type": "module",
   "description": "桌面宿主：Electron 主进程、preload 与核心服务进程的构建入口，只做宿主适配，不写业务逻辑。",
   "author": "yinxulai <yinxulai@hotmail.com>",
-  "main": "dist/command/index.js",
+  "main": "output/command/index.js",
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "node scripts/build.mjs",

@@ -1,6 +1,6 @@
 /**
  * 核心服务的**运行时**入口。它由 `apps/app/source/service.ts` 打包成
- * `dist/command/service-main.mjs`（那个文件才是构建入口，归属在应用那边）。
+ * `output/command/service-main.mjs`（那个文件才是构建入口，归属在应用那边）。
  *
  * **只**能被宿主的 `utilityProcess.fork()` 加载，不要 import 它去拿别的东西：这里带着
  * 顶层 `await`，而且在非服务进程环境下直接抛异常。真正的逻辑在 `./service-runtime`。

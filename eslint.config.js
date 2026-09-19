@@ -5,9 +5,8 @@ import i18n from './packages/console/scripts/eslint-plugin-i18n.mjs'
 export default [
   {
     ignores: [
-      'dist/**',
-      'packages/*/dist/**',
-      'apps/*/dist/**',
+      'output/**',
+      'packages/*/output/**',
       'apps/*/output/**',
       'apps/*/output-worker/**',
       'node_modules/**',

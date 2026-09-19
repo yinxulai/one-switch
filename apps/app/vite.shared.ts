@@ -8,22 +8,26 @@ import type { UserConfig } from 'vite'
 export const mainEntry = fileURLToPath(new URL('./source/index.ts', import.meta.url))
 export const preloadEntry = fileURLToPath(new URL('./source/preload.ts', import.meta.url))
 
-// 核心服务进程入口。产物落在 `dist/command` 里，和主进程同一层，理由是这里的路径都是
+// 核心服务进程入口。产物落在 `output/command` 里，和主进程同一层，理由是这里的路径都是
 // `__dirname` 相关的运行期路径，typecheck / lint / 单测都照不到：
 //   - 迁移基线：`packages/core/source/database/index.ts` 从 `import.meta.url` 往上找
-//     `packages/core/drizzle`。放在 `dist/command/` 就和主进程同深度，两者不会因为
+//     `packages/core/drizzle`。放在 `output/command/` 就和主进程同深度，两者不会因为
 //     一方挪了目录而各上溯不同的层数（开发态再往上才是仓库根，打包态到 asar 根）。
 //   - 入口名是运行期约定：`server-host.ts` 按名字找 `service-main.mjs`
 //     （名字由 `vite.server.config.ts` 的 `entryFileNames` 钉死）。
 export const serviceEntry = fileURLToPath(new URL('./source/service.ts', import.meta.url))
 
-// 输出目录名不是随意的。打包后这一段落在 asar 的 `dist/command`，而主进程代码用
+// 输出目录名不是随意的。打包后这一段落在 asar 的 `output/command`，而主进程代码用
 // `__dirname` 反推两个位置：
-//   `__dirname/..`    → `dist`，渲染层静态产物所在处（`loadFile(dist/render/index.html)`）
+//   `__dirname/..`    → `output`，渲染层静态产物所在处（`loadFile(output/render/index.html)`）
 //   `__dirname/../..` → 应用根（asar 根），`packages/core/drizzle` 迁移基线的探测起点
 // 这两条都是运行期路径，typecheck / lint / 单测都看不见它们。改名必须同步改
 // `electron-builder.config.cjs` 里的映射与 `packages/core/source/database/index.ts` 的候选列表。
-export const outputDirectory = fileURLToPath(new URL('./dist/command', import.meta.url))
+//
+// 目录名统一叫 `output`（不再用 `dist`）：仓库里三份产物目录（console / app / cli）
+// 与两个 Worker（`apps/apis`、`apps/www`）现在同名，`turbo.json` 的 `outputs`、
+// `.gitignore` 与 eslint 的 ignores 也就只需要一套模式。
+export const outputDirectory = fileURLToPath(new URL('./output/command', import.meta.url))
 
 // 宿主只认识自己与两个内部包；渲染层不在这里构建（见 `packages/console/vite.config.ts`）。
 // 注意这里要退两层：别名是相对 `apps/app/` 而不是相对仓库根。

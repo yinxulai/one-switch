@@ -122,7 +122,7 @@ osw/
 │   │   ├── electron-builder.config.cjs  # 打包配置
 │   │   ├── build/                       # 应用图标与托盘图标
 │   │   ├── scripts/                     # build.mjs、dev.mjs、release-notes.mjs、macos-adhoc-sign.cjs
-│   │   ├── dist/command/                # 构建产物：index.js（主进程）+ preload.js + service-main.mjs（服务进程）
+│   │   ├── output/command/              # 构建产物：index.js（主进程）+ preload.js + service-main.mjs（服务进程）
 │   │   └── source/
 │   │       ├── index.ts                 # Electron 应用编排
 │   │       ├── preload.ts               # 暴露最小化 API 给渲染进程
@@ -137,7 +137,7 @@ osw/
 │   └── cli/                             # 命令行宿主（`osw`）
 │       ├── vite.config.ts               # ESM 构建（自带外部化 / platform / define）
 │       ├── scripts/                     # build.mjs、smoke.mjs
-│       ├── dist/                        # 构建产物：index.js + web/（控制台）+ 按需分块
+│       ├── output/                      # 构建产物：index.js + web/（控制台）+ 按需分块
 │       └── source/                      # index.ts（分发与退出码）、options.ts、宿主适配与 commands/
 │
 └── release/                             # 打包产物
@@ -205,7 +205,7 @@ SQLite（`node:sqlite` + Drizzle ORM）承载配置与日志，表结构与字�
 拆分的理由与两条边界见 [data-model.md](./data-model.md) §2.1；文件名里的版本号是两个**独立的 schema 版本**常量，不住在应用版本号上。
 
 - 首发基线：两条链各自只保留一份由 schema 直接生成的首发基线迁移与快照，`pnpm db:generate` 按角色各生成一次（drizzle-kit 一份配置只能喂一条链，所以是两份 `drizzle.config.<role>.ts`）
-- 基线随 `@osw/core` 包分发：开发期从模块目录逐级上溯找到 `packages/core/drizzle`，再按角色下钻一层；打包后则命中与入口同层的那份映射（`app.asar/dist/command/` 上溯两层就是 asar 根），不存在第二套深度
+- 基线随 `@osw/core` 包分发：开发期从模块目录逐级上溯找到 `packages/core/drizzle`，再按角色下钻一层；打包后则命中与入口同层的那份映射（`app.asar/output/command/` 上溯两层就是 asar 根），不存在第二套深度
 - 首发后冻结基线，只追加后续迁移，不改写已发布历史
 - 换代（把 `DATABASE_SCHEMA_VERSIONS` 加一并重新生成基线）只发生在应用大版本发布时，用来甩掉累积的迁移历史；日常结构变化一律追加迁移，不要换文件名
 - 库边界由 `packages/core/scripts/check-database-boundaries.mjs` 在 `pnpm lint` 中强制：每个 store 只碰自己那个库，两份 schema 不互相引用
@@ -234,10 +234,10 @@ React 18 + TypeScript + shadcn/ui + Tailwind。页面通过 `packages/console/so
 
 ### Vite
 
-- 控制台：`packages/console/vite.config.ts`，输出 `packages/console/dist/`，dev server 固定 `127.0.0.1:5173`
-- 主进程（ESM）：`apps/app/vite.config.ts`，输出 `apps/app/dist/command/index.js`
-- preload（CJS）：`apps/app/vite.preload.config.ts`，输出 `apps/app/dist/command/preload.js`；必须与主进程分成两次构建，因为 Vite 一份配置只能产出一个格式
-- 服务进程（ESM）：`apps/app/vite.server.config.ts`，输出 `apps/app/dist/command/service-main.mjs`（外加按 hash 命名的共享 chunk）；它必须是**独立的一次构建**，因为主进程与服务进程的外部化边界不同：`node:sqlite` 允许进服务进程的 chunk 图，却**不得**被拉进主进程
+- 控制台：`packages/console/vite.config.ts`，输出 `packages/console/output/`，dev server 固定 `127.0.0.1:5173`
+- 主进程（ESM）：`apps/app/vite.config.ts`，输出 `apps/app/output/command/index.js`
+- preload（CJS）：`apps/app/vite.preload.config.ts`，输出 `apps/app/output/command/preload.js`；必须与主进程分成两次构建，因为 Vite 一份配置只能产出一个格式
+- 服务进程（ESM）：`apps/app/vite.server.config.ts`，输出 `apps/app/output/command/service-main.mjs`（外加按 hash 命名的共享 chunk）；它必须是**独立的一次构建**，因为主进程与服务进程的外部化边界不同：`node:sqlite` 允许进服务进程的 chunk 图，却**不得**被拉进主进程
 - 三份配置共用 `apps/app/vite.shared.ts` 里的别名、Node 内置模块外部化与 `target: node22`
 - 开发时 `pnpm dev` 由 turbo 启动各包 `dev` 任务，宿主侧的实际编排在 `apps/app/scripts/dev.mjs`：先等控制台 dev server 起来，再起三份 `vite build --watch`，等首轮构建落定后拉起 Electron，之后监听产物目录做整应用重启；渲染层热更新由 Vite HMR 提供
 - 生产构建由 Vite 直接产出静态产物，不再依赖开发期插件
@@ -245,7 +245,7 @@ React 18 + TypeScript + shadcn/ui + Tailwind。页面通过 `packages/console/so
 ### electron-builder
 
 - 打包成 macOS `.dmg` / `.app`、Windows `.exe`、Linux `.AppImage` / `.deb`
-- 所有东西都在 `app.asar` 一个文件里：`dist/command/` 的 `index.js`、`preload.js`、`service-main.mjs` 与全部 chunk，`dist/render/`，以及迁移基线 `packages/core/drizzle`。`node_modules` 被 `files` 里的 `!node_modules` 排除（里面只有 `@osw/*` 的 TS 源码与测试，运行时无人引用），细节与坑见 [packaging.md](./packaging.md) §5.7
+- 所有东西都在 `app.asar` 一个文件里：`output/command/` 的 `index.js`、`preload.js`、`service-main.mjs` 与全部 chunk，`output/render/`，以及迁移基线 `packages/core/drizzle`。`node_modules` 被 `files` 里的 `!node_modules` 排除（里面只有 `@osw/*` 的 TS 源码与测试，运行时无人引用），细节与坑见 [packaging.md](./packaging.md) §5.7
 - macOS 无付费证书阶段使用显式 ad-hoc 签名；`afterPack` 必须对完整 `.app` 执行严格签名校验
 - ad-hoc 签名只保证应用包内部完整性，不提供开发者身份信任，也不能提交 Apple 公证
 - GitHub Release 必须附带 DMG 的 SHA-256 文件和“隐私与安全 > 仍要打开”的首次安装说明
