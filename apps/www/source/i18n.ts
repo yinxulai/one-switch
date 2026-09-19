@@ -22,21 +22,34 @@ export const FALLBACK_LANG: Lang = 'zh'
  */
 const en = {
   hero: {
-    tagline1: 'Put every LLM channel you own behind one local address.',
-    tagline2: 'When one goes down, the next one takes over.',
+    slogan: 'Local AI routing and failover',
+    download: 'Download the latest release',
+    source: 'View source',
   },
   features: {
     gateway: {
       title: 'One local gateway',
-      body: 'Point every AI client at a single local address. OSW identifies the protocol, picks a channel and moves on when it fails.',
+      body: 'Point every AI client at a single local address. Requests pass through untouched, and OSW identifies the protocol and picks a channel for you.',
     },
     failover: {
       title: 'Failover that just works',
-      body: 'Rate limits, timeouts, exhausted quota and rejected keys all push the request to the next channel automatically.',
+      body: 'Rate limits, timeouts, exhausted quota and rejected keys all push the request to the next channel automatically — a response that already started streaming is never spliced from another channel.',
+    },
+    routing: {
+      title: 'Smart Routing',
+      body: 'Choose which requests land in which channel group by drawing a node graph or writing a rule table. Every save is a version you can roll back, and a test run shows the branch a real request takes.',
+    },
+    rewrite: {
+      title: 'Request Rewrite',
+      body: 'Smooth over provider differences without code: add, drop or change headers, edit JSON fields by $.path, replace text by literal or regex.',
+    },
+    logs: {
+      title: 'Request Logs',
+      body: 'Which provider and model really served the request, which attempt succeeded, how long it took, first-token latency, tokens per second and cache hits — all stored and queryable.',
     },
     privacy: {
-      title: 'Your data stays on your machine',
-      body: 'Local listener on 127.0.0.1, keys in the OS-encrypted store. No account, no cloud sync, no relay.',
+      title: 'Local only',
+      body: 'Listener on 127.0.0.1, keys in the OS-encrypted store. No account, no cloud sync, no relay — requests only reach the upstreams you configured.',
     },
   },
   downloads: {

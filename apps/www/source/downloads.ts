@@ -10,3 +10,6 @@ export const DOWNLOAD_VERSION = __APP_VERSION__
 
 /** GitHub 的「最新发布」永久地址：自动指向最新一个正式发布，仓库里不用维护版本号。 */
 export const RELEASE_URL = 'https://github.com/yinxulai/osw/releases/latest'
+
+/** 仓库地址，用于 Hero 的「查看源码」。 */
+export const REPO_URL = 'https://github.com/yinxulai/osw'
