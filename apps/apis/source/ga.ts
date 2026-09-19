@@ -132,16 +132,19 @@ export interface GaCollectBody {
    * 分布」是不准的——想按时段比较就得把它们放回事件参数。现在的取舍选了前者。
    */
   user_properties: Record<string, GaUserProperty>
+  /**
+   * 地区。**这是本文件里唯一与「用户在哪」有关的字段**，而且它只是一个国家代码。
+   *
+   * 两个选项只能用其一（GA 文档：`user_location` 优先于 `ip_override`），这里选前者：
+   * 转发请求是从 Cloudflare 机房发出的，不显式给地区，GA 会按**机房出口 IP** 定位，
+   * 于是全世界用户在报表里都同城。反过来，一旦给了 `user_location`，它就不再去看 IP，
+   * 所以我们**永远不需要、也不应该**把用户的地址交给 GA（见 `index.ts` 文件头）。
+   */
   user_location: { country_id: string }
   device: { category: string; operating_system: string; language: string }
   consent: { ad_user_data: 'DENIED'; ad_personalization: 'DENIED' }
   non_personalized_ads: true
   events: GaEvent[]
-  /**
-   * 只在排查埋点问题时出现。平时**不发**它：默认的 `RELAXED` 最大化接收率，
-   * 而 `ENFORCE_RECOMMENDATIONS` 会让 GA 直接拒收它认为不合规的事件——那是调试手段，不是生产配置。
-   */
-  validation_behavior?: 'ENFORCE_RECOMMENDATIONS'
 }
 
 export interface BuildCollectBodyOptions {
@@ -149,8 +152,6 @@ export interface BuildCollectBodyOptions {
   country: string | null
   /** 服务端收到请求的时刻（毫秒）。时间戳回溯窗口以它为准。 */
   receivedAt: number
-  /** 是否要求 GA 反馈被忽略的参数（仅排查时开启）。 */
-  strictValidation?: boolean
 }
 
 /**
@@ -175,7 +176,6 @@ export function buildCollectBody(events: readonly TelemetryEvent[], options: Bui
     consent: GA_CONSENT,
     non_personalized_ads: true,
     events: events.map(event => toGaEvent(event, options.receivedAt)),
-    ...(options.strictValidation === true ? { validation_behavior: 'ENFORCE_RECOMMENDATIONS' as const } : {}),
   }
 }
 

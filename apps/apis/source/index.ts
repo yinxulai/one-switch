@@ -6,12 +6,12 @@
  * 1. **严格校验**：用客户端同一份 schema 解析，拒绝多余字段；
  * 2. **白名单削平**：只把认识的字段交给下游；
  * 3. **补服务端字段**：地区来自 `request.cf.country`，时间戳来自服务器时钟；
- * 4. **限流**：按安装标识与来源 IP 哈希两个维度。
+ * 4. **限流**：按安装标识与来源地址两个维度。
  *
- * 路径**只有 `/v1/track` 一条**（`TELEMETRY_REQUEST_PATH`），其余一律 404，根路径也不例外。
+ * 请求路径只有 `/v1/track` 一条（`TELEMETRY_REQUEST_PATH`），其余一律 404，根路径也不例外。
  * 刻意不为部署流水线另加一个健康检查接口：域名上「唯一一条路径」本身就是最强的信号，
- * 而流水线真正需要确认的只有「路由注册上了没有」——对 `GET /v1/track` 期待 405 就回答了它，
- * 那是一个只可能来自本 Worker 的答案（`.github/workflows/deploy-api.yml` 的 Smoke check 即此）。
+ * 而部署后真正要确认的只有「路由注册上了没有」——对 `GET /v1/track` 期待 405 就回答了它，
+ * 那是一个只可能来自本 Worker 的答案。
  *
  * 为什么必须有这一层，而不是让客户端直接打 GA：GA 的密钥只应该存在于这里。桌面应用里嵌的
  * 任何凭证都能被解出来，所以「客户端不持有下游凭证」不是可选的组织方式，是唯一的正确形态。
@@ -19,6 +19,21 @@
  *
  * 端点地址是客户端里唯一写死的地址，**发布出去就是永久地址**：换下游、换存储、换数据驻留
  * 区域都只动这个 Worker。所以这里对客户端承诺的是**请求格式**（`/v1/track`），不是数据去向。
+ *
+ * ## 关于来源 IP
+ *
+ * 转发请求是从 **Cloudflare 机房**发出的，而 GA 在没有拿到显式地理位置时会按请求的来源 IP
+ * （也就是机房出口）定位——结果是「所有用户都落在数据中心所在地」。所以这里全程用的是
+ * **客户端的真实 IP**，而不是这个 Worker 自己的出口：
+ *
+ * - **地理**：`request.cf.country`（Cloudflare 边缘按真实客户端 IP 解析出的国家）写进
+ *   `user_location.country_id`。GA 文档明确 `user_location` 优先于 `ip_override`，两者只会取其一；
+ *   选了前者，用户的 IP 就**不进 GA**（见 `ga.ts`）。
+ * - **限流**：`CF-Connecting-IP`（同样是真实客户端 IP，由 Cloudflare 填、客户端伪造不了）
+ *   哈希后当键，不落地、不出 Worker。
+ *
+ * 两条都取不到就各自降级（地区写 `XX`、地址维度直接跳过），**绝不退回请求自身的来源地址**：
+ * 那只会得到一个「所有人都来自机房」的假键。
  */
 
 import {
@@ -42,8 +57,6 @@ export interface TelemetryEnv {
   GA_MEASUREMENT_ID?: string
   /** Measurement Protocol 的 API 密钥。它一旦泄露，任何人都能往这个媒体资源里灌数据。 */
   GA_API_SECRET?: string
-  /** 设为 `1` 时要求 GA 反馈被忽略的参数。**只在排查埋点问题时开**，见 `ga.ts` 的说明。 */
-  TELEMETRY_STRICT_VALIDATION?: string
 }
 
 /**
@@ -95,21 +108,28 @@ export function createTelemetryHandler(options: TelemetryHandlerOptions = {}): T
   const installLimiter = createRateLimiter(INSTALL_LIMITS)
 
   return async function handle(request, env, now = Date.now()) {
-    const pathname = new URL(request.url).pathname
+    // ---- 1. 路由：只有一条路径，只有一种方法 ----
 
     // 只认一条路径。不在它上面的一律 404（根路径也是）：域名上**没有**「不知道为什么有回应」
     // 的地址，包括不给运维探针留位置——那件事由 `GET /v1/track` 的 405 回答，见文件头。
-    if (pathname !== TELEMETRY_REQUEST_PATH) return json(404, { ok: false, error: 'not_found' })
+    if (new URL(request.url).pathname !== TELEMETRY_REQUEST_PATH) return json(404, { ok: false, error: 'not_found' })
     if (request.method !== 'POST') return methodNotAllowed('POST')
     if (!isJsonContentType(request.headers.get('content-type'))) return json(415, { ok: false, error: 'unsupported_media_type' })
+
+    // ---- 2. 下游配置：缺了就说清楚，不能静默丢数据 ----
 
     const credentials = credentialsOf(env)
     if (credentials === null) return json(500, { ok: false, error: 'not_configured' })
     const { measurementId, apiSecret } = credentials
 
+    // ---- 3. 来源地址限流 ----
+
     // 地址这一维度先于解析：它的判断不需要读正文，能在花掉反序列化的钱之前就把洪峰挡掉。
+    // 键来自 `CF-Connecting-IP`，即**真实客户端 IP**；拿不到就跳过这一维度（见文件头）。
     const originKey = await originKeyOf(request)
     if (originKey !== null && !addressLimiter.admit(originKey, now)) return rateLimited()
+
+    // ---- 4. 严格校验 ----
 
     const text = await request.text()
     if (byteLength(text) > MAX_REQUEST_BODY_BYTES) return json(413, { ok: false, error: 'payload_too_large' })
@@ -128,15 +148,15 @@ export function createTelemetryHandler(options: TelemetryHandlerOptions = {}): T
       })
     }
 
+    // ---- 5. 安装标识限流 + 一批只能来自一台设备 ----
+
     const events = parsed.data.events
     if (!installLimiter.admit(`id:${events[0].installId}`, now)) return rateLimited()
     if (!isSingleDevice(events)) return json(400, { ok: false, error: 'mixed_batch' })
 
-    const body = buildCollectBody(events, {
-      country: countryOf(request),
-      receivedAt: now,
-      strictValidation: env.TELEMETRY_STRICT_VALIDATION === '1',
-    })
+    // ---- 6. 削平 + 补服务端字段 + 转发 ----
+
+    const body = buildCollectBody(events, { country: countryOf(request), receivedAt: now })
 
     const upstream = await postToGa(collectUrl(measurementId, apiSecret), body, fetchImpl)
     if (upstream === null) return json(502, { ok: false, error: 'upstream_unreachable' })
@@ -173,6 +193,15 @@ interface CloudflareRequest extends Request {
   cf?: { country?: string }
 }
 
+/**
+ * 请求的地理位置，取 **Cloudflare 边缘按真实客户端 IP 解析出的国家**（ISO 3166-1 alpha-2）。
+ *
+ * 拿不到或不认识就返回 `null`，由 `ga.ts` 写成 `XX`：不留空、也不猜。VPN、内网、
+ * Cloudflare 自己拿不到地理位置时都会落到这里。
+ *
+ * 这里是「用户的 IP 不进 GA」的落点：出去的是一个国家代码，不是一个地址。而它之所以必须存在，
+ * 是因为转发请求来自机房——不显式给位置，GA 会把所有人算到数据中心所在地（见文件头）。
+ */
 function countryOf(request: Request): string | null {
   const country = (request as CloudflareRequest).cf?.country
   return typeof country === 'string' && /^[A-Z]{2}$/.test(country) ? country : null
@@ -185,9 +214,10 @@ function countryOf(request: Request): string | null {
  * 它不写日志、不出 Worker、isolate 一死就没了。因此这里不需要加盐——没有「谁都能读到的哈希
  * 表」可供反查。
  *
- * `CF-Connecting-IP` 由 Cloudflare 填，客户端伪造不了；**刻意不回退到 `X-Forwarded-For`**
- * （随便谁都能写），拿不到就跳过这一维度。跳过比共用一个假键好：万一这个头真的没了，
- * 共用假键会把「全体用户」塞进一个 120/分钟的桶里，那是一场自制的故障。
+ * `CF-Connecting-IP` 由 Cloudflare 填，是**真实客户端 IP**，客户端伪造不了；**刻意不回退到
+ * `X-Forwarded-For`**（随便谁都能写）。拿不到就跳过这一维度——跳过比共用一个假键好：
+ * 万一这个头真的没了，共用假键会把「全体用户」塞进一个 120/分钟的桶里，那是一场自制的故障；
+ * 而如果退回到请求自身的来源地址，那个假键还会是**机房出口**。
  */
 async function originKeyOf(request: Request): Promise<string | null> {
   const address = request.headers.get('CF-Connecting-IP')

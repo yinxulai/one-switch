@@ -1,7 +1,7 @@
 # 匿名使用统计的上报端点。
 #
-# 部署：`pnpm --filter @osw/api deploy`（CI 在 `apps/apis/**` 变更并合入 `main` 时自动跑，
-# 见 `.github/workflows/deploy-api.yml`）。密钥不在这里，用 `wrangler secret put` 配一次。
+# 部署：`pnpm --filter @osw/api deploy`（云端由 Workers Builds 关联仓库自动跑，本地手动部署
+# 就这一条命令）。密钥不在这里，用 `wrangler secret put` 配一次。
 
 name = "osw-telemetry"
 main = "source/index.ts"
@@ -50,12 +50,12 @@ enabled = true
 # 其余路径一律 404（`/` 也是），所以域名上不会出现「不知道为什么有回应」的地址。
 #
 # 刻意**没有**健康检查接口：域名上「只有一条路径」本身就是最强的信号，而部署后要确认的只有
-# 「路由注册上了没有」——`GET /v1/track` 的 405 就回答了它（见 `deploy-api.yml` 的 Smoke check）。
+# 「路由注册上了没有」——`GET /v1/track` 的 405 就回答了它。
 
 # ---------------------------------------------------------------- 密钥
 #
 #   wrangler secret put GA_MEASUREMENT_ID    # G-XXXXXXXXXX
 #   wrangler secret put GA_API_SECRET        # GA 后台「数据流 → Measurement Protocol API 密钥」
 #
-# 可选：`wrangler secret put TELEMETRY_STRICT_VALIDATION`（值 `1`）只在排查埋点问题时开，
-# 它会让 GA 反馈被忽略的参数并可能拒收事件（见 `source/ga.ts`）。排查完记得删掉。
+# 只有这两个。少了任何一个，端点会对所有请求回 500 `not_configured`——它宁可明确失败，
+# 也不会静默把数据丢掉。

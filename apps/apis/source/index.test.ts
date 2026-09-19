@@ -297,6 +297,21 @@ describe('上报端点', () => {
       expect(body.non_personalized_ads).toBe(true)
     })
 
+    it('用户的 IP 不进下游：位置只有一个国家代码', async () => {
+      const upstream = createUpstream()
+      const handler = createTelemetryHandler({ fetchImpl: upstream.fetchImpl })
+
+      await handler(post({ address: '203.0.113.7', country: 'CN' }), ENV, NOW)
+
+      const [call] = upstream.calls
+      const serialized = JSON.stringify(call.body)
+      // 转发请求从机房发出，所以「位置」必须由服务端显式给出；一旦给的是地址而不是国家代码，
+      // GA 就会开始按 IP 定位，而那个 IP 不是用户的。
+      expect(serialized).not.toContain('203.0.113.7')
+      expect(serialized).not.toContain('ip_override')
+      expect(call.body).toMatchObject({ user_location: { country_id: 'CN' } })
+    })
+
     it('拿不到地区时发 XX 而不是留空', async () => {
       const upstream = createUpstream()
       const handler = createTelemetryHandler({ fetchImpl: upstream.fetchImpl })
@@ -359,26 +374,6 @@ describe('上报端点', () => {
 
       const body = upstream.calls[0].body as { events: { timestamp_micros?: number }[] }
       expect(body.events[0].timestamp_micros).toBeUndefined()
-    })
-
-    it('排查模式才要求 GA 反馈', async () => {
-      const upstream = createUpstream()
-      const handler = createTelemetryHandler({ fetchImpl: upstream.fetchImpl })
-
-      await handler(post(), { ...ENV, TELEMETRY_STRICT_VALIDATION: '1' }, NOW)
-
-      const body = upstream.calls[0].body as { validation_behavior?: string }
-      expect(body.validation_behavior).toBe('ENFORCE_RECOMMENDATIONS')
-    })
-
-    it('默认不带排查模式字段', async () => {
-      const upstream = createUpstream()
-      const handler = createTelemetryHandler({ fetchImpl: upstream.fetchImpl })
-
-      await handler(post(), ENV, NOW)
-
-      const body = upstream.calls[0].body as { validation_behavior?: string }
-      expect(body.validation_behavior).toBeUndefined()
     })
 
     it('下游连不上与下游拒收都算 502', async () => {
