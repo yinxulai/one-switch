@@ -74,12 +74,50 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # 这里**没有** build job，是有意的。
+  # 这里**有** build job，而且它是刻意的。
   #
-  # 它曾经存在过（`needs: [typecheck, test]`，跑 `pnpm build` 后上传产物），代价是每次 push
-  # 都要在 ubuntu 上把渲染层与宿主整个打一遍，换来的只是一份没人下载的 artifact。
-  # 而真正需要验证打包能不能过的地方本来就有两个，且都比它准：
-  #   - Worker：Cloudflare Workers Builds 里的 build 命令（`pnpm run build`，见
-  #     `apps/apis/wrangler.toml` 的头部注释）——参数与线上部署完全一致；
-  #   - 桌面端：`release.yml`，release 时在三个平台上跑真实打包，那才是产物定义。
-  # typecheck / lint / test 继续覆盖「代码是不是对的」，构建由上面两处覆盖「产物是不是出得来」。
+  # 曾经删过一版，理由是「每次 push 把渲染层与宿主整个打一遍，换来的只是一份没人下载的
+  # artifact」——那是把两件事混成了一件：
+  #   - 这个 job 回答的是「这次的改动还能不能构建」；
+  #   - `release.yml` 回答的是「发布产物对不对」（三个平台真实打包，那才是产物定义）。
+  # 前者只有每次 push 都跑才有意义，后者只在发版时跑。产物路径、`entryFileNames`、
+  # `index.html` 里的模块引用这类错误，typecheck / lint / test 一路全绿也照样漏过去，
+  # 历史上真出过；只有真的跑一次 `pnpm build` 才看得见。
+  # Worker 那侧仍由 Cloudflare Workers Builds 里的 build 命令覆盖（与线上部署同参数）。
+  #
+  # `needs: [typecheck, test]` 只是省算力：前两个红了就没必要再打一遍。
+  # 上传的产物也顺便让「不发版就能下载一份构建产物」成立；要可运行的安装包走
+  # `.github/workflows/test-build.yml`（手动触发，命令与 `release.yml` 相同）。
+  build:
+    name: Build application
+    needs: [typecheck, test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      # 这是 CI 里唯一会写 `.turbo` 的 job（`turbo run build`），所以缓存开关保持默认开启：
+      # 上游没变的包会直接命中缓存。注意缓存来自本 job 的历史运行，不是同一轮里
+      # typecheck / test 的结果——那两个 job 跑的是裸 tsc 与 vitest，不产生 turbo 任务记录。
+      - name: Set up environment
+        uses: ./.github/actions/setup
+
+      # `pnpm build` 就是 `turbo run build`：按包依赖顺序构建 console / app / cli / www / api。
+      - name: Build application
+        run: pnpm build
+
+      - name: Upload build output
+        uses: actions/upload-artifact@v6
+        with:
+          name: osw-build
+          # 渲染层与各宿主各自构建到自己的包目录里，仓库根不再有 `dist/`。
+          # 这只是打包的**输入**，不是可直接运行的安装包。
+          # 控制台产物会出现两次：`packages/console/output/` 是它自己的落点，
+          # `apps/cli/output/web/` 是 CLI 构建时拷进去的副本——刻意都留着，
+          # 这样下载下来的人不用先去翻构建脚本就知道每个包各自产出了什么。
+          path: |
+            packages/console/output/
+            apps/app/output/
+            apps/cli/output/
+          if-no-files-found: error
+          retention-days: 7

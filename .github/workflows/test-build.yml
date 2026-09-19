@@ -1,0 +1,132 @@
+name: Test build
+
+# 不发版的测试包：手动触发，走与 `release.yml` 完全相同的打包命令与产物定义，
+# 区别只在最后一步——产物留成 artifact 供下载，而不是创建 GitHub Release。
+# 于是「这一版到底能不能跑、长什么样」可以在一份可下载、可运行的文件上验证，
+# 不用为了拿到安装包而先发一个版本出去（发布是不可回收的，测试包是可丢弃的）。
+#
+# 与 `ci.yml` 的 `Build application` 的关系：那个 job 每个 push 都跑，产出的是打包的
+# **输入**（`output/` 里的 JS 与静态资源），用来回答「还能不能构建」；这里产出的是
+# 真正装得上的安装包，用来回答「装上去能不能用」。两者都不发布。
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 打哪个平台的包
+        required: true
+        default: linux
+        type: choice
+        options:
+          - linux
+          - windows
+          - macos
+          - all
+      version:
+        description: 覆盖产物版本号（留空则用仓库根 manifest 里的版本）
+        required: false
+        default: ''
+        type: string
+
+# 测试包不需要写仓库（不改版本号提交、不打标签、不建 Release），只读即可。
+permissions:
+  contents: read
+
+concurrency:
+  group: test-build
+  cancel-in-progress: false
+
+jobs:
+  # 先算出矩阵，再让 `build` 直接吃结果。
+  # 之所以不写成「静态矩阵 + `job.if` 里比 `inputs.platform == matrix.platform`」：
+  # job 级 `if` 在**矩阵展开之前**求值，那里拿不到 `matrix` 上下文（可用的是
+  # `github` / `needs` / `vars` / `inputs`），写 `matrix.platform` 恒为空 ——
+  # 结果是所有平台都被静默跳过，job 显示 skipped，看不出哪里错了。
+  targets:
+    name: Resolve targets
+    runs-on: ubuntu-latest
+    outputs:
+      include: ${{ steps.resolve.outputs.include }}
+    steps:
+      - name: Resolve targets
+        id: resolve
+        shell: bash
+        env:
+          PLATFORM: ${{ inputs.platform }}
+        run: |
+          case "$PLATFORM" in
+            linux)   SELECTED=('linux') ;;
+            windows) SELECTED=('windows') ;;
+            macos)   SELECTED=('macos') ;;
+            all)     SELECTED=('macos' 'windows' 'linux') ;;
+            *) echo "Unknown platform: $PLATFORM" >&2; exit 1 ;;
+          esac
+
+          # 每一项都要能被 `actions/upload-artifact` 的 `path` 直接吃：
+          # 多行 glob 用 JSON 的 `\n` 表达（单引号里 backslash 原样保留，
+          # 交给 `fromJSON` 解析成真正的换行）。
+          # 产物 glob 与 `release.yml` 的 `matrix.asset` 一致：测试包与发布包是同一种
+          # 产物，文件名规则（`OSW-<版本>-<平台>-<架构>.<ext>`）也由同一份
+          # `electron-builder.config.cjs` 决定，所以可以直接照搬。
+          target() {
+            case "$1" in
+              macos)   echo '{"name":"macOS","platform":"macos","os":"macos-latest","command":"pnpm release:mac","asset":"release/**/*.dmg\nrelease/**/*.zip"}' ;;
+              windows) echo '{"name":"Windows","platform":"windows","os":"windows-latest","command":"pnpm release:win","asset":"release/**/OSW-*.exe"}' ;;
+              linux)   echo '{"name":"Linux","platform":"linux","os":"ubuntu-latest","command":"pnpm release:linux","asset":"release/**/OSW-*.AppImage"}' ;;
+            esac
+          }
+
+          INCLUDE='['
+          FIRST=1
+          for PLAT in "${SELECTED[@]}"; do
+            if [ "$FIRST" = '1' ]; then FIRST=0; else INCLUDE="$INCLUDE,"; fi
+            INCLUDE="$INCLUDE$(target "$PLAT")"
+          done
+          INCLUDE="$INCLUDE]"
+          echo "include=$INCLUDE" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Package ${{ matrix.name }}
+    needs: targets
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.targets.outputs.include) }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      # `pnpm release:*` = `turbo run build` + electron-builder，是写 `.turbo` 的地方，
+      # 所以缓存保持默认开启；三个系统各存各的（key 里带 `runner.os`），不会互相覆盖。
+      - name: Set up environment
+        uses: ./.github/actions/setup
+
+      # 可选：把根版本号改成一个带后缀的值（如 `1.1.0-beta.14-test.1`），
+      # 用来把测试包与同版本的发布包区分开。只改工作树，不提交、不打标签，runner 用完即弃；
+      # 因此必须在 `Set up environment` 之后跑——安装依赖时要的是 lockfile 与 manifest 一致的仓库状态。
+      - name: Override version
+        if: inputs.version != ''
+        env:
+          VERSION: ${{ inputs.version }}
+        run: node packages/toolkit/scripts/version.mjs "$VERSION"
+
+      - name: Build installer
+        run: ${{ matrix.command }}
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v6
+        with:
+          # 名字里带平台和 run number：同一个分支前后触发两次，下载区不会互相覆盖，
+          # 也不会和 `release.yml` 的 `macos` / `windows` / `linux` 撞名。
+          name: osw-test-build-${{ matrix.platform }}-${{ github.run_number }}
+          # 安装包 + electron-updater 的差量更新与版本检查文件。
+          # 测试包不发布，`.blockmap` / `latest*.yml` 用不上，但留下它们的好处是：
+          # 万一哪天从这里捞了一份包自测更新流程，目录结构与发布包是一致的。
+          path: |
+            ${{ matrix.asset }}
+            release/**/*.blockmap
+            release/**/latest*.yml
+          if-no-files-found: error
+          # `release.yml` 没写这项（用仓库默认的 90 天，因为那些产物真正要给用户下载）；
+          # 测试包是内部用完即弃的，7 天足够，别把 artifact 配额占着。
+          retention-days: 7

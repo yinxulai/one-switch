@@ -153,7 +153,7 @@ osw/
 | 应用图标与托盘图标 | `apps/app/build/` | 源码里用 `?url` 内联（`assetsInlineLimit: Infinity` 让图标变成 data URL，避免 asar 内多一次文件寻址）；electron-builder 的 `icon` 相对 `apps/app` 解析 |
 | 打包配置 | `apps/app/electron-builder.config.cjs` | `apps/app/scripts/build.mjs` 显式 `--config`；`directories.output` 指回仓库根 `release/`，`afterPack` 为同包内 `scripts/macos-adhoc-sign.cjs` |
 | Electron 与 electron-builder | `apps/app/package.json` 的 devDependencies | 宿主包自己声明。electron-builder 只在 `<projectDir>/node_modules` 里找 Electron（见坑 4），把依赖留在仓库根等于「开发全通、只在打包时失败」 |
-| 控制台静态资源 | `packages/console/public/` | Vite 的 `publicDir`，随渲染层构建拷贝进 `packages/console/dist` |
+| 控制台静态资源 | `packages/console/public/` | Vite 的 `publicDir`，随渲染层构建拷贝进 `packages/console/output` |
 | 各包脚本 | `apps/app/scripts/`、`packages/core/scripts/`、`packages/console/scripts/` | 根 `package.json` 的 scripts 指向包内路径（`apps/app/scripts/{build,dev,version}.mjs`、`packages/core/scripts/{db,check-proxy-layers}.mjs`、`packages/console/scripts/{eslint-plugin-i18n.mjs,vitest.setup.ts}`） |
 | 跨包脚本 | `packages/toolkit/scripts/` | 私有工作区包（`@osw/toolkit`，无运行时代码）：任务编排（lint / test / typecheck）、版本写入与校验、包边界守卫与脚本运行库。它们不属于任何单一业务包，所以独立成包而不是堆在根目录。同样只被这些脚本读取的 `vitest.config.ts` 与 `tsconfig.check.json` 也住在这里 |
 | 打包产物 | `release/<version>/` | 仍在仓库根：它是构建**输出**，不属于任何包的源码 |
@@ -161,9 +161,9 @@ osw/
 挪动这些资产时必须同步核对的四处：
 
 1. **图标同时被源码级相对路径引用**。`?url` 的解析基准是源码文件而不是配置文件，所以改目录必须连带改源码里的引用，只看配置文件会漏。
-2. **`__dirname` 推导需要重新核对**。产物布局是「主进程、preload 与服务进程都住 `apps/app/dist/command/`，渲染层与迁移基线由 electron-builder 抬进 asar 的 `dist/render` 与 `packages/core/drizzle`」——这几条映射是一组，动一条必须重新验算其他条。`apps/app/electron-builder.config.cjs` 与 `apps/app/vite.shared.ts`（以及 `vite.server.config.ts` 的 `entryFileNames` / `chunkFileNames`）里各有一段注释专门记录这层约束。
+2. **`__dirname` 推导需要重新核对**。产物布局是「主进程、preload 与服务进程都住 `apps/app/output/command/`，渲染层与迁移基线由 electron-builder 抬进 asar 的 `output/render` 与 `packages/core/drizzle`」——这几条映射是一组，动一条必须重新验算其他条。`apps/app/electron-builder.config.cjs` 与 `apps/app/vite.shared.ts`（以及 `vite.server.config.ts` 的 `entryFileNames` / `chunkFileNames`）里各有一段注释专门记录这层约束。
 
-   这里有一个踩过的坑（当前配置已绕开，保留备查）：**`asarUnpack` 在 `files` 含跨包 `{ from, to }` 映射时根本用不了**。它的过滤根被钉死在 `projectDir`（即 `apps/app`），而只要它不是空数组，打包时就会拿这个过滤器去扫**整个**文件集——扫到源在仓库别处的条目（`packages/console/dist`、`packages/core/drizzle`）时直接抛 `... must be under .../apps/app`。当时换 `extraResources` 绕开了这层：它一个文件一个 `to`，可以直接指向 `app.asar.unpacked/...`，且不参与 `files` 过滤。但服务进程改成 `utilityProcess` 后，服务代码同主进程一样能直接从 asar 里加载（见 §5.7），所以 `asarUnpack` 与 `extraResources` 都已从配置里删干净，`files` 里只剩 `dist` 与紧跟在后的两条排除。
+   这里有一个踩过的坑（当前配置已绕开，保留备查）：**`asarUnpack` 在 `files` 含跨包 `{ from, to }` 映射时根本用不了**。它的过滤根被钉死在 `projectDir`（即 `apps/app`），而只要它不是空数组，打包时就会拿这个过滤器去扫**整个**文件集——扫到源在仓库别处的条目（`packages/console/output`、`packages/core/drizzle`）时直接抛 `... must be under .../apps/app`。当时换 `extraResources` 绕开了这层：它一个文件一个 `to`，可以直接指向 `app.asar.unpacked/...`，且不参与 `files` 过滤。但服务进程改成 `utilityProcess` 后，服务代码同主进程一样能直接从 asar 里加载（见 §5.7），所以 `asarUnpack` 与 `extraResources` 都已从配置里删干净，`files` 里只剩 `output` 与紧跟在后的两条排除。
 3. **脚本的「仓库根」是数目录数出来的**。脚本用 `import.meta.url` 往上数目录定位仓库根，换目录必须同步改层数，否则它会在错误的 cwd 里跑（症状是「找不到 tsconfig」而不是「找不到脚本」）。同理，跨包引用运行库用相对路径时，层数也跟着目录深度变。
 4. **electron-builder 只在自己的包里找 Electron**。它探测版本靠读 `<projectDir>/node_modules/electron/package.json`，**不会逐级向上找**，而打包时的 `projectDir` 就是 `apps/app`——所以 Electron 必须由 `apps/app/package.json` 声明。同理 `author` 与产物入口 `main` 也得在被打包的那份清单里，根清单不参与。根 `package.json` 保留 `electron` 只剩一个理由：仓库级测试要跑在 Electron 的 Node 里（`node:sqlite` 的 ABI 必须与 app 对齐），那是测试基建的事，不是宿主的事。
 
@@ -205,7 +205,7 @@ CLI 侧的取舍要写清楚：这是**文件级加密**，防止的是备份、
 
 - CLI：`--web`（默认开启）时托管控制台产物，`/` 走 SPA fallback（未命中静态文件且不是 `/api/*` 时返回 `index.html`）。
 - App：保持 `loadFile`，不启用静态托管（避免多开一个可被局域网访问的入口）。
-- 静态根目录由宿主传入（App 用 asar 内路径，CLI 用包内 `dist/web`），core 不硬编码路径。
+- 静态根目录由宿主传入（App 用 asar 内路径，CLI 用包内 `output/web`），core 不硬编码路径。
 
 守卫必须保持：静态托管只挂在管理服务上，默认只监听 `127.0.0.1`。**不做 Host 头白名单校验**：网络可达性交给 `listenHost` 与操作系统防火墙（见 [security-privacy.md](./security-privacy.md)）。这里刻意不叠加第二套应用层白名单——一旦叠上，就只能监听 `localhost` 系名字，「能访问」与「不能访问」的理由就从一处变成两处，而 CLI 形态下用户完全可以自行改 `--host`。
 
@@ -301,20 +301,20 @@ CLI 的 native 层需要一套独立文案（启动横幅、端口占用、数�
 
 | 形态 | 模块目录 | 到 `packages/core/drizzle` 的上溯层数 |
 | --- | --- | --- |
-| 开发（`pnpm dev`） | `apps/app/dist/command/` | 4 层到仓库根 |
-| 打包（asar 内，主进程与服务进程） | `app.asar/dist/command/` | 2 层到 asar 根（electron-builder 把 `packages/core/drizzle` 映射进去） |
+| 开发（`pnpm dev`） | `apps/app/output/command/` | 4 层到仓库根 |
+| 打包（asar 内，主进程与服务进程） | `app.asar/output/command/` | 2 层到 asar 根（electron-builder 把 `packages/core/drizzle` 映射进去） |
 
-打包形态只有上面**一种**：服务进程是 Electron 的 `utilityProcess`，走的是和主进程同一套模块加载路径（`fs` 上的 asar 补丁对它同样生效），于是 `service-main.mjs` 与其 chunk 直接住在 `app.asar/dist/command/`，两者上溯层数天然一致，不需要任何刻意对齐。
+打包形态只有上面**一种**：服务进程是 Electron 的 `utilityProcess`，走的是和主进程同一套模块加载路径（`fs` 上的 asar 补丁对它同样生效），于是 `service-main.mjs` 与其 chunk 直接住在 `app.asar/output/command/`，两者上溯层数天然一致，不需要任何刻意对齐。
 
 这也是从 `worker_threads` 搬家的根本原因：`worker_threads` 读不了 asar（Electron 只给主进程的 `fs` 装了 asar 解析，worker 线程没有这层补丁），所以才曾经不得不把服务代码与一份迁移基线摊到 `app.asar.unpacked/` 下，既多一层路径假设，又让产物分成两截。
 
-`files` 里那两条排除模式（`!dist/**/*.map`、`!node_modules`）**必须紧跟在 `dist` 后面**：electron-builder 把连续的字符串项归一化成同一个 file set 的 `filter`，而每个 `{ from, to }` 项各自独立成一个 set；一旦排除项被 `{ from, to }` 隔开，它就退化成「只含排除项」的 set，而 `minimatchAll` 是逐个模式累进判定的，没有前置正向模式时排除项会静默失效。`!node_modules` 排除的是 `@osw/*` 那几包：它们以 `exports: "./source/*.ts"` 形态被 electron-builder 整包拷进 asar，里面只有 TS 源码与 `*.test.ts`，而 Vite 已经把要用的代码全部 bundle 进 `dist/`（实测打包产物里 `@osw/` 的出现次数为 0），白白占掉约 3 MB / 29% 的 asar 体积。
+`files` 里那两条排除模式（`!output/**/*.map`、`!node_modules`）**必须紧跟在 `output` 后面**：electron-builder 把连续的字符串项归一化成同一个 file set 的 `filter`，而每个 `{ from, to }` 项各自独立成一个 set；一旦排除项被 `{ from, to }` 隔开，它就退化成「只含排除项」的 set，而 `minimatchAll` 是逐个模式累进判定的，没有前置正向模式时排除项会静默失效。`!node_modules` 排除的是 `@osw/*` 那几包：它们以 `exports: "./source/*.ts"` 形态被 electron-builder 整包拷进 asar，里面只有 TS 源码与 `*.test.ts`，而 Vite 已经把要用的代码全部 bundle 进 `output/`（实测打包产物里 `@osw/` 的出现次数为 0），白白占掉约 3 MB / 29% 的 asar 体积。
 
 固定层数必然在某一侧失效，且失效是运行期才报的。上溯查找对两端同时成立，产物布局再变也不会静默失配。
 
 要求：
 
-- `drizzle/` 必须随包分发（App 的 `files`、CLI 的 `files` 都要包含）。CLI 当前**不发布**、没有 `files` 字段，上溯查找在仓库内从 `apps/cli/dist/` 向上到仓库根命中 `packages/core/drizzle`；一旦开始打包分发，这条就从「恰好成立」变成「必须显式声明」。
+- `drizzle/` 必须随包分发（App 的 `files`、CLI 的 `files` 都要包含）。CLI 当前**不发布**、没有 `files` 字段，上溯查找在仓库内从 `apps/cli/output/` 向上到仓库根命中 `packages/core/drizzle`；一旦开始打包分发，这条就从「恰好成立」变成「必须显式声明」。
 - 不依赖 `process.cwd()`：CLI 可以在任意目录启动，cwd 探测只是开发期便利，不是唯一来源；打包后必须靠模块相对路径命中。
 - **不要把这一类路径经 `process.env` 传入**：宿主构建会用 Vite，而 Vite 默认把 `process.env` 静态替换为 `{}`，传入的值读出来永远是 `undefined`（详见 §5.8）。
 
@@ -326,13 +326,13 @@ CLI 的 native 层需要一套独立文案（启动横幅、端口占用、数�
 | --- | --- | --- |
 | `contracts` | 不产出构建物，`exports` 直接指向 `./source/*.ts` | — |
 | `core` | 同上 | — |
-| `console` | 静态文件 `packages/console/dist` | `vite build`（`packages/console/vite.config.ts`） |
-| `app` | `apps/app/dist/command/{index.js,preload.js,service-main.mjs}`（三份产物连同 chunk 全在 asar 内），再交给 electron-builder | 三份 Vite 配置 + `apps/app/scripts/build.mjs` |
-| `cli` | ESM `dist/index.js`（`bin` 指向它）+ `dist/web`（拷入的控制台产物） | `vite build`（`apps/cli/vite.config.ts`）+ `apps/cli/scripts/build.mjs` |
+| `console` | 静态文件 `packages/console/output` | `vite build`（`packages/console/vite.config.ts`） |
+| `app` | `apps/app/output/command/{index.js,preload.js,service-main.mjs}`（三份产物连同 chunk 全在 asar 内），再交给 electron-builder | 三份 Vite 配置 + `apps/app/scripts/build.mjs` |
+| `cli` | ESM `output/index.js`（`bin` 指向它）+ `output/web`（拷入的控制台产物） | `vite build`（`apps/cli/vite.config.ts`）+ `apps/cli/scripts/build.mjs` |
 
 编排由 Turborepo 承担（`turbo.json`）：
 
-- `build` 依赖 `^build`，顺序只由依赖图决定：`contracts` → `core` → `console` / `app` / `cli`。实测 `pnpm build` 只跑 3 个任务（只有 console、app 与 cli 真的有构建步骤），「谁先构建」不再需要人工记忆。`cli` 把 `console` 列为 `devDependencies` 纯粹为了让它进依赖图：它构建时需要 `packages/console/dist` 存在（拷入自己的 `dist/web`），而自己不 import 控制台一行代码。
+- `build` 依赖 `^build`，顺序只由依赖图决定：`contracts` → `core` → `console` / `app` / `cli`。实测 `pnpm build` 只跑 3 个任务（只有 console、app 与 cli 真的有构建步骤），「谁先构建」不再需要人工记忆。`cli` 把 `console` 列为 `devDependencies` 纯粹为了让它进依赖图：它构建时需要 `packages/console/output` 存在（拷入自己的 `output/web`），而自己不 import 控制台一行代码。
 - `typecheck` / `test` 同样依赖 `^build`：上游没通过时，下游的报错不参与排查。
 - `lint` 无依赖、可并行，因为它不写产物。
 - `dev` 标记为 `cache: false` + `persistent: true`：turbo 并行拉起而不等待依赖，跨进程顺序由宿主自己的编排脚本负责（`apps/app/scripts/dev.mjs`）。
@@ -364,10 +364,10 @@ CI（`.github/workflows/ci.yml`）与发布（`release.yml`）共用 `.github/ac
 
 | 缓存 | 路径 | 开关 | 实际在用的 job |
 | --- | --- | --- | --- |
-| Turbo 任务缓存 | `.turbo` | `turbo-cache`（默认开） | 只有 `release.yml` 的矩阵构建会写：它是唯一跑 `turbo run build` 的地方（`pnpm release:*`），CI 的 typecheck / lint / test 由包内脚本直跑 |
+| Turbo 任务缓存 | `.turbo` | `turbo-cache`（默认开） | `release.yml` 的矩阵构建与 `ci.yml` 的 `Build application`：只有跑 `turbo run build` 的 job 会写（`pnpm build` / `pnpm release:*`），而 CI 的 typecheck / lint / test 由包内脚本直跑 |
 | ESLint 缓存 / tsc 增量信息 | `node_modules/.cache` | `tool-cache`（默认关） | `Lint`（`eslint . --cache`）与 `Typecheck`（`tsc --incremental`） |
 
-`ci.yml` **没有 build job**：每次 push 把渲染层与宿主整个打一遍，换来的只是一份没人下载的 artifact，而「产物到底出不出得来」真正由两处覆盖——Worker 是 Cloudflare Workers Builds 里的 build 命令（与线上部署同参数），桌面端是 `release.yml` 的矩阵打包（那才是产物定义）。CI 只负责「代码是不是对的」。
+`ci.yml` **有** build job（`needs: [typecheck, test]`，跑 `pnpm build`，产物作为 `osw-build` 上传）。它曾经被删掉过，理由是「每 push 都打一遍只换来一份没人下载的 artifact」——但那是把两件事混成了一件：**CI 要回答的是「这次改动还能不能构建」**，而 `release.yml` 回答的是「发布产物对不对」。前者只有每次 push 都跑才有意义，后者只在发版时跑；产物路径、`entryFileNames`、`index.html` 里的模块引用这类错误，typecheck / lint / test 全绿也照样漏过去，只有真的跑一次 `pnpm build` 才看得见。上传的 `osw-build` 是打包的**输入**（`packages/console/output` + `apps/app/output` + `apps/cli/output`），不是可直接运行的安装包；要一个可下载、可运行的测试包走 `.github/workflows/test-build.yml`——手动触发，命令与 `release.yml` 完全相同，只是不创建 Release、不改版本号、不打标签。Worker 那边仍由 Cloudflare Workers Builds 里的 build 命令（与线上部署同参数）覆盖。
 
 缓存一个命令根本不会创建的目录比不缓存更糟：`actions/cache` 在保存阶段报 `Path Validation Error`，job 白跑一趟，还占着日志让人以为缓存生效了——`typecheck` / `lint` / `test` 三个 job 的 `.turbo` 就属于这种情况，因此显式关掉。另一点是收益只出现在第二次运行（首次要写盘，约 15 s），所以 key 不能高频变化，否则等于每次都在付写入成本。本地冷热对照（同机、同一份工作树）：`tsc -p packages/toolkit/tsconfig.check.json` 16.7 s → 6.9 s；`eslint .` 6.1 s → 2.5 s（`pnpm lint` 整体只快一点，守卫脚本与 turbo/pnpm 启动占了大头）。electron-builder 的 Electron 二进制缓存（Windows 的 `%LOCALAPPDATA%\electron\Cache`、macOS 的 `~/Library/Caches/electron*`，每系统约 1.3 GB）**没有**纳入本次改动：Electron 压缩包从 CDN 下载是秒级的，而 Windows 87 s / macOS 91 s 的打包耗时主要在解压与封装本身，为它占掉一个可观份额的 10 GB 缓存配额不划算（未实测，只按量级判断）。
 
@@ -441,7 +441,7 @@ CI（`.github/workflows/ci.yml`）与发布（`release.yml`）共用 `.github/ac
 - 已完成：S0 骨架平移，以及 S2–S2.5（CLI 成型与 §5.1–§5.5 五项宿主适配、生产级细节、两种形态一致性、数据落用户主目录 + 两库拆分、宿主与实例身份收口、管理接口去鉴权）。这些阶段的结论就是本文件 §4–§6 的现状描述，逐阶段验收记录见 [roadmap.md](./roadmap.md)。
 - **S1「core 可独立运行」跳过**：CLI 在构建期用 Vite 别名直接打包 `core` / `contracts` 的**源码**，不消费它们的独立产物，因此没有驱动这一阶段的需求。代价是 `apps/cli/vite.config.ts` 必须自带一份完整的 `rolldownOptions`（外部化、`platform`、`define`，见 §5.8），不能复用 `vite.shared.ts`——那份外部化了 `electron`。等真有第三方单独消费 `core` 时再做。
 - **S3 App 回归（未开始）**：`apps/app/source` 按 §4.1 目标态拆出 `main/` 与 `preload/`，并复核构建产物映射（`electron-builder` 配置与打包脚本均归 `apps/app/`）。托盘、自动更新、开机自启、原生对话框保持。验收：桌面安装包端到端可用；升级路径（检查更新 → 下载 → 安装）不回归。
-- **S4 分发与文档（未开始）**：CLI 发布形态（npm 全局 bin）+ `engines` 声明 + 使用说明。**CLI 当前明确不发布**，所以 `apps/cli/package.json` 里 `bin` 已就位但 `private: true` 未摘。开工前要先办三件：定 `files`（至少含 `dist/` 与 `packages/core/drizzle`，见 §5.7）、确定启动时如何提示 `node:sqlite` 不可用，以及确认 `bin` 入口的 shebang 与执行位在三个平台都成立。
+- **S4 分发与文档（未开始）**：CLI 发布形态（npm 全局 bin）+ `engines` 声明 + 使用说明。**CLI 当前明确不发布**，所以 `apps/cli/package.json` 里 `bin` 已就位但 `private: true` 未摘。开工前要先办三件：定 `files`（至少含 `output/` 与 `packages/core/drizzle`，见 §5.7）、确定启动时如何提示 `node:sqlite` 不可用，以及确认 `bin` 入口的 shebang 与执行位在三个平台都成立。
 
 长期有效的工程约定：
 
