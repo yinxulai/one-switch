@@ -185,8 +185,8 @@ Configuration, logs and request metadata live in one hidden directory in your ho
 
 | File | Contents |
 | --- | --- |
-| `~/.osw/osw-config-v1.db` | Providers, models, routing and rewrite rules — **your configuration, worth backing up** |
-| `~/.osw/osw-data-v1.db` | Request logs, captured bodies, usage and health state — **safe to delete**, you only lose history |
+| `~/.osw/config-v1.db` | Providers, models, routing and rewrite rules — **your configuration, worth backing up** |
+| `~/.osw/data-v1.db` | Request logs, captured bodies, usage and health state — **safe to delete**, you only lose history |
 
 The development build uses `~/.osw-development` instead, so a dev instance never touches your real data.
 
