@@ -8,7 +8,6 @@ export default [
       'output/**',
       'packages/*/output/**',
       'apps/*/output/**',
-      'apps/*/output-worker/**',
       'node_modules/**',
       'release/**',
       'coverage/**',

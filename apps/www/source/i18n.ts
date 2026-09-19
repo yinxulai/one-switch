@@ -41,8 +41,9 @@ const en = {
   },
   downloads: {
     title: 'Download',
-    subtitle: 'Choose your platform and download the latest installer.',
-    action: 'Download',
+    subtitle: 'Available for macOS, Windows and Linux — pick your installer on the latest release.',
+    action: 'Download the latest release',
+    host: 'Opens GitHub Releases',
     version: 'Current release · v{{version}}',
     detail:
       'macOS builds are ad-hoc signed and not notarized — if the first launch is blocked, allow it under System Settings → Privacy & Security.',

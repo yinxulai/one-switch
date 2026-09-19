@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { DOWNLOAD_VERSION, downloads } from './downloads'
+import { DOWNLOAD_VERSION, RELEASE_URL } from './downloads'
+import { PlatformIcon } from './platform-icons'
 import { PLATFORMS } from './platforms'
 import { LANGS, type Lang } from './i18n'
 
@@ -29,7 +30,6 @@ const FEATURES: { key: string; title: string; body: string }[] = [
 export function App() {
   const { t, i18n } = useTranslation()
   const lang = i18n.language as Lang
-  const items = downloads()
 
   // 让 `<html lang>` 跟随界面语言（无障碍与搜索引擎用）。
   useEffect(() => {
@@ -87,31 +87,42 @@ export function App() {
             ))}
           </section>
 
-          {/* 下载 */}
+          {/* 下载：一个公共按钮 → 最新 release 页；上方一行平台标记只做「支持哪些平台」的说明。 */}
           <section className="mt-16 w-full">
             <h2 className="text-2xl font-semibold">{t('downloads.title', '下载')}</h2>
             <p className="mt-2 text-sm text-[rgb(200_206_218/0.7)]">
-              {t('downloads.subtitle', '选择你的平台，下载最新安装包。')}
+              {t('downloads.subtitle', '支持 macOS、Windows 与 Linux，从最新发布页按平台自取。')}
             </p>
-            <div className="mt-6 grid w-full gap-4 sm:grid-cols-3">
-              {items.map((item) => (
-                <a
-                  key={item.id}
-                  href={`/~asset/${item.id}`}
-                  className="group rounded-md border border-[rgb(200_206_218/0.16)] p-6 text-left transition-colors hover:border-[rgb(255_255_255/0.35)]"
-                >
-                  <div className="text-base font-semibold">
-                    {PLATFORMS.find((p) => p.id === item.id)?.label}
+
+            <div className="mt-6 rounded-md border border-[rgb(200_206_218/0.16)] p-6">
+              <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-3">
+                {PLATFORMS.map((platform) => (
+                  <div
+                    key={platform.id}
+                    className="flex items-center gap-2 text-[rgb(200_206_218/0.85)]"
+                  >
+                    <PlatformIcon id={platform.id} className="h-5 w-5 shrink-0" />
+                    <span className="text-sm">{platform.label}</span>
                   </div>
-                  <div className="mt-1 text-xs text-[rgb(200_206_218/0.55)]">
-                    {t('downloads.version', '当前版本 · v{{version}}', { version: DOWNLOAD_VERSION })}
-                  </div>
-                  <div className="mt-4 text-sm font-semibold text-[#7ea6ff] group-hover:underline">
-                    {t('downloads.action', '下载')} →
-                  </div>
-                </a>
-              ))}
+                ))}
+              </div>
+
+              <a
+                href={RELEASE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-6 flex w-full items-center justify-center rounded-md bg-[#f3f4f8] px-6 py-3 text-sm font-semibold text-[#0b0d12] transition-colors hover:bg-white"
+              >
+                {t('downloads.action', '下载最新版本')}
+              </a>
+
+              <p className="mt-3 text-center text-xs text-[rgb(200_206_218/0.55)]">
+                {t('downloads.version', '当前版本 · v{{version}}', { version: DOWNLOAD_VERSION })}
+                {' · '}
+                {t('downloads.host', '在 GitHub Releases 上打开')}
+              </p>
             </div>
+
             <p className="mx-auto mt-6 max-w-xl text-xs text-[rgb(200_206_218/0.55)]">
               {t(
                 'downloads.detail',

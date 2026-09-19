@@ -2,12 +2,12 @@
 # 本项目 → Settings → Build）：Root directory `apps/www`，Build `pnpm install && pnpm build`，
 # Deploy `npx wrangler deploy`。仓库里不放部署流水线（不用 GitHub Actions）。
 #
-# Worker 只做「静态资源 + 一条下载路由」：Vite 产物（`output/`）由 Static Assets 托管，
-# `/~asset/<platform>` 从 R2 桶流式返回安装包（见 `worker/index.ts`）。
+# **纯静态**：没有 Worker 脚本，只有 `[assets]`；Vite 产物（`output/`）原样上传、按静态资源
+# 托管。下载按钮是前端直接跳 GitHub Releases 的外部链接，所以服务端不需要任何逻辑，
+# 也就不需要 R2 绑定。（真要改回站内分发时，再加 `main` + R2。）
 # 目录名与 `source/` 对仗：`source` 进、`output` 出。
 
 name = "osw-www"
-main = "worker/index.ts"
 
 compatibility_date = "2026-01-01"
 
@@ -19,24 +19,17 @@ compatibility_date = "2026-01-01"
 # 前提：`yinxulai.com` 这个 zone 在**同一个 Cloudflare 账号**下。不满足时 deploy 会报错
 # （找不到 zone），需把 zone 挪到本账号，或删掉 `routes` 改到后台手动绑定。
 #
-# ⚠️ 这一块必须在**任何 `[表头]` 之前**：TOML 里 `[assets]` / `[[r2_buckets]]` 之后的键
-# 都会落入那张表，放错位置只会得到「Unexpected fields found in …」的告警，而部署照常进行。
+# ⚠️ 这一块必须在**任何 `[表头]` 之前**：TOML 里 `[assets]` 之后的键都会落入那张表，
+# 放错位置只会得到「Unexpected fields found in …」的告警，而部署照常进行。
 routes = [
   { pattern = "osw.yinxulai.com", custom_domain = true },
 ]
 
 # 静态资源：Vite 构建产物。`not_found_handling` 让任意深层路径都回落到 SPA 入口。
 [assets]
-binding = "ASSETS"
 directory = "./output"
 not_found_handling = "single-page-application"
 
-# R2 桶：承载安装包（`<version>/OSW-*.{dmg,exe,AppImage}`）。上传方式见 README.md。
-[[r2_buckets]]
-binding = "DOWNLOADS"
-bucket_name = "osw-downloads"
-
 # ---------------------------------------------------------------- 密钥
 #
-# 本 Worker 当前不需要 secret（R2 桶通过 `r2_buckets` 绑定）。若下载路由日后要加
-# 访问控制或统计，可在此配 `wrangler secret put` 的项并在此注明。
+# 站点是纯静态资源，没有 Worker 脚本，因此既不需要 secret，也不需要 R2 之类的绑定。

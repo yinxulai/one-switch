@@ -1,14 +1,15 @@
 # apps/www — 产品官网
 
-logo、名字、功能与下载链接的纯净态落地页。**Vite + React + TypeScript + Tailwind v4**，
-构建为纯静态产物（`output/`），由 **Cloudflare Worker（Workers + Static Assets）** 托管。
+logo、名字、功能与下载入口的纯净态落地页。**Vite + React + TypeScript + Tailwind v4**，
+构建为纯静态产物（`output/`），由 **Cloudflare Workers Static Assets** 托管。
 
 ## 技术栈（为什么这么选）
 
 - **Vite + React + TS + Tailwind v4**：与 `packages/console` 完全同栈，直接复用设计 token、
   logo（`public/icon.svg`）与「不用阴影、发丝边框分模块」的视觉约定，不引入新框架。
   明确不用 Next.js：这是无 SSR 需求的静态落地页，Vite 产物更简单、更快、更小。
-- **部署 = Workers + Static Assets**：Vite 产物原样上传，Worker 只多一条下载路由。
+- **部署 = Workers Static Assets，且只有静态资源**：`wrangler.toml` 里没有 `main`，
+  也就没有 Worker 脚本——下载按钮是前端直接跳 GitHub Releases 的外部链接，服务端不需要逻辑。
   纯静态「纯净态」托管，构建与部署交给 Cloudflare 侧的 Workers Git 集成，仓库里不放部署流水线。
 
 ## 本地
@@ -17,8 +18,8 @@ logo、名字、功能与下载链接的纯净态落地页。**Vite + React + Ty
 pnpm --filter @osw/www dev        # Vite dev server（端口 5174）
 pnpm --filter @osw/www build      # 构建静态产物到 output/
 pnpm --filter @osw/www preview    # 本地预览构建产物
-pnpm --filter @osw/www deploy:dry-run   # wrangler 干跑（校验配置与 worker 打包）
-pnpm --filter @osw/www dev:worker # 本地跑 worker + 静态资源 + R2
+pnpm --filter @osw/www deploy:dry-run   # wrangler 干跑（校验 assets 配置）
+pnpm --filter @osw/www dev:worker # 本地起静态资源服务（wrangler dev）
 ```
 
 ## 多语言（i18next）
@@ -67,39 +68,38 @@ i18n.changeLanguage('zh')                          // 切语言（组件自动�
 
 - **包管理器**：`pnpm-lock.yaml` 在仓库根，而 Root directory 指向子目录时 Cloudflare 未必能自动识别。
   在 Build 的 **Variables and secrets** 里加 `PNPM_VERSION`（与仓库根 `packageManager` 同版）最稳。
-- **wrangler.toml 就在仓库里**（`apps/www/wrangler.toml`），Git 集成会直接用它——含 `[assets]` 静态资源
-  与 R2 绑定，无需在 Dashboard 里重复配绑定。
+- **wrangler.toml 就在仓库里**（`apps/www/wrangler.toml`），Git 集成会直接用它——只有 `[assets]`
+  一张表，没有 `main`、没有绑定，无需在 Dashboard 里重复配任何东西。
 - **自定义域名**：`wrangler.toml` 的 `routes` 已声明绑定。前提是该 zone 在同一账号下；否则删掉 `routes`，
   改到 Workers → Settings → Domains & Routes 手动绑定。
-- **R2 桶要先建好**（名字与 `wrangler.toml` 的 `bucket_name` 一致），否则部署会因绑定缺失失败。
 
 本地想手动部署一次：`pnpm --filter @osw/www deploy`（需先 `wrangler login` 或配 `CLOUDFLARE_API_TOKEN`）。
 
-## 下载（站内直接下载，不跳 GitHub）
+## 下载（一个按钮，跳 GitHub Releases）
 
-安装包由 release 工作流生成（命名见 `apps/app/electron-builder.config.cjs` 的
-`artifactName`，形如 `OSW-<version>-<os>-<arch>.<ext>`），上传到 R2 桶。Worker 路由
-`/~asset/<platform>`（`mac` / `win` / `linux`）在桶里按平台匹配最新对象并流式返回。
+站点**不做**按平台分发，也**不**代理安装包：下载区只有一个公共按钮，指向
 
-### 发版后把安装包上传到 R2（手动，需先配好 R2 凭证）
-
-```bash
-cd apps/www
-# 每个平台一个命令，路径里的版本号与当前发布版本一致（也可直接 `r2 cp` 整个目录）
-wrangler r2 object put osw-downloads/1.1.0-beta.14/OSW-1.1.0-beta.14-mac-arm64.dmg --file ../../release/1.1.0-beta.14/OSW-1.1.0-beta.14-mac-arm64.dmg
-wrangler r2 object put osw-downloads/1.1.0-beta.14/OSW-1.1.0-beta.14-win-x64.exe --file ../../release/1.1.0-beta.14/OSW-1.1.0-beta.14-win-x64.exe
-wrangler r2 object put osw-downloads/1.1.0-beta.14/OSW-1.1.0-beta.14-linux-x86_64.AppImage --file ../../release/1.1.0-beta.14/OSW-1.1.0-beta.14-linux-x86_64.AppImage
+```text
+https://github.com/yinxulai/osw/releases/latest
 ```
 
-> 前端下载卡片里的版本号来自仓库根 `package.json` 的 `version`（构建期注入）。发版后若
-> R2 桶没有对应版本的目录，下载会 404——两者必须一致。Worker 侧是「按平台取最新对象」，
-> 不依赖这个版本号。
+（`source/downloads.ts` 的 `RELEASE_URL`）。这是 GitHub 的「最新发布」永久地址，自动指向最新一个
+正式发布——所以站点**不需要跟着发版更新任何东西**，也不会出现「页面上的固定路径 404」。
+按钮上方那一行平台标记（macOS / Windows / Linux）只是「支持哪些平台」的说明，不可点。
+
+按钮下面显示的版本号来自仓库根 `package.json` 的 `version`（构建期注入，见 `vite.config.ts`），
+**只用于展示**，与跳转目标无关；它跟着站点构建时间走，站点没重新部署时可能落后于最新发布。
+
+安装包本身由 release 工作流产出（命名见 `apps/app/electron-builder.config.cjs` 的 `artifactName`，
+形如 `OSW-<version>-<os>-<arch>.<ext>`），由发布流程上传到 GitHub Releases。
+
+> 将来若要做「站内直接下载、不跳 GitHub」：加回 `main` 与 R2 绑定，在 Worker 里按平台从桶里
+> 取最新对象并流式返回，桶空时再 302 到 GitHub。这一版刻意不做——先用最少的活动部件把链接跑通。
 
 ### 校验
 
 ```bash
-curl -I https://osw.yinxulai.com/              # 200，HTML
-curl -I https://osw.yinxulai.com/~asset/mac    # 302/200，Content-Disposition: attachment
+curl -I https://osw.yinxulai.com/    # 200，HTML
 ```
 
 ## 目录
@@ -109,12 +109,12 @@ apps/www/
   source/            # React 应用
     App.tsx          # 单页落地（hero + 功能 + 下载 + 页脚）
     i18n.ts          # i18next 初始化 + 英文资源表（中文是兜底语言，见下）
-    downloads.ts     # 前端下载卡片（平台 → 版本对象路径）
-    platforms.ts     # 平台清单（前端与 worker 共用）
+    downloads.ts     # 版本号 + 最新发布页地址
+    platforms.ts     # 平台清单（下载区那一行平台标记用）
+    platform-icons.tsx # 三平台品牌标记（Simple Icons + 手绘 Windows 方标）
     index.css        # Tailwind v4 入口 + 基础样式
     main.tsx / vite-env.d.ts
-  worker/index.ts    # Cloudflare Worker（静态托管 + 下载路由）
   public/icon.svg    # 官方 logo（自 packages/console/public/icon.svg 复制的副本；改 logo 以真源为准同步覆盖）
-  wrangler.toml      # Workers + Static Assets + R2 绑定
+  wrangler.toml      # Workers Static Assets（纯静态，无 main、无绑定）
   vite.config.ts / tsconfig.json / index.html
 ```

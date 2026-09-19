@@ -32,7 +32,6 @@
     "../../apps/cli/source/**/*.ts",
     "../../apps/www/source/**/*.ts",
     "../../apps/www/source/**/*.tsx",
-    "../../apps/www/worker/**/*.ts",
     "../../packages/console/vite.config.ts",
     "../../packages/core/drizzle.config.config.ts",
     "../../packages/core/drizzle.config.data.ts",

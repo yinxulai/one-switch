@@ -4,14 +4,14 @@
   "private": true,
   "license": "PolyForm-Noncommercial-1.0.0",
   "type": "module",
-  "description": "产品官网：logo、功能、下载链接。Vite + React 纯静态产物，由 Cloudflare Worker（Workers + Static Assets）托管。",
+  "description": "产品官网：logo、功能、下载链接。Vite + React 纯静态产物，由 Cloudflare Workers Static Assets 托管。",
   "author": "yinxulai <yinxulai@hotmail.com>",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "deploy": "wrangler deploy",
-    "deploy:dry-run": "wrangler deploy --dry-run --outdir=output-worker",
+    "deploy:dry-run": "wrangler deploy --dry-run",
     "dev:worker": "wrangler dev"
   },
   "dependencies": {
