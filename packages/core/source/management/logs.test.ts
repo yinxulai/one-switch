@@ -1,7 +1,7 @@
 import type { ServerResponse } from 'node:http'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { logRoutes } from './routes/observability/logs'
-import { clearLogs, installLogCapture, listLogs } from './infrastructure/log-buffer'
+import { clearLogs, installLogCapture, listLogs, writeRuntimeLog } from './infrastructure/log-buffer'
 import { mockResponse } from './test-support'
 
 function responseData(response: ServerResponse): Record<string, unknown> {
@@ -60,5 +60,15 @@ describe('log routes', () => {
     await logRoutes.invoke('/api/logs/list', queryRes, { limit: 50, query: 'alpha marker' })
     const queryPayload = responseData(queryRes) as { data: { logs: Array<{ message: string }> } }
     expect(queryPayload.data.logs.every(log => log.message.includes('alpha marker'))).toBe(true)
+  })
+
+  // 宿主（Electron 主进程）的 console 转发走这条路：它自己碰不到数据库，
+  // 所以由服务侧按同样的形状写进来（见 `writeRuntimeLog` 与协议里的 `logs.write`）。
+  it('writes a forwarded host line verbatim, timestamp included', () => {
+    writeRuntimeLog('warn', 'forwarded from host', 1234)
+
+    expect(listLogs()).toEqual([
+      expect.objectContaining({ level: 'warn', message: 'forwarded from host', timestamp: 1234 }),
+    ])
   })
 })

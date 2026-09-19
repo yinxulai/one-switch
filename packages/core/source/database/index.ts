@@ -40,6 +40,8 @@ interface OpenedDatabase {
 
 let configDatabase: OpenedDatabase | null = null
 let dataDatabase: OpenedDatabase | null = null
+/** 观测库的文件住在哪；`readDataStorageBytes` 需要它，别处不许复制一份。 */
+let dataDirectory: string | null = null
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url))
 
 /**
@@ -56,6 +58,7 @@ export async function initDatabases(dataDir: string): Promise<void> {
 
   const startedAt = Date.now()
   fs.mkdirSync(dataDir, { recursive: true })
+  dataDirectory = dataDir
   try {
     // 配置库先开：它决定「这次启动有没有意义」。数据库拿不到时用户仍能看到配置与健康状态，
     // 所以顺序不是随意的，而是「先给出最重要的那个」。
@@ -83,6 +86,37 @@ export function getDataDb(): Database {
   return dataDatabase.database
 }
 
+/**
+ * 观测库当前在磁盘上占用的字节数——主文件 `data-v<n>.db` 加上尚未 checkpoint 的 `-wal`。
+ *
+ * 报的是**文件**大小而不是 `PRAGMA page_count * page_size`：两个数在这里本来就不一样，
+ * 而用户问的是「这东西占了我多少盘」。WAL 计入是因为它此刻同样占着盘，且默认的自动
+ * checkpoint 让它通常只有几 MB，不会掩盖主文件那部分。`-shm` 不计：它是 32KB 的共享
+ * 内存映射，不是数据。
+ *
+ * 用 `fs.statSync` 而不是向 SQLite 问：读文件大小不碰数据库内容，不该走连接、也不该
+ * 受事务或 WAL 快照影响。文件读不到（库刚建还没写过、被外部工具移走）按 0 计——
+ * 展示层只是少显示一个数字，没有理由因此报错。
+ */
+export function readDataStorageBytes(): number {
+  const directory = dataDirectory
+  if (!directory) throw new Error('Data directory not initialized')
+  const fileName = createDatabaseFileName('data')
+  return [fileName, `${fileName}-wal`].reduce(
+    (total, name) => total + readFileSizeOrZero(path.join(directory, name)),
+    0,
+  )
+}
+
+function readFileSizeOrZero(filePath: string): number {
+  try {
+    return fs.statSync(filePath).size
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 0
+    throw error
+  }
+}
+
 /** 把清理腾出来的页真正还给文件系统。 */
 export function reclaimUnusedSpace(): void {
   if (!dataDatabase) return
@@ -99,6 +133,7 @@ export async function closeDatabases(): Promise<void> {
   const handles = [configDatabase, dataDatabase].filter((handle): handle is OpenedDatabase => handle !== null)
   configDatabase = null
   dataDatabase = null
+  dataDirectory = null
   if (handles.length === 0) {
     console.debug('[database] close skipped reason=not-initialized')
     return
@@ -262,6 +297,7 @@ function closeQuietly(): void {
   const handles = [dataDatabase, configDatabase]
   dataDatabase = null
   configDatabase = null
+  dataDirectory = null
   for (const handle of handles) {
     try {
       handle?.client.close()

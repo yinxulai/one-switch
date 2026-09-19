@@ -58,6 +58,8 @@ interface ElectronAPI {
   platform: string
   /** 用系统默认方式打开外部链接。主进程只放行 `https:`。 */
   openExternal: (url: string) => void
+  /** 用系统文件管理器打开数据目录。失败时 reject（例如系统没有默认文件管理器）。 */
+  openDataDirectory: () => Promise<void>
   updater: UpdaterAPI
 }
 

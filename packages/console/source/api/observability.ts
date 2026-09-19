@@ -6,6 +6,13 @@ export type ListRequestLogsParams = { limit?: number; offset?: number; providerI
 
 export type PruneRequestLogsParams = { requestLogRetentionDays?: number; contentRetentionDays?: number }
 
+/** 观测库在磁盘上的占用。`dataBytes` = 主文件 + 未 checkpoint 的 WAL。 */
+export type StorageUsage = { dataBytes: number }
+
+export const storageApi = {
+  usage: () => request<StorageUsage>('/storage/usage'),
+}
+
 export const logsApi = {
   list: (params: ListLogsParams = {}) => request<{ logs: LogEntry[]; total: number }>('/logs/list', params),
   export: () => request<{ content: string }>('/logs/export'),

@@ -19,6 +19,7 @@ import {
   requestRewriteRuleRoutes,
   runtimeControlRoutes,
   settingsRoutes,
+  storageRoutes,
 } from './routes'
 import type { RuntimeEnvironment } from '@common/runtime-profile'
 import { parseJsonBody } from './core/request-body'
@@ -44,6 +45,7 @@ const router = new HttpRouter<ManagementHandler>()
   .mount(relationRoutes)
   .mount(requestRewriteRuleRoutes)
   .mount(developmentRoutes)
+  .mount(storageRoutes)
 
 export async function handleApiRequest(req: IncomingMessage, res: ServerResponse, environment: RuntimeEnvironment = 'production'): Promise<void> {
   const url = new URL(req.url!, 'http://localhost')

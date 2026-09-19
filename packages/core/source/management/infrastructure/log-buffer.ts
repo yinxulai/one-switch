@@ -34,24 +34,7 @@ function formatArgs(args: unknown[]): string {
 }
 
 function push(level: LogLevel, args: unknown[]): void {
-  const entry: Omit<LogEntry, 'id'> = {
-    level,
-    timestamp: Date.now(),
-    message: formatArgs(args),
-  }
-
-  entries.push({
-    id: nextId++,
-    ...entry,
-  })
-  if (entries.length > MAX_ENTRIES) {
-    entries.splice(0, entries.length - MAX_ENTRIES)
-  }
-
-  if (!persistRuntimeLog(entry)) {
-    pendingEntries.push(entry)
-    if (pendingEntries.length > MAX_ENTRIES) pendingEntries.splice(0, pendingEntries.length - MAX_ENTRIES)
-  }
+  writeRuntimeLog(level, formatArgs(args))
 }
 
 function shouldPrune(nowTime: number): boolean {
@@ -82,6 +65,30 @@ function drainPendingEntries(): void {
     } catch {
       return
     }
+  }
+}
+
+/**
+ * 直接写一条日志进缓冲与数据库，不经过 `console`。
+ *
+ * 给宿主（Electron 主进程）的 console 转发用：主进程碰不到数据库（`node:sqlite` 留在
+ * 主进程就会卡住界面，见 issue #9），它的输出经 `logs.write` 这条 RPC 送进来，落库走的是
+ * 和 `installLogCapture()` 完全一样的路径，所以两边的格式、上限、保留策略都不会漂。
+ *
+ * 时间戳由调用方给：主进程的日志发生在「服务还没起来」的时候，等它送过来已经过了一段，
+ * 用 `Date.now()` 会把横幅的时间记得比实际晚。
+ */
+export function writeRuntimeLog(level: LogLevel, message: string, timestamp = Date.now()): void {
+  const entry: Omit<LogEntry, 'id'> = { level, timestamp, message }
+
+  entries.push({ id: nextId++, ...entry })
+  if (entries.length > MAX_ENTRIES) {
+    entries.splice(0, entries.length - MAX_ENTRIES)
+  }
+
+  if (!persistRuntimeLog(entry)) {
+    pendingEntries.push(entry)
+    if (pendingEntries.length > MAX_ENTRIES) pendingEntries.splice(0, pendingEntries.length - MAX_ENTRIES)
   }
 }
 

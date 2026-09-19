@@ -6,10 +6,11 @@
  * 这里之后，测试用一对 `MessageChannel` 端口就能把整条协议跑完。
  */
 import { getSettings, onSettingsChanged } from '../database/settings-store'
+import { writeRuntimeLog } from '../management/infrastructure/log-buffer'
 import { startServer, stopServer } from '../index'
 import { getProxyServerStatus, startProxyServer, stopProxyServer } from '../proxy/runtime/server'
 import { createCaller, createRpcEndpoint, describeError, type RpcPort } from './rpc'
-import type { HostCalls, ServiceEvents } from './protocol'
+import type { HostCalls, HostLogLine, ServiceEvents } from './protocol'
 import type { SecretStore } from '@common/secret-store'
 import type { SystemProxyResolver } from '../infrastructure/network/outbound-connector'
 
@@ -55,6 +56,13 @@ export async function startServiceRuntime(options: ServiceRuntimeOptions): Promi
       await stopProxyServer()
     })
     endpoint.handle('settings.get', () => getSettings())
+
+    // 宿主 console 的落点（见协议里的 `logs.write`）。它和 `installLogCapture()` 用同一条
+    // 落库路径，所以主进程的启动横幅与服务的日志在列表里长得一模一样。
+    endpoint.handle('logs.write', params => {
+      const line = params as HostLogLine
+      writeRuntimeLog(line.level, line.message, line.timestamp)
+    })
 
     // 设置变更只推一次、由宿主分发：托盘、菜单、自动启动都在主进程，它们读不到这个
     // 进程里的模块级监听表。宿主也不必轮询——`getSettings()` 每次都把 `updatedTime`

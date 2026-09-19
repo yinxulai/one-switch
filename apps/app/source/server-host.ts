@@ -4,6 +4,7 @@ import { utilityProcess } from 'electron'
 import { ServiceHost, type ServiceHostState, type ServiceHostOptions, type ServiceProcess } from '@server/host/service-host'
 import type { Settings } from '@common/schemas'
 import type { ProxyServerStatus } from '@server/proxy/runtime/server'
+import type { ForwardedLogLine } from './log-forwarder'
 
 /**
  * 应用与核心服务之间的**唯一**接口。
@@ -151,4 +152,15 @@ export function startProxyServer(): Promise<void> {
 export function stopProxyServer(): Promise<void> {
   if (host === null) return Promise.reject(new Error('Service host is not running'))
   return host.stopProxy()
+}
+
+/**
+ * 把主进程 console 的一行交给服务进程落进 `runtime_logs`（见
+ * `packages/core/source/host/protocol.ts` 的 `logs.write`）。
+ *
+ * 服务不在时**静默丢弃**：这是旁路，丢一行日志不该让调用方（`console.log`）出错；
+ * 启动期那几行由 `log-forwarder.ts` 自己攒着补送，不走这里。
+ */
+export function forwardRuntimeLog(line: ForwardedLogLine): void {
+  host?.writeLog(line)
 }

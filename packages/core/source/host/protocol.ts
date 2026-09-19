@@ -41,11 +41,26 @@ export type ServiceCalls = {
   'settings.get': { params: undefined; result: Settings }
   /**
    * 优雅停止：释放实例锁、关数据库、停监听端口。
-   *
-   * 没有对应的日志转发方法，这是刻意的：核心服务的日志留在服务进程里，
-   * 由那边的 `installLogCapture()` 直接写 `runtime_logs`，不再往主进程倒一手。
    */
   'runtime.stop': { params: undefined; result: void }
+  /**
+   * 宿主 console 的一条输出，落进 `runtime_logs`。
+   *
+   * 方向是**宿主 → 服务**，因为数据库在服务进程这边：主进程自己写不了（`node:sqlite`
+   * 是同步 API，见 issue #9），所以它把格式化好的行送过来，由服务按与
+   * `installLogCapture()` 相同的路径落库。
+   *
+   * 代价是宿主在服务起来之前打的那几行（启动横幅）得先攒着，等服务就绪再补送——
+   * 时间戳随消息带上，所以补送不会把「横幅发生在启动最早」这件事抹掉。
+   */
+  'logs.write': { params: HostLogLine; result: void }
+}
+
+/** 宿主 console 转发过来的一行日志。`log` 与 `info` 在两侧都映射到同一级别。 */
+export interface HostLogLine {
+  level: 'info' | 'warn' | 'error' | 'debug'
+  message: string
+  timestamp: number
 }
 
 /** 服务进程反过来要宿主办的事。 */

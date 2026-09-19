@@ -74,6 +74,9 @@ const updaterApi = {
 contextBridge.exposeInMainWorld('electronAPI', {
   platform: process.platform,
   openExternal: (url: string): void => ipcRenderer.send('open-external', url),
+  // 打开数据目录。路径由主进程自己取（渲染进程送路径等于把「打开任意目录」交回给页面），
+  // 所以这里没有参数；失败时把拒绝原样透给调用方，由界面提示。
+  openDataDirectory: (): Promise<void> => ipcRenderer.invoke('open-data-directory'),
   updater: updaterApi,
 })
 

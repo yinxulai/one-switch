@@ -1498,6 +1498,17 @@ export const uiZhCN: Record<keyof typeof uiEn, MessageValue> = {
   'settings.failover.unitMilliseconds': '毫秒',
   'settings.failover.rangeError': '请输入 {min} 到 {max} 之间的整数',
 
+  // 数据目录
+  'settings.dataDirectory.title': '数据目录',
+  'settings.dataDirectory.description': '配置、数据库与凭据都保存在这个目录里，桌面端与命令行共用同一份。',
+  'settings.dataDirectory.open': '在文件管理器中打开',
+  'settings.dataDirectory.openDescription': '便于备份、迁移或手工排查。',
+  'settings.dataDirectory.openAction': '打开目录',
+  'settings.dataDirectory.openFailed': '打开数据目录失败：{message}',
+  'settings.dataDirectory.unavailable': '只有桌面端可以打开数据目录，命令行形态下请按路径自行访问。',
+  'settings.dataDirectory.storage': '数据占用',
+  'settings.dataDirectory.storageDescription': '本目录下观测数据库文件的大小，含请求日志、用量与指标；清理历史日志后会立即变小。',
+
   // 请求日志
   'settings.logs.title': '请求日志',
   'settings.logs.description': '控制请求记录范围、保留周期和历史数据清理',

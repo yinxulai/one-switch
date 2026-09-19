@@ -9,6 +9,7 @@ import { useRuntimeSettingsService } from './service'
 import { ListenConfigCard } from './components/listen-config-card'
 import { OutboundProxyCard } from './components/outbound-proxy-card'
 import { FailoverCard } from './components/failover-card'
+import { DataDirectoryCard } from './components/data-directory-card'
 import { LogRetentionCard } from './components/log-retention-card'
 import { RouteModeCard } from './components/route-mode-card'
 import { GeneralCard } from './components/general-card'
@@ -115,6 +116,7 @@ export function RuntimeSettingsPage() {
                 onContentRetentionDaysChange={value => service.updateField('contentRetentionDays', value)}
                 onPrune={service.pruneLogs}
               />
+              <DataDirectoryCard storageBytes={service.storageBytes} />
               {import.meta.env.DEV && (
                 <DevelopmentCard onSeedDevelopment={() => void service.seedDevelopmentData()} />
               )}

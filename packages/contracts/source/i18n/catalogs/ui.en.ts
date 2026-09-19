@@ -1501,6 +1501,17 @@ export const uiEn = {
   'settings.failover.unitMilliseconds': 'ms',
   'settings.failover.rangeError': 'Enter an integer between {min} and {max}',
 
+  // 数据目录
+  'settings.dataDirectory.title': 'Data directory',
+  'settings.dataDirectory.description': 'Configuration, databases and credentials all live here, shared by the desktop app and the CLI.',
+  'settings.dataDirectory.open': 'Open in file manager',
+  'settings.dataDirectory.openDescription': 'Handy for backups, migration or manual inspection.',
+  'settings.dataDirectory.openAction': 'Open directory',
+  'settings.dataDirectory.openFailed': 'Could not open the data directory: {message}',
+  'settings.dataDirectory.unavailable': 'Only the desktop app can open the data directory; in the CLI form, reach it by path.',
+  'settings.dataDirectory.storage': 'Data size',
+  'settings.dataDirectory.storageDescription': 'Size of the observability database file in this directory, covering request logs, usage and metrics; it shrinks right after history is pruned.',
+
   // 请求日志
   'settings.logs.title': 'Request Logs',
   'settings.logs.description': 'What is recorded, how long it is kept, and history cleanup',

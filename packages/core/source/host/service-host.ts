@@ -23,7 +23,7 @@
  * 带走主进程。选型过程与实测数字在 `apps/app/source/server-host.ts`。
  */
 import { createRpcEndpoint, reviveError, type RpcEndpoint, type RpcPort } from './rpc'
-import type { HostCalls, RuntimeStartResult, ServiceCalls, ServiceEvents } from './protocol'
+import type { HostCalls, HostLogLine, RuntimeStartResult, ServiceCalls, ServiceEvents } from './protocol'
 import type { Settings } from '@common/schemas'
 import type { SecretStore } from '@common/secret-store'
 import type { RuntimeConfig } from '@common/runtime-config'
@@ -228,6 +228,19 @@ export class ServiceHost {
 
   stopProxy(): Promise<void> {
     return this.call('proxy.stop')
+  }
+
+  /**
+   * 把宿主 console 的一行交给服务落库（见协议里的 `logs.write`）。
+   *
+   * 刻意**不等**结果也不抛：转发是尽力而为的旁路，通道断了、服务正在重启、
+   * 消息被当成未知方法——都只是这一行没记上，没有理由反过来让宿主的 `console.log` 变成
+   * 一个会 reject 的东西（那才是真会把主进程弄崩的做法）。
+   */
+  writeLog(line: HostLogLine): void {
+    const endpoint = this.endpoint
+    if (endpoint === null) return
+    void endpoint.call('logs.write', line).catch(() => undefined)
   }
 
   private call<TName extends keyof ServiceCalls & string>(

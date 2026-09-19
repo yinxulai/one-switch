@@ -20,6 +20,11 @@ export interface PlatformCapabilities {
   updater: UpdaterAPI | null
   /** 用系统默认方式打开外部链接。 */
   openExternal: (url: string) => void
+  /**
+   * 用系统文件管理器打开数据目录。浏览器形态没有这个概念（目录在那台机器上，
+   * 不在这台机器上），所以是 `null`；界面照常渲染，只是按钮不可用。
+   */
+  openDataDirectory: (() => Promise<void>) | null
 }
 
 let cached: PlatformCapabilities | null = null
@@ -38,6 +43,10 @@ function detectCapabilities(): PlatformCapabilities {
       // `?? null`：老版本的 preload 可能没暴露 updater，缺能力不代表崩。
       updater: electronApi.updater ?? null,
       openExternal: url => electronApi.openExternal(url),
+      // 同理：preload 与渲染层是两份产物，版本能对不上。
+      openDataDirectory: electronApi.openDataDirectory
+        ? () => electronApi.openDataDirectory()
+        : null,
     }
   }
   return {
@@ -47,6 +56,7 @@ function detectCapabilities(): PlatformCapabilities {
     openExternal: url => {
       if (typeof window !== 'undefined') window.open(url, '_blank', 'noopener,noreferrer')
     },
+    openDataDirectory: null,
   }
 }
 

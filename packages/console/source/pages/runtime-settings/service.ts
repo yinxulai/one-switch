@@ -2,12 +2,14 @@ import { useDevelopmentSeed } from './hooks/use-development-seed'
 import { useRequestLogRetention } from './hooks/use-request-log-retention'
 import { useRuntimeDataReload } from './hooks/use-runtime-data-reload'
 import { useSettingsForm } from './hooks/use-settings-form'
+import { useStorageUsage } from './hooks/use-storage-usage'
 
 export function useRuntimeSettingsService() {
   const form = useSettingsForm()
   const retention = useRequestLogRetention()
   const reload = useRuntimeDataReload()
   const development = useDevelopmentSeed(reload)
+  const storageBytes = useStorageUsage()
 
   return {
     settings: form.settings,
@@ -20,6 +22,7 @@ export function useRuntimeSettingsService() {
     resetSettings: form.resetSettings,
     saveSettings: form.saveSettings,
     pruneLogs: retention.pruneLogs,
+    storageBytes,
     reload,
     seedDevelopmentData: development.seedDevelopmentData,
   }

@@ -8,6 +8,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { FormRow } from '@/components/form-kit'
 import { useToast } from '@/components/ui/toast'
 import { useLocale, useTranslation } from '@/i18n/provider'
+import { formatBytes } from '@/lib/format-bytes'
 import { getPlatformCapabilities } from '@/platform/capabilities'
 
 type StatusBadgeProps = {
@@ -39,13 +40,6 @@ function isSameState(a: UpdateState, b: UpdateState): boolean {
   } catch {
     return false
   }
-}
-
-function formatBytes(bytes: number): string {
-  if (!bytes) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(1024))
-  return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`
 }
 
 /** 日期按当前界面语言格式化，不再写死 zh-CN。 */

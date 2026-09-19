@@ -2,7 +2,8 @@ import { app, BrowserWindow, Menu, nativeImage, ipcMain, dialog, session, shell 
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { startServer, onServerStateChanged, stopServer } from './server-host'
+import { startServer, onServerStateChanged, stopServer, forwardRuntimeLog } from './server-host'
+import { installLogForwarding, setLogSink } from './log-forwarder'
 import { listCurrentDatabaseFileNames } from '@common/database-file'
 import { createRuntimeConfig } from '@common/runtime-config'
 import { getRuntimeProfile } from '@common/runtime-profile'
@@ -118,6 +119,23 @@ function registerRuntimeConfigIpc(): void {
   })
 }
 
+/**
+ * 用系统文件管理器打开数据目录（`PlatformCapabilities.openDataDirectory`）。
+ *
+ * 目录**不带参数**、由这里自己取 `app.getPath('userData')`：渲染进程送过来的路径不能直接
+ * 交给 `shell.openPath`，那等于把「打开任意目录」这个能力交回给了页面。这也是唯一正确的
+ * 来源——数据目录就落在 userData 上（见文件顶部的 `app.setPath`）。
+ *
+ * 失败用 reject 回去而**不是**吞掉：调用方要能告诉用户「没打开」，否则按钮看起来像是点了没反应。
+ */
+function registerOpenDataDirectoryIpc(): void {
+  ipcMain.handle('open-data-directory', async () => {
+    const target = app.getPath('userData')
+    const failure = await shell.openPath(target)
+    if (failure) throw new Error(failure)
+  })
+}
+
 // 这一层**不是**数据目录那把锁，而是操作系统级的「应用实例」：它把第二次启动变成一个
 // 「聚焦已有窗口」的事件（见 `second-instance` / `focusExistingInstance`），并且必须在
 // 任何窗口存在之前就判定。数据目录的互斥是 core 的事（`runtime/instance-lock.ts`），
@@ -128,6 +146,7 @@ if (isPrimaryInstance) {
   registerUpdaterIpc()
   registerExternalLinkIpc()
   registerRuntimeConfigIpc()
+  registerOpenDataDirectoryIpc()
 } else {
   console.info('[osw] another instance already owns this profile; exiting')
 }
@@ -380,10 +399,10 @@ function focusExistingInstance(): void {
 async function bootstrap(): Promise<void> {
   await app.whenReady()
 
-  // 这里**不**再安装日志拦截。核心服务的日志留在服务进程里（那边的
-  // `installLogCapture()` 直接写 `runtime_logs`），主进程只输出到 stdout。
-  // 把主进程的 console 也倒进运行日志页面过时了：那里现在是「服务在干什么」的窗口，
-  // 混进窗口管理、托盘、更新检查的噪声之后反而看不清服务本身。
+  // 先接管 console 再输出任何东西：横幅是启动期唯一一组「服务之外」的信息
+  // （Electron 版本、数据目录、进程号），漏掉它就等于这次转发没做。
+  // 这时服务进程还没起来，所以 `log-forwarder` 先把行攒着，等服务就绪再补送。
+  installLogForwarding()
   logStartupBanner()
 
   // 服务进程崩溃重启的预算也会用尽。到那一步应用已经没什么可做的了：
@@ -413,6 +432,10 @@ async function bootstrap(): Promise<void> {
     app.quit()
     return
   }
+
+  // 服务起来了，把 console 的落点接上：`installLogForwarding()` 之后攒下的行
+  // （横幅及启动期的报错）在这里一次性补送，之后逐行实时过去。
+  setLogSink(forwardRuntimeLog)
 
   // 托盘 / 应用菜单 / 原生对话框都在主进程，语言真相源仍是 settings.language；
   // 数据库还读不出来时退回 app.getLocale()。必须在服务端启动后同步。
