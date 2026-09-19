@@ -235,3 +235,13 @@ pnpm release:linux   # 构建 Linux arm64 / x64 安装包
 [![贡献者](https://contrib.rocks/image?repo=yinxulai/one-switch)](https://github.com/yinxulai/one-switch/graphs/contributors)
 
 感谢每一位为 One Switch 出过力的人 —— 写代码、提 Issue、提想法、修文档，都算。
+
+---
+
+## 许可
+
+One Switch 采用 [PolyForm Noncommercial License 1.0.0](./LICENSE) 发布。
+
+- **个人及非商业用途免费。** 研究、学习、业余项目，以及慈善、教育、公共科研、公共安全与卫生、环保和政府机构的使用，都属于允许用途。
+- **不可商用。** 如需商业使用，请联系作者另行取得授权。
+- **许可证必须随代码一起保留。** 任何拿到副本的人（无论是否修改）都必须同时拿到许可证全文和 [`LICENSE`](./LICENSE) 里的 `Required Notice:` 行；不得以其他协议对本项目再授权或转授权。

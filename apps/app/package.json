@@ -2,6 +2,7 @@
   "name": "@one-switch/app",
   "version": "1.1.0-beta.14",
   "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
   "type": "module",
   "description": "桌面宿主：Electron 主进程、preload 与核心服务进程的构建入口，只做宿主适配，不写业务逻辑。",
   "author": "yinxulai <yinxulai@hotmail.com>",
