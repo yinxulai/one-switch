@@ -12,7 +12,7 @@ import type { uiEn } from './ui.en'
 
 export const uiZhCN: Record<keyof typeof uiEn, MessageValue> = {
   // ========== 应用 ==========
-  'app.tagline': '本地 ai 网关',
+  'app.tagline': 'AI 路由+故障转移',
   'app.windowTitle': 'OSW',
 
   // ========== 导航 ==========

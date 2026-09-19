@@ -95,11 +95,10 @@ export function App() {
               <button
                 key={l.id}
                 onClick={() => void i18n.changeLanguage(l.id)}
-                className={`rounded-md px-2.5 py-1 text-sm transition-colors ${
-                  l.id === lang
+                className={`rounded-md px-2.5 py-1 text-sm transition-colors ${l.id === lang
                     ? 'bg-[#f3f4f8] text-[#0b0d12]'
                     : 'text-[rgb(200_206_218/0.7)] hover:text-[#f3f4f8]'
-                }`}
+                  }`}
               >
                 {l.label}
               </button>
@@ -111,10 +110,7 @@ export function App() {
       <main className="mx-auto max-w-6xl px-6">
         {/* Hero：全站第一层级，只有它允许居中的大排版。 */}
         <section className="flex flex-col items-center pt-20 pb-24 text-center sm:pt-28">
-          <div className={`rounded-2xl border ${BORDER} bg-[rgb(255_255_255/0.03)] p-4`}>
-            <img src="/icon.svg" alt="" aria-hidden="true" className="h-14 w-14 sm:h-16 sm:w-16" />
-          </div>
-
+          <img src="/icon.svg" alt="" aria-hidden="true" className="h-16 w-16 sm:h-16 sm:w-16" />
           <h1 className="mt-8 max-w-4xl text-balance text-4xl font-semibold leading-[1.2] tracking-tight sm:text-5xl lg:text-6xl">
             {t('hero.appName', 'OSW')}
           </h1>
@@ -146,11 +142,10 @@ export function App() {
             return (
               <article
                 key={f.key}
-                className={`group flex flex-col rounded-xl border ${BORDER} transition-colors duration-200 hover:border-[rgb(200_206_218/0.3)] ${
-                  primary
+                className={`group flex flex-col rounded-xl border ${BORDER} transition-colors duration-200 hover:border-[rgb(200_206_218/0.3)] ${primary
                     ? 'bg-[rgb(255_255_255/0.03)] p-7 sm:col-span-6'
                     : 'bg-[rgb(255_255_255/0.015)] p-5 sm:col-span-6 lg:col-span-3'
-                }`}
+                  }`}
               >
                 <span
                   className={

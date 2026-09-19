@@ -10,7 +10,7 @@
 
 export const uiEn = {
   // ========== 应用 ==========
-  'app.tagline': 'local ai gateway',
+  'app.tagline': 'ai routing + failover',
   'app.windowTitle': 'OSW',
 
   // ========== 导航 ==========
