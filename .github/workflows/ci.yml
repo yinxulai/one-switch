@@ -74,33 +74,12 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  build:
-    name: Build application
-    needs: [typecheck, test]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v5
-
-      - name: Set up environment
-        uses: ./.github/actions/setup
-
-      # `pnpm build` 就是 `turbo run build`：按包依赖顺序构建。
-      # 这是全仓唯一会写 `.turbo` 的 job，所以缓存开关保持默认开启：
-      # 上游没变的包会直接命中缓存，`Time: 34ms >>> FULL TURBO` 是常态。
-      # 注意缓存来自本 job 的历史运行，不是同一轮里 typecheck / test 的结果
-      # ——那两个 job 跑的是裸 tsc 与 vitest，根本不产生 turbo 任务记录。
-      - name: Build application
-        run: pnpm build
-
-      - name: Upload build output
-        uses: actions/upload-artifact@v6
-        with:
-          name: osw-build
-          # 渲染层与宿主各自构建到自己的包目录里，仓库根不再有 `dist/`。
-          path: |
-            packages/console/dist/
-            apps/app/dist/
-            release/**/*.AppImage
-          if-no-files-found: error
-          retention-days: 7
+  # 这里**没有** build job，是有意的。
+  #
+  # 它曾经存在过（`needs: [typecheck, test]`，跑 `pnpm build` 后上传产物），代价是每次 push
+  # 都要在 ubuntu 上把渲染层与宿主整个打一遍，换来的只是一份没人下载的 artifact。
+  # 而真正需要验证打包能不能过的地方本来就有两个，且都比它准：
+  #   - Worker：Cloudflare Workers Builds 里的 build 命令（`pnpm run build`，见
+  #     `apps/apis/wrangler.toml` 的头部注释）——参数与线上部署完全一致；
+  #   - 桌面端：`release.yml`，release 时在三个平台上跑真实打包，那才是产物定义。
+  # typecheck / lint / test 继续覆盖「代码是不是对的」，构建由上面两处覆盖「产物是不是出得来」。

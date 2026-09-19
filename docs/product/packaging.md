@@ -364,8 +364,10 @@ CI（`.github/workflows/ci.yml`）与发布（`release.yml`）共用 `.github/ac
 
 | 缓存 | 路径 | 开关 | 实际在用的 job |
 | --- | --- | --- | --- |
-| Turbo 任务缓存 | `.turbo` | `turbo-cache`（默认开） | 只有 `Build` 会写：它是唯一跑 `turbo run build` 的 job，其余 job 的 typecheck / lint / test 由包内脚本直跑 |
+| Turbo 任务缓存 | `.turbo` | `turbo-cache`（默认开） | 只有 `release.yml` 的矩阵构建会写：它是唯一跑 `turbo run build` 的地方（`pnpm release:*`），CI 的 typecheck / lint / test 由包内脚本直跑 |
 | ESLint 缓存 / tsc 增量信息 | `node_modules/.cache` | `tool-cache`（默认关） | `Lint`（`eslint . --cache`）与 `Typecheck`（`tsc --incremental`） |
+
+`ci.yml` **没有 build job**：每次 push 把渲染层与宿主整个打一遍，换来的只是一份没人下载的 artifact，而「产物到底出不出得来」真正由两处覆盖——Worker 是 Cloudflare Workers Builds 里的 build 命令（与线上部署同参数），桌面端是 `release.yml` 的矩阵打包（那才是产物定义）。CI 只负责「代码是不是对的」。
 
 缓存一个命令根本不会创建的目录比不缓存更糟：`actions/cache` 在保存阶段报 `Path Validation Error`，job 白跑一趟，还占着日志让人以为缓存生效了——`typecheck` / `lint` / `test` 三个 job 的 `.turbo` 就属于这种情况，因此显式关掉。另一点是收益只出现在第二次运行（首次要写盘，约 15 s），所以 key 不能高频变化，否则等于每次都在付写入成本。本地冷热对照（同机、同一份工作树）：`tsc -p packages/toolkit/tsconfig.check.json` 16.7 s → 6.9 s；`eslint .` 6.1 s → 2.5 s（`pnpm lint` 整体只快一点，守卫脚本与 turbo/pnpm 启动占了大头）。electron-builder 的 Electron 二进制缓存（Windows 的 `%LOCALAPPDATA%\electron\Cache`、macOS 的 `~/Library/Caches/electron*`，每系统约 1.3 GB）**没有**纳入本次改动：Electron 压缩包从 CDN 下载是秒级的，而 Windows 87 s / macOS 91 s 的打包耗时主要在解压与封装本身，为它占掉一个可观份额的 10 GB 缓存配额不划算（未实测，只按量级判断）。
 
