@@ -3,13 +3,14 @@ import { z } from 'zod'
 import type { ManagementHandler } from '../../core/response'
 import { sendError, sendSuccess } from '../../core/response'
 import type { RequestAttempt, RequestLog, RequestLogEntry } from '@common/schemas'
-import { countRequestLogs, getRequestLog, listAttemptContents, listAttemptsByRequest, listAttemptsByRequests, listRequestContents, listRequestLogs, pruneRequestContentsBefore, pruneRequestLogsBefore } from '@server/database/request-log-store'
+import { countRequestLogs, getRequestLog, listAttemptContentSummaries, listAttemptContents, listAttemptsByRequest, listAttemptsByRequests, listRequestContentSummaries, listRequestContents, listRequestLogs, pruneRequestContentsBefore, pruneRequestLogsBefore } from '@server/database/request-log-store'
 import { listRequestRewriteRulesByIds } from '@server/database/request-rewrite-rule-store'
 import { HttpRouter } from '@server/http-router'
 
 export const requestLogRoutes = new HttpRouter<ManagementHandler>()
   .post('/api/request-log/list', handleListRequestLogs)
   .post('/api/request-log/detail', handleRequestLogDetail)
+  .post('/api/request-log/bodies', handleRequestLogBodies)
   .post('/api/request-log/prune', handlePruneRequestLogs)
 
 const ListRequestLogsSchema = z.object({
@@ -34,25 +35,45 @@ const PruneRequestLogsSchema = z.object({
   requestLogRetentionDays: z.number().int().nonnegative().optional(),
   contentRetentionDays: z.number().int().nonnegative().optional(),
 })
-const RequestLogDetailSchema = z.object({ id: z.string().trim().min(1) })
+const RequestLogIdSchema = z.object({ id: z.string().trim().min(1) })
 
 async function handleRequestLogDetail(_req: IncomingMessage, res: ServerResponse, body: unknown): Promise<void> {
-  const { id } = RequestLogDetailSchema.parse(body ?? {})
+  const { id } = RequestLogIdSchema.parse(body ?? {})
   const log = await getRequestLog(id)
   if (!log) {
     sendError(res, 'RESOURCE_NOT_FOUND', `Request log not found: ${id}`, 404, { requestId: id })
     return
   }
+  // 只取正文摘要：详情在请求还挂着时会被界面每 1.5s 重取一次，正文由
+  // `/api/request-log/bodies` 按需提供。
   const [attempts, contents, attemptContents] = await Promise.all([
     listAttemptsByRequest(id),
-    listRequestContents(id),
-    listAttemptContents(id),
+    listRequestContentSummaries(id),
+    listAttemptContentSummaries(id),
   ])
   const entry = mapRequestLogEntry(log, attempts)
   // 改写规则归属于尝试视角：规则是按 providerModel 匹配的，命中的是某次尝试。
   const ruleIds = [...new Set(entry.attempts.flatMap(attempt => [...attempt.requestRewriteRuleIds, ...attempt.responseRewriteRuleIds]))]
   const requestRewriteRules = (await listRequestRewriteRulesByIds(ruleIds)).map(rule => ({ id: rule.id, name: rule.name }))
   sendSuccess(res, { ...entry, contents, attemptContents, requestRewriteRules })
+}
+
+/**
+ * 按需取回一个请求的全部正文。
+ *
+ * 单独的接口而不是详情的一个参数：正文是库里最大的列（单条可达上 MB）且解压是同步的，
+ * 界面只在用户真的点开正文面板时才需要它。并入详情的话，任何一次详情轮询都会把它
+ * 一起带上（见 issue #23）。
+ *
+ * 粒度是整个请求：一次要看的几个视角一并返回，界面切 attempt 不必再往返一次。
+ */
+async function handleRequestLogBodies(_req: IncomingMessage, res: ServerResponse, body: unknown): Promise<void> {
+  const { id } = RequestLogIdSchema.parse(body ?? {})
+  const [contents, attemptContents] = await Promise.all([
+    listRequestContents(id),
+    listAttemptContents(id),
+  ])
+  sendSuccess(res, { contents, attemptContents })
 }
 
 async function handlePruneRequestLogs(_req: IncomingMessage, res: ServerResponse, body: unknown): Promise<void> {

@@ -192,10 +192,87 @@ describe('request log management', () => {
           expect.objectContaining({ upstreamTransport: 'http', requestRewriteRuleIds: [rule.id, 'rule_missing'], responseRewriteRuleIds: ['rule_response'] }),
         ],
         contents: [expect.objectContaining({ captureStatus: 'captured', responseHeaders: '{"content-type":"application/json","x-client":"1"}' })],
-        attemptContents: [expect.objectContaining({ attemptId: attempt.id, responseBody: '{"ok":true}' })],
+        attemptContents: [expect.objectContaining({ attemptId: attempt.id, responseStatus: 200 })],
         requestRewriteRules: [{ id: rule.id, name: '请求日志规则名称' }],
       }),
     })
+    // 详情只带摘要：正文是库里最大的列，而详情在请求还挂着时会被界面反复重取，
+    // 因此列清单在这里钉死——多回一列正文就等于把轮询的代价又加回去。
+    const detail = (responseData(res) as { data: { contents: Record<string, unknown>[]; attemptContents: Record<string, unknown>[] } }).data
+    expect(Object.keys(detail.contents[0]).sort()).toEqual([
+      'captureStatus', 'createdTime', 'id', 'requestHeaders', 'requestId', 'requestMethod', 'requestPath', 'responseHeaders', 'responseStatus', 'updatedTime',
+    ])
+    expect(Object.keys(detail.attemptContents[0]).sort()).toEqual([
+      'attemptId', 'captureStatus', 'createdTime', 'id', 'requestHeaders', 'responseHeaders', 'responseStatus', 'updatedTime',
+    ])
+  })
+
+  it('returns the captured bodies on demand', async () => {
+    const log = await createRequestLog({
+      id: 'req_bodies',
+      logicalModelId: 'detail-model',
+      clientProtocol: 'openai-responses',
+      transport: 'http',
+      status: 'success',
+      totalDurationMilliseconds: 10,
+    })
+    const attempt = await createAttemptOrThrow({
+      requestId: log.id,
+      providerId: 'prov_bodies',
+      providerName: 'Provider Bodies',
+      providerModelId: 'model_bodies',
+      providerModelName: 'model-bodies',
+      upstreamProtocol: 'openai-responses',
+      upstreamRequestId: null,
+      url: 'https://example.com/v1/responses',
+      httpStatus: 200,
+      retryable: false,
+      upstreamTransport: 'http',
+      attemptIndex: 0,
+      status: 'success',
+      durationMilliseconds: 6,
+    })
+    await createRequestContent({
+      requestId: log.id,
+      captureStatus: 'captured',
+      requestMethod: 'POST',
+      requestPath: '/v1/responses',
+      requestHeaders: '{"authorization":"[REDACTED]"}',
+      requestBody: '{"model":"detail-model"}',
+      responseStatus: 200,
+      responseHeaders: '{"content-type":"application/json"}',
+      responseBody: '{"ok":true}',
+    })
+    await createAttemptContent({
+      attemptId: attempt.id,
+      captureStatus: 'captured',
+      requestHeaders: '{"x-upstream":"1"}',
+      requestBody: '{"model":"detail-model"}',
+      responseStatus: 200,
+      responseHeaders: '{"content-type":"application/json"}',
+      responseBody: '{"ok":true}',
+    })
+    const res = mockResponse()
+
+    await requestLogRoutes.invoke('/api/request-log/bodies', res, { id: log.id })
+
+    expect(res.statusCode).toBe(200)
+    expect(responseData(res)).toEqual({
+      success: true,
+      data: {
+        contents: [expect.objectContaining({ requestBody: '{"model":"detail-model"}', responseBody: '{"ok":true}' })],
+        attemptContents: [expect.objectContaining({ attemptId: attempt.id, requestBody: '{"model":"detail-model"}', responseBody: '{"ok":true}' })],
+      },
+    })
+  })
+
+  it('returns empty bodies for a request whose contents were pruned', async () => {
+    const res = mockResponse()
+
+    await requestLogRoutes.invoke('/api/request-log/bodies', res, { id: 'req_missing' })
+
+    expect(res.statusCode).toBe(200)
+    expect(responseData(res)).toEqual({ success: true, data: { contents: [], attemptContents: [] } })
   })
 
   it('returns not found for a missing request log', async () => {

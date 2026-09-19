@@ -89,13 +89,31 @@ interface RenderInput {
   client?: Partial<RequestContent>
   upstream?: Partial<AttemptContent>
   attempt?: Partial<RequestLogEntryAttempt>
+  /** 正文还在取：摘要已经到了，正文没到。 */
+  bodiesLoading?: boolean
+}
+
+/**
+ * 摘要就是同一行去掉正文两列——接口上就是这么定义的，这里照此构造，
+ * 免得两边各写一份字段清单后悄悄漂移。
+ */
+function summaryOf<T extends { requestBody: string | null; responseBody: string | null }>(content: T): Omit<T, 'requestBody' | 'responseBody'> {
+  const summary: Record<string, unknown> = { ...content }
+  delete summary.requestBody
+  delete summary.responseBody
+  return summary as Omit<T, 'requestBody' | 'responseBody'>
 }
 
 function renderSheet(input: RenderInput = {}) {
+  const client = clientContentOf(input.client)
+  const upstream = attemptContentOf(input.upstream)
   return render(
     <RequestContentsSheet
-      contents={[clientContentOf(input.client)]}
-      attemptContents={[attemptContentOf(input.upstream)]}
+      contents={[summaryOf(client)]}
+      attemptContents={[summaryOf(upstream)]}
+      bodies={input.bodiesLoading ? null : { contents: [client], attemptContents: [upstream] }}
+      bodiesLoading={input.bodiesLoading ?? false}
+      bodiesError={null}
       attempts={[attemptOf(input.attempt)]}
       requestRewriteRules={[]}
       clientProtocol="openai-responses"
@@ -107,6 +125,27 @@ function renderSheet(input: RenderInput = {}) {
     { wrapper: Wrapper },
   )
 }
+
+describe('deferred bodies', () => {
+  beforeEach(() => {
+    useLanguageStore.setState({ preference: 'en' })
+  })
+
+  it('keeps the panel in its loading state until the bodies arrive, instead of drawing an empty one', () => {
+    renderSheet({ bodiesLoading: true })
+
+    expect(screen.getByText('Loading contents')).toBeTruthy()
+    expect(screen.queryByText('No bodies to show: this request was pruned by the retention policy, or bodies were never captured. Attempts, usage and metrics are kept.')).toBeNull()
+  })
+
+  it('draws every stage once the bodies arrive', () => {
+    renderSheet()
+
+    expect(screen.queryByText('Loading contents')).toBeNull()
+    expect(screen.getByText('Original client request')).toBeTruthy()
+    expect(screen.getByText('Request sent to the real channel')).toBeTruthy()
+  })
+})
 
 describe('capture status hint', () => {
   beforeEach(() => {

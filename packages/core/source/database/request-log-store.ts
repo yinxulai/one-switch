@@ -1,6 +1,7 @@
 import { and, desc, eq, gte, inArray, lt, sql } from 'drizzle-orm'
 import type {
   AttemptContent,
+  AttemptContentSummary,
   AttemptStatus,
   Protocol,
   RawUsage,
@@ -8,6 +9,7 @@ import type {
   RequestAttribute,
   RequestContent,
   RequestContentCaptureStatus,
+  RequestContentSummary,
   RequestLog,
   RequestLogUpdate,
   RequestStatus,
@@ -324,6 +326,49 @@ export async function listRequestContents(requestId: string): Promise<RequestCon
   return getDataDb().select().from(requestContents).where(eq(requestContents.requestId, requestId)).orderBy(requestContents.createdTime).all().map(mapRequestContent)
 }
 
+// 摘要 = 整行去掉正文两列。列清单写成常量而不是 `select()` 全取再删字段：
+// 解压发生在 drizzle 的 `customType.fromDriver` 里，只有**不 select** 才真的省掉
+// `inflateSync`。写成全取再丢字段只是把解压白做一遍。
+const requestContentSummaryColumns = {
+  id: requestContents.id,
+  requestId: requestContents.requestId,
+  captureStatus: requestContents.captureStatus,
+  requestMethod: requestContents.requestMethod,
+  requestPath: requestContents.requestPath,
+  requestHeaders: requestContents.requestHeaders,
+  responseStatus: requestContents.responseStatus,
+  responseHeaders: requestContents.responseHeaders,
+  createdTime: requestContents.createdTime,
+  updatedTime: requestContents.updatedTime,
+}
+
+const attemptContentSummaryColumns = {
+  id: attemptContents.id,
+  attemptId: attemptContents.attemptId,
+  captureStatus: attemptContents.captureStatus,
+  requestHeaders: attemptContents.requestHeaders,
+  responseStatus: attemptContents.responseStatus,
+  responseHeaders: attemptContents.responseHeaders,
+  createdTime: attemptContents.createdTime,
+  updatedTime: attemptContents.updatedTime,
+}
+
+/**
+ * 按请求列出客户端视角正文的摘要（不含正文本身）。
+ *
+ * 详情接口走这条路径：详情是唯一会被界面反复重取的接口（请求还是 `pending` 时
+ * 每 1.5s 一次），正文又是最大的列，因此默认不取。
+ */
+export async function listRequestContentSummaries(requestId: string): Promise<RequestContentSummary[]> {
+  return getDataDb()
+    .select(requestContentSummaryColumns)
+    .from(requestContents)
+    .where(eq(requestContents.requestId, requestId))
+    .orderBy(requestContents.createdTime)
+    .all()
+    .map(row => ({ ...row, captureStatus: parseCaptureStatus(row.captureStatus) }))
+}
+
 type CreateAttemptContentInput = Omit<AttemptContent, 'id' | 'createdTime' | 'updatedTime' | 'responseStatus' | 'responseHeaders' | 'responseBody'> & Partial<Pick<AttemptContent, 'responseStatus' | 'responseHeaders' | 'responseBody'>>
 type UpdateAttemptContentInput = Partial<Pick<AttemptContent, 'captureStatus' | 'responseStatus' | 'responseHeaders' | 'responseBody'>>
 
@@ -359,6 +404,18 @@ export async function listAttemptContents(requestId: string): Promise<AttemptCon
     .orderBy(attemptContents.createdTime)
     .all()
     .map(row => mapAttemptContent(row.content))
+}
+
+/** {@link listAttemptContents} 的摘要版：同样的关联，但不取正文两列（理由见 `listRequestContentSummaries`）。 */
+export async function listAttemptContentSummaries(requestId: string): Promise<AttemptContentSummary[]> {
+  return getDataDb()
+    .select(attemptContentSummaryColumns)
+    .from(attemptContents)
+    .innerJoin(requestAttempts, eq(attemptContents.attemptId, requestAttempts.id))
+    .where(eq(requestAttempts.requestId, requestId))
+    .orderBy(attemptContents.createdTime)
+    .all()
+    .map(row => ({ ...row, captureStatus: parseCaptureStatus(row.captureStatus) }))
 }
 
 export async function listAttemptsByRequest(requestId: string): Promise<RequestAttempt[]> {

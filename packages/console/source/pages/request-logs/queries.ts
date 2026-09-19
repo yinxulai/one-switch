@@ -1,6 +1,6 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { requestLogApi } from '@/api/observability'
-import type { RequestLogDetail, RequestLogEntry } from '@common/schemas'
+import type { RequestLogBodies, RequestLogDetail, RequestLogEntry } from '@common/schemas'
 import type { RequestLogFilter } from './service'
 
 export const PAGE_SIZE = 20
@@ -47,6 +47,41 @@ export function useRequestLogDetailQuery(id: string | null) {
     enabled: Boolean(id),
     staleTime: 1_000,
     refetchInterval: query => query.state.data?.status === 'pending' ? 1_500 : false,
+  })
+}
+
+export const requestLogBodiesQueryKey = (id: string) => ['request-log-bodies', id]
+
+async function fetchBodies(id: string): Promise<RequestLogBodies> {
+  const result = await requestLogApi.bodies(id)
+  if (!result.success) throw new Error(result.errorMessage)
+  return result.data
+}
+
+/**
+ * 取回某个请求的全部正文，返回值同时进缓存，供后续直接命中。
+ *
+ * 「复制 cURL」要知道请求体，而它不进正文面板；点它同样是在要正文，所以就地取一次，
+ * 而不是让按钮一直灰着——见 `request-log-detail-row.tsx`。
+ */
+export async function fetchRequestLogBodies(id: string, queryClient: QueryClient): Promise<RequestLogBodies> {
+  return queryClient.fetchQuery({ queryKey: requestLogBodiesQueryKey(id), queryFn: () => fetchBodies(id) })
+}
+
+/**
+ * 按需取正文——`id` 为空表示用户还没点开正文面板，此时一次都不请求。
+ *
+ * 正文是库里最大的列，而详情在请求还挂着时每 1.5s 轮询一次；正文因此从详情里剥离出来，
+ * 只在用户真的要看的时候取（见 issue #23）。`poll` 用来在流式回包期间把它保持新鲜，
+ * 请求一旦落定就停：那时正文已经写完，再取也只是重复解压同一份数据。
+ */
+export function useRequestLogBodiesQuery(id: string | null, poll = false) {
+  return useQuery<RequestLogBodies>({
+    queryKey: requestLogBodiesQueryKey(id ?? ''),
+    queryFn: () => fetchBodies(id!),
+    enabled: Boolean(id),
+    staleTime: 1_000,
+    refetchInterval: poll ? 1_500 : false,
   })
 }
 

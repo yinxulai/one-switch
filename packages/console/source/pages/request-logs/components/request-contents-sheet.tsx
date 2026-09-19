@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { AlertCircle, Check, ChevronDown, ChevronUp, Copy, LoaderCircle, Search } from 'lucide-react'
-import type { AppliedRequestRewriteRule, AttemptContent, RequestContent, RequestLogEntryAttempt } from '@common/schemas'
+import type { AppliedRequestRewriteRule, AttemptContent, AttemptContentSummary, RequestContent, RequestContentSummary, RequestLogBodies, RequestLogEntryAttempt } from '@common/schemas'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
@@ -76,10 +76,15 @@ interface AttemptErrorProps {
 }
 
 interface RequestContentsSheetProps {
-  /** 客户端视角正文；每个请求至多一行。 */
-  contents: RequestContent[] | null
-  /** 上游视角正文；每次尝试至多一行。 */
-  attemptContents: AttemptContent[] | null
+  /** 客户端视角正文摘要；每个请求至多一行。只有报文身份，没有正文。 */
+  contents: RequestContentSummary[] | null
+  /** 上游视角正文摘要；每次尝试至多一行。只有报文身份，没有正文。 */
+  attemptContents: AttemptContentSummary[] | null
+  /** 按需取回的正文；用户没点开面板、或还在路上时为 `null`。 */
+  bodies: RequestLogBodies | null
+  /** 正文还在取。摘要可能早就到了，但面板一次只画一种状态，避免先闪一版空版面。 */
+  bodiesLoading: boolean
+  bodiesError: string | null
   attempts: RequestLogEntryAttempt[]
   requestRewriteRules: AppliedRequestRewriteRule[] | null
   /** 客户端协议；`null` 表示该请求连 API 路径都未识别。 */
@@ -504,9 +509,24 @@ function buildRequestStages(t: AppTranslator, input: RequestStageBuilderInput): 
 export function RequestContentsSheet(props: RequestContentsSheetProps) {
   const t = useTranslation()
   const selectedAttempt = props.attempts.find(attempt => attempt.id === props.selectedAttemptId) ?? null
-  const attemptContent = props.attemptContents?.find(content => content.attemptId === props.selectedAttemptId) ?? null
+  // 摘要在详情里（随行一起到达），正文在 `bodies` 里（点开面板才取），两者按 `id`
+  // 对齐后才是渲染需要的一整行。对齐失败只可能是「正文还没取到」，落 `null`；
+  // 那时整个面板被加载态挡着，不会把「还没取」画成「没采到」。
+  const attemptSummary = props.attemptContents?.find(content => content.attemptId === props.selectedAttemptId) ?? null
+  const attemptBody = props.bodies?.attemptContents.find(content => content.id === attemptSummary?.id) ?? null
+  const attemptContent: AttemptContent | null = attemptSummary === null ? null : {
+    ...attemptSummary,
+    requestBody: attemptBody?.requestBody ?? null,
+    responseBody: attemptBody?.responseBody ?? null,
+  }
   // 客户端视角每个请求只有一行，不需要按 attemptId 筛选。
-  const clientContent = props.contents?.[0] ?? null
+  const clientSummary = props.contents?.[0] ?? null
+  const clientBody = props.bodies?.contents.find(content => content.id === clientSummary?.id) ?? null
+  const clientContent: RequestContent | null = clientSummary === null ? null : {
+    ...clientSummary,
+    requestBody: clientBody?.requestBody ?? null,
+    responseBody: clientBody?.responseBody ?? null,
+  }
   const [search, setSearch] = React.useState('')
   const [sectionStates, setSectionStates] = React.useState<Record<string, boolean>>({})
   const [activeMatchIndex, setActiveMatchIndex] = React.useState(0)
@@ -588,18 +608,19 @@ export function RequestContentsSheet(props: RequestContentsSheetProps) {
   const bodiesMissing = sections.length === 0
 
   let state: React.ReactNode
-  if (props.loading) {
+  const error = props.error ?? props.bodiesError
+  if (props.loading || props.bodiesLoading) {
     state = (
       <div className="flex items-center justify-center gap-2 py-8 system-sm-regular text-text-tertiary">
         <LoaderCircle size={15} aria-hidden className="animate-spin" />
         {t('requestLogs.contents.loading')}
       </div>
     )
-  } else if (props.error) {
+  } else if (error) {
     state = (
       <div className="flex items-center justify-center gap-2 py-8 system-sm-regular text-text-destructive">
         <AlertCircle size={15} aria-hidden />
-        {props.error}
+        {error}
       </div>
     )
   } else if (selectedAttempt || clientContent) {

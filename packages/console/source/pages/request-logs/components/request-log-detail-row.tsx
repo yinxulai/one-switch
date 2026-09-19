@@ -1,10 +1,11 @@
 import * as React from 'react'
-import { Braces, Check, ChevronRight, Copy, Route, ScrollText } from 'lucide-react'
+import { Braces, Check, ChevronRight, Copy, LoaderCircle, Route, ScrollText } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { resolveProxyOrigin } from '@common/proxy-origin'
 import { formatMilliseconds, formatOutputSpeed, requestOutputTokensPerSecond, servingAttemptOf } from '@common/metrics'
 import type {
-  RequestContent,
+  RequestContentSummary,
   RequestLogDetail,
   RequestLogEntry,
   RequestLogEntryAttempt,
@@ -17,6 +18,7 @@ import { useProxyStatus } from '@/features/proxy/hooks'
 import { useLocale, useTranslation, type AppTranslator } from '@/i18n/provider'
 import { cn } from '@/lib/utils'
 import { routePaths } from '@/routes'
+import { fetchRequestLogBodies, useRequestLogBodiesQuery } from '../queries'
 import { buildCurl } from '../lib/build-curl'
 import {
   PROTOCOL_LABEL,
@@ -45,8 +47,8 @@ interface RequestLogIdLinkProps {
 }
 
 interface CopyRequestButtonProps {
-  /** 客户端视角的正文记录；详情还没加载出来、或已被保留策略清掉时为 `null`。 */
-  contents: RequestContent | null
+  /** 客户端视角的报文身份（方法、路径、头）。正文不在这里，点按钮时现取。 */
+  content: RequestContentSummary | null
   /** 代理监听的地址，用来把记录的路径拼成可直接执行的绝对 URL。 */
   origin: string | null
 }
@@ -236,46 +238,56 @@ function RequestLogIdLink(props: RequestLogIdLinkProps) {
 function CopyRequestButton(props: CopyRequestButtonProps) {
   const t = useTranslation()
   const toast = useToast()
+  const queryClient = useQueryClient()
   const [copied, setCopied] = React.useState(false)
+  const [copying, setCopying] = React.useState(false)
   const timerRef = React.useRef<number | null>(null)
 
   React.useEffect(() => () => {
     if (timerRef.current !== null) window.clearTimeout(timerRef.current)
   }, [])
 
-  const content = props.contents
-  const curl = content && props.origin ? buildCurl({
-    url: `${props.origin}${content.requestPath}`,
-    method: content.requestMethod,
-    headers: content.requestHeaders,
-    body: content.requestBody,
-  }) : null
-
+  const content = props.content
+  // 命令本身来自摘要（方法、路径、头），只有请求体要现取，因此没有报文行时才不可用。
+  const available = content !== null && props.origin !== null
   const label = copied ? t('common.action.copied') : t('requestLogs.detail.copyRequest')
-  const title = curl === null ? t('requestLogs.detail.copyRequestUnavailable') : t('requestLogs.detail.copyRequestTitle')
+  const title = available ? t('requestLogs.detail.copyRequestTitle') : t('requestLogs.detail.copyRequestUnavailable')
 
   return (
     <Button
       variant="outline"
       size="sm"
       className={cn('shrink-0', copied && 'text-text-success')}
-      disabled={curl === null}
+      disabled={!available || copying}
       title={title}
       aria-label={title}
       onClick={async event => {
         event.stopPropagation()
-        if (curl === null) return
+        if (!available) return
+        setCopying(true)
         try {
+          // 请求体不在详情里（正文按需取）。点这个按钮就是在要正文，所以就地取一次，
+          // 而不是让按钮一直灰着；取回来的那份同时进缓存，正文面板直接命中。
+          const bodies = await fetchRequestLogBodies(content.requestId, queryClient)
+          const body = bodies.contents.find(item => item.id === content.id)?.requestBody ?? null
+          const curl = buildCurl({
+            url: `${props.origin}${content.requestPath}`,
+            method: content.requestMethod,
+            headers: content.requestHeaders,
+            body,
+          })
           await navigator.clipboard.writeText(curl)
           setCopied(true)
           if (timerRef.current !== null) window.clearTimeout(timerRef.current)
           timerRef.current = window.setTimeout(() => setCopied(false), 1500)
         } catch (error) {
           toast.error(error instanceof Error ? error.message : t('common.action.copyFailed'))
+        } finally {
+          setCopying(false)
         }
       }}
     >
-      {copied ? <Check size={13} aria-hidden /> : <Copy size={13} aria-hidden />}
+      {copying ? <LoaderCircle size={13} className="animate-spin" aria-hidden /> : copied ? <Check size={13} aria-hidden /> : <Copy size={13} aria-hidden />}
       {label}
     </Button>
   )
@@ -518,6 +530,9 @@ export function RequestLogDetailRow(props: RequestLogDetailRowProps) {
   const contents = 'contents' in log ? log.contents : null
   const requestRewriteRules = 'requestRewriteRules' in log ? log.requestRewriteRules : null
   const [selectedAttemptId, setSelectedAttemptId] = React.useState<string | null>(null)
+  // 正文只在用户点开某个尝试的正文面板时才去取：它是库里最大的列，而详情在请求还挂着时
+  // 每 1.5s 就被重取一次（见 issue #23）。请求落定后正文不会再变，也就不再轮询。
+  const bodiesQuery = useRequestLogBodiesQuery(selectedAttemptId === null ? null : log.id, log.status === 'pending')
   const canOpenRuntimeLogs = Date.now() - log.createdTime <= RUNTIME_LOG_RETENTION_MS
   // 客户端请求的绝对地址：代理监听地址 + 记录下来的路径。拿不到监听地址就不拼，宁可禁用。
   const origin = resolveProxyOrigin(proxyStatus?.host ?? null, proxyStatus?.port ?? null)
@@ -566,7 +581,7 @@ export function RequestLogDetailRow(props: RequestLogDetailRowProps) {
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-2">
               {canOpenRuntimeLogs && <RequestLogIdLink requestId={log.id} />}
-              <CopyRequestButton contents={contents?.[0] ?? null} origin={origin} />
+              <CopyRequestButton content={contents?.[0] ?? null} origin={origin} />
             </div>
           </div>
 
@@ -589,6 +604,9 @@ export function RequestLogDetailRow(props: RequestLogDetailRowProps) {
           <RequestContentsSheet
             contents={contents}
             attemptContents={'attemptContents' in log ? log.attemptContents : null}
+            bodies={bodiesQuery.data ?? null}
+            bodiesLoading={bodiesQuery.isPending}
+            bodiesError={bodiesQuery.error === null ? null : bodiesQuery.error.message}
             attempts={log.attempts}
             requestRewriteRules={requestRewriteRules}
             clientProtocol={log.clientProtocol}

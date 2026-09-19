@@ -1,4 +1,4 @@
-import type { AnalyticsRange, AnalyticsSummary, LogEntry, ProviderAnalyticsDetail, RequestLogDetail, RequestLogEntry } from '@common/schemas'
+import type { AnalyticsRange, AnalyticsSummary, LogEntry, ProviderAnalyticsDetail, RequestLogBodies, RequestLogDetail, RequestLogEntry } from '@common/schemas'
 import { request } from './client'
 
 export type ListLogsParams = { limit?: number; offset?: number; level?: LogEntry['level']; query?: string }
@@ -14,8 +14,9 @@ export const logsApi = {
 
 export const requestLogApi = {
   list: (params: ListRequestLogsParams = {}) => request<{ logs: RequestLogEntry[]; total: number }>('/request-log/list', params),
-  detail: (id: string) => request<RequestLogDetail>('/request-log/detail', { id }),
   prune: (params: PruneRequestLogsParams) => request<{ deletedLogs: number; deletedContents: number }>('/request-log/prune', params),
+  detail: (id: string) => request<RequestLogDetail>('/request-log/detail', { id }),
+  bodies: (id: string) => request<RequestLogBodies>('/request-log/bodies', { id }),
 }
 
 export const analyticsApi = {

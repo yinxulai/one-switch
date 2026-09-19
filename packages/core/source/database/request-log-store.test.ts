@@ -14,7 +14,9 @@ import {
   getRequestLog,
   getRequestUsage,
   listAttemptContents,
+  listAttemptContentSummaries,
   listRequestContents,
+  listRequestContentSummaries,
   listRequestLogs,
   listAttemptsByRequest,
   pruneRequestContentsBefore,
@@ -156,6 +158,28 @@ describe('request log store persistence', () => {
       responseStatus: 200,
       responseBody: '{"ok":true}',
     })])
+
+    // 摘要把正文两列直接排除在 select 之外（不是取出来再删字段），其余字段与整行同源。
+    const requestSummary = (await listRequestContentSummaries(log.id))[0]
+    expect(requestSummary).toMatchObject({
+      id: content.id,
+      captureStatus: 'captured',
+      requestMethod: 'POST',
+      requestPath: '/v1/chat/completions',
+      responseStatus: 200,
+    })
+    expect(Object.keys(requestSummary)).not.toContain('requestBody')
+    expect(Object.keys(requestSummary)).not.toContain('responseBody')
+
+    const attemptSummary = (await listAttemptContentSummaries(log.id))[0]
+    expect(attemptSummary).toMatchObject({
+      id: attemptContent.id,
+      attemptId: attempt.id,
+      captureStatus: 'captured',
+      responseStatus: 200,
+    })
+    expect(Object.keys(attemptSummary)).not.toContain('requestBody')
+    expect(Object.keys(attemptSummary)).not.toContain('responseBody')
   })
 
   it('正文不管多大都完整落库：压缩是透明的，读回来的字节与写进去的一模一样', async () => {
@@ -183,6 +207,13 @@ describe('request log store persistence', () => {
 
     // 而消费方只看得到原文：写入路径与更新路径都必须还原得一字不差。
     expect((await listRequestContents(log.id))[0]).toMatchObject({ requestBody: largeBody, responseBody: largeBody })
+
+    // 反向证据：摘要路径没读这两列，所以即便库里的字节已经坏掉也照常返回；
+    // 整行路径必须解压，同一个坏字节当场就炸。这条差异就是「详情不再解压正文」的证据——
+    // 没有它，把 `select` 改回全取也能让上面那堆断言全部通过。
+    getDataDb().$client.prepare('UPDATE request_contents SET requestBody = ? WHERE id = ?').run(new Uint8Array([1, 2, 3]), content.id)
+    expect((await listRequestContentSummaries(log.id))[0]).toMatchObject({ id: content.id, requestMethod: 'POST' })
+    await expect(listRequestContents(log.id)).rejects.toThrow()
   })
 
   it('updates request outcome fields and prunes all related rows', async () => {

@@ -553,6 +553,28 @@ export const AttemptContentSchema = z.object({
 })
 export type AttemptContent = z.infer<typeof AttemptContentSchema>
 
+// 正文是库里唯一随请求长度线性膨胀的部分（单条可达上 MB），而详情在请求还是
+// `pending` 时每 1.5s 就会重取一次。把正文塞在详情里，等于让轮询反复解压最大的
+// 那两列（见 issue #23）。因此详情只带**摘要**：说清这次请求/这次尝试有哪些报文
+// （方法、路径、状态、头），正文本身由用户在界面上点开正文面板时另行获取。
+//
+// 摘要不是另一份数据，就是同一行的投影：截到这里只是为了「详情不带正文」这一条
+// 契约，字段本身仍以 `RequestContent` / `AttemptContent` 为唯一来源。
+export const RequestContentSummarySchema = RequestContentSchema.omit({ requestBody: true, responseBody: true })
+export type RequestContentSummary = z.infer<typeof RequestContentSummarySchema>
+
+export const AttemptContentSummarySchema = AttemptContentSchema.omit({ requestBody: true, responseBody: true })
+export type AttemptContentSummary = z.infer<typeof AttemptContentSummarySchema>
+
+/** 按需取回的正文。粒度是整个请求：界面一次要看的几个视角一并返回，不来回请求。 */
+export const RequestLogBodiesSchema = z.object({
+  /** 客户端视角，每个请求至多一行。 */
+  contents: z.array(RequestContentSchema),
+  /** 上游视角，每次尝试至多一行。 */
+  attemptContents: z.array(AttemptContentSchema),
+})
+export type RequestLogBodies = z.infer<typeof RequestLogBodiesSchema>
+
 // ========== API 响应结构 ==========
 
 export const ApiSuccessSchema = <T extends z.ZodTypeAny>(dataSchema: T) =>
@@ -699,8 +721,9 @@ export const AppliedRequestRewriteRuleSchema = z.object({
 export type AppliedRequestRewriteRule = z.infer<typeof AppliedRequestRewriteRuleSchema>
 
 export const RequestLogDetailSchema = RequestLogEntrySchema.extend({
-  contents: z.array(RequestContentSchema),
-  attemptContents: z.array(AttemptContentSchema),
+  /** 只有摘要，正文按需另取（`RequestLogBodies`）。 */
+  contents: z.array(RequestContentSummarySchema),
+  attemptContents: z.array(AttemptContentSummarySchema),
   requestRewriteRules: z.array(AppliedRequestRewriteRuleSchema),
 })
 export type RequestLogDetail = z.infer<typeof RequestLogDetailSchema>

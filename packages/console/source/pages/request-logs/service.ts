@@ -52,7 +52,9 @@ export function useRequestLogsService() {
     error, filtered,
     page, expandedId, filter, providers, logicalModels, providerOptions, providerModelOptions, getModelName,
     details: detailQuery.data && expandedId ? { [expandedId]: detailQuery.data } : {},
-    detailLoadingIds: expandedId && detailQuery.isFetching ? { [expandedId]: true } : {},
+    // 只认「还没有数据」，不认后台重取：请求还挂着时详情每 1.5s 会被重取一次，
+    // 那是为了拿到新的状态与用量，画面上的东西不该跟着闪一下。
+    detailLoadingIds: expandedId && detailQuery.isPending ? { [expandedId]: true } : {},
     detailErrors: expandedId && detailQuery.error ? { [expandedId]: detailQuery.error.message } : {},
     loadDetail: setExpandedId, refresh, setFilter, goToPage, pageSize: PAGE_SIZE,
   }

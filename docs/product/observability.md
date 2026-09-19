@@ -228,6 +228,9 @@ $$\text{TPS} = \frac{\text{输出 Token}}{\text{尝试耗时}}$$
 - 有协议转换时，转换信息以「客户端协议 → 上游协议」标注展示，并复用上述四个阶段的正文，不额外渲染第三份载荷
 - JSON 正文提供格式化、折叠和复制能力；文本、SSE 事件使用等宽文本查看器
 - 未开启内容记录时，在详情中明确显示状态和原因
+- **正文与详情分两个接口。** 详情（`POST /api/request-log/detail`）只返回**摘要**——正文之外的列，包括 `captureStatus` 与请求/响应头，足以判定“有没有正文、是什么协议、什么状态码”；正文本身由 `POST /api/request-log/bodies` 单独取回，两者以 `id` 关联。详情在请求 `pending` 期间每 1.5 秒轮询一次，正文若挂在详情里就会跟着被反复读出、解压、丢弃，而正文恰是观测库里最大的两列。
+- **正文只在用户要看时才取。** 展开详情面板、或点击「复制为 curl」时才发起 bodies 请求，结果进查询缓存，同一请求只取一次，随后的 1.5 秒轮询沿用缓存。粒度是整条请求（该请求的全部客户端正文与全部尝试正文一次取回），因为用户打开面板本就要看这几块内容，按单个阶段切分只会换来更多次往返。
+- **取正文期间面板按同一套布局展示。** 布局不因“正文还没到”而换成简化版：加载态覆盖整个面板，正文到达后原地渲染，不出现先空后满的跳动。正文已被保留策略清理时，bodies 请求返回空数组，面板显示“正文已按保留策略清理”，与“正在加载”是两种不同状态。
 
 ## 用量统计
 
@@ -328,7 +331,7 @@ WHERE a.createdTime >= ? GROUP BY a.providerId
 | `idx_request_attempts_created_time(createdTime)` | 不带供应商/模型条件的全量统计 | `(providerId, createdTime)` 与 `(providerModelId, createdTime)` 的最左列都不是时间，服务不了全量排行 |
 | `idx_request_usages_created_time` / `idx_attempt_usages_created_time` | 用量聚合 | 过滤条件永远只有时间窗（五种类型总是一起取），`(type, createdTime)` 的最左列用不上 |
 
-**连接与 PRAGMA 层面的调优同样重要。** 这些调优全部落在**数据文件**上（观测数据都存在 `osw-data-<n>.db`）——`initDatabases` 设定 `temp_store = MEMORY`（聚合的 `GROUP BY` / `ORDER BY` 临时 B 树不再落盘）、`cache_size = -64000`（默认页缓存仅 2 MB，扫一遍日志表就被冲干净）、`synchronous = NORMAL`（WAL 下不会因进程崩溃丢已提交数据）、`auto_vacuum = INCREMENTAL`（保留策略删掉的页能被 `reclaimUnusedSpace()` 逐步回收），并在迁移后执行一次 `PRAGMA optimize` 让规划器拿到统计信息——没有统计信息时它按「所有索引一样好」估计，实测正是这一点让它给带时间窗的聚合选了更差的路径。配置库刻意用 `synchronous = FULL`：那里每次写入都是用户资产，不值得为一点写入速度换掉「断电也不丢」。`auto_vacuum` 只在空库上生效，所以顺序修正之前建出的观测库不会自愈，仍需手工执行一次 `PRAGMA auto_vacuum = INCREMENTAL; VACUUM;` 才能转成 INCREMENTAL（启动时不自动执行，见 [data-model.md](./data-model.md) §6）。
+**连接与 PRAGMA 层面的调优同样重要。** 这些调优全部落在**数据文件**上（观测数据都存在 `data-<n>.db`）——`initDatabases` 设定 `temp_store = MEMORY`（聚合的 `GROUP BY` / `ORDER BY` 临时 B 树不再落盘）、`cache_size = -64000`（默认页缓存仅 2 MB，扫一遍日志表就被冲干净）、`synchronous = NORMAL`（WAL 下不会因进程崩溃丢已提交数据）、`auto_vacuum = INCREMENTAL`（保留策略删掉的页能被 `reclaimUnusedSpace()` 逐步回收），并在迁移后执行一次 `PRAGMA optimize` 让规划器拿到统计信息——没有统计信息时它按「所有索引一样好」估计，实测正是这一点让它给带时间窗的聚合选了更差的路径。配置库刻意用 `synchronous = FULL`：那里每次写入都是用户资产，不值得为一点写入速度换掉「断电也不丢」。`auto_vacuum` 只在空库上生效，所以顺序修正之前建出的观测库不会自愈，仍需手工执行一次 `PRAGMA auto_vacuum = INCREMENTAL; VACUUM;` 才能转成 INCREMENTAL（启动时不自动执行，见 [data-model.md](./data-model.md) §6）。
 
 结果：分析页一次完整加载从 1403 ms 降到 550 ms（7 天）、从 3088 ms 降到 1479 ms（30 天）；供应商详情页 30 天从 744 ms 降到 206 ms。
 
