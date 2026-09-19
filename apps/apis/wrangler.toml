@@ -2,6 +2,13 @@
 #
 # 部署：`pnpm --filter @osw/api deploy`（云端由 Workers Builds 关联仓库自动跑，本地手动部署
 # 就这一条命令）。密钥不在这里，用 `wrangler secret put` 配一次。
+#
+# Workers Builds 三条命令（Root directory = `apps/apis`）：
+#   Build   `pnpm run build` → `deploy:dry-run`。Worker 没有单独的编译阶段，「打包」就是构建，
+#           所以这一步与部署跑的是同一件事，区别只是不推上去。它必须存在：把 Build command
+#           填成 `pnpm run build` 而包里没有这个 script，构建会以 ERR_PNPM_NO_SCRIPT 直接失败。
+#   Deploy  `npx wrangler deploy`
+#   Version `npx wrangler versions upload`
 
 name = "osw-telemetry"
 main = "source/index.ts"

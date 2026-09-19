@@ -12,7 +12,7 @@
     // 顺序由依赖图决定，不靠人记：「谁先构建」这个问题只允许有一个答案。
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**"]
+      "outputs": ["dist/**", "output/**"]
     },
     // 长驻进程：不缓存、不结束。
     "dev": { "cache": false, "persistent": true }
