@@ -193,7 +193,7 @@
 - [ ] 管理接口：预告报文（「预览即将发送的内容」）与统计状态
 - [ ] 控制台：统计开关与同屏预览卡片
 - [ ] 引导页同意步骤（默认不勾选，跳过不等于同意）
-- [ ] `apps/apis/`：严格校验、白名单削平、用 `cf.country` 补 `user_location.country_id`、限流、单批 25 条硬上限、转发 GA4 Measurement Protocol
+- [ ] `apps/apis/`：严格校验、白名单削平、把真实客户端 IP 作为 `ip_override` 交给 GA 解析地理位置、限流、单批 25 条硬上限、转发 GA4 Measurement Protocol
 - [ ] `apps/apis/` 自动部署：push 到 `main` 且 `apps/apis/**` 变更时发布，支持手动触发
 
 ### 范围

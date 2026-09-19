@@ -8,7 +8,7 @@
  *
  * 四个字段各有其位，靠的是 GA4 自己的机制而不是我们的命名：
  * - 安装标识 → `client_id`：它没有基数上限，而自定义维度有；
- * - 设备/地区/语言 → `device` 与 `user_location`：原生报表直接读，不必先注册维度；
+ * - 设备/语言 → `device`，用户在哪 → `ip_override`：原生报表直接读，不必先注册维度；
  * - 版本/架构 → `user_properties`：安装级事实，按用户保存才不会把一次升级算成两个用户；
  * - 业务属性 → 事件参数：就是事件自己的事。
  * 落点表在 `@common/telemetry` 的 `TELEMETRY_FIELD_TARGETS` 里，这里只负责执行它。
@@ -20,7 +20,6 @@
 import {
   type TelemetryEvent,
   TELEMETRY_FIELD_TARGETS,
-  TELEMETRY_UNKNOWN_COUNTRY,
   TELEMETRY_COMMON_FIELD_NAMES,
   TELEMETRY_MAX_BACKDATE_MILLISECONDS,
 } from '@common/telemetry'
@@ -133,14 +132,20 @@ export interface GaCollectBody {
    */
   user_properties: Record<string, GaUserProperty>
   /**
-   * 地区。**这是本文件里唯一与「用户在哪」有关的字段**，而且它只是一个国家代码。
+   * 用户的 IP 地址，**由 GA 自己解析成地理位置**（城市 / 国家 / 大洲）。
    *
-   * 两个选项只能用其一（GA 文档：`user_location` 优先于 `ip_override`），这里选前者：
-   * 转发请求是从 Cloudflare 机房发出的，不显式给地区，GA 会按**机房出口 IP** 定位，
-   * 于是全世界用户在报表里都同城。反过来，一旦给了 `user_location`，它就不再去看 IP，
-   * 所以我们**永远不需要、也不应该**把用户的地址交给 GA（见 `index.ts` 文件头）。
+   * 这是请求里唯一与「用户在哪」有关的字段，而且**它必须存在**：转发请求是从 Cloudflare
+   * 机房发出的，不给位置信息时 GA 会按请求的来源 IP（也就是机房出口）定位，于是全世界
+   * 用户在报表里都同城。
+   *
+   * 交给 GA 而不是自己算，是因为我们手上本来就有**真实客户端 IP**（`CF-Connecting-IP`，
+   * 见 `index.ts`），而 GA 的 IP 地理库比我们临时能拿到的任何东西都准：换 `user_location`
+   * 就等于把一个更准的答案换成一个更粗的（`cf.country` 只有国家级），还要自己维护映射。
+   *
+   * ⚠️ `user_location` 与 `ip_override` **只能给一个**。GA 官方参考文档写明前者优先，
+   * 同时发送时这个字段会被忽略——所以报文里**不能**出现 `user_location`，出现即等于没给位置。
    */
-  user_location: { country_id: string }
+  ip_override?: string
   device: { category: string; operating_system: string; language: string }
   consent: { ad_user_data: 'DENIED'; ad_personalization: 'DENIED' }
   non_personalized_ads: true
@@ -148,8 +153,8 @@ export interface GaCollectBody {
 }
 
 export interface BuildCollectBodyOptions {
-  /** 服务端看到的地区（ISO 3166-1 alpha-2）；拿不到就传 `null`。 */
-  country: string | null
+  /** 服务端看到的**真实客户端 IP**（`CF-Connecting-IP`）；拿不到就传 `null`。 */
+  ipOverride: string | null
   /** 服务端收到请求的时刻（毫秒）。时间戳回溯窗口以它为准。 */
   receivedAt: number
 }
@@ -157,7 +162,7 @@ export interface BuildCollectBodyOptions {
 /**
  * 把一批事件拼成一次 GA 请求。
  *
- * **一次批量 = 一次 GA 请求**，所以 `client_id`、`user_properties`、`user_location`、`device`、
+ * **一次批量 = 一次 GA 请求**，所以 `client_id`、`user_properties`、`ip_override`、`device`、
  * `consent` 这些「每请求一个」的字段只能取整批共有的值，统一取首个事件的那份。调用方
  * （`index.ts`）已经保证同一批的 `installId`、`os`、`locale` 一致——它们本来就是同一台机器
  * 同一个进程发出来的，不一致说明有人手改了报文。
@@ -167,7 +172,9 @@ export function buildCollectBody(events: readonly TelemetryEvent[], options: Bui
   return {
     client_id: first.installId,
     user_properties: userPropertiesOf(first),
-    user_location: { country_id: options.country ?? TELEMETRY_UNKNOWN_COUNTRY },
+    // 地址拿不到就不带这个字段，而不是编一个：编出来的地址会让 GA 把用户定位到某个具体的地方，
+    // 这比「不知道在哪」错得多（见 `index.ts` 文件头）。
+    ...(options.ipOverride === null ? {} : { ip_override: options.ipOverride }),
     device: {
       category: GA_DEVICE_CATEGORY,
       operating_system: GA_OPERATING_SYSTEM[first.os],

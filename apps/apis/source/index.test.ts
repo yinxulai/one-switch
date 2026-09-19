@@ -45,7 +45,6 @@ function appStarted(overrides: EventOverrides = {}): TelemetryEvent {
 
 interface PostOptions {
   events?: readonly TelemetryEvent[]
-  country?: string | null
   body?: string
   contentType?: string | null
   method?: string
@@ -60,11 +59,7 @@ function post(options: PostOptions = {}): Request {
   const method = options.method ?? 'POST'
   // GET / HEAD 不允许带正文，而这里多数用例只关心状态码，所以只在这两个方法下省掉 body。
   const body = method === 'POST' ? options.body ?? JSON.stringify({ events: options.events ?? [appStarted()] }) : undefined
-  const request = new Request(options.url ?? ENDPOINT, { method, headers, body })
-  if (options.country) {
-    ;(request as unknown as { cf: { country: string } }).cf = { country: options.country }
-  }
-  return request
+  return new Request(options.url ?? ENDPOINT, { method, headers, body })
 }
 
 describe('上报端点', () => {
@@ -244,21 +239,21 @@ describe('上报端点', () => {
       expect(JSON.stringify(call.body)).not.toContain('secret')
     })
 
-    it('client_id 用安装标识，地区、平台与安装级字段各有其位', async () => {
+    it('client_id 用安装标识，位置、平台与安装级字段各有其位', async () => {
       const upstream = createUpstream()
       const handler = createTelemetryHandler(upstream.fetcher)
 
-      await handler(post({ country: 'CN', events: [appStarted({ os: 'darwin', locale: 'zh-CN' })] }), ENV, NOW)
+      await handler(post({ events: [appStarted({ os: 'darwin', locale: 'zh-CN' })] }), ENV, NOW)
 
       const body = upstream.calls[0].body as {
         client_id: string
         user_properties: Record<string, { value: string }>
-        user_location: { country_id: string }
+        ip_override?: string
         device: { category: string; operating_system: string; language: string }
         events: { name: string; params: Record<string, string | number>; timestamp_micros?: number }[]
       }
       expect(body.client_id).toBe(INSTALL_ID)
-      expect(body.user_location.country_id).toBe('CN')
+      expect(body.ip_override).toBe('203.0.113.7')
       expect(body.device).toEqual({ category: 'desktop', operating_system: 'Macintosh', language: 'zh-CN' })
       expect(body.events[0].name).toBe('app_started')
       // 只发契约里声明了去 param 的公共字段，其余各有去向（client_id / 时间戳 / device / user_properties）。
@@ -297,39 +292,37 @@ describe('上报端点', () => {
       expect(body.non_personalized_ads).toBe(true)
     })
 
-    it('用户的 IP 不进下游：位置只有一个国家代码', async () => {
+    it('位置交给 GA：发的是真实客户端 IP', async () => {
       const upstream = createUpstream()
       const handler = createTelemetryHandler(upstream.fetcher)
 
-      await handler(post({ address: '203.0.113.7', country: 'CN' }), ENV, NOW)
+      await handler(post({ address: '203.0.113.7' }), ENV, NOW)
 
       const [call] = upstream.calls
-      const serialized = JSON.stringify(call.body)
-      // 转发请求从机房发出，所以「位置」必须由服务端显式给出；一旦给的是地址而不是国家代码，
-      // GA 就会开始按 IP 定位，而那个 IP 不是用户的。
-      expect(serialized).not.toContain('203.0.113.7')
-      expect(serialized).not.toContain('ip_override')
-      expect(call.body).toMatchObject({ user_location: { country_id: 'CN' } })
+      // 转发请求从机房发出，所以位置必须显式给出；给的是**用户自己的地址**，
+      // 由 GA 的 IP 地理库去解析——比我们临时读一个国家级字段准。
+      expect(call.body).toMatchObject({ ip_override: '203.0.113.7' })
+      // 而 `user_location` 必须**不在**：GA 文档写明它优先于 `ip_override`，
+      // 两个同时发等于把这个 IP 白传一场（且 GA 会退回按机房出口定位）。
+      expect(JSON.stringify(call.body)).not.toContain('user_location')
     })
 
-    it('拿不到地区时发 XX 而不是留空', async () => {
+    it('拿不到来源地址时不传 ip_override，而不是编一个', async () => {
       const upstream = createUpstream()
       const handler = createTelemetryHandler(upstream.fetcher)
 
-      await handler(post(), ENV, NOW)
+      await handler(post({ address: null }), ENV, NOW)
 
-      const body = upstream.calls[0].body as { user_location: { country_id: string } }
-      expect(body.user_location.country_id).toBe('XX')
+      expect(upstream.calls[0].body).not.toHaveProperty('ip_override')
     })
 
-    it('格式不对的地区也退到 XX', async () => {
+    it('畸形的来源地址也不进转发报文', async () => {
       const upstream = createUpstream()
       const handler = createTelemetryHandler(upstream.fetcher)
 
-      await handler(post({ country: 'chn' }), ENV, NOW)
-
-      const body = upstream.calls[0].body as { user_location: { country_id: string } }
-      expect(body.user_location.country_id).toBe('XX')
+      // 限流那一层同样拿不到键，但它不会因此报错——地址本来就是一个「有则用」的维度。
+      expect((await handler(post({ address: 'not-an-ip' }), ENV, NOW)).status).toBe(204)
+      expect(upstream.calls[0].body).not.toHaveProperty('ip_override')
     })
 
     it('业务属性原样进参数表', async () => {
@@ -477,10 +470,11 @@ describe('上报端点', () => {
       try {
         const handler = createTelemetryHandler(createUpstream(400).fetcher)
 
-        await handler(post({ address: '203.0.113.7', country: 'CN' }), ENV, NOW)
+        await handler(post({ address: '203.0.113.7' }), ENV, NOW)
 
         // `wrangler.toml` 把 `[observability]` 打开，等的就是这一行；而它同时承诺了日志里
-        // 不问「谁在发」——这是那句承诺在测试里的落点。
+        // 不问「谁在发」——这是那句承诺在测试里的落点。注意同一批报文里是带着用户地址的，
+        // 它只该出现在转发报文里，不该出现在日志里。
         expect(logged).toHaveBeenCalledTimes(1)
         const line = String(logged.mock.calls[0][0])
         expect(line).toContain('upstream rejected status=400')

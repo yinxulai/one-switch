@@ -380,9 +380,6 @@ export const TELEMETRY_FIELD_TARGETS = {
  */
 export const TELEMETRY_USER_PROPERTIES = ['version', 'arch'] as const
 
-/** 地区缺失时的占位值：不留空、不猜。VPN、本地网络、拿不到地理位置时都落到这里。 */
-export const TELEMETRY_UNKNOWN_COUNTRY = 'XX'
-
 // ========== 预览 ==========
 
 /**

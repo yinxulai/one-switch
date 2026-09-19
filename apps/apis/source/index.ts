@@ -5,7 +5,7 @@
  *
  * 1. **严格校验**：用客户端同一份 schema 解析，拒绝多余字段；
  * 2. **白名单削平**：只把认识的字段交给下游；
- * 3. **补服务端字段**：地区来自 `request.cf.country`，时间戳来自服务器时钟；
+ * 3. **补服务端字段**：把真实客户端 IP 交给 GA 去解析地理位置，时间戳来自服务器时钟；
  * 4. **限流**：按安装标识与来源地址两个维度。
  *
  * 请求路径只有 `/v1/track` 一条（`TELEMETRY_REQUEST_PATH`），其余一律 404，根路径也不例外。
@@ -26,13 +26,16 @@
  * （也就是机房出口）定位——结果是「所有用户都落在数据中心所在地」。所以这里全程用的是
  * **客户端的真实 IP**，而不是这个 Worker 自己的出口：
  *
- * - **地理**：`request.cf.country`（Cloudflare 边缘按真实客户端 IP 解析出的国家）写进
- *   `user_location.country_id`。GA 文档明确 `user_location` 优先于 `ip_override`，两者只会取其一；
- *   选了前者，用户的 IP 就**不进 GA**（见 `ga.ts`）。
- * - **限流**：`CF-Connecting-IP`（同样是真实客户端 IP，由 Cloudflare 填、客户端伪造不了）
- *   哈希后当键，不落地、不出 Worker。
+ * - **地理**：`CF-Connecting-IP`（Cloudflare 填的真实客户端 IP，客户端伪造不了）作为
+ *   `ip_override` 交给 GA，由 GA 自己解析成地理位置。**这是故意的**：IP 地理库在 GA 那边，
+ *   比我们临时读一个 `cf.country`（只有国家级）准得多，也不必自己维护映射表。
+ *   代价说清楚：**用户的 IP 会随这次转发进入 GA**——报文的其余部分仍然是白名单字段。
+ * - **限流**：同一个地址哈希后当键，不落地、不出 Worker（除上面那次转发外）。
  *
- * 两条都取不到就各自降级（地区写 `XX`、地址维度直接跳过），**绝不退回请求自身的来源地址**：
+ * ⚠️ `user_location` 与 `ip_override` **只能给一个**：GA 文档写明前者优先，两者同时出现时
+ * `ip_override` 会被忽略。所以报文里**没有** `user_location`，给了它这个 IP 就白传了。
+ *
+ * 两处都取不到就各自降级（不传 `ip_override`、地址维度直接跳过），**绝不退回请求自身的来源地址**：
  * 那只会得到一个「所有人都来自机房」的假键。
  */
 
@@ -119,9 +122,10 @@ export function createTelemetryHandler(fetcher: Fetcher = fetch): TelemetryHandl
     // ---- 3. 来源地址限流 ----
 
     // 地址这一维度先于解析：它的判断不需要读正文，能在花掉反序列化的钱之前就把洪峰挡掉。
-    // 键来自 `CF-Connecting-IP`，即**真实客户端 IP**；拿不到就跳过这一维度（见文件头）。
-    const originKey = await originKeyOf(request)
-    if (originKey !== null && !addressLimiter.admit(originKey, now)) return rateLimited()
+    // 键来自 `CF-Connecting-IP`，即**真实客户端 IP**；同一个地址还要作为 `ip_override`
+    // 交给 GA（见第 6 步），所以这个头只读一次。拿不到就跳过这一维度（见文件头）。
+    const address = addressOf(request)
+    if (address !== null && !addressLimiter.admit(`ip:${await sha256Prefix(address)}`, now)) return rateLimited()
 
     // ---- 4. 严格校验 ----
 
@@ -150,7 +154,7 @@ export function createTelemetryHandler(fetcher: Fetcher = fetch): TelemetryHandl
 
     // ---- 6. 削平 + 补服务端字段 + 转发 ----
 
-    const body = buildCollectBody(events, { country: countryOf(request), receivedAt: now })
+    const body = buildCollectBody(events, { ipOverride: address, receivedAt: now })
 
     const upstream = await postToGa(collectUrl(measurementId, apiSecret), body, fetcher)
     if (upstream === null) {
@@ -172,7 +176,7 @@ export function createTelemetryHandler(fetcher: Fetcher = fetch): TelemetryHandl
 /**
  * 同一批必须来自同一台设备。
  *
- * 不是洁癖：GA 的 `client_id`、`user_location`、`device` 都是**每请求一个**的字段，一批只能
+ * 不是洁癖：GA 的 `client_id`、`ip_override`、`device` 都是**每请求一个**的字段，一批只能
  * 表达一个值。混着发就必然要把某些事件归到别的用户或别的平台上去——那比拒收更糟，
  * 因为它静默地坏了口径。
  */
@@ -185,48 +189,32 @@ function isSingleDevice(events: readonly TelemetryEvent[]): boolean {
 }
 
 /**
- * Cloudflare 的附加请求属性。
+ * 请求的来源地址，**真实客户端 IP**。
  *
- * 只用得到 `cf.country` 一个字段，所以本地声明而不引 `@cloudflare/workers-types`：那套全局声明
- * 与 `lib.dom` 是两套互斥的 `Request` / `Response`，为这一个字段把整个仓库的类型环境改成
- * Workers 形态不值得。运行时它就在那里——`wrangler` 只打包不做类型检查。
+ * `CF-Connecting-IP` 由 Cloudflare 填，客户端伪造不了；**刻意不回退到 `X-Forwarded-For`**
+ * （随便谁都能写）。拿不到就返回 `null`：限流跳过这一维度，地理位置也不传——**绝不退回
+ * 请求自身的来源地址**，那只会得到「所有用户都来自机房」的假答案（见文件头）。
+ *
+ * 这里做一次形状检查：这个值会被写进转发报文，而报文是给外部服务的。真正的保证来自
+ * Cloudflare 会覆盖这个头，这里只是不让一个畸形的值穿过去。
  */
-interface CloudflareRequest extends Request {
-  cf?: { country?: string }
+function addressOf(request: Request): string | null {
+  const address = request.headers.get('CF-Connecting-IP')
+  if (address === null) return null
+  const trimmed = address.trim()
+  // 45 字符是 IPv6 长度上限；字符集同时容纳 IPv4 与 IPv6 的写法。
+  return trimmed !== '' && trimmed.length <= 45 && /^[0-9a-fA-F.:]+$/.test(trimmed) ? trimmed : null
 }
 
 /**
- * 请求的地理位置，取 **Cloudflare 边缘按真实客户端 IP 解析出的国家**（ISO 3166-1 alpha-2）。
- *
- * 拿不到或不认识就返回 `null`，由 `ga.ts` 写成 `XX`：不留空、也不猜。VPN、内网、
- * Cloudflare 自己拿不到地理位置时都会落到这里。
- *
- * 这里是「用户的 IP 不进 GA」的落点：出去的是一个国家代码，不是一个地址。而它之所以必须存在，
- * 是因为转发请求来自机房——不显式给位置，GA 会把所有人算到数据中心所在地（见文件头）。
- */
-function countryOf(request: Request): string | null {
-  const country = (request as CloudflareRequest).cf?.country
-  return typeof country === 'string' && /^[A-Z]{2}$/.test(country) ? country : null
-}
-
-/**
- * 来源地址的限流键，**不透明且不落地**。
+ * 地址哈希，**只用作限流键**。
  *
  * 客户端不该在这里被识别，所以哈希只做一件事：把同一个地址在同一分钟内的请求归到同一个桶里。
- * 它不写日志、不出 Worker、isolate 一死就没了。因此这里不需要加盐——没有「谁都能读到的哈希
- * 表」可供反查。
+ * 它不写日志、isolate 一死就没了，所以这里不需要加盐——没有「谁都能读到的哈希表」可供反查。
  *
- * `CF-Connecting-IP` 由 Cloudflare 填，是**真实客户端 IP**，客户端伪造不了；**刻意不回退到
- * `X-Forwarded-For`**（随便谁都能写）。拿不到就跳过这一维度——跳过比共用一个假键好：
- * 万一这个头真的没了，共用假键会把「全体用户」塞进一个 120/分钟的桶里，那是一场自制的故障；
- * 而如果退回到请求自身的来源地址，那个假键还会是**机房出口**。
+ * 取前 8 字节而不是全长：这个键只活在内存表的生命周期里，碰撞概率要远低于「一台机器在
+ * 一分钟内换 IP」的可能，而短键让表更便宜。
  */
-async function originKeyOf(request: Request): Promise<string | null> {
-  const address = request.headers.get('CF-Connecting-IP')
-  if (address === null || address === '') return null
-  return `ip:${await sha256Prefix(address)}`
-}
-
 async function sha256Prefix(value: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
   return [...new Uint8Array(digest).slice(0, 8)].map(byte => byte.toString(16).padStart(2, '0')).join('')
