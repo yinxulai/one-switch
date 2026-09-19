@@ -3,7 +3,7 @@ import { check, index, integer, primaryKey, real, sqliteTable, text, uniqueIndex
 import { storedBody } from './stored-body'
 
 /**
- * 数据库（`osw-data-v1.db`）：**系统写的东西**（观测数据）。
+ * 数据库（`data-v1.db`）：**系统写的东西**（观测数据）。
  *
  * 请求日志、请求属性、请求级与尝试级用量、尝试、客户端与上游两侧的正文、运行时日志、
  * 供应商与供应商模型的健康状态——全部是系统在跑的过程中自己产生的，用户不可编辑。
@@ -264,6 +264,12 @@ export const requestContents = sqliteTable(
   },
   table => [
     uniqueIndex('idx_request_contents_request').on(table.requestId),
+    // 保留期回收按 `createdTime` 删（`pruneRequestContentsInternal`），而正文是库里
+    // 唯一随请求长度线性膨胀的部分——这两张表通常远大于其余所有表之和。没有这个索引
+    // 时每次回收都是全表扫描，代价随历史数据量增长，而且是一次会阻塞事件循环的
+    // **同步**调用（见 issue #23）。按 `requestId` 的外键索引在这里帮不上忙：
+    // 回收的入口是时间窗，不是某一批请求。
+    index('idx_request_contents_created_time').on(table.createdTime),
     check('chk_request_contents_capture_status', sql`${table.captureStatus} in ('captured', 'partial')`),
   ],
 )
@@ -292,6 +298,8 @@ export const attemptContents = sqliteTable(
   },
   table => [
     uniqueIndex('idx_attempt_contents_attempt').on(table.attemptId),
+    // 同 `request_contents`：回收按 `createdTime` 删，缺索引就是全表扫描。
+    index('idx_attempt_contents_created_time').on(table.createdTime),
     check('chk_attempt_contents_capture_status', sql`${table.captureStatus} in ('captured', 'partial')`),
   ],
 )
