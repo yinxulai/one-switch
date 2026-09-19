@@ -116,7 +116,7 @@ export function App() {
           </div>
 
           <h1 className="mt-8 max-w-4xl text-balance text-4xl font-semibold leading-[1.2] tracking-tight sm:text-5xl lg:text-6xl">
-            {t('hero.slogan', '本地的 AI 路由 + 故障转移')}
+            {t('hero.appName', 'OSW')}
           </h1>
 
           <div className="mt-9 flex flex-wrap items-center justify-center gap-3">

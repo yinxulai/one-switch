@@ -22,7 +22,7 @@ export const FALLBACK_LANG: Lang = 'zh'
  */
 const en = {
   hero: {
-    slogan: 'Local AI routing and failover',
+    appName: 'OSW',
     download: 'Download the latest release',
     source: 'View source',
   },
