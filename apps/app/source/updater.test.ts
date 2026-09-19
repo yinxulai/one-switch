@@ -36,9 +36,10 @@ const mocks = vi.hoisted(() => {
 vi.mock('electron', () => ({ app: mocks.app, shell: mocks.shell }))
 vi.mock('electron-updater', () => ({ autoUpdater: mocks.autoUpdater }))
 
-import { UpdaterManager } from './updater'
+import { UpdaterManager, isMajorUpgrade } from './updater'
 
 const latestReleaseUrl = 'https://github.com/yinxulai/osw/releases/tag/v1.1.0'
+const nextMajorReleaseUrl = 'https://github.com/yinxulai/osw/releases/tag/v2.0.0'
 
 /** 真实产物名与顺序（照抄 v1.1.0-beta.9 的 `latest*.yml`，别理想化）。 */
 const windowsFiles = [
@@ -370,6 +371,48 @@ describe('UpdaterManager', () => {
     expect(manager.getState()).toMatchObject({ status: 'update-available', errorMessage: null })
   })
 
+  it('flags an update that crosses a major version as manual only', () => {
+    const manager = new UpdaterManager()
+
+    emit('update-available', updateInfo({ version: '2.0.0' }))
+
+    expect(manager.getState().info).toMatchObject({
+      currentVersion: '1.0.0-beta.10',
+      latestVersion: '2.0.0',
+      requiresManualUpdate: true,
+    })
+  })
+
+  it('keeps same-major updates on the built-in updater', () => {
+    const manager = new UpdaterManager()
+
+    emit('update-available', updateInfo({ version: '1.2.0-beta.3' }))
+
+    expect(manager.getState().info?.requiresManualUpdate).toBe(false)
+  })
+
+  it('sends a major-version update to the release page instead of downloading', async () => {
+    const manager = new UpdaterManager()
+    emit('update-available', updateInfo({ version: '2.0.0' }))
+
+    await expect(manager.downloadUpdate()).resolves.toBe('manual-download')
+
+    expect(mocks.shell.openExternal).toHaveBeenCalledWith(nextMajorReleaseUrl)
+    expect(mocks.autoUpdater.downloadUpdate).not.toHaveBeenCalled()
+    // 和 macOS 一样：不是失败，界面不该报错
+    expect(manager.getState()).toMatchObject({ status: 'update-available', errorMessage: null })
+  })
+
+  it('never auto-installs across a major version, even when a package is already downloaded', async () => {
+    const manager = new UpdaterManager()
+    emit('update-downloaded', updateInfo({ version: '2.0.0' }))
+
+    await manager.installUpdate()
+
+    expect(mocks.autoUpdater.quitAndInstall).not.toHaveBeenCalled()
+    expect(mocks.shell.openExternal).toHaveBeenCalledWith(nextMajorReleaseUrl)
+  })
+
   it('installs a downloaded update on supported platforms', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
     const manager = new UpdaterManager()
@@ -402,5 +445,26 @@ describe('UpdaterManager', () => {
 
     expect(mocks.shell.openExternal).toHaveBeenCalledWith(latestReleaseUrl)
     expect(mocks.autoUpdater.quitAndInstall).not.toHaveBeenCalled()
+  })
+})
+
+describe('isMajorUpgrade', () => {
+  it('treats a different leading number as a major upgrade', () => {
+    expect(isMajorUpgrade('1.0.0-beta.10', '2.0.0')).toBe(true)
+    expect(isMajorUpgrade('2.0.0', '1.9.9')).toBe(true)
+    expect(isMajorUpgrade('0.9.0', '1.0.0')).toBe(true)
+  })
+
+  it('treats everything inside one major number as a normal update', () => {
+    expect(isMajorUpgrade('1.0.0-beta.10', '1.1.0')).toBe(false)
+    // 预发布到正式版不算跨大版本
+    expect(isMajorUpgrade('1.1.0-beta.9', '1.1.0')).toBe(false)
+    expect(isMajorUpgrade('1.0.0', '1.0.1')).toBe(false)
+  })
+
+  it('falls back to manual whenever a version cannot be parsed', () => {
+    expect(isMajorUpgrade('1.0.0', 'nightly')).toBe(true)
+    expect(isMajorUpgrade('', '1.1.0')).toBe(true)
+    expect(isMajorUpgrade('v1.1.0', '1.1.0')).toBe(false)
   })
 })

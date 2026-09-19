@@ -1553,6 +1553,8 @@ export const uiEn = {
   'settings.update.installNow': 'Install now',
   'settings.update.installFailed': 'Could not launch the installer',
   'settings.update.downloadDmg': 'Download the DMG',
+  'settings.update.downloadNewVersion': 'Download the new version',
+  'settings.update.manualUpdateNotice': 'v{version} is a major release with breaking changes — your data and configuration do not carry over. Automatic updates are therefore disabled; download and install it manually.',
   'settings.update.githubReleases': 'GitHub Releases',
   'settings.update.package': 'Package',
   'settings.update.notesToggle': 'Show release notes',

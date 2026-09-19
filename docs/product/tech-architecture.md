@@ -199,8 +199,8 @@ SQLite（`node:sqlite` + Drizzle ORM）承载配置与日志，表结构与字�
 
 | 文件 | 角色 | Drizzle 定义 | 迁移链 |
 | --- | --- | --- | --- |
-| `osw-config-<n>.db` | 用户配置（12 张表） | `packages/core/source/database/config-schema.ts` | `packages/core/drizzle/config/` |
-| `osw-data-<n>.db` | 系统观测数据（10 张表） | `packages/core/source/database/data-schema.ts` | `packages/core/drizzle/data/` |
+| `config-<n>.db` | 用户配置（12 张表） | `packages/core/source/database/config-schema.ts` | `packages/core/drizzle/config/` |
+| `data-<n>.db` | 系统观测数据（10 张表） | `packages/core/source/database/data-schema.ts` | `packages/core/drizzle/data/` |
 
 拆分的理由与两条边界见 [data-model.md](./data-model.md) §2.1；文件名里的版本号是两个**独立的 schema 版本**常量，不住在应用版本号上。
 
@@ -253,6 +253,8 @@ React 18 + TypeScript + shadcn/ui + Tailwind。页面通过 `packages/console/so
 - 自动更新已实现：`apps/app/source/updater.ts` 使用 `electron-updater`，支持检查、手动下载、进度、安装和状态广播；生产环境启动后静默检查，开发环境无更新元数据时显示友好状态
 - 平台差异只有两处，`updater.ts` 里不该再有第三处平台判断：Windows / Linux 走完整链路（下载 → 点击安装，未点安装时由 `autoInstallOnAppQuit` 在退出时安装）；macOS 因 ad-hoc 签名不被 Squirrel.Mac 接受，只保留「检查 → 前往对应的 DMG / Release 页」的手动路径
 - `downloadUpdate()` 返回 `'download-complete' | 'manual-download' | 'downloading' | 'failed'` 而不是布尔值：macOS 打开下载页是「按预期做完」，不能和「下载失败」共用 `false`，否则界面会弹出假报错
+- 跨应用大版本（`isMajorUpgrade`：大版本号不同）**只能手动更新**：`downloadUpdate()` 直接返回 `'manual-download'`，`installUpdate()` 也走发布页而不是 `quitAndInstall`；界面把按钮换成「前往下载新版本」并给出一行说明。理由是大版本变更必然伴随破坏性换代（数据库 schema 代次加一，旧库不再被读），自动装上去等于在用户毫无准备时把配置甩在一张空表旁边。版本号解析不出来时保守按「跨大版本」处理
+- 跨大版本的手动路径与 macOS 的手动路径共用同一个返回值，但两者不可能同时成立：`resolveManualInstallReason()` 把「为什么转去发布页」拆成 `manual-macos-install` / `major-version-manual-update` / `update-not-downloaded`，日志里能直接分辨是哪一种
 - 同一平台的更新元数据里有多个文件（Windows 的 fat exe / x64 / arm64、macOS 的 zip / DMG），`preferredAsset` 按当前 `process.platform` 与 `process.arch` 挑出该下的那个，不能直接取 `files[0]`
 - 下载完整性依赖更新元数据中的 SHA-512。`verifyUpdateCodeSignature` 只对 Windows 的 `NsisUpdater` 生效，不要在 `initialize()` 里无条件设为 `false`：它既是空操作，又会让人误以为 macOS 的校验已被关掉。启用正式 Developer ID 签名与 Apple notarization 后才谈恢复 macOS 的自动安装。
 

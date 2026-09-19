@@ -68,6 +68,7 @@ type UpdateActionsProps = {
   isMacOS: boolean
   hasUpdate: boolean
   hasPreferredAsset: boolean
+  requiresManualUpdate: boolean
   onInstall: () => void
   onDownload: () => void
   onOpenReleases: () => void
@@ -162,6 +163,7 @@ function UpdateActions(props: UpdateActionsProps) {
     hasUpdate,
     hasPreferredAsset,
     isMacOS,
+    requiresManualUpdate,
     onDownload,
     onInstall,
     onOpenReleases,
@@ -175,6 +177,15 @@ function UpdateActions(props: UpdateActionsProps) {
         <Button size="sm" onClick={onOpenReleases}>
           <Download className="size-3.5" />
           {t('settings.update.downloadDmg')}
+        </Button>
+      )
+    }
+    // 跨大版本没有「下载更新」这条路：装了就是一次破坏性换代，只能用户自己去下载页。
+    if (requiresManualUpdate) {
+      return (
+        <Button size="sm" onClick={onOpenReleases}>
+          <Download className="size-3.5" />
+          {t('settings.update.downloadNewVersion')}
         </Button>
       )
     }
@@ -328,6 +339,7 @@ export function UpdateCard() {
                   hasUpdate={hasUpdate}
                   hasPreferredAsset={Boolean(info?.preferredAsset)}
                   isMacOS={isMacOS}
+                  requiresManualUpdate={Boolean(info?.requiresManualUpdate)}
                   onDownload={handleDownload}
                   onInstall={handleInstall}
                   onOpenReleases={handleOpenReleases}
@@ -336,7 +348,7 @@ export function UpdateCard() {
             )}
           />
 
-          {!isMacOS && info?.preferredAsset && (
+          {!isMacOS && info?.preferredAsset && !info.requiresManualUpdate && (
             <FormRow
               title={t('settings.update.package')}
               description={<span className="font-mono">{info.preferredAsset.name}</span>}
@@ -347,6 +359,11 @@ export function UpdateCard() {
 
         {(hasUpdate || errorMessage || isDownloading) && (
           <div className="grid gap-3 py-1">
+            {info?.requiresManualUpdate && hasUpdate && (
+              <p className="system-2xs-regular text-text-tertiary">
+                {t('settings.update.manualUpdateNotice', { version: info.latestVersion })}
+              </p>
+            )}
             <ReleaseNotes info={info} hasUpdate={hasUpdate} />
             {errorMessage && (
               <p className="system-2xs-regular text-text-destructive">{errorMessage}</p>

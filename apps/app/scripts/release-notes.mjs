@@ -482,8 +482,32 @@ const renderAssets = (rows, repository) => {
 // 组装
 // ---------------------------------------------------------------------------
 
+/**
+ * 预发布版的固定提示。
+ *
+ * 放在正文最前面：beta 阶段不承诺数据兼容（原因见 issue #24），用户得在点「下载」之前
+ * 就看见它，所以不能埋进 Release Notes 的分组里。正文其余部分保持英文，但这段是中英双语的。
+ */
+const renderBetaNotice = (repository) => [
+  '> [!IMPORTANT]',
+  '> **这是一个 beta 版本。** 每个 beta 版本都可能会发生接口的变化和数据结构的调整，不承诺数据的兼容和自动迁移。'
+    + '请在更新前手动导出供应商数据（模型管理 → 导出）备份，以备不时之需。',
+  `> 为什么不兼容见 https://github.com/${repository}/issues/24。`,
+  '',
+  '> [!IMPORTANT]',
+  '> **This is a beta build.** Every beta release may change internal APIs and data structures; '
+    + 'data compatibility and automatic migration are not promised. Export your provider data '
+    + 'before updating (model management → export) as a backup, just in case.',
+  `> See https://github.com/${repository}/issues/24 for why.`,
+  '',
+]
+
 const renderNotes = ({ breaking, buckets, assets, repository, tag, previousTag }) => {
   const lines = []
+
+  if (parseVersion(tag)?.prerelease) {
+    lines.push(...renderBetaNotice(repository))
+  }
 
   if (breaking.length > 0) {
     lines.push('### ⚠️ Breaking changes', '')

@@ -378,6 +378,7 @@ CI（`.github/workflows/ci.yml`）与发布（`release.yml`）共用 `.github/ac
 - 下载表由**真实产物文件名**反推：按 `artifactName` 编译出带命名组的正则，平台与架构从匹配结果里取，大小取文件字节数。这样表里出现的文件一定真的在 release 里，不会出现「文档说有、实际没有」；`.zip` / `.blockmap` / `latest*.yml` 不列（内置更新器自己会取），`.sha256` 只在存在时给链接。
 - 与之配套，校验文件的生成从「只算 macOS 的 dmg」改成遍历全部 `.dmg` / `.exe` / `.AppImage`：`Create installer checksums` 在三个系统的矩阵 job 内各算各的，所以下载表每一行都能给 SHA-256，不会只剩某一两行有链接、看起来像漏了。
 - 范围端点默认 `HEAD`，可用 `--head <标签>` 换掉，补写一个**已经发出去**的版本时必须指到那个标签：否则标签之后合进来的提交会被算进那一版的说明（把没发布的活记在旧版本头上），并且这些提交会从下一版的说明里消失，让下一版看起来「什么都没改」。补写时同样没有本地产物目录，用 `--assets-json` 吃 `gh api repos/<owner>/<repo>/releases/tags/<标签> --jq '[.assets[] | {name, size}]'` 的清单：安装包几百 MB，只为拿文件名和大小再下一遍不值当。清单在 Windows 上按这个重定向写法存盘会带 UTF-8 BOM，脚本先剥掉再 parse，否则一个看不见的字节就会让 `JSON.parse` 把整份清单判为非法。`--assets-dir` / `--assets-json` 缺目录、缺文件都直接报错拦住发布，不静默省略下载表——发出去的说明少一块，比发不出去更糟。修改已发布版本的正文用 `gh release edit <标签> --notes-file <文件>`；说明文字仍然只在 GitHub 上改，不进仓库。
+- 预发布版本（`parseVersion(tag)?.prerelease` 非空）的正文最前面固定压一段中英双语的提示：beta 每个版本都可能改接口与数据结构，不承诺数据兼容和自动迁移，更新前请手动导出供应商数据、更新后导入；原因链到 [issue #24](https://github.com/yinxulai/osw/issues/24)。这段必须在 Release Notes 的分组**之前**——用户得在点下载之前看见它，埋进分组就等于没写。正式版不带这段。
 - `softprops/action-gh-release` 不再开 `generate_release_notes`：它自己附带的那行 Full Changelog 与脚本写的重复，两行怎么合并由 action 决定，不如自己只留一行。
 
 ## 6. CLI 契约
@@ -419,7 +420,7 @@ CI（`.github/workflows/ci.yml`）与发布（`release.yml`）共用 `.github/ac
 | 维度 | 状态 | 说明 |
 | --- | --- | --- |
 | 数据目录 | 一致 | `<用户主目录>/<预设数据目录名>`，见 §5.5 |
-| 数据文件名 | 一致 | 两边都由 `@common/database-file` 从**库自己的 schema 版本常量**推导（`osw-config-v1.db` / `osw-data-v1.db`）。宿主不算文件名，所以「两边算出不同文件名」这类差异从结构上不存在 |
+| 数据文件名 | 一致 | 两边都由 `@common/database-file` 从**库自己的 schema 版本常量**推导（`config-v1.db` / `data-v1.db`）。宿主不算文件名，所以「两边算出不同文件名」这类差异从结构上不存在 |
 | `RuntimeConfig` | 一致 | 同一份 `createRuntimeConfig`；命令行只多传端口与数据目录的覆盖值 |
 | 代理引擎与业务 | 一致 | 同一份 `packages/core`，命令行不写业务逻辑（包边界守卫强制） |
 | 设置与日志 | 一致 | 同一对 SQLite 文件（配置库 + 数据库），没有第二份配置 |

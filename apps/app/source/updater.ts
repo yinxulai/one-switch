@@ -57,6 +57,8 @@ export interface UpdateInfoView {
   releaseUrl: string
   assets: ReleaseAsset[]
   preferredAsset?: ReleaseAsset
+  /** 跨应用大版本：只能手动下载安装，不做自动更新。见 `isMajorUpgrade`。 */
+  requiresManualUpdate: boolean
 }
 
 export interface UpdateState {
@@ -101,6 +103,28 @@ function pickPreferredAsset(assets: ReleaseAsset[]): ReleaseAsset | undefined {
   return best
 }
 
+/** 从版本串里读大版本号；读不出来时返回 `null`，不猜。 */
+function readMajorVersion(version: string): number | null {
+  const matched = version.trim().match(/^v?(\d+)\./)
+  return matched ? Number(matched[1]) : null
+}
+
+/**
+ * 这次更新是不是跨了应用大版本。
+ *
+ * 大版本变更是**破坏性**的：数据库换代（文件名里的 schema 版本加一，旧库不再被读）、
+ * 配置结构可能整体重做。自动更新会在用户毫无准备时把配置甩在一张空表旁边，所以跨大版本
+ * **只能手动更新**——由用户自己决定什么时候换、先把配置导出走。
+ *
+ * 版本串解析不出来时保守返回 `true`：拿不准的更新宁可让用户多点一下，也不要赌它不破坏。
+ */
+export function isMajorUpgrade(currentVersion: string, latestVersion: string): boolean {
+  const current = readMajorVersion(currentVersion)
+  const latest = readMajorVersion(latestVersion)
+  if (current === null || latest === null) return true
+  return latest !== current
+}
+
 /**
  * 基于 electron-updater 的更新检查与安装实现。
  *
@@ -123,6 +147,7 @@ export class UpdaterManager {
       releaseDate: '',
       releaseUrl: GITHUB_RELEASES_PAGE,
       assets: [],
+      requiresManualUpdate: false,
     },
     errorMessage: null,
     downloadProgress: null,
@@ -241,6 +266,7 @@ export class UpdaterManager {
       releaseUrl: `https://github.com/yinxulai/osw/releases/tag/v${info.version}`,
       assets,
       preferredAsset: pickPreferredAsset(assets),
+      requiresManualUpdate: isMajorUpgrade(app.getVersion(), info.version),
     }
   }
 
@@ -266,6 +292,13 @@ export class UpdaterManager {
     if (process.platform === 'darwin') {
       // macOS 装不了 electron-updater 的更新包，这里只把用户送到下载页。
       // 返回 `manual-download` 而不是 `false`：它不是失败，界面不该报「下载失败」。
+      await this.openReleasesPage()
+      return 'manual-download'
+    }
+    if (this.state.info?.requiresManualUpdate) {
+      // 跨大版本：不下载、不自动装，只把用户送到发布页。
+      // 自动装上去的代价是用户的配置在没有任何预告的情况下不再被读（见 `isMajorUpgrade`）。
+      console.info(`[updater] manual update required currentVersion=${app.getVersion()} latestVersion=${this.state.info.latestVersion}`)
       await this.openReleasesPage()
       return 'manual-download'
     }
@@ -301,9 +334,14 @@ export class UpdaterManager {
    * 其他平台由 electron-updater 退出应用并启动安装程序。
    */
   async installUpdate(): Promise<void> {
-    if (process.platform === 'darwin' || this.state.status !== 'downloaded') {
-      // macOS 使用 DMG 手动覆盖安装；其他平台无已下载更新时也回退到发布页。
-      console.info(`[updater] opening release page reason=${process.platform === 'darwin' ? 'manual-macos-install' : 'update-not-downloaded'}`)
+    if (
+      process.platform === 'darwin'
+      || this.state.status !== 'downloaded'
+      || Boolean(this.state.info?.requiresManualUpdate)
+    ) {
+      // macOS 使用 DMG 手动覆盖安装；跨大版本不走自动安装（即使包里已经躺着一个）；
+      // 其他平台无已下载更新时也回退到发布页。
+      console.info(`[updater] opening release page reason=${resolveManualInstallReason(this.state)}`)
       await this.openReleasesPage()
       return
     }
@@ -315,4 +353,11 @@ export class UpdaterManager {
   async openReleasesPage(): Promise<void> {
     await shell.openExternal(this.state.info?.releaseUrl ?? GITHUB_RELEASES_PAGE)
   }
+}
+
+/** 日志里那一行「为什么转去发布页」的原因码——三个分支各自可辨认。 */
+function resolveManualInstallReason(state: UpdateState): string {
+  if (process.platform === 'darwin') return 'manual-macos-install'
+  if (state.info?.requiresManualUpdate) return 'major-version-manual-update'
+  return 'update-not-downloaded'
 }

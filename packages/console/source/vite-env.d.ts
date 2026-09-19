@@ -26,6 +26,8 @@ interface UpdateInfo {
   releaseUrl: string
   assets: ReleaseAsset[]
   preferredAsset?: ReleaseAsset
+  /** 跨应用大版本的破坏性更新：不做自动更新，只能手动下载安装。 */
+  requiresManualUpdate: boolean
 }
 
 interface UpdateState {

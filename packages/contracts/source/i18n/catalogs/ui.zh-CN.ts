@@ -1550,6 +1550,8 @@ export const uiZhCN: Record<keyof typeof uiEn, MessageValue> = {
   'settings.update.installNow': '立即安装',
   'settings.update.installFailed': '启动安装程序失败',
   'settings.update.downloadDmg': '前往下载 DMG',
+  'settings.update.downloadNewVersion': '前往下载新版本',
+  'settings.update.manualUpdateNotice': 'v{version} 是一个大版本更新，包含破坏性变更（数据与配置不再沿用），因此不支持自动更新，请手动下载安装。',
   'settings.update.githubReleases': 'GitHub 发布页',
   'settings.update.package': '更新包',
   'settings.update.notesToggle': '查看更新说明',
