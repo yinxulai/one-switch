@@ -35,9 +35,7 @@ export function ModelProtocolEndpointCard(props: ModelProtocolEndpointCardProps)
       {entry.enabled && (
         <div className="grid gap-3">
           <div className="flex items-center justify-between gap-3">
-            <span className="system-xs-regular text-text-tertiary">
-              {entry.overrideUrl ? t('models.endpoint.useCustomUrl') : t('models.endpoint.useProviderDefault')}
-            </span>
+            <span className="system-xs-regular text-text-tertiary">{t('models.endpoint.customUrlLabel')}</span>
             <Switch
               checked={entry.overrideUrl}
               onCheckedChange={checked => updateProtocolEntry(index, { overrideUrl: checked })}

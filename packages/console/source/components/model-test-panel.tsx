@@ -17,7 +17,7 @@ import {
 } from 'lucide-react'
 import type { Protocol, Provider, ProviderModelRoute } from '@common/schemas'
 import type { UiCatalogKey } from '@common/i18n/catalogs'
-import { CONVERTIBLE_PROTOCOLS } from '@common/protocols'
+import { CONVERTIBLE_PROTOCOLS, PROTOCOL_DISPLAY_NAMES } from '@common/protocols'
 import { modelTestApi, type ModelTestResult } from '@/api/tools'
 import { InlineEmptyState } from '@/components/inline-empty-state'
 import { TableFrame, TableHeaderSurface, tableRowClass } from '@/components/table-primitives'
@@ -56,11 +56,7 @@ interface TestTask {
   errorMessage?: string
 }
 
-const PROTOCOL_LABELS: Record<Protocol, string> = {
-  'openai-completions': 'Chat Completions',
-  'openai-responses': 'Responses',
-  'anthropic-messages': 'Messages',
-}
+const PROTOCOL_LABELS: Record<Protocol, string> = { ...PROTOCOL_DISPLAY_NAMES }
 
 const TEST_CONCURRENCY = 3
 

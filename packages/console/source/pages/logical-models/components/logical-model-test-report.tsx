@@ -1,5 +1,6 @@
 import { Activity, FlaskConical, Loader2 } from 'lucide-react'
 import type { Protocol } from '@common/schemas'
+import { PROTOCOL_DISPLAY_NAMES } from '@common/protocols'
 import type { ModelTestResult } from '@/api/tools'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -24,11 +25,7 @@ interface LogicalModelTestSummaryProps {
   onClose: () => void
 }
 
-export const PROTOCOL_LABELS: Record<Protocol, string> = {
-  'openai-completions': 'OpenAI Chat',
-  'openai-responses': 'OpenAI Responses',
-  'anthropic-messages': 'Anthropic',
-}
+export const PROTOCOL_LABELS: Record<Protocol, string> = { ...PROTOCOL_DISPLAY_NAMES }
 
 export function LogicalModelTestControls(props: LogicalModelTestControlsProps) {
   const t = useTranslation()

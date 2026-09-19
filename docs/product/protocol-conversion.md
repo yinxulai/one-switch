@@ -82,12 +82,12 @@
 
 | 方向 | 约定 |
 |------|------|
-| OpenAI → Anthropic | content block index 由转换器统一分配：文本块占用首个 index，`tool_calls` 的 OpenAI index 通过映射表固定到各自的 Anthropic index，不允许直接复用 OpenAI 的 tool index |
-| OpenAI → Anthropic | `message_start` 在首次出现内容时合成；`message_delta` + `message_stop` 仅在同时拿到 `finish_reason` 与 `usage` 后发出；上游提前结束（缺 `usage`）时在流结束时用最近一次 `finish_reason` 兜底关闭 |
-| Anthropic → OpenAI | Anthropic 的 block index 会重新压缩为连续的 OpenAI `tool_calls` index；`thinking_delta`、`content_block_stop` 等无对应语义的事件被忽略；`message_delta` 缺少 `stop_reason` 时只回填 usage，由 `message_stop` 兜底补 `finish_reason` |
-| OpenAI → Responses | 必须合成完整事件生命周期：`response.created` → `response.in_progress` → `output_item.added` → `content_part.added` → `output_text.delta`* → `output_text.done` → `content_part.done` → `output_item.done` → 终止事件；文本 item 在切换到 function call item 前必须先关闭 |
-| OpenAI → Responses | 终止事件取决于上游 `finish_reason`：`length` / `content_filter` 用 `response.incomplete` 并携带 `incomplete_details.reason`（`max_output_tokens` / `content_filter`），其余用 `response.completed`；两种终止都携带完整 `output` 与 `usage`，item 自身的 `status` 与其 `output_item.done` 事件保持一致 |
-| OpenAI 上游 → 任意客户端 | 上游 `data: [DONE]` 只表示 OpenAI SSE 结束，转换器必须消费并丢弃，不能转发给 Anthropic 或 Responses 客户端 |
+| OpenAI Completions → Anthropic Messages | content block index 由转换器统一分配：文本块占用首个 index，`tool_calls` 的 OpenAI index 通过映射表固定到各自的 Anthropic index，不允许直接复用 OpenAI 的 tool index |
+| OpenAI Completions → Anthropic Messages | `message_start` 在首次出现内容时合成；`message_delta` + `message_stop` 仅在同时拿到 `finish_reason` 与 `usage` 后发出；上游提前结束（缺 `usage`）时在流结束时用最近一次 `finish_reason` 兜底关闭 |
+| Anthropic Messages → OpenAI Completions | Anthropic 的 block index 会重新压缩为连续的 OpenAI `tool_calls` index；`thinking_delta`、`content_block_stop` 等无对应语义的事件被忽略；`message_delta` 缺少 `stop_reason` 时只回填 usage，由 `message_stop` 兜底补 `finish_reason` |
+| OpenAI Completions → OpenAI Responses | 必须合成完整事件生命周期：`response.created` → `response.in_progress` → `output_item.added` → `content_part.added` → `output_text.delta`* → `output_text.done` → `content_part.done` → `output_item.done` → 终止事件；文本 item 在切换到 function call item 前必须先关闭 |
+| OpenAI Completions → OpenAI Responses | 终止事件取决于上游 `finish_reason`：`length` / `content_filter` 用 `response.incomplete` 并携带 `incomplete_details.reason`（`max_output_tokens` / `content_filter`），其余用 `response.completed`；两种终止都携带完整 `output` 与 `usage`，item 自身的 `status` 与其 `output_item.done` 事件保持一致 |
+| OpenAI Completions 上游 → 任意客户端 | 上游 `data: [DONE]` 只表示 OpenAI SSE 结束，转换器必须消费并丢弃，不能转发给 Anthropic Messages 或 OpenAI Responses 客户端 |
 | 任意方向 | `flush()` 与 `finish()` 必须幂等；即使没有残留缓冲也要补齐收尾事件，保证客户端总能收到终止事件 |
 
 ## 数据模型变更
@@ -151,14 +151,14 @@
 ### 逻辑模型页
 
 - 每个 ProviderModel 条目的协议徽标区：
-  - 原生协议：现有实心徽标（如 `OpenAI`）
-  - 转换支持的协议：特殊徽标——带转换图标的描边样式（如 `⟳ Anthropic`），hover 提示「经协议转换支持」
+  - 原生协议：现有实心徽标（如 `OpenAI Completions`）
+  - 转换支持的协议：特殊徽标——带转换图标的描边样式（如 `⟳ Anthropic Messages`），hover 提示「经协议转换支持」
 - 排序展示上，模型条目可同时出现原生徽标 + 若干转换徽标，原生在前
 - 手动切换选择器中，候选项同样以徽标区分原生/转换，避免用户误选
 
 ### 请求日志
 
-- 协议列在发生转换时显示 `Anthropic → OpenAI` 组合标签
+- 协议列在发生转换时显示 `Anthropic Messages → OpenAI Completions` 组合标签
 - 筛选器按客户端协议过滤（保持现有语义）
 
 ## 转换器模块设计
@@ -243,8 +243,8 @@ interface ProtocolConversionAdapter {
 
 - OpenAI `prompt_tokens` / `input_tokens` 表示总输入。
 - Anthropic `input_tokens` 只表示未缓存输入，总输入为 `input_tokens + cache_read_input_tokens + cache_creation_input_tokens`。
-- OpenAI → Anthropic 时，从总输入中扣除 `cached_tokens` 和 `cache_write_tokens`；异常数据使用 0 作为未缓存输入下限。
-- Anthropic → OpenAI 时，将未缓存、缓存读取和缓存创建三部分相加，并把读取/写入分别放入 `*_tokens_details`。
+- OpenAI Completions → Anthropic Messages 时，从总输入中扣除 `cached_tokens` 和 `cache_write_tokens`；异常数据使用 0 作为未缓存输入下限。
+- Anthropic Messages → OpenAI Completions 时，将未缓存、缓存读取和缓存创建三部分相加，并把读取/写入分别放入 `*_tokens_details`。
 - 非流式与 SSE 最终 usage 必须使用相同公式。Anthropic SSE 的输入 usage 可能位于 `message_start`、输出 usage 位于 `message_delta`，转换器必须合并后输出。
 
 请求缓存控制采用保守的 best-effort 映射：

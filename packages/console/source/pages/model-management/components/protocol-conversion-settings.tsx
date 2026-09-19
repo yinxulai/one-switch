@@ -1,8 +1,7 @@
 import { Repeat } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
-import { CONVERTIBLE_PROTOCOLS } from '@common/protocols'
+import { CONVERTIBLE_PROTOCOLS, PROTOCOL_DISPLAY_NAMES } from '@common/protocols'
 import { useTranslation } from '@/i18n/provider'
-import { PROTOCOL_SHORT_LABELS } from '../lib/protocols'
 import type { ProtocolEndpointEntry } from '../hooks/types'
 
 interface ProtocolConversionSettingsProps {
@@ -41,7 +40,7 @@ export function ProtocolConversionSettings(props: ProtocolConversionSettingsProp
               className="inline-flex items-center gap-1 rounded-md bg-state-warning-hover px-1.5 py-0.5 system-2xs-medium text-text-warning"
             >
               <Repeat className="size-2.5" aria-hidden />
-              {PROTOCOL_SHORT_LABELS[from]} → {PROTOCOL_SHORT_LABELS[entry.protocol]}
+              {PROTOCOL_DISPLAY_NAMES[from]} → {PROTOCOL_DISPLAY_NAMES[entry.protocol]}
             </span>
           ))}
           <p className="w-full system-2xs-regular text-text-tertiary">

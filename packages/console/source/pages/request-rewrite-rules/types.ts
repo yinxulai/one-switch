@@ -1,4 +1,5 @@
-﻿import type { Protocol, TransportKind } from '@common/schemas'
+﻿import { PROTOCOL_DISPLAY_NAMES } from '@common/protocols'
+import type { Protocol, TransportKind } from '@common/schemas'
 
 export type RuleStage = 'request' | 'response'
 export type RuleStatusFilter = 'all' | 'enabled' | 'disabled'
@@ -65,8 +66,4 @@ export const PROTOCOL_OPTIONS: Protocol[] = [
 ]
 
 /** 协议标识是供应商的产品名，两种界面语言下写法相同，因此不进翻译目录。 */
-export const PROTOCOL_LABELS: Record<Protocol, string> = {
-  'openai-completions': 'OpenAI Completions',
-  'openai-responses': 'OpenAI Responses',
-  'anthropic-messages': 'Anthropic Messages',
-}
+export const PROTOCOL_LABELS: Record<Protocol, string> = { ...PROTOCOL_DISPLAY_NAMES }

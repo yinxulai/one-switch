@@ -38,9 +38,3 @@ export const PROTOCOL_EXAMPLES: Record<Protocol, ProtocolExample[]> = {
  */
 export const PROTOCOL_OPTIONS: Array<{ value: Protocol; label: string }> = ProtocolSchema.options
   .map(value => ({ value, label: PROTOCOL_DISPLAY_NAMES[value] }))
-
-export const PROTOCOL_SHORT_LABELS: Record<Protocol, string> = {
-  'openai-completions': 'OpenAI',
-  'openai-responses': 'Responses',
-  'anthropic-messages': 'Anthropic',
-}
