@@ -28,6 +28,7 @@
     "../../packages/console/source/**/*.ts",
     "../../packages/console/source/**/*.tsx",
     "../../apps/app/source/**/*.ts",
+    "../../apps/api/source/**/*.ts",
     "../../apps/cli/source/**/*.ts",
     "../../packages/console/vite.config.ts",
     "../../packages/core/drizzle.config.config.ts",

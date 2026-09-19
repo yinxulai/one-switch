@@ -10,7 +10,7 @@
 
 - [x] [data-model.md](./data-model.md)：22 张核心表基线，含 provider_settings、provider_endpoints、provider_model_endpoints、provider_model_health、scheduling_policies、protocol_converters、request_rewrite_rules、provider_model_request_rewrite_rules、workflows、request_logs、request_attributes、request_usages、attempt_usages、request_attempts、request_contents、attempt_contents、runtime_logs；采用标准字段结构化列、多值关系表、受限 JSON 正文/协议详情、请求观测分层、软删除和 Unix 毫秒时间戳。
 - [x] [proxy.md](./proxy.md)（外部行为契约）、[proxy-engine.md](./proxy-engine.md)（分层引擎）：代理管线按入口 → 路由 → 尝试规划 → 尝试执行 → 协议/适配 → 传输 → 响应产出 → 观测分层。
-- [x] [protocol-conversion.md](./protocol-conversion.md)、[server-architecture.md](./server-architecture.md)、[tech-architecture.md](./tech-architecture.md)、[security-privacy.md](./security-privacy.md)、[observability.md](./observability.md)。
+- [x] [protocol-conversion.md](./protocol-conversion.md)、[server-architecture.md](./server-architecture.md)、[tech-architecture.md](./tech-architecture.md)、[security-privacy.md](./security-privacy.md)、[observability.md](./observability.md)、[telemetry.md](./telemetry.md)。
 
 ### 当前实现结论
 
@@ -180,6 +180,21 @@
 - [ ] 三种协议的 thinking/reasoning 字段矩阵，以及 OpenAI Responses、Anthropic Messages 的人工验收（**部分实现**：Responses `reasoning.effort` ↔ Chat `reasoning_effort` 与用量层 `reasoning_tokens` 已映射；Anthropic `thinking` / `thinking_delta` 当前双向丢弃，完整字段矩阵与人工验收未做，见 [request-rewrite-rules.md](./request-rewrite-rules.md) §5.4）
 - [ ] 请求日志中的规则执行摘要与响应字段修改安全审计（**部分实现**：`request_attempts.requestRewriteRuleIds` / `responseRewriteRuleIds` 已落库并在请求详情展示规则名，粒度只到规则 ID 列表；响应字段修改的安全审计未做，见 [request-rewrite-rules.md](./request-rewrite-rules.md) §12）
 - [ ] 流式事件级规则（仅在独立设计评审通过后实施）
+
+### 匿名使用统计
+
+默认关闭的匿名使用统计：事件白名单、匿名标识口径、上报链路与分析口径见 [telemetry.md](./telemetry.md)。
+
+- [x] 设计定稿：事件目录（13 个事件）、公共字段、稳定不轮换的 `installId` 与保留期取舍、端点恒定与后端可换、首版只对接 GA4（不自建存储）、Worker 职责与 GA 能力边界、分析口径
+- [ ] `packages/contracts/source/telemetry.ts`：事件名闭集、属性枚举与长度约束、端点常量
+- [ ] `SettingsSchema`：`telemetryEnabled`（默认 `false`）与 `telemetryEndpoint`（仅开发档使用）
+- [ ] core：安装标识读写（`telemetry-id`）、内存队列、批量发送、独立直连连接器，接入启动 / 关闭生命周期
+- [ ] 宿主注入应用版本（core 不自己解析版本）
+- [ ] 管理接口：预告报文（「预览即将发送的内容」）与统计状态
+- [ ] 控制台：统计开关与同屏预览卡片
+- [ ] 引导页同意步骤（默认不勾选，跳过不等于同意）
+- [ ] `apps/api/`：严格校验、白名单削平、用 `cf.country` 补 `user_location.country_id`、限流、单批 25 条硬上限、转发 GA4 Measurement Protocol
+- [ ] `apps/api/` 自动部署：push 到 `main` 且 `apps/api/**` 变更时发布，支持手动触发
 
 ### 范围
 

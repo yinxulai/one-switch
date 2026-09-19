@@ -39,6 +39,8 @@ async function startHarness(options: HarnessOptions = {}): Promise<Harness> {
   const managementPort = await getAvailablePort()
   const runtimeConfig = createRuntimeConfig({
     environment: 'development',
+    appVersion: '0.0.0-test',
+    runtime: 'desktop',
     dataDir: dataDirectory,
     proxyPort,
     managementPort,

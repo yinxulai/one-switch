@@ -370,6 +370,24 @@ export const SettingsSchema = z.object({
    * 切到规则模式后，图仍然完整保留（在它的版本列表里），切回来就恢复。
    */
   routeMode: RouteModeSchema.default('workflow'),
+  /**
+   * 匿名使用统计的开关。**默认关闭**——统计是「用户选择参与」，不是「用户选择退出」。
+   *
+   * 关闭时不上报任何请求，包括关闭这个动作本身之后的一切后续事件；
+   * 关闭的那一刻会尽力补发一条 `telemetry_toggled`，否则服务端只能看到「某天起不再出现」，
+   * 分不清是关闭、卸载还是断网（见 `docs/product/telemetry.md` §13）。
+   *
+   * 采集范围、事件白名单与保留期都在 telemetry.md，不在这里复述。
+   */
+  telemetryEnabled: z.boolean().default(false),
+  /**
+   * 上报端点的覆盖值，**空字符串表示用内置常量**（`@common/telemetry` 的 `TELEMETRY_ENDPOINT`）。
+   *
+   * 只给开发档使用：把请求打到本地的 `wrangler dev` 上，不必改代码也不必发版。
+   * 它不做校验、不会被用户改到别处去——它不是「自定义上报服务」功能，
+   * 只是一个让本地调试不必污染生产数据的出口。
+   */
+  telemetryEndpoint: z.string().default(''),
   updatedTime: z.number().int(),
 })
 export type Settings = z.infer<typeof SettingsSchema>

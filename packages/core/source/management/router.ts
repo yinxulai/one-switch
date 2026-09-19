@@ -19,6 +19,7 @@ import {
   requestRewriteRuleRoutes,
   runtimeControlRoutes,
   settingsRoutes,
+  telemetryRoutes,
 } from './routes'
 import type { RuntimeEnvironment } from '@common/runtime-profile'
 import { parseJsonBody } from './core/request-body'
@@ -32,6 +33,7 @@ const router = new HttpRouter<ManagementHandler>()
   .mount(providerModelRoutes)
   .mount(settingsRoutes)
   .mount(runtimeControlRoutes)
+  .mount(telemetryRoutes)
   .mount(logRoutes)
   .mount(requestLogRoutes)
   .mount(analyticsRoutes)

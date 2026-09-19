@@ -1,0 +1,20 @@
+{
+  "name": "@one-switch/api",
+  "version": "1.1.0-beta.14",
+  "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "type": "module",
+  "description": "匿名使用统计的上报端点：严格校验客户端报文、削平白名单、补服务端字段，再转发到下游分析服务。",
+  "author": "yinxulai <yinxulai@hotmail.com>",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "deploy:dry-run": "wrangler deploy --dry-run --outdir=dist",
+    "dev:worker": "wrangler dev"
+  },
+  "dependencies": {
+    "@one-switch/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "wrangler": "^4.42.0"
+  }
+}

@@ -395,6 +395,9 @@ async function bootstrap(): Promise<void> {
   const userDataDir = app.getPath('userData')
   const runtimeConfig = createRuntimeConfig({
     environment: runtimeProfile.environment,
+    // 版本号只有一个来源（打包出来的清单），主进程已经拿得到，不再让服务进程自己猜一遍。
+    appVersion: app.getVersion(),
+    runtime: 'desktop',
     dataDir: userDataDir,
     // 桌面形态的窗口直接 loadFile 加载控制台产物，不由管理服务托管静态文件。
     serveWeb: false,

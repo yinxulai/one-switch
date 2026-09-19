@@ -121,6 +121,8 @@ export async function runStart(values: CliArguments): Promise<number> {
   const runtimeConfig = createRuntimeConfig({
     // 预设由 `host.ts` 唯一决定：数据目录名与默认端口都跟着它走。
     environment: CLI_RUNTIME_ENVIRONMENT,
+    appVersion: __CLI_VERSION__,
+    runtime: 'cli',
     dataDir,
     proxyHost: values.host ?? undefined,
     proxyPort: values.proxyPort ?? undefined,

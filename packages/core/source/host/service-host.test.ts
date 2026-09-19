@@ -142,7 +142,7 @@ function createHost(overrides: Partial<ServiceHostOptions> = {}): Harness {
   const states: ServiceHostState[] = []
 
   const host = new ServiceHost({
-    runtimeConfig: createRuntimeConfig({ environment: 'development', dataDir: temporaryDirectory }),
+    runtimeConfig: createRuntimeConfig({ environment: 'development', appVersion: '0.0.0-test', runtime: 'desktop', dataDir: temporaryDirectory }),
     secretStore,
     systemProxyResolver: async () => 'DIRECT',
     serviceEntry: 'fixture',

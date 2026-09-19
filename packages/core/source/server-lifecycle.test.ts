@@ -167,6 +167,8 @@ describe('server lifecycle', () => {
 function createTestRuntimeConfig(proxyPort: number, managementPort: number): RuntimeConfig {
   return createRuntimeConfig({
     environment: 'development',
+    appVersion: '0.0.0-test',
+    runtime: 'desktop',
     dataDir: temporaryDirectory,
     proxyPort,
     managementPort,

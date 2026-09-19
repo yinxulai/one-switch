@@ -27,6 +27,7 @@ const PACKAGE_ROOTS = {
   contracts: ['packages/contracts/source'],
   core: ['packages/core/source'],
   console: ['packages/console/source'],
+  api: ['apps/api/source'],
   cli: ['apps/cli/source'],
   app: ['apps/app/source'],
 }
@@ -55,6 +56,14 @@ const RULES = {
       { pattern: /^electron$/, why: '控制台不得直接依赖 Electron，宿主能力见 docs/product/packaging.md §5.4' },
     ],
   },
+  api: {
+    summary: '上报端点跑在 Worker 的 isolate 里，只用共享契约，不碰任何一边的实现',
+    forbiddenPackages: ['core', 'console', 'cli', 'app'],
+    forbiddenSpecifiers: [
+      { pattern: /^electron$/, why: 'Worker 里没有 Electron' },
+      { pattern: /^node:/, why: 'Worker 默认不是 Node 运行时；要放开必须先在 wrangler.toml 里加 nodejs_compat' },
+    ],
+  },
   cli: {
     summary: 'CLI 只做宿主适配与参数解析，不写业务逻辑',
     forbiddenPackages: ['console', 'app'],
@@ -78,6 +87,7 @@ const ALIASES = [
   { pattern: /^@render(\/|$)/, packageName: 'console' },
   { pattern: /^@(\/|$)/, packageName: 'console' },
   { pattern: /^@one-switch\/console(\/|$)/, packageName: 'console' },
+  { pattern: /^@one-switch\/api(\/|$)/, packageName: 'api' },
   { pattern: /^@one-switch\/cli(\/|$)/, packageName: 'cli' },
   { pattern: /^@one-switch\/app(\/|$)/, packageName: 'app' },
 ]

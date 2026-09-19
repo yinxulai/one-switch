@@ -17,8 +17,30 @@
 
 import { getRuntimeProfile, type RuntimeEnvironment } from './runtime-profile'
 
+/**
+ * 宿主形态：把 core 跑起来的是桌面端还是命令行。
+ *
+ * core 自己分不出来：两种形态跑的是同一个 `ServerRuntime`，`serveWeb` 之类的是部署选择
+ * 而不是宿主身份。这个事实只有宿主知道，所以由宿主带进来——与 `appVersion` 同一条道理。
+ */
+export const HOST_RUNTIMES = ['desktop', 'cli'] as const
+export type HostRuntime = (typeof HOST_RUNTIMES)[number]
+
 export interface RuntimeConfig {
   environment: RuntimeEnvironment
+  /**
+   * 宿主解析出来的应用版本。
+   *
+   * **core 不自己找版本号**：它跑在 `utilityProcess` 里，既没有 Electron 的 `app.getVersion()`
+   * 也没有打包时注入的 `__APP_VERSION__`，任何「自己算一遍」的写法都只能得到另一份可能与
+   * 主进程不一致的答案。版本号是构建产物的事实，只有一个来源（根 `package.json`，
+   * 由 `packages/toolkit/scripts/version.mjs` 写进各清单），宿主已经拿得到，就由宿主带进来。
+   *
+   * 它不只是给统计用的：任何「这个运行实例是什么版本」的判断（诊断、上报、日志）都读它。
+   */
+  appVersion: string
+  /** 宿主形态。统计的 `runtime` 字段、按形态区分的行为都读它。 */
+  runtime: HostRuntime
   /** 数据目录（两个数据库、运行时文件、本地密钥文件都落在这里）。 */
   dataDir: string
   /** 代理监听地址的**默认值**；实际上由设置里的 `listenHost` 决定。 */
@@ -37,6 +59,10 @@ export interface RuntimeConfig {
 
 export interface CreateRuntimeConfigInput {
   environment: RuntimeEnvironment
+  /** 应用版本，必填：见 {@link RuntimeConfig.appVersion}。 */
+  appVersion: string
+  /** 宿主形态，必填：见 {@link RuntimeConfig.runtime}。 */
+  runtime: HostRuntime
   dataDir: string
   serveWeb?: boolean
   webRoot?: string | null
@@ -56,6 +82,8 @@ export function createRuntimeConfig(input: CreateRuntimeConfigInput): RuntimeCon
   const profile = getRuntimeProfile(input.environment)
   return {
     environment: input.environment,
+    appVersion: input.appVersion,
+    runtime: input.runtime,
     dataDir: input.dataDir,
     proxyHost: input.proxyHost ?? '127.0.0.1',
     proxyPort: input.proxyPort ?? profile.proxyPort,
