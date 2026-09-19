@@ -44,9 +44,6 @@ import {
 import { buildCollectBody, collectUrl } from './ga'
 import { createRateLimiter } from './rate-limit'
 
-/** 所有响应共用一个 Content-Type，只写一份。 */
-const JSON_HEADERS = { 'Content-Type': 'application/json' }
-
 /**
  * Worker 的绑定。
  *
@@ -90,20 +87,17 @@ const INSTALL_LIMITS = { windowMilliseconds: 60_000, maxPerWindow: 30, maxKeys: 
 
 export type TelemetryHandler = (request: Request, env: TelemetryEnv, now?: number) => Promise<Response>
 
-export interface TelemetryHandlerOptions {
-  /** 下游请求的实现。只在测试里替换；部署时不传，用运行时的 `fetch`。 */
-  fetchImpl?: typeof fetch
-}
+/** 下游请求的实现。写成别名是为了让「可以在测试里换掉」这件事在签名上一眼可见。 */
+type Fetcher = typeof fetch
 
 /**
  * 造一个 handler。
  *
  * 之所以是工厂而不是一个模块级的函数：限流状态必须活在 handler 上，测试要能拿到互不干扰的
- * 实例。部署时用下面那个默认实例——**限流状态在部署形态下必须是长命的**，每次请求新建一个
- * 计数器等于没有限流。
+ * 实例。部署时用文件末尾那个默认实例——**限流状态在部署形态下必须是长命的**，每次请求新建
+ * 一个计数器等于没有限流。
  */
-export function createTelemetryHandler(options: TelemetryHandlerOptions = {}): TelemetryHandler {
-  const fetchImpl = options.fetchImpl ?? ((...args) => fetch(...args))
+export function createTelemetryHandler(fetcher: Fetcher = fetch): TelemetryHandler {
   const addressLimiter = createRateLimiter(ADDRESS_LIMITS)
   const installLimiter = createRateLimiter(INSTALL_LIMITS)
 
@@ -158,11 +152,19 @@ export function createTelemetryHandler(options: TelemetryHandlerOptions = {}): T
 
     const body = buildCollectBody(events, { country: countryOf(request), receivedAt: now })
 
-    const upstream = await postToGa(collectUrl(measurementId, apiSecret), body, fetchImpl)
-    if (upstream === null) return json(502, { ok: false, error: 'upstream_unreachable' })
+    const upstream = await postToGa(collectUrl(measurementId, apiSecret), body, fetcher)
+    if (upstream === null) {
+      // 唯一的日志点，而且只说「下游答不答」，不说「谁在发」：没有安装标识、没有来源地址、
+      // 没有报文正文。`wrangler.toml` 把 `[observability]` 打开，等的就是这行。
+      console.error('[apis] upstream unreachable')
+      return json(502, { ok: false, error: 'upstream_unreachable' })
+    }
     // ⚠️ 2xx 只说明 GA 收下了请求，**不代表事件被接受**：参数超长、名字非法、时间戳过旧都会
     // 静默丢弃（telemetry.md §9）。所以这个返回值不能当验收标准用，验收要看实时报告。
-    if (!upstream.ok) return json(502, { ok: false, error: 'upstream_rejected', status: upstream.status })
+    if (!upstream.ok) {
+      console.error(`[apis] upstream rejected status=${upstream.status}`)
+      return json(502, { ok: false, error: 'upstream_rejected', status: upstream.status })
+    }
     return new Response(null, { status: 204 })
   }
 }
@@ -230,11 +232,11 @@ async function sha256Prefix(value: string): Promise<string> {
   return [...new Uint8Array(digest).slice(0, 8)].map(byte => byte.toString(16).padStart(2, '0')).join('')
 }
 
-async function postToGa(url: string, body: unknown, fetchImpl: typeof fetch): Promise<Response | null> {
+async function postToGa(url: string, body: unknown, fetcher: Fetcher): Promise<Response | null> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MILLISECONDS)
   try {
-    return await fetchImpl(url, {
+    return await fetcher(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -282,24 +284,46 @@ function isNonEmpty(value: string | undefined): value is string {
   return value !== undefined && value !== ''
 }
 
+/**
+ * 所有响应的头都只从这里出去。
+ *
+ * 刻意**不加 CORS**：调用方是桌面应用与命令行，不是浏览器里的页面，放开跨域只会让它更容易被
+ * 滥用。刻意**不设 `Cache-Control`**：这里没有任何东西值得被缓存，而缓存住一个 429 是真伤害。
+ */
+function responseHeaders(extra?: Record<string, string>): Record<string, string> {
+  return { 'Content-Type': 'application/json; charset=utf-8', ...extra }
+}
+
 function json(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS })
+  return new Response(JSON.stringify(body), { status, headers: responseHeaders() })
 }
 
 function methodNotAllowed(allow: string): Response {
   return new Response(JSON.stringify({ ok: false, error: 'method_not_allowed' }), {
     status: 405,
-    headers: { ...JSON_HEADERS, Allow: allow },
+    headers: responseHeaders({ Allow: allow }),
   })
 }
 
 function rateLimited(): Response {
   return new Response(JSON.stringify({ ok: false, error: 'rate_limited' }), {
     status: 429,
-    headers: { ...JSON_HEADERS, 'Retry-After': '60' },
+    headers: responseHeaders({ 'Retry-After': '60' }),
   })
 }
 
-// 部署形态的实例：无状态入口 + 长命的限流状态。
-// 刻意**不加 CORS**：调用方是桌面应用与命令行，不是浏览器里的页面；放开跨域只会让它更容易被滥用。
-export default { fetch: createTelemetryHandler() }
+// 部署形态：入口无状态，限流状态活在模块作用域上，所以它比 isolate 活得短、比请求活得多。
+const handleRequest = createTelemetryHandler()
+
+/**
+ * Worker 的入口。
+ *
+ * 单独写成一个有名的函数而不是直接内联进 `export default`：入口是部署之后最先要去的一行，
+ * 它应该能被搜到、能被打断点。运行时还会传第三个参数 `ExecutionContext`，这里用不到，
+ * 不声明即可。
+ */
+export function workerFetch(request: Request, env: TelemetryEnv): Promise<Response> {
+  return handleRequest(request, env)
+}
+
+export default { fetch: workerFetch }

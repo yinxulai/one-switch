@@ -31,7 +31,7 @@ import {
  * `measurement_id` 与 `api_secret` 只出现在这里：它们不进客户端二进制、不进设置、不进日志。
  * 向欧盟境内收集数据时把它换成 `region1.google-analytics.com`。
  */
-export const GA_COLLECT_ORIGIN = 'https://www.google-analytics.com'
+const GA_COLLECT_ORIGIN = 'https://www.google-analytics.com'
 
 /** GA 用的是微秒，而 `occurredAt` 是毫秒。 */
 const MICROSECONDS_PER_MILLISECOND = 1_000
