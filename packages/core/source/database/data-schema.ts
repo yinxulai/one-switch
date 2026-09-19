@@ -3,7 +3,7 @@ import { check, index, integer, primaryKey, real, sqliteTable, text, uniqueIndex
 import { storedBody } from './stored-body'
 
 /**
- * 数据库（`one-switch-data-v1.db`）：**系统写的东西**（观测数据）。
+ * 数据库（`osw-data-v1.db`）：**系统写的东西**（观测数据）。
  *
  * 请求日志、请求属性、请求级与尝试级用量、尝试、客户端与上游两侧的正文、运行时日志、
  * 供应商与供应商模型的健康状态——全部是系统在跑的过程中自己产生的，用户不可编辑。

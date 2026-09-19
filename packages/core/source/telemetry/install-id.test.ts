@@ -11,7 +11,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 let dataDir: string
 
 beforeEach(() => {
-  dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-telemetry-id-'))
+  dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'osw-telemetry-id-'))
 })
 
 afterEach(() => {

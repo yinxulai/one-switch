@@ -2,7 +2,7 @@ import { sql } from 'drizzle-orm'
 import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 
 /**
- * 配置库（`one-switch-config-v1.db`）：**用户写的东西**。
+ * 配置库（`osw-config-v1.db`）：**用户写的东西**。
  *
  * 供应商、模型、端点、协议转换、逻辑模型、路由策略、改写规则、工作流、全局设置——
  * 全部是用户在界面上敲出来的、丢了就得重敲一遍的内容。文件名的 schema 版本见

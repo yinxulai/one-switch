@@ -37,7 +37,7 @@ async function main(argv: readonly string[]): Promise<number> {
 
   const values = parsed.values
 
-  // `--help` / `--version` 优先于命令：`one-switch start --help` 想看的是帮助，
+  // `--help` / `--version` 优先于命令：`osw start --help` 想看的是帮助，
   // 不是把服务跑起来。
   if (values.help) {
     process.stdout.write(`${renderHelp()}\n`)
@@ -73,7 +73,7 @@ async function main(argv: readonly string[]): Promise<number> {
  * 收尾退出。
  *
  * 不直接 `process.exit()`：输出到管道时 `stdout` 是异步写，强退会把最后几行截掉
- * （`one-switch status` 恰好就是「输出几行然后立刻结束」的形状）。
+ * （`osw status` 恰好就是「输出几行然后立刻结束」的形状）。
  * 先设 `exitCode` 让进程自然收尾，同时挂一个 `unref` 的兜底定时器——
  * 它只在还有句柄占着事件循环时才会触发（例如 fetch 的连接池），自然退出时不起作用。
  */

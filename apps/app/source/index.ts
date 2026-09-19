@@ -64,7 +64,7 @@ function readWasOpenedAsHidden(): boolean {
 // Windows 任务栏图标依赖 AppUserModelID；必须在创建任何窗口前设置，
 // 否则系统会把进程归到默认 Electron 应用，导致显示默认图标。
 if (process.platform === 'win32') {
-  app.setAppUserModelId('com.yinxulai.one-switch')
+  app.setAppUserModelId('com.yinxulai.osw')
 }
 
 function broadcastUpdateState(state: UpdateState) {
@@ -94,11 +94,11 @@ function registerUpdaterIpc() {
 function registerExternalLinkIpc(): void {
   ipcMain.on('open-external', (_event, url: unknown) => {
     if (typeof url !== 'string' || !url.startsWith('https://')) {
-      console.warn('[one-switch] refused to open external url', url)
+      console.warn('[osw] refused to open external url', url)
       return
     }
     void shell.openExternal(url).catch(error => {
-      console.error('[one-switch] failed to open external url', formatError(error))
+      console.error('[osw] failed to open external url', formatError(error))
     })
   })
 }
@@ -129,7 +129,7 @@ if (isPrimaryInstance) {
   registerExternalLinkIpc()
   registerRuntimeConfigIpc()
 } else {
-  console.info('[one-switch] another instance already owns this profile; exiting')
+  console.info('[osw] another instance already owns this profile; exiting')
 }
 
 function reportFatalError(error: unknown, title = nativeTranslator()('native.error.fatalTitle')): void {
@@ -137,7 +137,7 @@ function reportFatalError(error: unknown, title = nativeTranslator()('native.err
   fatalErrorShown = true
 
   const detail = formatError(error)
-  console.error(`[one-switch] ${title}`, detail)
+  console.error(`[osw] ${title}`, detail)
 
   const showDialog = () => {
     dialog.showErrorBox(title, `${detail}\n\n${nativeTranslator()('native.error.fatalDetail')}`)
@@ -167,7 +167,7 @@ process.on('uncaughtException', error => {
  * 而不是靠一次偶发拒绝把整个进程带走。
  */
 process.on('unhandledRejection', reason => {
-  console.error('[one-switch] unhandled rejection', formatError(reason))
+  console.error('[osw] unhandled rejection', formatError(reason))
 })
 
 function formatUptime(): string {
@@ -187,7 +187,7 @@ function showStartupError(error: unknown): void {
   fatalErrorShown = true
 
   const detail = formatError(error)
-  console.error('[one-switch] startup failed', detail)
+  console.error('[osw] startup failed', detail)
 
   // 启动阶段还没有可用的渲染窗口，必须使用原生对话框告知用户，
   // 否则 app.quit() 会让应用看起来像是“启动后直接关闭”。
@@ -215,7 +215,7 @@ function logStartupBanner() {
   const lines = [
     '',
     '  ╔══════════════════════════════════════════════════╗',
-    '  ║              One Switch is starting...           ║',
+    '  ║               OSW is starting...                ║',
     '  ╚══════════════════════════════════════════════════╝',
     '',
     `  Application :  ${app.getName()} v${app.getVersion()}`,
@@ -313,7 +313,7 @@ function installApplicationMenu(): void {
 
 function createWindow() {
   win = new BrowserWindow({
-    title: 'One Switch',
+    title: 'OSW',
     width: 1200,
     height: 800,
     minWidth: 800,
@@ -342,7 +342,7 @@ function createWindow() {
     })
     showStartupError(new Error(failed))
     void stopServer().catch(stopError => {
-      console.error('[one-switch] failed to stop server after renderer load failure', formatError(stopError))
+      console.error('[osw] failed to stop server after renderer load failure', formatError(stopError))
     })
     app.quit()
   })
@@ -369,7 +369,7 @@ function createWindow() {
  */
 function focusExistingInstance(): void {
   if (!win) {
-    console.info('[one-switch] second instance launched while still starting up; ignoring')
+    console.info('[osw] second instance launched while still starting up; ignoring')
     return
   }
   if (win.isMinimized()) win.restore()
@@ -426,7 +426,7 @@ async function bootstrap(): Promise<void> {
   } catch (error) {
     showStartupError(error)
     await stopServer().catch(stopError => {
-      console.error('[one-switch] failed to stop server after startup failure', formatError(stopError))
+      console.error('[osw] failed to stop server after startup failure', formatError(stopError))
     })
     app.quit()
     return
@@ -438,7 +438,7 @@ async function bootstrap(): Promise<void> {
     trayManager.init(win!)
   } catch (error) {
     trayManager = null
-    console.error('[one-switch] failed to initialize tray', error)
+    console.error('[osw] failed to initialize tray', error)
   }
 
   // 开发环境不应修改系统登录项。
@@ -457,7 +457,7 @@ async function bootstrap(): Promise<void> {
     }, 10_000)
   }
 
-  console.info(`[one-switch] ready startupDuration=${formatUptime()}`)
+  console.info(`[osw] ready startupDuration=${formatUptime()}`)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -503,7 +503,7 @@ async function shutdown(): Promise<void> {
     // 服务端本身带关闭握手，这里再兜一个上限，别让某个挂住的连接把退出拖住。
     await Promise.race([stopServer(), delay(5_000)])
   } catch (error) {
-    console.error('[one-switch] failed to stop the server during quit', formatError(error))
+    console.error('[osw] failed to stop the server during quit', formatError(error))
   }
 }
 

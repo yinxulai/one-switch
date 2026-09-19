@@ -1,6 +1,6 @@
 
 <svg width="256px" height="256px" viewBox="0 0 256 256" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
-  <!-- One Switch 标志：一道连续斜切的闪电。所有位图图标都由这个文件派生（pnpm icons）。 -->
+  <!-- OSW 标志：一道连续斜切的闪电。所有位图图标都由这个文件派生（pnpm icons）。 -->
   <defs>
     <linearGradient id="icon-gradient" gradientUnits="userSpaceOnUse" x1="41" y1="16" x2="215" y2="241">
       <stop offset="0" stop-color="#FFE066"></stop>

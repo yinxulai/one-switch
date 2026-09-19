@@ -39,7 +39,7 @@ function mockUpstream(statusCode: number, body: string): void {
 }
 
 beforeEach(async () => {
-  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-fetch-models-'))
+  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'osw-fetch-models-'))
   await initDatabases(temporaryDirectory)
   secretStore = {
     set: vi.fn(async () => undefined),

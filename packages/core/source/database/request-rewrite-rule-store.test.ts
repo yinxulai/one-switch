@@ -20,7 +20,7 @@ import { createProviderModelRoute } from './model-store'
 let temporaryDirectory: string
 
 beforeEach(async () => {
-  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-mod-rule-'))
+  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'osw-mod-rule-'))
   await initDatabases(temporaryDirectory)
 })
 

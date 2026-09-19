@@ -247,7 +247,7 @@ export function resolveNoteNodeSize(model: NoteNode): NoteNodeSize {
 /**
  * 连线在“无状态、无交互”时的颜色。
  * 对应上游的 `--color-workflow-link-line-normal`。
- * 上游只有一种灰，本仓库额外按分支区分颜色，属于 One Switch 的信息增强，
+ * 上游只有一种灰，本仓库额外按分支区分颜色，属于 OSW 的信息增强，
  * 分支色取自 util-colors 色板，保证明暗两套主题下都与节点图标同色系。
  */
 export const EDGE_STROKE_NORMAL = 'var(--color-workflow-link-line-normal)'

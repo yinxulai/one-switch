@@ -28,7 +28,7 @@ function responseData(response: ServerResponse): unknown {
 }
 
 beforeEach(async () => {
-  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-router-graph-'))
+  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'osw-router-graph-'))
   await initDatabases(temporaryDirectory)
 })
 

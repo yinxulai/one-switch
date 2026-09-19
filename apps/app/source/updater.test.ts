@@ -38,34 +38,34 @@ vi.mock('electron-updater', () => ({ autoUpdater: mocks.autoUpdater }))
 
 import { UpdaterManager } from './updater'
 
-const latestReleaseUrl = 'https://github.com/yinxulai/one-switch/releases/tag/v1.1.0'
+const latestReleaseUrl = 'https://github.com/yinxulai/osw/releases/tag/v1.1.0'
 
 /** 真实产物名与顺序（照抄 v1.1.0-beta.9 的 `latest*.yml`，别理想化）。 */
 const windowsFiles = [
-  { url: 'One-Switch-1.1.0-win.exe', sha512: 'checksum', size: 194211246 },
-  { url: 'One-Switch-1.1.0-win-x64.exe', sha512: 'checksum', size: 96353572 },
-  { url: 'One-Switch-1.1.0-win-arm64.exe', sha512: 'checksum', size: 98418281 },
+  { url: 'OSW-1.1.0-win.exe', sha512: 'checksum', size: 194211246 },
+  { url: 'OSW-1.1.0-win-x64.exe', sha512: 'checksum', size: 96353572 },
+  { url: 'OSW-1.1.0-win-arm64.exe', sha512: 'checksum', size: 98418281 },
 ]
 
 const macFiles = [
-  { url: 'One-Switch-1.1.0-mac-arm64.zip', sha512: 'checksum', size: 106595669 },
-  { url: 'One-Switch-1.1.0-mac-x64.zip', sha512: 'checksum', size: 113790882 },
-  { url: 'One-Switch-1.1.0-mac-x64.dmg', sha512: 'checksum', size: 117927813 },
-  { url: 'One-Switch-1.1.0-mac-arm64.dmg', sha512: 'checksum', size: 110720617 },
+  { url: 'OSW-1.1.0-mac-arm64.zip', sha512: 'checksum', size: 106595669 },
+  { url: 'OSW-1.1.0-mac-x64.zip', sha512: 'checksum', size: 113790882 },
+  { url: 'OSW-1.1.0-mac-x64.dmg', sha512: 'checksum', size: 117927813 },
+  { url: 'OSW-1.1.0-mac-arm64.dmg', sha512: 'checksum', size: 110720617 },
 ]
 
 const linuxFiles = [
-  { url: 'One-Switch-1.1.0-linux-x86_64.AppImage', sha512: 'checksum', size: 119007720 },
+  { url: 'OSW-1.1.0-linux-x86_64.AppImage', sha512: 'checksum', size: 119007720 },
 ]
 
 function updateInfo(overrides: Partial<UpdateInfo> = {}): UpdateInfo {
   return {
     version: '1.1.0',
     files: [
-      { url: 'one-switch-1.1.0.exe', sha512: 'checksum', size: 2048 },
-      { url: 'downloads/one-switch-1.1.0.blockmap', sha512: 'checksum' },
+      { url: 'osw-1.1.0.exe', sha512: 'checksum', size: 2048 },
+      { url: 'downloads/osw-1.1.0.blockmap', sha512: 'checksum' },
     ],
-    path: 'one-switch-1.1.0.exe',
+    path: 'osw-1.1.0.exe',
     sha512: 'checksum',
     releaseDate: '2026-08-29T12:00:00.000Z',
     releaseNotes: '<p>Changes</p>',
@@ -157,17 +157,17 @@ describe('UpdaterManager', () => {
         releaseDate: '2026-08-29T12:00:00.000Z',
         releaseUrl: latestReleaseUrl,
         assets: [
-          { name: 'one-switch-1.1.0.exe', size: 2048, downloadUrl: 'one-switch-1.1.0.exe' },
+          { name: 'osw-1.1.0.exe', size: 2048, downloadUrl: 'osw-1.1.0.exe' },
           {
-            name: 'one-switch-1.1.0.blockmap',
+            name: 'osw-1.1.0.blockmap',
             size: 0,
-            downloadUrl: 'downloads/one-switch-1.1.0.blockmap',
+            downloadUrl: 'downloads/osw-1.1.0.blockmap',
           },
         ],
         preferredAsset: {
-          name: 'one-switch-1.1.0.exe',
+          name: 'osw-1.1.0.exe',
           size: 2048,
-          downloadUrl: 'one-switch-1.1.0.exe',
+          downloadUrl: 'osw-1.1.0.exe',
         },
       },
     })
@@ -199,11 +199,11 @@ describe('UpdaterManager', () => {
 
     emit('update-available', updateInfo({ files: windowsFiles }))
     // 第一项是「不带架构段的多合一安装包」（194MB），不是这台 x64 机器要下的那个。
-    expect(manager.getState().info?.preferredAsset?.name).toBe('One-Switch-1.1.0-win-x64.exe')
+    expect(manager.getState().info?.preferredAsset?.name).toBe('OSW-1.1.0-win-x64.exe')
 
     vi.spyOn(process, 'arch', 'get').mockReturnValue('arm64')
     emit('update-available', updateInfo({ files: windowsFiles }))
-    expect(manager.getState().info?.preferredAsset?.name).toBe('One-Switch-1.1.0-win-arm64.exe')
+    expect(manager.getState().info?.preferredAsset?.name).toBe('OSW-1.1.0-win-arm64.exe')
   })
 
   it('picks the DMG for the running architecture on macOS', () => {
@@ -213,7 +213,7 @@ describe('UpdaterManager', () => {
     emit('update-available', updateInfo({ files: macFiles }))
 
     // 元数据第一项是 arm64 的 zip；手动安装要的是本架构的 DMG
-    expect(manager.getState().info?.preferredAsset?.name).toBe('One-Switch-1.1.0-mac-x64.dmg')
+    expect(manager.getState().info?.preferredAsset?.name).toBe('OSW-1.1.0-mac-x64.dmg')
   })
 
   it('picks the AppImage whose architecture token is x86_64 on Linux', () => {
@@ -222,7 +222,7 @@ describe('UpdaterManager', () => {
 
     emit('update-available', updateInfo({ files: linuxFiles }))
 
-    expect(manager.getState().info?.preferredAsset?.name).toBe('One-Switch-1.1.0-linux-x86_64.AppImage')
+    expect(manager.getState().info?.preferredAsset?.name).toBe('OSW-1.1.0-linux-x86_64.AppImage')
   })
 
   it('supplies safe defaults for optional release metadata', () => {
@@ -388,7 +388,7 @@ describe('UpdaterManager', () => {
     await manager.installUpdate()
 
     expect(mocks.shell.openExternal).toHaveBeenCalledWith(
-      'https://github.com/yinxulai/one-switch/releases/latest',
+      'https://github.com/yinxulai/osw/releases/latest',
     )
     expect(mocks.autoUpdater.quitAndInstall).not.toHaveBeenCalled()
   })

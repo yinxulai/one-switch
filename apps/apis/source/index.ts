@@ -8,15 +8,17 @@
  * 3. **补服务端字段**：地区来自 `request.cf.country`，时间戳来自服务器时钟；
  * 4. **限流**：按安装标识与来源 IP 哈希两个维度。
  *
- * 外加一个 `/health`：它是给部署流水线的探针，**不是客户端契约的一部分**，所以既不占根路径，
- * 也不进 `/v1/`（理由见下面 `HEALTH_PATH`）。
+ * 路径**只有 `/v1/track` 一条**（`TELEMETRY_REQUEST_PATH`），其余一律 404，根路径也不例外。
+ * 刻意不为部署流水线另加一个健康检查接口：域名上「唯一一条路径」本身就是最强的信号，
+ * 而流水线真正需要确认的只有「路由注册上了没有」——对 `GET /v1/track` 期待 405 就回答了它，
+ * 那是一个只可能来自本 Worker 的答案（`.github/workflows/deploy-api.yml` 的 Smoke check 即此）。
  *
  * 为什么必须有这一层，而不是让客户端直接打 GA：GA 的密钥只应该存在于这里。桌面应用里嵌的
  * 任何凭证都能被解出来，所以「客户端不持有下游凭证」不是可选的组织方式，是唯一的正确形态。
  * 也因此这里**不做客户端鉴权**——它只能提供虚假的安全感（§7）。
  *
  * 端点地址是客户端里唯一写死的地址，**发布出去就是永久地址**：换下游、换存储、换数据驻留
- * 区域都只动这个 Worker。所以这里对客户端承诺的是**请求格式**（`/v1/events`），不是数据去向。
+ * 区域都只动这个 Worker。所以这里对客户端承诺的是**请求格式**（`/v1/track`），不是数据去向。
  */
 
 import {
@@ -24,30 +26,8 @@ import {
   TELEMETRY_REQUEST_PATH,
   type TelemetryEvent,
 } from '@common/telemetry'
-import apiManifest from '../package.json'
 import { buildCollectBody, collectUrl } from './ga'
 import { createRateLimiter } from './rate-limit'
-
-/**
- * Worker 的版本，取自 `apps/api/package.json`——它与仓库里其余七份清单是同一个数字
- * （`pnpm version:check` 校验一致），打包时被内联成常量，所以它就是这个部署的版本。
- *
- * 报它的用途只有一个：部署之后能回答「跑着的到底是不是我刚推的那一版」。域名绑错、账号切错、
- * 边沿缓存没刷新，这几种都会让这个问句真的出现，而它们在别处都看不出来。
- */
-const VERSION = apiManifest.version
-
-/**
- * 健康检查的路径。
- *
- * **刻意不占根路径 `/`。** 根路径是这块域名上唯一「一看就知道该留给别的东西」的位置，
- * 拿它放一个只在部署流水线里被 curl 一次的探针，等于用一个永久地址换一次便利。
- * 它同样不放进 `/v1/`：那是客户端协议的名字空间，里面每一条都是永久承诺（§7），
- * 而探针是运维设施，应当能随时改名或删掉。
- *
- * 与 `.github/workflows/deploy-api.yml` 的 Smoke check 是同一个字符串，改这里要一起改。
- */
-const HEALTH_PATH = '/health'
 
 /** 所有响应共用一个 Content-Type，只写一份。 */
 const JSON_HEADERS = { 'Content-Type': 'application/json' }
@@ -117,9 +97,8 @@ export function createTelemetryHandler(options: TelemetryHandlerOptions = {}): T
   return async function handle(request, env, now = Date.now()) {
     const pathname = new URL(request.url).pathname
 
-    // 健康检查排在一切之前：它不碰下游、不碰限流、**也不要求密钥配好**——它回答的是
-    // 「Worker 活着吗、路由对吗」，那是流水线唯一能自动验证的部分。
-    if (pathname === HEALTH_PATH) return health(request, env)
+    // 只认一条路径。不在它上面的一律 404（根路径也是）：域名上**没有**「不知道为什么有回应」
+    // 的地址，包括不给运维探针留位置——那件事由 `GET /v1/track` 的 405 回答，见文件头。
     if (pathname !== TELEMETRY_REQUEST_PATH) return json(404, { ok: false, error: 'not_found' })
     if (request.method !== 'POST') return methodNotAllowed('POST')
     if (!isJsonContentType(request.headers.get('content-type'))) return json(415, { ok: false, error: 'unsupported_media_type' })
@@ -166,22 +145,6 @@ export function createTelemetryHandler(options: TelemetryHandlerOptions = {}): T
     if (!upstream.ok) return json(502, { ok: false, error: 'upstream_rejected', status: upstream.status })
     return new Response(null, { status: 204 })
   }
-}
-
-/**
- * 健康检查的响应。
- *
- * **状态码只表达「活着」，不表达「配好了」。** 密钥缺失时回 503 会让一次成功的部署看起来像
- * 失败，而「部署成功了」与「secret 忘了加」是两件事，该分开报：这里恒回 200，把未配置放进
- * 正文的 `upstream` 字段——人和流水线都读得出来，却不假装自己是服务不可用。
- */
-function health(request: Request, env: TelemetryEnv): Response {
-  if (request.method !== 'GET' && request.method !== 'HEAD') return methodNotAllowed('GET, HEAD')
-
-  // HEAD 的正文按 HTTP 语义必须为空：运行期多半会替我们丢掉，但「多半」不是契约。
-  return request.method === 'HEAD'
-    ? new Response(null, { status: 200, headers: JSON_HEADERS })
-    : json(200, { ok: true, version: VERSION, upstream: upstreamStateOf(env) })
 }
 
 /**
@@ -276,18 +239,13 @@ interface DownstreamCredentials {
 }
 
 /**
- * 「下游配置齐了吗」只留这一个定义：业务路径据此回 500，健康检查据此报 `upstream`。
- * 写成两份判断，迟早会出现「健康检查说配好了、真发的时候说没配」这种最难查的不一致。
+ * 「下游配置齐了吗」只留这一个定义：业务路径据此回 500。写成两份判断，迟早会出现
+ * 「这条路径说配好了、那条路径说没配」这种最难查的不一致。
  */
 function credentialsOf(env: TelemetryEnv): DownstreamCredentials | null {
   const { GA_MEASUREMENT_ID: measurementId, GA_API_SECRET: apiSecret } = env
   if (!isNonEmpty(measurementId) || !isNonEmpty(apiSecret)) return null
   return { measurementId, apiSecret }
-}
-
-/** 健康检查正文里的那一格。取值只有两个，不叫 `ready` 是因为缺的只可能是密钥这一件事。 */
-function upstreamStateOf(env: TelemetryEnv): 'configured' | 'unconfigured' {
-  return credentialsOf(env) === null ? 'unconfigured' : 'configured'
 }
 
 function isNonEmpty(value: string | undefined): value is string {

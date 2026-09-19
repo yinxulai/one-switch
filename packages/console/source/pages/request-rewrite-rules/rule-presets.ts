@@ -42,7 +42,7 @@ export interface RulePreset {
  * 版本号取构建时的 `package.json`（Vite `define` 注入的 `__APP_VERSION__`），
  * 这样默认值不会随版本迭代变成一句谎话 —— 它声称的就是当前这个二进制。
  */
-const USER_AGENT_VALUE = `OneSwitch/${__APP_VERSION__}`
+const USER_AGENT_VALUE = `OSW/${__APP_VERSION__}`
 
 /**
  * 模板清单。

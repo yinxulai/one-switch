@@ -1,14 +1,14 @@
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
-  appId: 'com.yinxulai.one-switch',
-  productName: 'One Switch',
+  appId: 'com.yinxulai.osw',
+  productName: 'OSW',
   icon: 'build/icon.png',
   directories: {
     output: '../../release/${version}',
   },
   // 注意：文件名不能包含空格。GitHub 会把 release 资产文件名中的空格替换为 "."，
   // 而 electron-updater 按 latest*.yml 中的原始文件名拼接下载 URL，会导致 404。
-  artifactName: 'One-Switch-${version}-${os}-${arch}.${ext}',
+  artifactName: 'OSW-${version}-${os}-${arch}.${ext}',
   // projectDir 就是本包（`apps/app`），所以这里的路径一律相对它解析；
   // 两个 `{ from, to }` 把「不是本包构建出来的」产物抬进 asar，落到主进程代码反推的位置上：
   //   `dist/render`           ← 渲染层静态产物（`__dirname/../render`）
@@ -30,10 +30,10 @@ module.exports = {
     'dist',
     '!dist/**/*.map',
     // `node_modules` 整棵树都是死的：`vite.shared.ts` 的 `nodeExternals` 只外部化
-    // `node:` 内置模块与 `electron`，工作区包（`@one-switch/*`）全部被 Vite 打进
+    // `node:` 内置模块与 `electron`，工作区包（`@osw/*`）全部被 Vite 打进
     // `dist/command/*.mjs`。但工作区包同时写在 `dependencies` 里（turbo 靠它排序构建），
     // electron-builder 于是照单收下——实测 asar 里这棵树有 3.0 MB、全是 TypeScript 源码
-    // 与 `*.test.ts`，占整个 asar 的 29%。产物里没有任何一处 `import '@one-switch/...'`
+    // 与 `*.test.ts`，占整个 asar 的 29%。产物里没有任何一处 `import '@osw/...'`
     // 会活到运行期，所以整棵排掉。
     // 将来若真的引入一个必须留在外部的运行期依赖，要同时改 `nodeExternals` 和这里。
     '!node_modules',
@@ -46,7 +46,7 @@ module.exports = {
   publish: {
     provider: 'github',
     owner: 'yinxulai',
-    repo: 'one-switch',
+    repo: 'osw',
   },
   afterPack: 'scripts/macos-adhoc-sign.cjs',
   mac: {
@@ -61,7 +61,7 @@ module.exports = {
     icon: 'build/icon.ico',
     target: ['nsis'],
     // signAndEditExecutable 必须保持启用（默认值），否则 rcedit 不会将 icon.ico
-    // 嵌入到 One Switch.exe 中，导致 Windows 任务栏/窗口显示 Electron 默认图标。
+    // 嵌入到 OSW.exe 中，导致 Windows 任务栏/窗口显示 Electron 默认图标。
     // 未配置代码签名证书时，electron-builder 会自动跳过签名步骤（仅输出警告）。
   },
   linux: {

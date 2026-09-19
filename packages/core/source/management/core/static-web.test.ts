@@ -14,7 +14,7 @@ let host: StaticWebHost
 let baseUrl: string
 
 beforeEach(async () => {
-  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-static-web-'))
+  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'osw-static-web-'))
   fs.mkdirSync(path.join(temporaryDirectory, 'assets'))
   fs.writeFileSync(path.join(temporaryDirectory, 'index.html'), '<!doctype html><html><head><title>console</title></head><body></body></html>')
   fs.writeFileSync(path.join(temporaryDirectory, 'assets', 'app-abc123.js'), 'console.log(1)')
@@ -104,7 +104,7 @@ describe('createStaticWebHost', () => {
   })
 
   it('confines path traversal attempts to the web root', async () => {
-    const outsideName = `one-switch-outside-${process.pid}.txt`
+    const outsideName = `osw-outside-${process.pid}.txt`
     const secret = path.join(temporaryDirectory, '..', outsideName)
     fs.writeFileSync(secret, 'secret')
     try {

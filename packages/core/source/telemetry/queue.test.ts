@@ -9,7 +9,7 @@ import type { TelemetrySender } from './sender'
  * 真发送端要连网络，属于 `sender.test.ts` 的事。
  */
 
-const ENDPOINT = 'https://telemetry.test/v1/events'
+const ENDPOINT = 'https://telemetry.test/v1/track'
 const COMMON_FIELDS: TelemetryCommonFields = {
   occurredAt: 1_700_000_000_000,
   installId: '0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d',

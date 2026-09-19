@@ -25,7 +25,7 @@ async function createAttemptOrThrow(input: Parameters<typeof createRequestAttemp
 let temporaryDirectory: string
 
 beforeEach(async () => {
-  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-request-log-'))
+  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'osw-request-log-'))
   await initDatabases(temporaryDirectory)
 })
 

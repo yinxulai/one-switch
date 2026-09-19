@@ -7,7 +7,7 @@ import { ProtocolSchema } from './schemas'
  * 单独用一个字面量字段而不是只看版本号：导入时必须能一眼判断「这是不是一个供应商导出文件」，
  * 否则用户把别的导出文件拖进来时，只能得到一条含糊的字段校验错误。
  */
-export const PROVIDER_BUNDLE_FORMAT = 'one-switch/provider-bundle'
+export const PROVIDER_BUNDLE_FORMAT = 'osw/provider-bundle'
 
 /**
  * 供应商包版本。

@@ -1,4 +1,4 @@
-# One Switch v0.3 数据模型设计
+# OSW v0.3 数据模型设计
 
 > 本文是新大版本的目标数据库结构。
 >
@@ -7,7 +7,7 @@
 
 ## 1. 设计目标
 
-One Switch 的配置内容会持续增加，尤其是供应商、模型端点、认证方式、路由策略和模型能力。因此本版本遵循以下原则：
+OSW 的配置内容会持续增加，尤其是供应商、模型端点、认证方式、路由策略和模型能力。因此本版本遵循以下原则：
 
 1. **稳定身份、关系、枚举、开关、数值和查询字段使用独立列。**
 2. **只有真正开放、低频、非路由的扩展数据才使用 JSON；JSON 不是标准字段的默认容器。**
@@ -45,8 +45,8 @@ One Switch 的配置内容会持续增加，尤其是供应商、模型端点、
 
 | 文件 | 角色 | 表数 | 谁写 | 丢了会怎样 |
 | --- | --- | --- | --- | --- |
-| `one-switch-config-<v>.db` | 配置库 | 12 | 用户 | 供应商、模型、路由、改写规则全没了——**不可再生** |
-| `one-switch-data-<v>.db` | 数据库 | 10 | 系统 | 历史请求、日志与健康状态归零，代理照常工作——**可丢弃** |
+| `osw-config-<v>.db` | 配置库 | 12 | 用户 | 供应商、模型、路由、改写规则全没了——**不可再生** |
+| `osw-data-<v>.db` | 数据库 | 10 | 系统 | 历史请求、日志与健康状态归零，代理照常工作——**可丢弃** |
 
 文件名里的 `<v>` 是**该库自己的 schema 版本号**，不是应用版本号；两个数字各自独立地写在 `packages/contracts/source/database-file.ts`（`DATABASE_SCHEMA_VERSIONS`），该文件是这条规则的唯一实现。**它只在应用大版本发布时加一**，且这一下必须与「重新生成首发基线、丢掉旧链」一起做：换名字就是换文件，新文件从干净基线建起，旧文件既不读取也不删除。**日常改结构不走这条路，加一条迁移就好**——把每次加列都做成换代，等于每加一列就让用户在一张空表上重新开始。两个库的版本各自独立，可以停在不同的数字上。
 
@@ -60,7 +60,7 @@ One Switch 的配置内容会持续增加，尤其是供应商、模型端点、
 
 **一、可丢弃的和不可丢弃的不该共享损坏面。** 用户会定期清一次历史请求，没人想为了清日志而碰到配置；反过来，配置库若被工具链或磁盘错误弄坏，也不该把几个月的历史统计一起带走。
 
-**二、备份语义完全不同。** 想备份的其实是配置（几百 KB，改一次就该存一次）；观测数据每天都在长，正文开启后能长到几百 MB，它进备份只是把备份变成负担。两个文件后，「备份 `one-switch-config-*.db`」是一条可以放心写进文档的建议。
+**二、备份语义完全不同。** 想备份的其实是配置（几百 KB，改一次就该存一次）；观测数据每天都在长，正文开启后能长到几百 MB，它进备份只是把备份变成负担。两个文件后，「备份 `osw-config-*.db`」是一条可以放心写进文档的建议。
 
 **三、写放大与 PRAGMA 档位不同。** 配置库每次写入都很重要，用 `WAL + synchronous = FULL`；观测库每次写都很小但很频繁，用 `WAL + synchronous = NORMAL`、`cache_size = -64000`、`temp_store = MEMORY`，并开启 `auto_vacuum = INCREMENTAL` 让保留策略删掉的页能被逐步回收。合成一个库时只能取两者之间更保守的那个值。
 
@@ -76,7 +76,7 @@ One Switch 的配置内容会持续增加，尤其是供应商、模型端点、
 
 ### 2.2 表清单
 
-**配置库 `one-switch-config-<v>.db`（12 张，全部是配置实体，用户资产）**：
+**配置库 `osw-config-<v>.db`（12 张，全部是配置实体，用户资产）**：
 
 | 表 | 用途 | 数据性质 |
 | --- | --- | --- |
@@ -95,7 +95,7 @@ One Switch 的配置内容会持续增加，尤其是供应商、模型端点、
 
 这个库里的外键全部指向自己。
 
-**数据库 `one-switch-data-<v>.db`（10 张，全是系统写的观测数据）**：
+**数据库 `osw-data-<v>.db`（10 张，全是系统写的观测数据）**：
 
 | 表 | 用途 | 数据性质 |
 | --- | --- | --- |
@@ -616,7 +616,7 @@ CREATE INDEX idx_protocol_converters_deleted_time
 
 Provider 聚合健康状态和 ProviderModel 独立健康状态都是运行时状态，必须与静态配置分离。ProviderModel 健康状态用于精确跳过单个故障模型；Provider 健康状态用于表示整个 Provider 的聚合可用性。
 
-这两张表在**数据库**（`one-switch-data-<v>.db`）里，`providerId` / `providerModelId` 只是文本标识，**没有外键**——外键只能在同一个 SQLite 文件内生效，而它们引用的是配置库里的行（见 §2.1）。
+这两张表在**数据库**（`osw-data-<v>.db`）里，`providerId` / `providerModelId` 只是文本标识，**没有外键**——外键只能在同一个 SQLite 文件内生效，而它们引用的是配置库里的行（见 §2.1）。
 
 ```sql
 CREATE TABLE provider_health (
@@ -1197,15 +1197,15 @@ Token、缓存 Token 和其他协议用量 -> `request_usages` / `attempt_usages
 
 `initDatabases(dataDir)` 一次建两个库，下面这套流程对每个角色各跑一遍：
 
-1. 创建数据目录（`<用户主目录>/.one-switch`，开发档是 `<用户主目录>/.one-switch-development`，见 [packaging.md](./packaging.md) §5.5）；
-2. 打开 `one-switch-config-<v>.db` 与 `one-switch-data-<v>.db`（版本号取自 `DATABASE_SCHEMA_VERSIONS`，同名文件存在就直接复用）；
+1. 创建数据目录（`<用户主目录>/.osw`，开发档是 `<用户主目录>/.osw-development`，见 [packaging.md](./packaging.md) §5.5）；
+2. 打开 `osw-config-<v>.db` 与 `osw-data-<v>.db`（版本号取自 `DATABASE_SCHEMA_VERSIONS`，同名文件存在就直接复用）；
 3. 按角色设置 PRAGMA：两个库都开 `foreign_keys = ON` 并切 WAL；配置库 `synchronous = FULL`，数据库 `synchronous = NORMAL` + `cache_size = -64000` + `temp_store = MEMORY` + `auto_vacuum = INCREMENTAL`（`auto_vacuum` 必须在建表之前设定才生效，且要排在 `journal_mode = WAL` **之前**：WAL 一写库头，文件就不再算「空库」，这条 PRAGMA 会被静默忽略）；
 4. 应用该角色的 migration 链，创建全部表和索引；
 5. 配置库专有：按默认值批量插入 `settings` 配置项（使用 `INSERT OR IGNORE`，仅插入不存在的 key，永不覆盖已有值，保证幂等）、插入默认逻辑模型；
 6. 数据库专有：执行一次 `PRAGMA optimize`，让规划器拿到统计信息；
 7. 两个角色都完成之后：`pruneOrphanHealthRows(config, data)` 删掉配置库里已经不存在的健康行。
 
-**修复前建出的观测库不会自愈。** `auto_vacuum` 只对空库生效，所以旧 `one-switch-data-<v>.db`（在顺序修正前创建）仍然停在 `auto_vacuum = 0`，`incremental_vacuum` 对它依旧是一次空操作。转换是**刻意的运维动作**，不在启动路径上自动执行：手工跑一次 `PRAGMA auto_vacuum = INCREMENTAL; VACUUM;`，`VACUUM` 会顺带把文件压实（需要与库体量相当的临时空间）。新库不受影响——`applyPragmas` 已把这条 PRAGMA 排在 WAL 之前，建库那一刻就生效。
+**修复前建出的观测库不会自愈。** `auto_vacuum` 只对空库生效，所以旧 `osw-data-<v>.db`（在顺序修正前创建）仍然停在 `auto_vacuum = 0`，`incremental_vacuum` 对它依旧是一次空操作。转换是**刻意的运维动作**，不在启动路径上自动执行：手工跑一次 `PRAGMA auto_vacuum = INCREMENTAL; VACUUM;`，`VACUUM` 会顺带把文件压实（需要与库体量相当的临时空间）。新库不受影响——`applyPragmas` 已把这条 PRAGMA 排在 WAL 之前，建库那一刻就生效。
 
 **没有一步是「创建 Provider 时初始化健康状态」**：健康行惰性创建（见 §3.8），所以配置写入路径永远不会碰观测库。
 
@@ -1341,7 +1341,7 @@ Store 层同时是**分库边界**：一个 store 只属于一个库，只从 `g
 
 ## 11. 后续演进建议（评审补充）
 
-以下建议尚未定稿，按优先级排列，供后续迭代评审时决策。已定稿的决策（表名统一为 `settings`、`captureStatus` 枚举、时间戳毫秒、日志快照冗余、`provider_health` 与 `provider_model_health` 清理时机、转换事实并入 `request_attempts` 而不单独建表、正文按视角拆表（`request_contents` / `attempt_contents`，以 `attemptId` 唯一关联尝试）、用量按视角拆表（`request_usages` / `attempt_usages`）、`request_attempts` 去除 Provider 外键、唯一约束与 CHECK 约束、删除 `settings.version`、数据文件名由库自己的 schema 版本号决定（`one-switch-<role>-v<n>.db`）、用户配置与系统观测拆为两个独立文件（无跨库外键，健康行惰性创建））已落入正文各章。
+以下建议尚未定稿，按优先级排列，供后续迭代评审时决策。已定稿的决策（表名统一为 `settings`、`captureStatus` 枚举、时间戳毫秒、日志快照冗余、`provider_health` 与 `provider_model_health` 清理时机、转换事实并入 `request_attempts` 而不单独建表、正文按视角拆表（`request_contents` / `attempt_contents`，以 `attemptId` 唯一关联尝试）、用量按视角拆表（`request_usages` / `attempt_usages`）、`request_attempts` 去除 Provider 外键、唯一约束与 CHECK 约束、删除 `settings.version`、数据文件名由库自己的 schema 版本号决定（`osw-<role>-v<n>.db`）、用户配置与系统观测拆为两个独立文件（无跨库外键，健康行惰性创建））已落入正文各章。
 
 ### 11.1 待产品决策
 

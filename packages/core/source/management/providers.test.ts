@@ -19,7 +19,7 @@ function responseData(response: ServerResponse): Record<string, unknown> {
 }
 
 beforeEach(async () => {
-  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-provider-'))
+  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'osw-provider-'))
   await initDatabases(temporaryDirectory)
   secretStore = {
     set: vi.fn(async () => undefined),

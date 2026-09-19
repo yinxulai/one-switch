@@ -285,7 +285,7 @@ export function UpdateCard() {
   const capabilities = getPlatformCapabilities()
   const handleOpenReleases = async () => {
     if (!updater) {
-      capabilities.openExternal('https://github.com/yinxulai/one-switch/releases/latest')
+      capabilities.openExternal('https://github.com/yinxulai/osw/releases/latest')
       return
     }
     await updater.openReleases()

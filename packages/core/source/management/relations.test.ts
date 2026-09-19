@@ -17,7 +17,7 @@ function responseData(response: ServerResponse): unknown {
 let temporaryDirectory: string
 
 beforeEach(async () => {
-  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-relations-'))
+  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'osw-relations-'))
   await initDatabases(temporaryDirectory)
 })
 

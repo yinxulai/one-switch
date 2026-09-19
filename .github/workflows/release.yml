@@ -108,11 +108,11 @@ jobs:
           - name: Windows
             os: windows-latest
             artifact: windows
-            asset: release/**/One-Switch-*.exe
+            asset: release/**/OSW-*.exe
           - name: Linux
             os: ubuntu-latest
             artifact: linux
-            asset: release/**/One-Switch-*.AppImage
+            asset: release/**/OSW-*.AppImage
     runs-on: ${{ matrix.os }}
     steps:
       - name: Check out release tag
@@ -145,17 +145,17 @@ jobs:
             fi
           }
           # `release/` 下不只有安装包：`<version>/win-unpacked/` 里还放着 electron-builder
-          # 自己的可执行文件（`One.Switch.exe`、`elevate.exe`）。宽泛的 `-name '*.exe'` 会把它们
+          # 自己的可执行文件（`OSW.exe`、`elevate.exe`）。宽泛的 `-name '*.exe'` 会把它们
           # 一起算进来，而这些文件不匹配上面 `matrix.asset` 的上传 glob，结果 release 里会多出
-          # 两个「点进去是 404」的 `.sha256`（2026-09 的 beta.2 就发了 `One.Switch.exe.sha256`
-          # 和 `elevate.exe.sha256`）。安装包一律是 `One-Switch-<版本>-<平台>-<架构>.exe`
+          # 两个「点进去是 404」的 `.sha256`（2026-09 的 beta.2 就发了 `OSW.exe.sha256`
+          # 和 `elevate.exe.sha256`）。安装包一律是 `OSW-<版本>-<平台>-<架构>.exe`
           # （见 `electron-builder.config.cjs` 的 `artifactName`），所以 exe 用带前缀的模式限定，
           # `.dmg` / `.AppImage` 不会出现在 unpacked 目录里，保持原样即可。
           while IFS= read -r INSTALLER; do
             DIR=$(dirname "$INSTALLER")
             NAME=$(basename "$INSTALLER")
             (cd "$DIR" && hash256 "$NAME" > "$NAME.sha256")
-          done < <(find release -type f \( -name '*.dmg' -o -name 'One-Switch-*.exe' -o -name '*.AppImage' \))
+          done < <(find release -type f \( -name '*.dmg' -o -name 'OSW-*.exe' -o -name '*.AppImage' \))
 
       - name: Collect installer and update metadata
         uses: actions/upload-artifact@v6
@@ -219,7 +219,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
-          name: One Switch ${{ needs.prepare.outputs.tag }}
+          name: OSW ${{ needs.prepare.outputs.tag }}
           body_path: ${{ runner.temp }}/release-notes.md
           # 不开 `generate_release_notes`：它附带的那行 Full Changelog 与生成脚本自己写的
           # 重复，两行怎么合并由 action 决定，不如自己只留一行。

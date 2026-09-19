@@ -1,4 +1,4 @@
-<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="One Switch">
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="OSW">
   <!-- S1 · 笔杆收窄，高度不变；stroke-width 保持 14 → 圆角半径与 F3 完全一致 -->
   <defs>
     <linearGradient id="os" gradientUnits="userSpaceOnUse" x1="76" y1="12" x2="180" y2="244">

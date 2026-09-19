@@ -20,7 +20,7 @@ const LONG_AGO = new Date(Date.now() - 10 * 60_000).toISOString()
 let dataDir: string
 
 beforeEach(() => {
-  dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-lock-'))
+  dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'osw-lock-'))
 })
 
 afterEach(() => {

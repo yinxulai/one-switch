@@ -1,4 +1,4 @@
-<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="One Switch">
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="OSW">
   <!-- S4 · 收得更窄（轮廓约 95 × 242），高度不变；stroke-width 保持 14 -->
   <defs>
     <linearGradient id="os" gradientUnits="userSpaceOnUse" x1="88" y1="12" x2="168" y2="244">

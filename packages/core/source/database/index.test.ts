@@ -17,7 +17,7 @@ afterEach(async () => {
 })
 
 function createTemporaryDirectory(): string {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-db-'))
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'osw-db-'))
   temporaryDirectories.push(directory)
   return directory
 }

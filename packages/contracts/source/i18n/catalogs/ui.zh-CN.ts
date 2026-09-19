@@ -13,7 +13,7 @@ import type { uiEn } from './ui.en'
 export const uiZhCN: Record<keyof typeof uiEn, MessageValue> = {
   // ========== 应用 ==========
   'app.tagline': '本地 ai 网关',
-  'app.windowTitle': 'One Switch',
+  'app.windowTitle': 'OSW',
 
   // ========== 导航 ==========
   'nav.section.primary': '主要',
@@ -703,7 +703,7 @@ export const uiZhCN: Record<keyof typeof uiEn, MessageValue> = {
   'rules.presets.blank.description': '不预填任何动作，全部自己配置。',
   'rules.presets.testCaseName': '模板示例输入',
   'rules.presets.setUserAgent.name': '修改 User-Agent',
-  'rules.presets.setUserAgent.description': '把请求头 User-Agent 覆盖成固定值，用于隐藏真实客户端标识；默认值写成 OneSwitch/<应用版本号>，改成上游要求的值即可。',
+  'rules.presets.setUserAgent.description': '把请求头 User-Agent 覆盖成固定值，用于隐藏真实客户端标识；默认值写成 OSW/<应用版本号>，改成上游要求的值即可。',
   'rules.presets.removeRequestHeader.name': '移除请求头',
   'rules.presets.removeRequestHeader.description': '删掉客户端带上来的请求头，例如本地会话 Cookie。',
   'rules.presets.setRequestField.name': '设置请求字段',
@@ -1471,7 +1471,7 @@ export const uiZhCN: Record<keyof typeof uiEn, MessageValue> = {
 
   // 上游代理
   'settings.outboundProxy.title': '上游代理',
-  'settings.outboundProxy.description': '控制 One Switch 访问模型服务时使用的网络路径',
+  'settings.outboundProxy.description': '控制 OSW 访问模型服务时使用的网络路径',
   'settings.outboundProxy.mode': '代理模式',
   'settings.outboundProxy.modeAria': '代理模式',
   'settings.outboundProxy.mode.direct': '不使用任何代理',
@@ -1630,15 +1630,15 @@ export const uiZhCN: Record<keyof typeof uiEn, MessageValue> = {
   'native.tray.openWindow': '打开主界面',
   'native.tray.startProxy': '启动代理服务',
   'native.tray.stopProxy': '停止代理服务',
-  'native.tray.quit': '退出 One Switch',
+  'native.tray.quit': '退出 OSW',
 
   'native.menu.edit': '编辑',
   'native.menu.view': '视图',
   'native.menu.window': '窗口',
 
-  'native.error.fatalTitle': 'One Switch 运行失败',
+  'native.error.fatalTitle': 'OSW 运行失败',
   'native.error.fatalDetail': '应用将退出，请检查日志后重试。',
-  'native.error.startupTitle': 'One Switch 启动失败',
+  'native.error.startupTitle': 'OSW 启动失败',
   'native.error.startupDetail': '应用无法完成启动，请检查日志后重试。',
   'native.error.rendererLoadFailed': '主界面加载失败 ({code})：{description}',
 
@@ -1647,7 +1647,7 @@ export const uiZhCN: Record<keyof typeof uiEn, MessageValue> = {
 
   // ========== 命令行（终端输出） ==========
   // 参数名与路径原样打印，不译；诊断消息仍固定英文（见 docs/product/i18n.md §2）。
-  'native.cli.usage': '用法：one-switch [命令] [选项]',
+  'native.cli.usage': '用法：osw [命令] [选项]',
   'native.cli.commands': '命令：',
   'native.cli.command.start': '启动服务（不写命令时的默认行为）',
   'native.cli.command.stop': '停止由本 CLI 启动的实例',
@@ -1665,7 +1665,7 @@ export const uiZhCN: Record<keyof typeof uiEn, MessageValue> = {
   'native.cli.option.json': '以 JSON 输出（仅 status）',
   'native.cli.managementLoopback': '管理服务固定只监听 127.0.0.1：它本身没有鉴权，需要在别的机器上访问时请走 SSH 隧道。',
 
-  'native.cli.start.title': 'One Switch {version}（{environment}）',
+  'native.cli.start.title': 'OSW {version}（{environment}）',
   'native.cli.start.console': '控制台：{url}',
   'native.cli.start.proxy': '代理地址：{url}',
   'native.cli.start.management': '管理服务：{url}',
@@ -1676,14 +1676,14 @@ export const uiZhCN: Record<keyof typeof uiEn, MessageValue> = {
   'native.cli.start.exposedHint': '代理不带鉴权。只想本机使用，就去掉 --host（默认只监听 127.0.0.1）。',
 
   'native.cli.stop.requesting': '正在请求 pid {pid} 退出……',
-  'native.cli.stop.done': 'One Switch 已停止。',
-  'native.cli.stop.notRunning': 'One Switch 未在运行（{path} 下没有运行时文件）。',
+  'native.cli.stop.done': 'OSW 已停止。',
+  'native.cli.stop.notRunning': 'OSW 未在运行（{path} 下没有运行时文件）。',
   'native.cli.stop.stale': '没有找到运行中的实例，已清理失效的运行时文件 {path}。',
   'native.cli.stop.timeout': '已发出退出请求，但 {seconds}s 后 pid {pid} 仍在运行。',
   'native.cli.stop.rejected': '运行中的实例拒绝了退出请求（该实例没有开启退出握手，或这个端口上其实是别的服务）。',
-  'native.cli.stop.failed': '停止 One Switch 失败：{message}',
+  'native.cli.stop.failed': '停止 OSW 失败：{message}',
 
-  'native.cli.status.title': 'One Switch 状态',
+  'native.cli.status.title': 'OSW 状态',
   'native.cli.status.running': '运行中',
   'native.cli.status.stopped': '未运行',
   'native.cli.status.unresponsive': '无响应（状态文件还在）',
@@ -1704,12 +1704,12 @@ export const uiZhCN: Record<keyof typeof uiEn, MessageValue> = {
   'native.cli.error.missingValue': '{option} 需要一个取值',
   'native.cli.error.invalidPort': '{option} 必须是 1-65535 之间的整数，收到 “{value}”',
   'native.cli.error.webMissing': '控制台产物不存在：{path}；请先构建（pnpm build）。',
-  'native.cli.error.portInUse': '无法启动 One Switch：{address} 已被占用。',
+  'native.cli.error.portInUse': '无法启动 OSW：{address} 已被占用。',
   'native.cli.error.portInUseHint': '请停掉占用端口的进程，或用 --proxy-port / --management-port 换端口。',
-  'native.cli.error.startFailed': 'One Switch 启动失败：{message}',
+  'native.cli.error.startFailed': 'OSW 启动失败：{message}',
   'native.cli.error.alreadyRunning': '已有实例在运行（pid {pid}，数据目录 {dataDir}）。',
-  'native.cli.error.alreadyRunningHint': '先用 one-switch stop 停掉它；如果要同时跑两个，给其中一个 --data-dir 指定另一个数据目录。',
+  'native.cli.error.alreadyRunningHint': '先用 osw stop 停掉它；如果要同时跑两个，给其中一个 --data-dir 指定另一个数据目录。',
   'native.cli.error.lockUnknown': '无法确认 {path} 是否被占用：它存在，但读不出持有者。',
   'native.cli.error.sqliteTitle': 'node:sqlite 不可用',
-  'native.cli.error.sqliteBody': 'One Switch CLI 用 Node 内置的 “node:sqlite” 模块存数据，它从 Node.js 22.5 起提供（22.5-22.12 需要给 Node 加 --experimental-sqlite）。当前版本：{version}。',
+  'native.cli.error.sqliteBody': 'OSW CLI 用 Node 内置的 “node:sqlite” 模块存数据，它从 Node.js 22.5 起提供（22.5-22.12 需要给 Node 加 --experimental-sqlite）。当前版本：{version}。',
 }

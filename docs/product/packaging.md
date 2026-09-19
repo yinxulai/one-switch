@@ -7,7 +7,7 @@
 
 同一套核心能力，拆成可独立消费的包，支持两种交付形态（外加作为库直接使用）：
 
-1. **CLI**：`one-switch start` 启动核心服务，同时托管 Web 控制台；用户用浏览器操作，也可以只用 HTTP API。
+1. **CLI**：`osw start` 启动核心服务，同时托管 Web 控制台；用户用浏览器操作，也可以只用 HTTP API。
 2. **App**：Electron 只做宿主封装（窗口、托盘、自动更新、系统密钥环），业务能力全部来自核心包。
 
 核心原则：**core 不知道宿主是谁**。宿主差异（密钥存储、Web 托管、桌面能力、语言环境）全部收敛为接口注入，core 内不出现 `electron`、不出现静态文件路径假设。
@@ -16,8 +16,8 @@
 
 | 形态 | 组成 | 入口 | 分发方式 |
 | --- | --- | --- | --- |
-| 库 | `core` + `contracts` | `import { startServer } from '@one-switch/core'` | npm |
-| CLI | `core` + `contracts` + `console` 静态产物 + Node 密钥实现 + 静态托管 | `one-switch start` | npm 全局 bin / `npx` |
+| 库 | `core` + `contracts` | `import { startServer } from '@osw/core'` | npm |
+| CLI | `core` + `contracts` + `console` 静态产物 + Node 密钥实现 + 静态托管 | `osw start` | npm 全局 bin / `npx` |
 | App | `core` + `contracts` + `console` + Electron 壳 | 桌面图标 / 安装包 | electron-builder |
 
 三个形态共用同一份管理 API 契约（见 [tech-architecture.md](./tech-architecture.md)「管理 API 契约」），控制台不做形态分支。
@@ -47,11 +47,11 @@ flowchart LR
 
 | 位置 | 包 | 职责 | 硬约束 |
 | --- | --- | --- | --- |
-| `packages/contracts` | `@one-switch/contracts` | Zod schema、协议表、错误码、i18n 语言目录与核心、`SecretStore` 接口、运行时配置类型、供应商包格式、路由契约类型 | 只描述形状；不依赖 Node 内置模块、不依赖 DOM、不依赖任何其它包 |
-| `packages/core` | `@one-switch/core` | runtime / management / proxy / database / infrastructure / security | 纯 Node；**禁止 import `electron`**；不感知 Web 托管与桌面能力 |
-| `packages/console` | `@one-switch/console` | React 控制台，构建为静态产物 | 不直接读 `window.electronAPI`；宿主能力统一走平台抽象层 |
-| `apps/cli` | `@one-switch/cli` | 命令行入口、Node 密钥实现、静态托管 | 只做宿主适配与参数解析，不写业务逻辑 |
-| `apps/app` | `@one-switch/app` | Electron 主进程与 preload | 只做宿主适配，不写业务逻辑 |
+| `packages/contracts` | `@osw/contracts` | Zod schema、协议表、错误码、i18n 语言目录与核心、`SecretStore` 接口、运行时配置类型、供应商包格式、路由契约类型 | 只描述形状；不依赖 Node 内置模块、不依赖 DOM、不依赖任何其它包 |
+| `packages/core` | `@osw/core` | runtime / management / proxy / database / infrastructure / security | 纯 Node；**禁止 import `electron`**；不感知 Web 托管与桌面能力 |
+| `packages/console` | `@osw/console` | React 控制台，构建为静态产物 | 不直接读 `window.electronAPI`；宿主能力统一走平台抽象层 |
+| `apps/cli` | `@osw/cli` | 命令行入口、Node 密钥实现、静态托管 | 只做宿主适配与参数解析，不写业务逻辑 |
+| `apps/app` | `@osw/app` | Electron 主进程与 preload | 只做宿主适配，不写业务逻辑 |
 
 依赖方向严格单向：`core` 与 `console` **互不依赖**，二者之间只通过管理 API 通信。
 
@@ -62,7 +62,7 @@ flowchart LR
 ### 4.1 目标态
 
 ```text
-one-switch/
+osw/
 ├── packages/
 │   ├── contracts/
 │   │   ├── package.json
@@ -107,7 +107,7 @@ one-switch/
 │
 ├── apps/
 │   ├── cli/
-│   │   ├── package.json               # bin: one-switch
+│   │   ├── package.json               # bin: osw
 │   │   └── source/
 │   │       ├── index.ts               # argv 解析与分发
 │   │       ├── commands/              # start / stop / status / config / version
@@ -155,7 +155,7 @@ one-switch/
 | Electron 与 electron-builder | `apps/app/package.json` 的 devDependencies | 宿主包自己声明。electron-builder 只在 `<projectDir>/node_modules` 里找 Electron（见坑 4），把依赖留在仓库根等于「开发全通、只在打包时失败」 |
 | 控制台静态资源 | `packages/console/public/` | Vite 的 `publicDir`，随渲染层构建拷贝进 `packages/console/dist` |
 | 各包脚本 | `apps/app/scripts/`、`packages/core/scripts/`、`packages/console/scripts/` | 根 `package.json` 的 scripts 指向包内路径（`apps/app/scripts/{build,dev,version}.mjs`、`packages/core/scripts/{db,check-proxy-layers}.mjs`、`packages/console/scripts/{eslint-plugin-i18n.mjs,vitest.setup.ts}`） |
-| 跨包脚本 | `packages/toolkit/scripts/` | 私有工作区包（`@one-switch/toolkit`，无运行时代码）：任务编排（lint / test / typecheck）、版本写入与校验、包边界守卫与脚本运行库。它们不属于任何单一业务包，所以独立成包而不是堆在根目录。同样只被这些脚本读取的 `vitest.config.ts` 与 `tsconfig.check.json` 也住在这里 |
+| 跨包脚本 | `packages/toolkit/scripts/` | 私有工作区包（`@osw/toolkit`，无运行时代码）：任务编排（lint / test / typecheck）、版本写入与校验、包边界守卫与脚本运行库。它们不属于任何单一业务包，所以独立成包而不是堆在根目录。同样只被这些脚本读取的 `vitest.config.ts` 与 `tsconfig.check.json` 也住在这里 |
 | 打包产物 | `release/<version>/` | 仍在仓库根：它是构建**输出**，不属于任何包的源码 |
 
 挪动这些资产时必须同步核对的四处：
@@ -189,7 +189,7 @@ CLI 侧的取舍要写清楚：这是**文件级加密**，防止的是备份、
 设计要点：
 
 - 主密钥文件缺失时自动生成；存在但不可读时**报错而非静默重建**（静默重建等于把用户已有的密钥全部作废）。
-- 支持 `ONE_SWITCH_SECRET_KEY`（base64 的 32 字节）覆盖主密钥，服务于容器与 CI；环境变量存在时**不**读写 `secrets.key`，避免两处主密钥共存后互相解不开。
+- 支持 `OSW_SECRET_KEY`（base64 的 32 字节）覆盖主密钥，服务于容器与 CI；环境变量存在时**不**读写 `secrets.key`，避免两处主密钥共存后互相解不开。
 - 密文格式自带版本前缀（`v1:iv:tag:ciphertext`）：以后换算法或换格式时旧数据仍可识别，而不是把新写法当成损坏数据抛异常。
 
 ### 5.2 Web 托管
@@ -213,7 +213,7 @@ CLI 侧的取舍要写清楚：这是**文件级加密**，防止的是备份、
 
 `packages/console/source/api/client.ts` 在运行时解析 API base，优先级从高到低：
 
-1. `window.__ONE_SWITCH__?.apiBase` —— 宿主注入（目前只有 Electron preload 会注入绝对地址；CLI 托管时不注入，走第 2 条）。
+1. `window.__OSW__?.apiBase` —— 宿主注入（目前只有 Electron preload 会注入绝对地址；CLI 托管时不注入，走第 2 条）。
 2. `location.protocol` 为 `http:` / `https:` 时用 `${location.origin}/api` —— CLI 同源场景，无需注入也能工作。
 3. 回退到内置默认端口 —— 保证 `dev:preview` 与单测不炸。
 
@@ -264,14 +264,14 @@ interface RuntimeConfig {
 
 | 形态 | 数据目录 |
 | --- | --- |
-| 正式 | `~/.one-switch` |
-| 开发（`pnpm dev`） | `~/.one-switch-development` |
+| 正式 | `~/.osw` |
+| 开发（`pnpm dev`） | `~/.osw-development` |
 
 选主目录而不是平台 appData 目录，两个原因。一是 Windows 的 `%APPDATA%` 是**漫游配置目录**：会持续增长的请求日志与正文进去后，在有域控的机器上会被同步到服务器，这是实打实的缺陷。二是主目录把平台差异从结构上抹掉了：只要还按平台算目录，两个宿主就必须各写一份实现，任何一侧写错都会让同一个用户拿到半个数据目录（数据库、设置、日志、历史统计全部对不上），而两边都「看起来正常」。
 
 三个平台都不新增环境变量：用户改位置只能靠 `--data-dir`。
 
-目录名只允许来自 `getRuntimeProfile(environment).dataDirectoryName`，不许在宿主里写字面量，也不许自己判断平台。CLI 恒定跑 `production` 档（`CLI_RUNTIME_ENVIRONMENT`，`host.ts` 里**唯一**一处选择）：命令行没有「开发服务器」这个输入，所以 `One Switch Development` 只属于 `pnpm dev` 下的桌面形态。
+目录名只允许来自 `getRuntimeProfile(environment).dataDirectoryName`，不许在宿主里写字面量，也不许自己判断平台。CLI 恒定跑 `production` 档（`CLI_RUNTIME_ENVIRONMENT`，`host.ts` 里**唯一**一处选择）：命令行没有「开发服务器」这个输入，所以 `OSW Development` 只属于 `pnpm dev` 下的桌面形态。
 
 宿主把这三个默认值收在 `apps/cli/source/host.ts`，不散落在命令里：`--help` 里显示的默认数据目录与真正启动时用的是同一个函数，免得帮助里写一套、实际跑另一套。
 
@@ -308,7 +308,7 @@ CLI 的 native 层需要一套独立文案（启动横幅、端口占用、数�
 
 这也是从 `worker_threads` 搬家的根本原因：`worker_threads` 读不了 asar（Electron 只给主进程的 `fs` 装了 asar 解析，worker 线程没有这层补丁），所以才曾经不得不把服务代码与一份迁移基线摊到 `app.asar.unpacked/` 下，既多一层路径假设，又让产物分成两截。
 
-`files` 里那两条排除模式（`!dist/**/*.map`、`!node_modules`）**必须紧跟在 `dist` 后面**：electron-builder 把连续的字符串项归一化成同一个 file set 的 `filter`，而每个 `{ from, to }` 项各自独立成一个 set；一旦排除项被 `{ from, to }` 隔开，它就退化成「只含排除项」的 set，而 `minimatchAll` 是逐个模式累进判定的，没有前置正向模式时排除项会静默失效。`!node_modules` 排除的是 `@one-switch/*` 那几包：它们以 `exports: "./source/*.ts"` 形态被 electron-builder 整包拷进 asar，里面只有 TS 源码与 `*.test.ts`，而 Vite 已经把要用的代码全部 bundle 进 `dist/`（实测打包产物里 `@one-switch/` 的出现次数为 0），白白占掉约 3 MB / 29% 的 asar 体积。
+`files` 里那两条排除模式（`!dist/**/*.map`、`!node_modules`）**必须紧跟在 `dist` 后面**：electron-builder 把连续的字符串项归一化成同一个 file set 的 `filter`，而每个 `{ from, to }` 项各自独立成一个 set；一旦排除项被 `{ from, to }` 隔开，它就退化成「只含排除项」的 set，而 `minimatchAll` 是逐个模式累进判定的，没有前置正向模式时排除项会静默失效。`!node_modules` 排除的是 `@osw/*` 那几包：它们以 `exports: "./source/*.ts"` 形态被 electron-builder 整包拷进 asar，里面只有 TS 源码与 `*.test.ts`，而 Vite 已经把要用的代码全部 bundle 进 `dist/`（实测打包产物里 `@osw/` 的出现次数为 0），白白占掉约 3 MB / 29% 的 asar 体积。
 
 固定层数必然在某一侧失效，且失效是运行期才报的。上溯查找对两端同时成立，产物布局再变也不会静默失配。
 
@@ -380,15 +380,15 @@ CI（`.github/workflows/ci.yml`）与发布（`release.yml`）共用 `.github/ac
 
 ## 6. CLI 契约
 
-命令名 `one-switch`，无子命令时等价于 `start`。
+命令名 `osw`，无子命令时等价于 `start`。
 
 | 命令 | 说明 |
 | --- | --- |
-| `one-switch start` | 启动代理与管理服务；`--web` 时同时托管控制台 |
-| `one-switch stop` | 停止由本 CLI 启动的实例（通过数据目录下的运行时文件定位） |
-| `one-switch status` | 输出运行状态、监听地址、数据目录、版本；只读，不清理失效的运行时文件；`--json` 输出同一份数据的机器可读形态 |
-| `one-switch version` | 输出版本号（与 `--version` 同源） |
-| `one-switch config` | 读取或写入设置（与设置页同一份数据）——**未实现**（见 §7） |
+| `osw start` | 启动代理与管理服务；`--web` 时同时托管控制台 |
+| `osw stop` | 停止由本 CLI 启动的实例（通过数据目录下的运行时文件定位） |
+| `osw status` | 输出运行状态、监听地址、数据目录、版本；只读，不清理失效的运行时文件；`--json` 输出同一份数据的机器可读形态 |
+| `osw version` | 输出版本号（与 `--version` 同源） |
+| `osw config` | 读取或写入设置（与设置页同一份数据）——**未实现**（见 §7） |
 
 参数解析在 `apps/cli/source/options.ts`（纯函数，不碰进程与文件系统，便于单测）：无子命令时默认 `start`，`--opt=value` 与 `--opt value` 两种写法都接受，出现第二个位置参数即报错而不是默默丢掉。`--help` / `--version` 是全局开关，即使与子命令同时出现也优先输出后退出。`--json` 只对 `status` 有意义，出现在别的命令上直接按用法错误退出（退出码 `2`），而不是静默忽略——「参数被吞掉」比「参数被拒绝」难查得多。
 
@@ -417,7 +417,7 @@ CI（`.github/workflows/ci.yml`）与发布（`release.yml`）共用 `.github/ac
 | 维度 | 状态 | 说明 |
 | --- | --- | --- |
 | 数据目录 | 一致 | `<用户主目录>/<预设数据目录名>`，见 §5.5 |
-| 数据文件名 | 一致 | 两边都由 `@common/database-file` 从**库自己的 schema 版本常量**推导（`one-switch-config-v1.db` / `one-switch-data-v1.db`）。宿主不算文件名，所以「两边算出不同文件名」这类差异从结构上不存在 |
+| 数据文件名 | 一致 | 两边都由 `@common/database-file` 从**库自己的 schema 版本常量**推导（`osw-config-v1.db` / `osw-data-v1.db`）。宿主不算文件名，所以「两边算出不同文件名」这类差异从结构上不存在 |
 | `RuntimeConfig` | 一致 | 同一份 `createRuntimeConfig`；命令行只多传端口与数据目录的覆盖值 |
 | 代理引擎与业务 | 一致 | 同一份 `packages/core`，命令行不写业务逻辑（包边界守卫强制） |
 | 设置与日志 | 一致 | 同一对 SQLite 文件（配置库 + 数据库），没有第二份配置 |
@@ -458,12 +458,12 @@ CI（`.github/workflows/ci.yml`）与发布（`release.yml`）共用 `.github/ac
 | 决策 | 选择 | 备选与理由 |
 | --- | --- | --- |
 | 包结构 | pnpm workspace 多包 | 单包多入口无法用编译期/lint 强制边界，也没法让 core 被第三方单独消费 |
-| 包命名 | `@one-switch/*` | 需要 npm org；备选 `@yinxulai/*`（个人 scope，无需建 org） |
+| 包命名 | `@osw/*` | 需要 npm org；备选 `@yinxulai/*`（个人 scope，无需建 org） |
 | CLI 分发 | npm 全局 bin / `npx` | 单文件可执行（Node SEA）作为后续增量，首期不阻塞 |
 | CLI 密钥 | 本地文件 AES-256-GCM | 系统钥匙串需原生依赖，与零原生依赖约束冲突 |
 | 拆分顺序 | 先搬目录与配置，后改逻辑 | 现有代码已事实上分层，搬迁零行为风险，却能立刻把边界变成约束 |
 | 目录分层 | `packages/` 放库、`apps/` 放宿主壳 | 「可被第三方消费」与「可直接执行」是两件事，宿主壳不该被当作库发布 |
-| 导入写法 | 别名重指向，不改 specifier | 直接换成 `@one-switch/*` 是一次上千处的高风险改动，无法分批验证（见 §4.2） |
+| 导入写法 | 别名重指向，不改 specifier | 直接换成 `@osw/*` 是一次上千处的高风险改动，无法分批验证（见 §4.2） |
 | `build/` 与打包配置 | 归 `apps/app/` | 按「谁用谁持有」；搬动只需同步改源码引用与 `__dirname` 推导（见 §4.3） |
 | 目录名 | 统一用 `source/` 而非 `src/` | 仓库内只有一种写法，glob、别名与守卫脚本少一类例外 |
 | 任务编排 | Turborepo 接管 | 自己写依赖排序会在每新增一个包时重写一次；turbo 的顺序由依赖图决定，且自带 `dev` 长驻任务语义 |

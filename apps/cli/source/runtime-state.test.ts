@@ -30,7 +30,7 @@ function createState(overrides: Partial<RuntimeFileState> = {}): RuntimeFileStat
 }
 
 beforeEach(() => {
-  dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-cli-runtime-'))
+  dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'osw-cli-runtime-'))
 })
 
 afterEach(() => {

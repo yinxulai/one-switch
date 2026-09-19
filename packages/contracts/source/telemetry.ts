@@ -20,6 +20,7 @@
 
 import { z } from 'zod'
 import { HOST_RUNTIMES } from './runtime-config'
+import { WORKFLOW_NODE_KINDS } from './router/types'
 import { ProtocolSchema, RouteModeSchema } from './schemas'
 
 // ========== 端点 ==========
@@ -32,18 +33,19 @@ import { ProtocolSchema, RouteModeSchema } from './schemas'
  * 所以它的改动门槛比看上去高得多，上线前就该当作永久前缀来选。
  *
  * 必须是自有域名，**不能是 `workers.dev` 子域**：后者绑在平台命名空间上，改名即作废。
- *
- * ⚠️ 这里的域名是**占位值**，首次发版前必须替换成真实的自有域名。
  */
-export const TELEMETRY_ENDPOINT = 'https://telemetry.one-switch.app/v1/events'
+export const TELEMETRY_ENDPOINT = 'https://api.osw.yinxulai.com/v1/track'
 
 /**
  * 路径里的 `v1` 是**请求格式**的版本，不是数据去向的版本。
  *
  * 端点不变意味着会有很旧的客户端一直打过来，所以兼容窗口是「永久」而不是「支持几个版本」：
  * 新增字段一律可选，破坏性变更开新路径并**长期保留旧解析**（telemetry.md §7）。
+ *
+ * 末段叫 `track` 而不是 `events`：这条路径是整个域名上唯一的一条，名字应当直接说出
+ * 「这里是收埋点的地方」，而不是依赖上下文才知道 `events` 是谁的事件。
  */
-export const TELEMETRY_REQUEST_PATH = '/v1/events'
+export const TELEMETRY_REQUEST_PATH = '/v1/track'
 
 // ========== 硬上限 ==========
 
@@ -61,6 +63,15 @@ export const TELEMETRY_MAX_NAME_LENGTH = 40
 
 /** 属性值的长度上限（标准版 GA4；360 版是 500）。 */
 export const TELEMETRY_MAX_ATTRIBUTE_VALUE_LENGTH = 100
+
+/**
+ * **用户属性**值的长度上限，36。
+ *
+ * 与事件参数值（100）是两个不同的上限：GA4 对 `user_properties` 单独卡 36 字符
+ * （名字卡 24）。超长的用户属性 GA **不报错、直接丢**，所以凡是落点在那里的字段
+ * 都得按这个数字卡住（telemetry.md §9）。
+ */
+export const TELEMETRY_MAX_USER_PROPERTY_VALUE_LENGTH = 36
 
 /** 单个事件的属性数上限（GA4 的上限）。 */
 export const TELEMETRY_MAX_ATTRIBUTES_PER_EVENT = 25
@@ -107,8 +118,13 @@ export const TelemetryCommonFieldsSchema = z.object({
    * 客户端**不知道**它在下游被当 `client_id` 用，这是 Worker 的事。
    */
   installId: z.string().uuid(),
-  /** 应用版本，由宿主注入（core 拿不到渲染层的版本常量，也没有 electron）。 */
-  version: z.string().min(1).max(TELEMETRY_MAX_NAME_LENGTH),
+  /**
+   * 应用版本，由宿主注入（core 拿不到渲染层的版本常量，也没有 electron）。
+   *
+   * 长度按**用户属性**的上限卡（36），不是按事件参数的上限（40）：它在下游的落点是
+   * `user_properties.version`，多出来的字符会被 GA 直接丢掉。
+   */
+  version: z.string().min(1).max(TELEMETRY_MAX_USER_PROPERTY_VALUE_LENGTH),
   /** 操作系统。 */
   os: z.enum(['win32', 'darwin', 'linux']),
   /** CPU 架构。 */
@@ -231,13 +247,17 @@ export const TelemetryEventSchema = z.discriminatedUnion('name', [
     attempts: z.enum(TELEMETRY_FAILOVER_ATTEMPT_BUCKETS),
   }).strict(),
   /**
-   * 工作流节点执行。`nodeKind` 的取值来自 `@common/router/types` 的 `WorkflowNodeKind`，
-   * **不在这里再抄一份枚举**：节点类型是路由领域的词，它变了这里跟着变才对。
+   * 工作流节点执行。`nodeKind` 的取值**就是** `@common/router/types` 的 `WORKFLOW_NODE_KINDS`，
+   * 不在这里再抄一份枚举：节点类型是路由领域的词，它变了这里跟着变才对。
+   *
+   * 这一格必须是枚举而不是字符串。契约的红线是「不存在任何自由文本字段」（telemetry.md §3），
+   * 而 40 个字符足够塞进一段 URL；节点类型清单收缩时老客户端会在这层被拒，那正是
+   * 「破坏性变更开新路径」这条既有约定的适用场景（§7）。
    */
   z.object({
     ...TelemetryCommonFieldsSchema.shape,
     name: z.literal('workflow_node_run'),
-    nodeKind: z.string().min(1).max(TELEMETRY_MAX_NAME_LENGTH),
+    nodeKind: z.enum(WORKFLOW_NODE_KINDS),
   }).strict(),
   /** 导出日志。只发「带没带正文」，不发导了多少条、导到了哪。 */
   z.object({
@@ -329,30 +349,36 @@ export type TelemetryBatch = z.infer<typeof TelemetryBatchSchema>
 /**
  * 每个公共字段去哪，写在这里而不是写在 Worker 的 `switch` 里。
  *
- * 三个不进事件参数的去向各有理由：
+ * 四个不进事件参数的去向各有理由：
  * - `installId` → `client_id`：GA4 的自定义维度每天每维度约 500 个不同值后会把余下的折进
  *   `(other)`，安装标识这种量级第一天就会被折叠；而 `client_id` 没有这个上限；
  * - `occurredAt` → 时间戳：GA 用的是事件自己的时间，不是一个叫 `occurredAt` 的参数；
  * - `os` / `locale` → `device`：它们本就是设备属性，GA 的原生报表直接读这两个字段，
- *   走参数反而要额外注册自定义维度。
+ *   走参数反而要额外注册自定义维度；
+ * - `version` / `arch` → `user_properties`：它们是**安装级**事实而不是事件级事实。走用户属性
+ *   之后 GA 按用户保存，「版本分布」这一类问题里同一个安装只算一次（升级不会同时出现在两行），
+ *   而且不占用每个事件 25 个参数的名额。
+ *
+ * `runtime` **刻意留在事件参数里**：桌面端与命令行共用数据目录、因而共用安装标识，
+ * 同一个安装会先后发出两种 `runtime`。做成用户属性只会让它按最后一次上报来回翻。
  */
 export const TELEMETRY_FIELD_TARGETS = {
   occurredAt: 'timestamp',
   installId: 'clientId',
   os: 'deviceOperatingSystem',
   locale: 'deviceLanguage',
-  version: 'param',
-  arch: 'param',
+  version: 'userProperty',
+  arch: 'userProperty',
   runtime: 'param',
 } as const satisfies Record<(typeof TELEMETRY_COMMON_FIELD_NAMES)[number], string>
 
 /**
- * 需要**事先注册**才能查的自定义维度：`version` 与 `arch`（telemetry.md §11）。
+ * 需要**事先注册**才能查的用户级自定义维度：`version` 与 `arch`（telemetry.md §11）。
  *
  * 留在这里是为了让「要注册哪几个维度」有个代码里的落点——顺序很关键：维度必须在
  * **首次上报之前**注册，否则注册前的数据在这些维度上永远是空的，且无法回填。
  */
-export const TELEMETRY_CUSTOM_DIMENSIONS = ['version', 'arch'] as const
+export const TELEMETRY_USER_PROPERTIES = ['version', 'arch'] as const
 
 /** 地区缺失时的占位值：不留空、不猜。VPN、本地网络、拿不到地理位置时都落到这里。 */
 export const TELEMETRY_UNKNOWN_COUNTRY = 'XX'

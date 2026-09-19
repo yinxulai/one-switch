@@ -16,7 +16,7 @@
 ### 1.2 设计原则
 
 1. 用「层级化组件」取代「单文件大组件」，每种节点独立成文件。
-2. 交互范式参考 Dify 的节点编辑器，但视觉与文案保持 One Switch 的稳定性。
+2. 交互范式参考 Dify 的节点编辑器，但视觉与文案保持 OSW 的稳定性。
 3. 只搬展示层：业务数据一律由 props 注入，组件不持有图状态。
 4. 组件结构以现有 `graph` 模型为准，不为了对齐参考实现而改动图模型。
 5. 不引入 Dify 的 store、请求层、运行引擎与平台能力（插件、授权、协作 presence）。
@@ -122,11 +122,11 @@ Dify 采用修改版 Apache-2.0（附带多租户与前端 LOGO / 版权保留�
 
 ### 3.5 已知环境差异（适配约束）
 
-| 差异点 | 参考实现 | One Switch | 约束 |
+| 差异点 | 参考实现 | OSW | 约束 |
 | --- | --- | --- | --- |
 | 图库 | `reactflow@11` | `@xyflow/react@12` | import 统一走 `@xyflow/react`；按 v12 调整 `NodeProps` / `EdgeProps` / `useStore` / `Handle` |
 | UI 基础组件 | `@langgenius/dify-ui/*` | `components/ui/*`（shadcn 风格） | 建立映射；缺失组件写最小实现，不新增依赖 |
-| 样式体系 | Tailwind + workflow 语义变量 | Tailwind v4 + 主题变量 | 变量名按 One Switch 主题重映射，保留层级关系 |
+| 样式体系 | Tailwind + workflow 语义变量 | Tailwind v4 + 主题变量 | 变量名按 OSW 主题重映射，保留层级关系 |
 | 状态管理 | zustand 全量 workflow store | 页面 state + 图模型 | 用 props / 局部 state 注入，不引入外部 store |
 | 节点类型 | `BlockEnum` | `WorkflowNodeKind` 十种 | 只保留映射到本项目的分支 |
 | 文案 | `react-i18next` + `t()` | 组件内中文常量 | 去掉 `t()` |

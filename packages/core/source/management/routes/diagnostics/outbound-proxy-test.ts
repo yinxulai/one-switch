@@ -58,7 +58,7 @@ async function handleOutboundProxyTest(req: IncomingMessage, res: ServerResponse
         port: target.port || (target.protocol === 'https:' ? 443 : 80),
         path: target.pathname + target.search,
         method: 'GET',
-        headers: { Accept: '*/*', 'User-Agent': 'One-Switch-Proxy-Test' },
+        headers: { Accept: '*/*', 'User-Agent': 'OSW-Proxy-Test' },
         timeout: 15000,
       }, Buffer.alloc(0), {
         onResponse: response => {

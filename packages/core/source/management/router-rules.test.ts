@@ -53,7 +53,7 @@ function ruleSetWith(fallbackModelIds: string[]): RouteRuleSet {
 let temporaryDirectory: string
 
 beforeEach(async () => {
-  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-router-rules-'))
+  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'osw-router-rules-'))
   await initDatabases(temporaryDirectory)
 })
 

@@ -167,7 +167,7 @@
 
 ```json
 {
-  "format": "one-switch/provider-bundle",
+  "format": "osw/provider-bundle",
   "version": 1,
   "exportedAt": 1757000000000,
   "providers": [
@@ -204,7 +204,7 @@
 - 省略 `providerIds` 即导出全部未删除的供应商（含已停用）；显式给出时保持调用方顺序，并让不存在的 ID 明确失败而不是静默少导。
 - `includeApiKeys` 默认为 `false`；选择包含时，包里的 `apiKey` 是可直接使用的明文凭据，UI 必须明确提示文件需要按密钥保管。
 - 取不到密钥时省掉整个 `apiKey` 字段：导入语义是「缺省 = 保留目标环境已有密钥」，写空串会让源机器自己再导入一次都丢掉凭据。
-- 文件名形如 `one-switch-provider-<供应商名>-<YYYY-MM-DD>.json`，导出全部时为 `one-switch-providers-<YYYY-MM-DD>.json`。
+- 文件名形如 `osw-provider-<供应商名>-<YYYY-MM-DD>.json`，导出全部时为 `osw-providers-<YYYY-MM-DD>.json`。
 
 ### 导入语义
 

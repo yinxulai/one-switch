@@ -18,7 +18,7 @@ function responseData(response: ServerResponse): Record<string, unknown> {
 let temporaryDirectory: string
 
 beforeEach(async () => {
-  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-rewrite-rules-'))
+  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'osw-rewrite-rules-'))
   await initDatabases(temporaryDirectory)
 })
 

@@ -96,7 +96,7 @@ jobs:
       - name: Upload build output
         uses: actions/upload-artifact@v6
         with:
-          name: one-switch-build
+          name: osw-build
           # 渲染层与宿主各自构建到自己的包目录里，仓库根不再有 `dist/`。
           path: |
             packages/console/dist/

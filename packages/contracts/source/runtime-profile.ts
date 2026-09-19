@@ -26,14 +26,14 @@ export interface RuntimeProfile {
 const PROFILES: Record<RuntimeEnvironment, RuntimeProfile> = {
   development: {
     environment: 'development',
-    dataDirectoryName: '.one-switch-development',
+    dataDirectoryName: '.osw-development',
     proxyPort: 19300,
     managementPort: 19301,
     managementApiUrl: 'http://127.0.0.1:19301/api',
   },
   production: {
     environment: 'production',
-    dataDirectoryName: '.one-switch',
+    dataDirectoryName: '.osw',
     proxyPort: 9300,
     managementPort: 9301,
     managementApiUrl: 'http://127.0.0.1:9301/api',

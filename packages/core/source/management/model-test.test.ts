@@ -10,7 +10,7 @@ import { mockResponse } from './test-support'
 let temporaryDirectory: string
 
 beforeEach(async () => {
-  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-model-test-'))
+  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'osw-model-test-'))
   await initDatabases(temporaryDirectory)
 })
 

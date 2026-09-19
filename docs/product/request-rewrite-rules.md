@@ -6,7 +6,7 @@
 
 ## 1. 背景与目标
 
-One Switch 当前主要负责协议识别、ProviderModel 路由、故障切换、协议转换和请求观测。实际使用中，不同供应商或模型之间存在大量轻量兼容差异，例如：
+OSW 当前主要负责协议识别、ProviderModel 路由、故障切换、协议转换和请求观测。实际使用中，不同供应商或模型之间存在大量轻量兼容差异，例如：
 
 - 需要修改或补充 `User-Agent`；
 - 需要增删或重写请求 Header；
@@ -264,7 +264,7 @@ thinking/reasoning 不是三个协议中完全同构的字段。当前实现尚�
 
 | 模板 | 动作 | 用途 |
 | --- | --- | --- |
-| 修改 User-Agent | 请求 Header `set` `User-Agent` | 隐藏真实客户端标识；默认值 `OneSwitch/<应用版本号>` |
+| 修改 User-Agent | 请求 Header `set` `User-Agent` | 隐藏真实客户端标识；默认值 `OSW/<应用版本号>` |
 | 移除请求头 | 请求 Header `remove` `cookie` | 摘掉本地会话 Cookie |
 | 设置请求字段 | 请求 Body `set` `$.temperature` | 固定采样参数 |
 
@@ -280,7 +280,7 @@ thinking/reasoning 不是三个协议中完全同构的字段。当前实现尚�
   模板一多，下拉就变成要先通读一遍才能选的目录，反而拖慢「新建一条规则」这个动作。
 - 示例字段选三种协议根级都存在的 `temperature`，示例 Header 用通用的 `user-agent` / `cookie`，
   因此模板都不写匹配条件：只想覆盖一个 Header 的规则，不必先想清楚协议矩阵。
-- 「修改 User-Agent」的默认值是 `OneSwitch/<应用版本号>`，版本号取构建时的 `package.json`
+- 「修改 User-Agent」的默认值是 `OSW/<应用版本号>`，版本号取构建时的 `package.json`
   （Vite `define` 注入的 `__APP_VERSION__`），所以默认值声称的就是当前这个二进制，
   而不是某个随版本迭代变成假话的写死字符串。
 - 模板定义留在渲染层（`packages/console/source/pages/.../rule-presets.ts`），不放进 `@common`：它没有服务端用途，

@@ -38,7 +38,7 @@ vi.mock('../proxy/execution/attempt-executor', () => ({
 let temporaryDirectory: string
 
 beforeEach(async () => {
-  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-model-test-route-'))
+  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'osw-model-test-route-'))
   await initDatabases(temporaryDirectory)
   mockUpstreamHandler = null
 })

@@ -64,7 +64,7 @@ describe('modelsEndpoint', () => {
     expect(captured.headers['content-type']).toBe('application/json')
     expect(JSON.parse(captured.body)).toEqual({
       object: 'list',
-      data: [{ id: 'default', object: 'model', created: 0, owned_by: 'one-switch' }],
+      data: [{ id: 'default', object: 'model', created: 0, owned_by: 'osw' }],
     })
   })
 })

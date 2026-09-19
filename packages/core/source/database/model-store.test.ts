@@ -20,7 +20,7 @@ import { createProvider, createProviderEndpoint, listProviderEndpoints } from '.
 let temporaryDirectory: string
 
 beforeEach(async () => {
-  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-model-store-'))
+  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'osw-model-store-'))
   await initDatabases(temporaryDirectory)
 })
 

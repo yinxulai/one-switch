@@ -43,7 +43,7 @@ const serviceEntry = fileURLToPath(new URL('./service-main.mjs', import.meta.url
  * 让它在进程列表里有名字，排查「谁占着端口」时不用靠猜。
  */
 function spawnServiceProcess(entry: string): ServiceProcess {
-  const child = utilityProcess.fork(entry, [], { stdio: 'inherit', serviceName: 'One Switch Core' })
+  const child = utilityProcess.fork(entry, [], { stdio: 'inherit', serviceName: 'OSW Core' })
   return {
     postMessage: message => {
       child.postMessage(message)
@@ -118,7 +118,7 @@ export async function startServer(options: StartServerOptions): Promise<void> {
     throw error
   }
   host = next
-  console.info('[one-switch] server started successfully')
+  console.info('[osw] server started successfully')
 }
 
 export async function stopServer(): Promise<void> {

@@ -13,7 +13,7 @@ import { migrate } from 'drizzle-orm/node-sqlite/migrator'
 /**
  * 数据库连接层：一个数据目录、两个文件。
  *
- * `one-switch-config-v1.db`（用户配置）与 `one-switch-data-v1.db`（观测数据）分别开连接、
+ * `osw-config-v1.db`（用户配置）与 `osw-data-v1.db`（观测数据）分别开连接、
  * 分别迁移、分别调优。文件名由 `@common/database-file` 自己推导，宿主与连接层都不参与，
  * 也不拼任何字面量。为什么要拆、拆的边界在哪，见那个文件与 `docs/product/data-model.md`；
  * 这里只讲连接层自己必须守住的三件事：

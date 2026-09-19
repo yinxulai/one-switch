@@ -1,5 +1,5 @@
 {
-  "name": "@one-switch/cli",
+  "name": "@osw/cli",
   "version": "1.1.0-beta.14",
   "private": true,
   "license": "PolyForm-Noncommercial-1.0.0",
@@ -7,17 +7,17 @@
   "description": "命令行宿主：参数解析与宿主适配，把核心能力跑成前台进程并托管控制台产物。",
   "author": "yinxulai <yinxulai@hotmail.com>",
   "bin": {
-    "one-switch": "dist/index.js"
+    "osw": "dist/index.js"
   },
   "scripts": {
     "build": "node scripts/build.mjs",
     "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
-    "@one-switch/contracts": "workspace:*",
-    "@one-switch/core": "workspace:*"
+    "@osw/contracts": "workspace:*",
+    "@osw/core": "workspace:*"
   },
   "devDependencies": {
-    "@one-switch/console": "workspace:*"
+    "@osw/console": "workspace:*"
   }
 }

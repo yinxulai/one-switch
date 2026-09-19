@@ -31,7 +31,7 @@ const viteSteps = [
 ]
 
 const main = async () => {
-  log.title('Building One Switch host')
+  log.title('Building OSW host')
 
   fs.rmSync(distDirectory, { recursive: true, force: true })
   for (const step of viteSteps) {

@@ -38,7 +38,7 @@ export default defineConfig({
     // 会被静默跳过，套件仍显示全绿。
     include: [
       'apps/app/source/**/*.test.{ts,tsx}',
-      'apps/api/source/**/*.test.{ts,tsx}',
+      'apps/apis/source/**/*.test.{ts,tsx}',
       'apps/cli/source/**/*.test.{ts,tsx}',
       'packages/core/source/**/*.test.{ts,tsx}',
       'packages/contracts/source/**/*.test.{ts,tsx}',
@@ -50,7 +50,7 @@ export default defineConfig({
       reportsDirectory: './coverage',
       include: [
         'apps/app/source/updater.ts',
-        'apps/api/source/**/*.ts',
+        'apps/apis/source/**/*.ts',
         'apps/cli/source/**/*.ts',
         'packages/core/source/**/*.ts',
         'packages/contracts/source/**/*.ts',

@@ -9,7 +9,7 @@ import { log } from './lib/log.mjs'
 // 为什么需要它：版本号有三个消费方，而且都在构建期读取而不是运行期查询——
 // ① 渲染层的 `__APP_VERSION__`（`packages/console/vite.config.ts` 读根 manifest）
 // ② Electron 的 `app.getVersion()`（读 `apps/app/package.json`，electron-builder 也用它做产物名）
-// ③ 命令行宿主的 `__CLI_VERSION__` 与 `one-switch version`（`apps/cli`）
+// ③ 命令行宿主的 `__CLI_VERSION__` 与 `osw version`（`apps/cli`）
 // 三者不一致的后果不是报错而是「看起来正常但不对」：更新器的产物名会对不上，
 // 界面上显示的版本也不是实际在跑的那个。所以只留一个入口。
 //

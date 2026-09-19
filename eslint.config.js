@@ -8,6 +8,8 @@ export default [
       'dist/**',
       'packages/*/dist/**',
       'apps/*/dist/**',
+      'apps/*/output/**',
+      'apps/*/output-worker/**',
       'node_modules/**',
       'release/**',
       'coverage/**',

@@ -8,8 +8,8 @@ import {
 
 describe('database file name', () => {
   it('names the two databases after their role and schema version', () => {
-    expect(createDatabaseFileName('config')).toBe('one-switch-config-v1.db')
-    expect(createDatabaseFileName('data')).toBe('one-switch-data-v1.db')
+    expect(createDatabaseFileName('config')).toBe('osw-config-v1.db')
+    expect(createDatabaseFileName('data')).toBe('osw-data-v1.db')
   })
 
   it('gives every role its own file', () => {
@@ -20,15 +20,15 @@ describe('database file name', () => {
 
   it('lists exactly the files this version opens', () => {
     expect(listCurrentDatabaseFileNames().sort()).toEqual([
-      'one-switch-config-v1.db',
-      'one-switch-data-v1.db',
+      'osw-config-v1.db',
+      'osw-data-v1.db',
     ])
   })
 
   it('carries the schema version in the file name', () => {
     // 版本号变了文件名就变，这是「换代」的全部机制：照着常量拼一遍，两者不可能对不上。
     for (const role of DATABASE_ROLES) {
-      expect(createDatabaseFileName(role)).toBe(`one-switch-${role}-v${DATABASE_SCHEMA_VERSIONS[role]}.db`)
+      expect(createDatabaseFileName(role)).toBe(`osw-${role}-v${DATABASE_SCHEMA_VERSIONS[role]}.db`)
     }
   })
 })

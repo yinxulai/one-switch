@@ -116,8 +116,8 @@ function sanitizeFileName(name: string): string {
 
 function bundleFileName(providerName: string | null): string {
   const date = new Date().toISOString().slice(0, 10)
-  if (!providerName) return `one-switch-providers-${date}.json`
-  return `one-switch-provider-${sanitizeFileName(providerName)}-${date}.json`
+  if (!providerName) return `osw-providers-${date}.json`
+  return `osw-provider-${sanitizeFileName(providerName)}-${date}.json`
 }
 
 function downloadText(content: string, fileName: string): void {

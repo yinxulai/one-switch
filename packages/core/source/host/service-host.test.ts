@@ -88,7 +88,7 @@ let temporaryDirectory: string
 const running = new Set<ServiceHost>()
 
 beforeEach(() => {
-  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-service-host-'))
+  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'osw-service-host-'))
 })
 
 afterEach(async () => {

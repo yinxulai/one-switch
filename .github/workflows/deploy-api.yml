@@ -9,7 +9,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'apps/api/**'
+      - 'apps/apis/**'
       # Worker 直接打包 `packages/contracts/source`（`@common/*` 别名），改契约就是改产物。
       - 'packages/contracts/source/**'
       - 'tsconfig.base.json'
@@ -18,8 +18,8 @@ on:
       - 'pnpm-workspace.yaml'
       - '.github/actions/setup/action.yml'
       - '.github/workflows/deploy-api.yml'
-  # 手动补一次。改 `wrangler.toml`（比如绑自定义域名）或换 secret 之后需要它——
-  # 那两样都不在上面的 paths 里。
+  # 手动补一次。换 secret、或想在同一个提交上重跑一次部署时需要它
+  # （secret 不是仓库里的文件，push 触发不了）。
   workflow_dispatch:
 
 # 部署不需要写仓库。
@@ -51,7 +51,7 @@ jobs:
       # 这是**针对 Worker 的自查**，不是 CI 的替代品——`main` 上的完整 CI 与本工作流并行跑，
       # 两者互不等待。仓库在这一点上是诚实的：能拦住的东西只有它真正检查的那些。
       - name: Test Worker
-        run: pnpm test -- apps/api
+        run: pnpm test -- apps/apis
 
       # 先确认凭证在，再交给 wrangler。少了 secret 时 wrangler 的报错是一串 OAuth 提示，
       # 读起来像「代码有问题」；这里直接说清楚缺什么、去哪里加。
@@ -65,20 +65,22 @@ jobs:
             exit 1
           fi
 
-      # 与开发者在本地跑的是同一条命令（`apps/api/package.json` 的 `deploy`），
+      # 与开发者在本地跑的是同一条命令（`apps/apis/package.json` 的 `deploy`），
       # 这样「CI 上能过、本地不能过」不再是需要单独解释的一种情况。
       #
       # `GA_MEASUREMENT_ID` 与 `GA_API_SECRET` 不在这里：它们是 Worker 的 secret
       # （`wrangler secret put`），配一次就跟着 Worker 走，不随每次部署传递。
       - name: Deploy
-        working-directory: apps/api
+        working-directory: apps/apis
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: pnpm deploy
 
-      # 部署之后摸一下健康检查。`/health` 不碰下游、不碰限流，也不需要密钥配好，所以这里的
-      # 200 只说明「Worker 起来了、路由对」；下游配没配写在正文的 `upstream` 字段里，单独报。
+      # 部署之后摸一下端点。Worker 上**只有 `POST /v1/track` 一条路径**，所以这里特意用 `GET`：
+      # 405 + `allow: POST` 是「路径对了、方法不对」的答案，只可能来自本 Worker——一个没人绑定的
+      # 域名给不出它，一个 404 也答不出它。部署后要确认的本来就只有「路由注册上了没有」，
+      # 而一条只接受写入的接口没有安全的匿名读探针，这个 405 就是最便宜的那个证据。
       #
       # **失败不拦流水线**：域名/路由的生效可能滞后于部署，而为了 DNS 的几十秒把一次已经
       # 推上去的部署标红只会教人忽略红色。这一条的输出是给人看的。
@@ -86,10 +88,14 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
-          status=$(curl -s -o /tmp/health.json -w '%{http_code}' --max-time 10 https://telemetry.one-switch.app/health || true)
-          echo "GET /health -> $status $(cat /tmp/health.json 2>/dev/null)"
-          if [ "$status" != "200" ]; then
-            echo "::warning::健康检查没有返回 200。若刚刚才绑上自定义域名，等几十秒再试；否则检查域名与 TELEMETRY_ENDPOINT 是否一致。"
-          elif ! grep -q '"upstream":"configured"' /tmp/health.json; then
-            echo "::warning::Worker 活着但下游没配：GA_MEASUREMENT_ID / GA_API_SECRET 还缺，见 docs/product/telemetry.md §7。"
+          # 地址与路径分别来自 packages/contracts/source/telemetry.ts 的
+          # TELEMETRY_ENDPOINT / TELEMETRY_REQUEST_PATH，改契约时一起改。
+          response=$(curl -s -o /dev/null -D - -w '\n%{http_code}' --max-time 10 \
+            https://api.osw.yinxulai.com/v1/track || true)
+          status=$(printf '%s' "$response" | tail -n 1)
+          echo "GET /v1/track -> $status"
+          if [ "$status" != "405" ]; then
+            echo "::warning::探针期待 405（路由在、方法不对），实际得到 $status。若刚刚才绑上自定义域名，等几十秒再试；否则检查域名与 TELEMETRY_ENDPOINT 是否一致。"
+          elif ! printf '%s' "$response" | grep -qi '^allow:.*POST'; then
+            echo "::warning::路由在，但响应没有 Allow: POST —— 与 index.ts 的 methodNotAllowed 不一致。"
           fi

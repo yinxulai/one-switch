@@ -27,7 +27,7 @@ const PACKAGE_ROOTS = {
   contracts: ['packages/contracts/source'],
   core: ['packages/core/source'],
   console: ['packages/console/source'],
-  api: ['apps/api/source'],
+  api: ['apps/apis/source'],
   cli: ['apps/cli/source'],
   app: ['apps/app/source'],
 }
@@ -81,15 +81,15 @@ const RULES = {
 /** 别名到包的映射。历史别名（`@common` / `@server` / `@render` / `@`）与包名别名并存。 */
 const ALIASES = [
   { pattern: /^@common(\/|$)/, packageName: 'contracts' },
-  { pattern: /^@one-switch\/contracts(\/|$)/, packageName: 'contracts' },
+  { pattern: /^@osw\/contracts(\/|$)/, packageName: 'contracts' },
   { pattern: /^@server(\/|$)/, packageName: 'core' },
-  { pattern: /^@one-switch\/core(\/|$)/, packageName: 'core' },
+  { pattern: /^@osw\/core(\/|$)/, packageName: 'core' },
   { pattern: /^@render(\/|$)/, packageName: 'console' },
   { pattern: /^@(\/|$)/, packageName: 'console' },
-  { pattern: /^@one-switch\/console(\/|$)/, packageName: 'console' },
-  { pattern: /^@one-switch\/api(\/|$)/, packageName: 'api' },
-  { pattern: /^@one-switch\/cli(\/|$)/, packageName: 'cli' },
-  { pattern: /^@one-switch\/app(\/|$)/, packageName: 'app' },
+  { pattern: /^@osw\/console(\/|$)/, packageName: 'console' },
+  { pattern: /^@osw\/api(\/|$)/, packageName: 'api' },
+  { pattern: /^@osw\/cli(\/|$)/, packageName: 'cli' },
+  { pattern: /^@osw\/app(\/|$)/, packageName: 'app' },
 ]
 
 /** 所有 `from '...'` / `import('...')` / `require('...')` 的模块说明符。 */

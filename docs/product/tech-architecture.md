@@ -61,7 +61,7 @@ OpenAPI 目前未接入，项目没有 OpenAPI 文档、生成类型或 `openapi
 ## 项目结构
 
 ```
-one-switch/
+osw/
 ├── package.json                         # 工作区根：脚本入口 + 全部运行期依赖
 ├── pnpm-workspace.yaml
 ├── turbo.json                           # 任务编排与依赖顺序（build / typecheck / lint / test / dev）
@@ -134,7 +134,7 @@ one-switch/
 │   │       ├── i18n.ts                  # 原生界面语言
 │   │       └── secret-store.ts          # 系统密钥环封装
 │   │
-│   └── cli/                             # 命令行宿主（`one-switch`）
+│   └── cli/                             # 命令行宿主（`osw`）
 │       ├── vite.config.ts               # ESM 构建（自带外部化 / platform / define）
 │       ├── scripts/                     # build.mjs、smoke.mjs
 │       ├── dist/                        # 构建产物：index.js + web/（控制台）+ 按需分块
@@ -199,13 +199,13 @@ SQLite（`node:sqlite` + Drizzle ORM）承载配置与日志，表结构与字�
 
 | 文件 | 角色 | Drizzle 定义 | 迁移链 |
 | --- | --- | --- | --- |
-| `one-switch-config-<n>.db` | 用户配置（12 张表） | `packages/core/source/database/config-schema.ts` | `packages/core/drizzle/config/` |
-| `one-switch-data-<n>.db` | 系统观测数据（10 张表） | `packages/core/source/database/data-schema.ts` | `packages/core/drizzle/data/` |
+| `osw-config-<n>.db` | 用户配置（12 张表） | `packages/core/source/database/config-schema.ts` | `packages/core/drizzle/config/` |
+| `osw-data-<n>.db` | 系统观测数据（10 张表） | `packages/core/source/database/data-schema.ts` | `packages/core/drizzle/data/` |
 
 拆分的理由与两条边界见 [data-model.md](./data-model.md) §2.1；文件名里的版本号是两个**独立的 schema 版本**常量，不住在应用版本号上。
 
 - 首发基线：两条链各自只保留一份由 schema 直接生成的首发基线迁移与快照，`pnpm db:generate` 按角色各生成一次（drizzle-kit 一份配置只能喂一条链，所以是两份 `drizzle.config.<role>.ts`）
-- 基线随 `@one-switch/core` 包分发：开发期从模块目录逐级上溯找到 `packages/core/drizzle`，再按角色下钻一层；打包后则命中与入口同层的那份映射（`app.asar/dist/command/` 上溯两层就是 asar 根），不存在第二套深度
+- 基线随 `@osw/core` 包分发：开发期从模块目录逐级上溯找到 `packages/core/drizzle`，再按角色下钻一层；打包后则命中与入口同层的那份映射（`app.asar/dist/command/` 上溯两层就是 asar 根），不存在第二套深度
 - 首发后冻结基线，只追加后续迁移，不改写已发布历史
 - 换代（把 `DATABASE_SCHEMA_VERSIONS` 加一并重新生成基线）只发生在应用大版本发布时，用来甩掉累积的迁移历史；日常结构变化一律追加迁移，不要换文件名
 - 库边界由 `packages/core/scripts/check-database-boundaries.mjs` 在 `pnpm lint` 中强制：每个 store 只碰自己那个库，两份 schema 不互相引用
@@ -217,8 +217,8 @@ SQLite（`node:sqlite` + Drizzle ORM）承载配置与日志，表结构与字�
 
 | profile | 数据目录 | 代理端口 / 管理端口 |
 | --- | --- | --- |
-| 开发 | `~/.one-switch-development` | 19300 / 19301 |
-| 正式 | `~/.one-switch` | 9300 / 9301 |
+| 开发 | `~/.osw-development` | 19300 / 19301 |
+| 正式 | `~/.osw` | 9300 / 9301 |
 
 数据库文件、密钥文件与监听端口三者完整隔离。命令行形态也走同一份 profile：数据目录名一律取自 `dataDirectoryName`，命令行恒定跑正式档（见 [packaging.md](./packaging.md) §5.5）。
 
@@ -245,7 +245,7 @@ React 18 + TypeScript + shadcn/ui + Tailwind。页面通过 `packages/console/so
 ### electron-builder
 
 - 打包成 macOS `.dmg` / `.app`、Windows `.exe`、Linux `.AppImage` / `.deb`
-- 所有东西都在 `app.asar` 一个文件里：`dist/command/` 的 `index.js`、`preload.js`、`service-main.mjs` 与全部 chunk，`dist/render/`，以及迁移基线 `packages/core/drizzle`。`node_modules` 被 `files` 里的 `!node_modules` 排除（里面只有 `@one-switch/*` 的 TS 源码与测试，运行时无人引用），细节与坑见 [packaging.md](./packaging.md) §5.7
+- 所有东西都在 `app.asar` 一个文件里：`dist/command/` 的 `index.js`、`preload.js`、`service-main.mjs` 与全部 chunk，`dist/render/`，以及迁移基线 `packages/core/drizzle`。`node_modules` 被 `files` 里的 `!node_modules` 排除（里面只有 `@osw/*` 的 TS 源码与测试，运行时无人引用），细节与坑见 [packaging.md](./packaging.md) §5.7
 - macOS 无付费证书阶段使用显式 ad-hoc 签名；`afterPack` 必须对完整 `.app` 执行严格签名校验
 - ad-hoc 签名只保证应用包内部完整性，不提供开发者身份信任，也不能提交 Apple 公证
 - GitHub Release 必须附带 DMG 的 SHA-256 文件和“隐私与安全 > 仍要打开”的首次安装说明

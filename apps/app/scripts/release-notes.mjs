@@ -22,7 +22,7 @@ import { log } from '../../../packages/toolkit/scripts/lib/log.mjs'
 //     --assets-dir artifacts --output "$RUNNER_TEMP/release-notes.md"
 //
 // 补写已经发出去的版本时没有本地产物目录，就吃 GitHub 的资产清单，并把端点指到那个标签：
-//   gh api repos/yinxulai/one-switch/releases/tags/v1.1.0-beta.1 \
+//   gh api repos/yinxulai/osw/releases/tags/v1.1.0-beta.1 \
 //     --jq '[.assets[] | {name, size}]' > assets.json
 //   pnpm release:notes --version 1.1.0-beta.1 --head v1.1.0-beta.1 --assets-json assets.json > notes.md
 //

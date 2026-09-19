@@ -1,17 +1,27 @@
 import type { Protocol, TransportKind } from '@common/schemas'
 import type { UiCatalogKey } from '@common/i18n/catalogs'
 
-export type WorkflowNodeKind =
-  | 'input'
-  | 'control-input'
-  | 'protocol-discovery'
-  | 'condition'
-  | 'model-select'
-  | 'iteration'
-  | 'script'
-  | 'prompt'
-  | 'note'
-  | 'output'
+/**
+ * 节点类型的全集。
+ *
+ * 写成**运行期的数组**再派生出类型，是为了让需要枚举它的地方（上报契约的 `nodeKind` 字段）
+ * 直接用同一份清单，而不是各抄一遍：抄一份的代价是「画布上能建的节点，上报接口不认识」。
+ * `(typeof …)[number]` 与原来的联合类型完全等价，消费方不受影响。
+ */
+export const WORKFLOW_NODE_KINDS = [
+  'input',
+  'control-input',
+  'protocol-discovery',
+  'condition',
+  'model-select',
+  'iteration',
+  'script',
+  'prompt',
+  'note',
+  'output',
+] as const
+
+export type WorkflowNodeKind = (typeof WORKFLOW_NODE_KINDS)[number]
 
 export type WorkflowProtocol = Protocol | 'unknown'
 

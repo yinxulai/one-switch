@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="./docs/design/brand/png/icon-256.png" width="128" height="128" alt="One Switch" />
+  <img src="./docs/design/brand/png/icon-256.png" width="128" height="128" alt="OSW" />
 </p>
 
-<h1 align="center">One Switch</h1>
+<h1 align="center">OSW</h1>
 
 <p align="center">
   <strong>把你手上所有的大模型渠道，合成一个本地地址。当前渠道挂了，自动换下一个。</strong>
@@ -10,41 +10,51 @@
 
 <p align="center"><a href="./README.md">English</a> | 简体中文</p>
 
-One Switch 在本机跑一个代理服务。你把能用的渠道都配进来（不同供应商、不同账号、不同模型），排好优先级，然后让所有 AI 客户端统一指向一个本地地址。剩下的事它自己做：识别协议、按顺序挑渠道、把请求送出去、失败就换下一个，并把真实发生的一切记录清楚。
+OSW 在本机跑一个代理服务。你把能用的渠道都配进来（不同供应商、不同账号、不同模型），排好优先级，然后让所有 AI 客户端统一指向一个本地地址。剩下的事它自己做：识别协议、按顺序挑渠道、把请求送出去、失败就换下一个，并把真实发生的一切记录清楚。
 
 于是客户端只会看到成功的那一次。
+
+**OSW 是 One Switch 的简称。** 名字就是产品本身：给你手上所有渠道装一个开关 —— 入口只有一个本地地址，供应商只需配在这一处，哪个渠道挂了就拨到下一个。
+
+## 我们的理念
+
+- **一个入口。** 客户端只需要知道一个本地地址。供应商、账号、模型都在它后面换，下游再也不用跟着改。
+- **故障是常态。** 网络抖动、连接超时、限流、额度耗尽、密钥失效、上游 5xx —— 渠道会挂是预期内的事，不是意外。让你在渠道挂掉时继续干活，是产品该做的，不是你该做的。
+- **默认透传。** 不解析协议、不改写、不转换，除非你明确要求。最安全也最快的请求，是代理几乎没碰过的那一个。
+- **只在本地。** 只监听 `127.0.0.1`，密钥交给系统钥匙串，除了你配置的上游不与任何地方通信。没有账号、没有云同步、没有中转。
+- **一切可查。** 实际走了哪个供应商、哪个模型、第几次尝试才成功、耗时多少、首字多快、消耗了多少 Token —— 每一次请求都留下可追溯的记录。
 
 ---
 
 ## 安装
 
-到 [最新版本](https://github.com/yinxulai/one-switch/releases/latest) 下载对应平台的安装包。产物命名统一是 `One-Switch-<版本>-<平台>-<架构>.<后缀>`，每个安装包都配一个 `.sha256` 校验文件。
+到 [最新版本](https://github.com/yinxulai/osw/releases/latest) 下载对应平台的安装包。产物命名统一是 `OSW-<版本>-<平台>-<架构>.<后缀>`，每个安装包都配一个 `.sha256` 校验文件。
 
 | 平台 | 架构 | 下载哪个文件 |
 | --- | --- | --- |
-| macOS | Apple Silicon | `One-Switch-<版本>-mac-arm64.dmg` |
-| macOS | Intel | `One-Switch-<版本>-mac-x64.dmg` |
-| Windows | x64 | `One-Switch-<版本>-win-x64.exe` |
-| Windows | ARM64 | `One-Switch-<版本>-win-arm64.exe` |
-| Linux | x64 | `One-Switch-<版本>-linux-x86_64.AppImage` |
-| Linux | ARM64 | `One-Switch-<版本>-linux-arm64.AppImage` |
+| macOS | Apple Silicon | `OSW-<版本>-mac-arm64.dmg` |
+| macOS | Intel | `OSW-<版本>-mac-x64.dmg` |
+| Windows | x64 | `OSW-<版本>-win-x64.exe` |
+| Windows | ARM64 | `OSW-<版本>-win-arm64.exe` |
+| Linux | x64 | `OSW-<版本>-linux-x86_64.AppImage` |
+| Linux | ARM64 | `OSW-<版本>-linux-arm64.AppImage` |
 
-1. **macOS** —— 打开 `.dmg`，把 **One Switch** 拖进「应用程序」。构建目前是 ad-hoc 签名且未公证，首次打开若被系统拦下，去「系统设置 → 隐私与安全性」放行，或在 Finder 里右键应用选「打开」。
+1. **macOS** —— 打开 `.dmg`，把 **OSW** 拖进「应用程序」。构建目前是 ad-hoc 签名且未公证，首次打开若被系统拦下，去「系统设置 → 隐私与安全性」放行，或在 Finder 里右键应用选「打开」。
 2. **Windows** —— 直接运行 `.exe`。若 SmartScreen 提示未知发布者，点「更多信息 → 仍要运行」。
 3. **Linux** —— 给 AppImage 加执行权限再运行：
 
    ```bash
-   chmod +x One-Switch-*-linux-*.AppImage
-   ./One-Switch-*-linux-*.AppImage
+   chmod +x OSW-*-linux-*.AppImage
+   ./OSW-*-linux-*.AppImage
    ```
 
-装好后 One Switch 常驻系统托盘，并会自己检查更新。Windows / Linux 上是下载后就地安装；macOS 因为签名状态，只能检查更新并跳到 DMG 下载页。
+装好后 OSW 常驻系统托盘，并会自己检查更新。Windows / Linux 上是下载后就地安装；macOS 因为签名状态，只能检查更新并跳到 DMG 下载页。
 
 装完接着看下面的[三步上手](#三步上手)。
 
 ## 为什么值得装
 
-- **配一次，到处能用。** 所有客户端只填一个本地地址。以后换供应商、换账号、换模型，都只改 One Switch，不用再去翻每个工具的设置。
+- **配一次，到处能用。** 所有客户端只填一个本地地址。以后换供应商、换账号、换模型，都只改 OSW，不用再去翻每个工具的设置。
 - **渠道会挂，你的活不会停。** 网络抖动、连接超时、限流、额度耗尽、鉴权失效、上游 5xx，都会自动尝试下一个渠道。已经开始的流式输出不会被中途拼接成两份，宁可报失败也不给你混杂的回答。
 - **每个请求都查得到真相。** 这次请求实际走了哪个供应商、哪个模型、第几次尝试才成功、耗时多少、首字多快、每秒多少 Token、缓存命中了多少 —— 全都落库可查。
 - **不同供应商的小脾气，不用写代码。** 需要补一个 `User-Agent`、删掉一个 Header、把某个字段固定成 `0.7`？用请求重写规则配出来就行，编辑器里还能直接对着用例验证。
@@ -102,7 +112,7 @@ One Switch 在本机跑一个代理服务。你把能用的渠道都配进来（
 
 > ⚠️ 这里最容易踩的坑：Anthropic 客户端自己会拼 `/v1/messages`，所以 Base URL **只要到端口为止**。如果多写了 `/v1`，最终请求会变成 `/v1/v1/messages`，代理认不出这条路径，只能给你 404。
 
-模型名随便填 —— `default` 或任何非空名字都行，One Switch 会在转发时替换成当前选中渠道的真实模型 ID。要求填 API Key 的客户端，填个任意占位值即可，真实密钥由 One Switch 按供应商注入。
+模型名随便填 —— `default` 或任何非空名字都行，OSW 会在转发时替换成当前选中渠道的真实模型 ID。要求填 API Key 的客户端，填个任意占位值即可，真实密钥由 OSW 按供应商注入。
 
 验证一下服务是通的：
 
@@ -114,7 +124,7 @@ curl http://127.0.0.1:9300/v1/models
 
 ## 故障转移规则
 
-| 上游发生了什么 | One Switch 怎么做 |
+| 上游发生了什么 | OSW 怎么做 |
 | --- | --- |
 | 网络错误、连接超时、流式空闲超时 | 换下一个渠道 |
 | `401`、`403` | 换下一个渠道，并累计该供应商的失败状态 |
@@ -133,7 +143,7 @@ curl http://127.0.0.1:9300/v1/models
 | OpenAI Responses | `/v1/responses` | 支持 Responses API 的服务 |
 | Anthropic Messages | `/v1/messages` | Claude 及兼容服务 |
 
-上面这些路径带不带 `/v1` 前缀都能识别。`GET /v1/models` 由 One Switch 本地提供，返回统一的模型名，不会转发给上游。
+上面这些路径带不带 `/v1` 前缀都能识别。`GET /v1/models` 由 OSW 本地提供，返回统一的模型名，不会转发给上游。
 
 **关于协议转换**：默认不做任何转换，请求原样透传 —— 这是最安全也最快的做法。如果你确实需要让 Claude 的客户端去打一个只支持 OpenAI 格式的渠道，可以在端点绑定上单独开启转换。转换是尽力而为的兼容层，部分参数可能丢失，一次故障转移只会尝试原生匹配或你已经明确开启转换的渠道。
 
@@ -164,7 +174,7 @@ curl http://127.0.0.1:9300/v1/models
 - 规则可以设为全局（对所有渠道生效），也可以绑到具体模型上并调整执行顺序。
 - 编辑器里自带测试用例，改完动作立刻能看到效果，不用发真实请求。
 
-内置三个模板，覆盖最常见的那几件事：**修改 User-Agent**（默认值就是 `OneSwitch/<版本号>`）、**移除请求头**、**设置请求字段**。
+内置三个模板，覆盖最常见的那几件事：**修改 User-Agent**（默认值就是 `OSW/<版本号>`）、**移除请求头**、**设置请求字段**。
 
 新建的规则是启用的，不想用就在列表里停用它。所有改动都是结构化的增删改写，不执行任何脚本；响应阶段的动作只处理完整的非流式 JSON，流式响应的正文不会被改写。
 
@@ -177,16 +187,16 @@ curl http://127.0.0.1:9300/v1/models
 
 | 文件 | 内容 |
 | --- | --- |
-| `~/.one-switch/one-switch-config-v1.db` | 供应商、模型、路由与改写规则 —— **你的配置，值得单独备份** |
-| `~/.one-switch/one-switch-data-v1.db` | 请求日志、正文、用量与健康状态 —— **可以随时删**，只丢历史统计 |
+| `~/.osw/osw-config-v1.db` | 供应商、模型、路由与改写规则 —— **你的配置，值得单独备份** |
+| `~/.osw/osw-data-v1.db` | 请求日志、正文、用量与健康状态 —— **可以随时删**，只丢历史统计 |
 
-开发版跑的是 `~/.one-switch-development`，不会碰到你真实的数据。
+开发版跑的是 `~/.osw-development`，不会碰到你真实的数据。
 
 还有几件事值得你知道：
 
 - **正文捕获默认开启**，本机会保存完整的请求、响应和流式内容（包括协议转换前后的内容）。其中 Header 会自动脱敏（`authorization`、`x-api-key`、`cookie` 等），正文不会 —— 所以它能让你排查任何一次请求，也意味着日志里可能有敏感内容。正文默认只保留 7 天（请求记录本身默认永久保留），不想要的话可以在 **设置 → 数据 → 请求日志** 里关掉采集、调整保留天数，或立刻清理历史。
 - 为了完整支持超长上下文，代理和正文记录都不限制单次正文大小，会在内存里完整读一遍请求体 —— 极大正文会明显吃内存和磁盘，这是当前版本有意为之的取舍。
-- One Switch 没有云同步、账号体系或远程中转，请求只会发往你配置的上游地址。
+- OSW 没有云同步、账号体系或远程中转，请求只会发往你配置的上游地址。
 
 ## 现在还不支持
 
@@ -226,21 +236,21 @@ pnpm release:linux   # 构建 Linux arm64 / x64 安装包
 
 ## 反馈
 
-有问题或想法欢迎开 [Issue](https://github.com/yinxulai/one-switch/issues)。附上版本号、操作系统、请求协议和脱敏后的运行日志会好定位很多 —— 但请**不要**贴 API Key、完整提示词或其他敏感内容。
+有问题或想法欢迎开 [Issue](https://github.com/yinxulai/osw/issues)。附上版本号、操作系统、请求协议和脱敏后的运行日志会好定位很多 —— 但请**不要**贴 API Key、完整提示词或其他敏感内容。
 
 ---
 
 ## 贡献者
 
-[![贡献者](https://contrib.rocks/image?repo=yinxulai/one-switch)](https://github.com/yinxulai/one-switch/graphs/contributors)
+[![贡献者](https://contrib.rocks/image?repo=yinxulai/osw)](https://github.com/yinxulai/osw/graphs/contributors)
 
-感谢每一位为 One Switch 出过力的人 —— 写代码、提 Issue、提想法、修文档，都算。
+感谢每一位为 OSW 出过力的人 —— 写代码、提 Issue、提想法、修文档，都算。
 
 ---
 
 ## 许可
 
-One Switch 采用 [PolyForm Noncommercial License 1.0.0](./LICENSE) 发布。
+OSW 采用 [PolyForm Noncommercial License 1.0.0](./LICENSE) 发布。
 
 - **个人及非商业用途免费。** 研究、学习、业余项目，以及慈善、教育、公共科研、公共安全与卫生、环保和政府机构的使用，都属于允许用途。
 - **不可商用。** 如需商业使用，请联系作者另行取得授权。

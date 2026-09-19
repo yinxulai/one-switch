@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="./docs/design/brand/png/icon-256.png" width="128" height="128" alt="One Switch" />
+  <img src="./docs/design/brand/png/icon-256.png" width="128" height="128" alt="OSW" />
 </p>
 
-<h1 align="center">One Switch</h1>
+<h1 align="center">OSW</h1>
 
 <p align="center">
   <strong>Put every LLM channel you own behind one local address. When one goes down, the next one takes over.</strong>
@@ -10,41 +10,51 @@
 
 <p align="center">English | <a href="./README.zh-CN.md">简体中文</a></p>
 
-One Switch runs a proxy on your machine. You register all the channels you have — different providers, different accounts, different models — put them in the order you want them tried, and point every AI client at a single local address. From then on it does the work: identify the protocol, pick a channel, send the request, move on when a channel fails, and record exactly what happened.
+OSW runs a proxy on your machine. You register all the channels you have — different providers, different accounts, different models — put them in the order you want them tried, and point every AI client at a single local address. From then on it does the work: identify the protocol, pick a channel, send the request, move on when a channel fails, and record exactly what happened.
 
 Your client only ever sees the attempt that succeeded.
+
+**OSW is short for One Switch.** The name is the product: one switch for every channel you own — one local address going in, one place to configure providers, and one handle to flip when a channel breaks.
+
+## What we believe
+
+- **One entry point.** Clients only ever know one local address. Providers, accounts and models change behind it; nothing downstream ever has to be reconfigured again.
+- **Failure is normal.** Network hiccups, connection timeouts, rate limits, exhausted quotas, dead keys, upstream 5xx — a broken channel is the expected case, not the exception. Keeping you running through it is the product's job, not yours.
+- **Pass through by default.** No protocol parsing, no rewriting, no conversion unless you explicitly ask for it. The safest and fastest request is the one the proxy barely touches.
+- **Local only.** It listens on `127.0.0.1`, keeps keys in the OS keychain, and talks to nobody but the upstreams you configured. No account, no cloud sync, no relay.
+- **Everything is on the record.** Which provider, which model, which attempt finally succeeded, how long it took, how fast the first token arrived, how many tokens it cost — every request leaves a trace you can query.
 
 ---
 
 ## Install
 
-Download the installer for your platform from the [latest release](https://github.com/yinxulai/one-switch/releases/latest). Every asset follows `One-Switch-<version>-<os>-<arch>.<ext>`, and each installer ships a matching `.sha256` file you can verify.
+Download the installer for your platform from the [latest release](https://github.com/yinxulai/osw/releases/latest). Every asset follows `OSW-<version>-<os>-<arch>.<ext>`, and each installer ships a matching `.sha256` file you can verify.
 
 | Platform | Architecture | File to download |
 | --- | --- | --- |
-| macOS | Apple silicon | `One-Switch-<version>-mac-arm64.dmg` |
-| macOS | Intel | `One-Switch-<version>-mac-x64.dmg` |
-| Windows | x64 | `One-Switch-<version>-win-x64.exe` |
-| Windows | ARM64 | `One-Switch-<version>-win-arm64.exe` |
-| Linux | x64 | `One-Switch-<version>-linux-x86_64.AppImage` |
-| Linux | ARM64 | `One-Switch-<version>-linux-arm64.AppImage` |
+| macOS | Apple silicon | `OSW-<version>-mac-arm64.dmg` |
+| macOS | Intel | `OSW-<version>-mac-x64.dmg` |
+| Windows | x64 | `OSW-<version>-win-x64.exe` |
+| Windows | ARM64 | `OSW-<version>-win-arm64.exe` |
+| Linux | x64 | `OSW-<version>-linux-x86_64.AppImage` |
+| Linux | ARM64 | `OSW-<version>-linux-arm64.AppImage` |
 
-1. **macOS** — open the `.dmg` and drag **One Switch** into *Applications*. Builds are ad-hoc signed and not notarized, so if macOS blocks the first launch, allow it under **System Settings → Privacy & Security**, or right-click the app in Finder and choose **Open**.
+1. **macOS** — open the `.dmg` and drag **OSW** into *Applications*. Builds are ad-hoc signed and not notarized, so if macOS blocks the first launch, allow it under **System Settings → Privacy & Security**, or right-click the app in Finder and choose **Open**.
 2. **Windows** — run the `.exe`. If SmartScreen warns about an unknown publisher, choose **More info → Run anyway**.
 3. **Linux** — make the AppImage executable and run it:
 
    ```bash
-   chmod +x One-Switch-*-linux-*.AppImage
-   ./One-Switch-*-linux-*.AppImage
+   chmod +x OSW-*-linux-*.AppImage
+   ./OSW-*-linux-*.AppImage
    ```
 
-Once installed, One Switch lives in the system tray and checks for updates itself. Windows and Linux download and install updates in place; on macOS the ad-hoc signature means it can only check for updates and open the DMG download page.
+Once installed, OSW lives in the system tray and checks for updates itself. Windows and Linux download and install updates in place; on macOS the ad-hoc signature means it can only check for updates and open the DMG download page.
 
 Next: [Up and running in three steps](#up-and-running-in-three-steps).
 
 ## Why it's worth installing
 
-- **Configure once, use it everywhere.** Every client points at one local address. Swapping providers, accounts or models later means editing One Switch, not hunting through each tool's settings.
+- **Configure once, use it everywhere.** Every client points at one local address. Swapping providers, accounts or models later means editing OSW, not hunting through each tool's settings.
 - **Channels break; your work doesn't.** Network hiccups, connection timeouts, rate limits, exhausted quota, rejected keys and upstream 5xx all push the request to the next channel automatically. A response that has already started streaming is never spliced together from a second one — you get a failure instead of a Frankenstein answer.
 - **Every request tells you the truth.** Which provider and model actually served it, which attempt succeeded, how long it took, how fast the first token arrived, tokens per second, how much of the prompt was cached — all of it stored and queryable.
 - **Provider quirks without writing code.** Need to add a `User-Agent`, drop a header, or pin a field to `0.7`? Request rewrite rules do it, and the editor validates the change against a test case on the spot.
@@ -102,7 +112,7 @@ Things worth doing while you're here:
 
 > ⚠️ The trap everyone falls into: Anthropic clients append `/v1/messages` themselves, so the Base URL **stops at the port**. Add `/v1` and the request becomes `/v1/v1/messages`, which the proxy does not recognise — you get a 404.
 
-The model name is up to you: `default`, or any non-empty name. One Switch swaps it for the real model ID of whichever channel it selects. If your client insists on an API key, any placeholder will do — the real keys are injected per provider.
+The model name is up to you: `default`, or any non-empty name. OSW swaps it for the real model ID of whichever channel it selects. If your client insists on an API key, any placeholder will do — the real keys are injected per provider.
 
 Check that the service is alive:
 
@@ -114,7 +124,7 @@ The listener host and port live in **Settings → Network → Local Listener**; 
 
 ## Failover rules
 
-| What happens upstream | What One Switch does |
+| What happens upstream | What OSW does |
 | --- | --- |
 | Network error, connection timeout, streaming idle timeout | Try the next channel |
 | `401`, `403` | Try the next channel, and count the failure against that provider |
@@ -162,7 +172,7 @@ Maintain rules on the **Request Rewrite** page to smooth over small differences 
 - A rule can be global (applies to every channel) or bound to specific models with an explicit execution order.
 - The editor carries a test case, so you see the effect of a change immediately without sending a real request.
 
-Three templates ship with it: **Override User-Agent** (defaults to `OneSwitch/<version>`), **Drop a request header**, and **Set a request field**.
+Three templates ship with it: **Override User-Agent** (defaults to `OSW/<version>`), **Drop a request header**, and **Set a request field**.
 
 New rules are enabled; disable one from the list if you change your mind. Every change is a structured add/delete/replace and nothing ever executes a script. Response-stage actions only touch complete non-streaming JSON — the body of a streaming response is never rewritten.
 
@@ -175,10 +185,10 @@ Configuration, logs and request metadata live in one hidden directory in your ho
 
 | File | Contents |
 | --- | --- |
-| `~/.one-switch/one-switch-config-v1.db` | Providers, models, routing and rewrite rules — **your configuration, worth backing up** |
-| `~/.one-switch/one-switch-data-v1.db` | Request logs, captured bodies, usage and health state — **safe to delete**, you only lose history |
+| `~/.osw/osw-config-v1.db` | Providers, models, routing and rewrite rules — **your configuration, worth backing up** |
+| `~/.osw/osw-data-v1.db` | Request logs, captured bodies, usage and health state — **safe to delete**, you only lose history |
 
-The development build uses `~/.one-switch-development` instead, so a dev instance never touches your real data.
+The development build uses `~/.osw-development` instead, so a dev instance never touches your real data.
 
 A few more things worth knowing:
 
@@ -224,21 +234,21 @@ Design goals, behaviour contracts and acceptance criteria have a single authorit
 
 ## Feedback
 
-Issues and ideas are welcome in [Issues](https://github.com/yinxulai/one-switch/issues). The version number, operating system, protocol and a redacted runtime log go a long way — but please **do not** paste API keys, full prompts or other sensitive content.
+Issues and ideas are welcome in [Issues](https://github.com/yinxulai/osw/issues). The version number, operating system, protocol and a redacted runtime log go a long way — but please **do not** paste API keys, full prompts or other sensitive content.
 
 ---
 
 ## Contributors
 
-[![Contributors](https://contrib.rocks/image?repo=yinxulai/one-switch)](https://github.com/yinxulai/one-switch/graphs/contributors)
+[![Contributors](https://contrib.rocks/image?repo=yinxulai/osw)](https://github.com/yinxulai/osw/graphs/contributors)
 
-Thanks to everyone who has put work into One Switch — code, bug reports, ideas and documentation fixes all count.
+Thanks to everyone who has put work into OSW — code, bug reports, ideas and documentation fixes all count.
 
 ---
 
 ## License
 
-One Switch is released under the [PolyForm Noncommercial License 1.0.0](./LICENSE).
+OSW is released under the [PolyForm Noncommercial License 1.0.0](./LICENSE).
 
 - **Personal and other noncommercial use is free.** Research, study, hobby projects, and use by charitable, educational, public research, public safety or health, environmental and government organizations are all permitted purposes.
 - **Commercial use is not allowed.** For commercial licensing, contact the author.

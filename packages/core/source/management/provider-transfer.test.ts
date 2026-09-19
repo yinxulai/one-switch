@@ -31,7 +31,7 @@ let temporaryDirectory: string
 let secretStore: SecretStore
 
 beforeEach(async () => {
-  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-provider-transfer-'))
+  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'osw-provider-transfer-'))
   await initDatabases(temporaryDirectory)
   secretStore = {
     set: vi.fn(async () => undefined),

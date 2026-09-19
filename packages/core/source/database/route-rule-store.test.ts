@@ -31,7 +31,7 @@ afterEach(async () => {
 })
 
 async function initTemporaryDatabase(): Promise<void> {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-route-rules-'))
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'osw-route-rules-'))
   temporaryDirectories.push(directory)
   await initDatabases(directory)
 }

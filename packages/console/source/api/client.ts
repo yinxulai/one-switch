@@ -10,7 +10,7 @@ interface RequestOptions {
  *
  * 控制台产物只编一份，却要在三种形态下都能找到管理服务，所以基地址必须在**运行时**算：
  *
- * 1. 宿主显式注入（`window.__ONE_SWITCH__`）——注入了就照办；
+ * 1. 宿主显式注入（`window.__OSW__`）——注入了就照办；
  * 2. 页面本身就是管理服务发出来的（`http(s):`）——同源，`/api` 就在旁边，
  *    命令行形态的托管走这条；
  * 3. 其余（Electron 的 `file://`、Vite dev server）——退回构建期预设端口。
@@ -29,7 +29,7 @@ export function resolveApiBase(): string {
 }
 
 function resolveApiBaseFromEnvironment(fallback: string): string {
-  const injected = typeof window === 'undefined' ? undefined : window.__ONE_SWITCH__?.apiBase
+  const injected = typeof window === 'undefined' ? undefined : window.__OSW__?.apiBase
   if (injected) return injected.replace(/\/+$/, '')
 
   if (import.meta.env.DEV) return fallback

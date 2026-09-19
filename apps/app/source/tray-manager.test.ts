@@ -135,15 +135,15 @@ describe('托盘菜单结构', () => {
     mocks.getProxyServerStatus.mockResolvedValue({ running: true, host: '127.0.0.1', port: 19300 })
     manager = await initRunning()
 
-    expect(labels()).toEqual(['运行中 · 19300', '复制接入地址', '停止代理服务', '打开主界面', '退出 One Switch'])
+    expect(labels()).toEqual(['运行中 · 19300', '复制接入地址', '停止代理服务', '打开主界面', '退出 OSW'])
   })
 
   it('已停止：状态行与启停项一起翻转，菜单项数量不变', async () => {
     mocks.getProxyServerStatus.mockResolvedValue({ running: false, host: '127.0.0.1', port: 19300 })
     manager = await initRunning()
 
-    expect(labels()).toEqual(['已停止', '复制接入地址', '启动代理服务', '打开主界面', '退出 One Switch'])
-    expect(mocks.tray.setToolTip).toHaveBeenLastCalledWith('One Switch · 已停止')
+    expect(labels()).toEqual(['已停止', '复制接入地址', '启动代理服务', '打开主界面', '退出 OSW'])
+    expect(mocks.tray.setToolTip).toHaveBeenLastCalledWith('OSW · 已停止')
   })
 
   it('状态行不可点击，其余条目都可点击', async () => {
@@ -152,7 +152,7 @@ describe('托盘菜单结构', () => {
 
     expect(findItem('运行中 · 19300').enabled).toBe(false)
     expect(findItem('运行中 · 19300').click).toBeUndefined()
-    for (const label of ['停止代理服务', '打开主界面', '退出 One Switch']) {
+    for (const label of ['停止代理服务', '打开主界面', '退出 OSW']) {
       expect(findItem(label).enabled).not.toBe(false)
       expect(typeof findItem(label).click).toBe('function')
     }
@@ -239,6 +239,6 @@ describe('托盘启停与轮询', () => {
     manager.init(mocks.mainWindow as unknown as BrowserWindow)
 
     await vi.waitFor(() => expect(mocks.tray.setContextMenu).toHaveBeenCalled())
-    expect(labels()).toEqual(['打开主界面', '退出 One Switch'])
+    expect(labels()).toEqual(['打开主界面', '退出 OSW'])
   })
 })

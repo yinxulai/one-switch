@@ -38,6 +38,6 @@ export const useAppUiStore = create<AppUiState>()(persist(
     setSidebarPinned: sidebarPinned => set({ sidebarPinned }),
   }),
   {
-    name: 'one-switch-ui',
+    name: 'osw-ui',
   },
 ))

@@ -13,7 +13,7 @@
  *   - 缺失 → 自动生成。首次使用不该要求用户做任何事。
  *   - 存在但读不出来或长度不对 → **报错退出，绝不重建**。静默重建等于把用户已经存过的
  *     供应商密钥全部作废，而那些 key 在供应商侧只存哈希，是不可再生的。
- *   - `ONE_SWITCH_SECRET_KEY`（base64 的 32 字节）可覆盖，供不落盘主密钥的容器/CI 场景。
+ *   - `OSW_SECRET_KEY`（base64 的 32 字节）可覆盖，供不落盘主密钥的容器/CI 场景。
  */
 
 import crypto from 'node:crypto'
@@ -45,7 +45,7 @@ const ALGORITHM = 'aes-256-gcm'
 /** 密文格式版本：以后换算法时靠它区分新旧条目，不至于把旧数据当成损坏。 */
 const CIPHER_PREFIX = 'v1'
 
-export const MASTER_KEY_ENVIRONMENT_VARIABLE = 'ONE_SWITCH_SECRET_KEY'
+export const MASTER_KEY_ENVIRONMENT_VARIABLE = 'OSW_SECRET_KEY'
 
 export class EncryptedFileSecretStore implements SecretStore {
   private masterKey: Promise<Buffer> | null = null
@@ -136,7 +136,7 @@ async function resolveMasterKey(dataDirectory: string): Promise<Buffer> {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
       throw new Error(
-        `Cannot read the One Switch master key at ${keyPath} (${describeError(error)}). ` +
+        `Cannot read the OSW master key at ${keyPath} (${describeError(error)}). ` +
           'Refusing to create a new one: the existing secrets would become unreadable.',
       )
     }

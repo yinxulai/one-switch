@@ -11,6 +11,8 @@ node_modules
 dist
 dist-ssr
 dist-electron
+output
+output-worker
 release
 .native-build
 .turbo
@@ -35,7 +37,8 @@ coverage
 
 # Worker 的本地状态与本地密钥：`.dev.vars` 里放的是 GA 的 measurement id 与 api secret，
 # 与线上 secret 是同一份东西，绝不能进仓库。
-apps/api/.dev.vars
-apps/api/.wrangler
-apps/api/worker-configuration.d.ts
+apps/apis/.dev.vars
+apps/apis/.wrangler
+apps/apis/worker-configuration.d.ts
+apps/www/.wrangler
                                                                                   

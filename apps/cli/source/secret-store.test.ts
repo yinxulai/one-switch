@@ -21,7 +21,7 @@ function readKeyFile(): Buffer {
 }
 
 beforeEach(() => {
-  dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-cli-secrets-'))
+  dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'osw-cli-secrets-'))
   delete process.env[MASTER_KEY_ENVIRONMENT_VARIABLE]
 })
 

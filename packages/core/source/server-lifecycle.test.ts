@@ -26,7 +26,7 @@ async function startTestServer(options: StartServerOptions): Promise<void> {
 
 beforeEach(() => {
   secrets.clear()
-  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-server-'))
+  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'osw-server-'))
 })
 
 afterEach(async () => {
@@ -74,7 +74,7 @@ describe('server lifecycle', () => {
     expect(modelsResponse.status).toBe(200)
     expect(await modelsResponse.json()).toEqual({
       object: 'list',
-      data: [{ id: 'default', object: 'model', created: 0, owned_by: 'one-switch' }],
+      data: [{ id: 'default', object: 'model', created: 0, owned_by: 'osw' }],
     })
 
     expect(await post(`${managementUrl}/stop`)).toMatchObject({

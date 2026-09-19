@@ -14,7 +14,7 @@ export const CLI_COMMANDS = ['start', 'stop', 'status', 'version'] as const
 export type CliCommand = (typeof CLI_COMMANDS)[number]
 
 export interface CliArguments {
-  /** 没给命令时是 `start`：`one-switch` 等价于 `one-switch start`。 */
+  /** 没给命令时是 `start`：`osw` 等价于 `osw start`。 */
   command: CliCommand
   /** `-h` / `--help`，任何位置出现都优先于其它一切。 */
   help: boolean
@@ -68,7 +68,7 @@ export function parseArguments(argv: readonly string[]): ParseResult {
 
     if (!token.startsWith('-')) {
       // 第二个位置参数一律报未知命令：本 CLI 没有子命令层级，多出来的位置参数
-      // 通常是 `one-switch start extra` 这类手误，静默忽略会让人以为参数生效了。
+      // 通常是 `osw start extra` 这类手误，静默忽略会让人以为参数生效了。
       if (command !== null || !isCommand(token)) return fail('native.cli.error.unknownCommand', { command: token })
       command = token
       continue

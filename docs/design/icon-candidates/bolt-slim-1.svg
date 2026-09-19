@@ -1,4 +1,4 @@
-<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="One Switch">
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="OSW">
   <!-- H1 · F3 结构 + 笔杆瘦一档（上杆 54、下杆 49；F3 原本是 66 / 60） -->
   <defs>
     <linearGradient id="os" gradientUnits="userSpaceOnUse" x1="38" y1="14" x2="178" y2="242">

@@ -4,7 +4,7 @@ import { createTelemetryHandler, type TelemetryEnv } from './index'
 
 const NOW = 1_700_000_000_000
 const INSTALL_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3301'
-const ENDPOINT = 'https://telemetry.one-switch.app/v1/events'
+const ENDPOINT = 'https://api.osw.yinxulai.com/v1/track'
 const ENV: TelemetryEnv = { GA_MEASUREMENT_ID: 'G-TEST123', GA_API_SECRET: 'secret' }
 
 interface CapturedRequest {
@@ -67,66 +67,13 @@ function post(options: PostOptions = {}): Request {
   return request
 }
 
-/** 打健康检查的请求。`GET` / `HEAD` 不带正文，其余方法带（405 在读正文之前就判了）。 */
-function health(method = 'GET'): Request {
-  return post({ url: 'https://telemetry.one-switch.app/health', method, contentType: null })
-}
-
 describe('上报端点', () => {
-  describe('健康检查与路由', () => {
-    it('GET /health 直接回答，不碰下游也不进限流', async () => {
-      const upstream = createUpstream()
-      const handler = createTelemetryHandler({ fetchImpl: upstream.fetchImpl })
-
-      // 密钥一个都没给：探针的职责是「活着吗」，不是「配好了吗」，所以这里仍然要能回答。
-      const response = await handler(health(), {}, NOW)
-
-      expect(response.status).toBe(200)
-      expect(await response.json()).toMatchObject({ ok: true, upstream: 'unconfigured' })
-      expect(upstream.calls).toHaveLength(0)
-    })
-
-    it('健康检查报出自己的版本', async () => {
-      const handler = createTelemetryHandler({ fetchImpl: createUpstream().fetchImpl })
-
-      const payload = (await (await handler(health(), ENV, NOW)).json()) as { version: string }
-
-      // 不写死版本号：那是 `package.json` 的事，这里断言的是「它确实来自那份清单」。
-      expect(payload.version).toMatch(/^\d+\.\d+\.\d+/)
-    })
-
-    it('密钥齐了就把 upstream 报成 configured', async () => {
-      const handler = createTelemetryHandler({ fetchImpl: createUpstream().fetchImpl })
-
-      const payload = (await (await handler(health(), ENV, NOW)).json()) as { upstream: string }
-
-      expect(payload.upstream).toBe('configured')
-    })
-
-    it('HEAD /health 有状态码没有正文', async () => {
-      const handler = createTelemetryHandler({ fetchImpl: createUpstream().fetchImpl })
-
-      const response = await handler(health('HEAD'), ENV, NOW)
-
-      expect(response.status).toBe(200)
-      expect(response.headers.get('content-type')).toBe('application/json')
-      expect(await response.text()).toBe('')
-    })
-
-    it('POST /health 只允许 GET 与 HEAD', async () => {
-      const handler = createTelemetryHandler({ fetchImpl: createUpstream().fetchImpl })
-
-      const response = await handler(health('POST'), ENV, NOW)
-
-      expect(response.status).toBe(405)
-      expect(response.headers.get('allow')).toBe('GET, HEAD')
-    })
-
-    it('根路径不再被占，与任何未知路径一样 404', async () => {
+  describe('路由与请求头', () => {
+    it('根路径也是 404——域名上不留「不知道为什么有回应」的地址', async () => {
       const handler = createTelemetryHandler({ fetchImpl: createUpstream().fetchImpl })
 
       const response = await handler(
-        post({ url: 'https://telemetry.one-switch.app/', method: 'GET', contentType: null }),
+        post({ url: 'https://api.osw.yinxulai.com/', method: 'GET', contentType: null }),
         ENV,
         NOW,
       )
@@ -135,20 +82,32 @@ describe('上报端点', () => {
       expect(await response.json()).toEqual({ ok: false, error: 'not_found' })
     })
 
-    it('未知路径 404', async () => {
-      const handler = createTelemetryHandler({ fetchImpl: createUpstream().fetchImpl })
+    // 端点只有一条，所以「近亲路径」也必须被拒：多一个斜杠、多一段、换一个名字都算别的地址。
+    // `/v1/events` 是这条路径的**旧名字**，单独立一条回归用例：改名之后它必须一直是 404，
+    // 否则会把「老客户端还在打旧地址」误报成「请求成功了」。
+    it.each(['/v1/events', '/v1/track/', '/v1/track/extra'])(
+      '%s 不是端点，与其他未知路径一样 404',
+      async path => {
+        const handler = createTelemetryHandler({ fetchImpl: createUpstream().fetchImpl })
 
-      const response = await handler(post({ url: 'https://telemetry.one-switch.app/v2/events' }), ENV, NOW)
+        const response = await handler(
+          post({ url: `https://api.osw.yinxulai.com${path}`, method: 'GET', contentType: null }),
+          ENV,
+          NOW,
+        )
 
-      expect(response.status).toBe(404)
-      expect(await response.json()).toEqual({ ok: false, error: 'not_found' })
-    })
+        expect(response.status).toBe(404)
+        expect(await response.json()).toEqual({ ok: false, error: 'not_found' })
+      },
+    )
 
-    it('GET /v1/events 只允许 POST', async () => {
+    it('GET /v1/track 只允许 POST', async () => {
       const handler = createTelemetryHandler({ fetchImpl: createUpstream().fetchImpl })
 
       const response = await handler(post({ method: 'GET' }), ENV, NOW)
 
+      // 这个 405 同时也是部署流水线的探针：它只可能来自本 Worker，所以「路由注册上了没有」
+      // 靠它就能回答，不必为此再单独开一个接口（deploy-api.yml 的 Smoke check 即此）。
       expect(response.status).toBe(405)
       expect(response.headers.get('allow')).toBe('POST')
     })
@@ -241,6 +200,23 @@ describe('上报端点', () => {
       expect(response.status).toBe(400)
       expect(await response.json()).toEqual({ ok: false, error: 'mixed_batch' })
     })
+
+    it('节点类型是闭集：清单里的过，任意字符串不过', async () => {
+      const handler = createTelemetryHandler({ fetchImpl: createUpstream().fetchImpl })
+      // 故意不写成 TelemetryEvent：这里要发的正是**不合契约**的那一份。
+      const nodeRun = (nodeKind: string) => ({ ...appStarted(), name: 'workflow_node_run', nodeKind })
+
+      const accepted = await handler(post({ body: JSON.stringify({ events: [nodeRun('condition')] }) }), ENV, NOW)
+      // 24 个字符的 URL 塞得进旧的 40 字符上限，这条用例验的就是那条缝已经封死。
+      const rejected = await handler(
+        post({ body: JSON.stringify({ events: [nodeRun('https://example.com/?q=1')] }) }),
+        ENV,
+        NOW,
+      )
+
+      expect(accepted.status).toBe(204)
+      expect(rejected.status).toBe(400)
+    })
   })
 
   describe('转发给下游', () => {
@@ -268,7 +244,7 @@ describe('上报端点', () => {
       expect(JSON.stringify(call.body)).not.toContain('secret')
     })
 
-    it('client_id 用安装标识，地区与平台来自服务端观察到的值', async () => {
+    it('client_id 用安装标识，地区、平台与安装级字段各有其位', async () => {
       const upstream = createUpstream()
       const handler = createTelemetryHandler({ fetchImpl: upstream.fetchImpl })
 
@@ -276,21 +252,49 @@ describe('上报端点', () => {
 
       const body = upstream.calls[0].body as {
         client_id: string
+        user_properties: Record<string, { value: string }>
         user_location: { country_id: string }
-        device: { operating_system: string; language: string }
-        events: { name: string; params: Record<string, string>; timestamp_micros?: number }[]
+        device: { category: string; operating_system: string; language: string }
+        events: { name: string; params: Record<string, string | number>; timestamp_micros?: number }[]
       }
       expect(body.client_id).toBe(INSTALL_ID)
       expect(body.user_location.country_id).toBe('CN')
-      expect(body.device).toEqual({ operating_system: 'Macintosh', language: 'zh-CN' })
+      expect(body.device).toEqual({ category: 'desktop', operating_system: 'Macintosh', language: 'zh-CN' })
       expect(body.events[0].name).toBe('app_started')
-      // 只发契约里声明了去 param 的公共字段，其余各有去向（client_id / 时间戳 / device）。
-      expect(body.events[0].params).toEqual({
-        version: '1.1.0-beta.14',
-        arch: 'x64',
-        runtime: 'desktop',
-      })
+      // 只发契约里声明了去 param 的公共字段，其余各有去向（client_id / 时间戳 / device / user_properties）。
+      expect(body.events[0].params).toMatchObject({ runtime: 'desktop' })
+      expect(body.user_properties).toEqual({ version: { value: '1.1.0-beta.14' }, arch: { value: 'x64' } })
       expect(body.events[0].timestamp_micros).toBe((NOW - 1_000) * 1_000)
+    })
+
+    it('补上 GA 归属用户与会话所需的那两个参数', async () => {
+      const upstream = createUpstream()
+      const handler = createTelemetryHandler({ fetchImpl: upstream.fetchImpl })
+      const events = [appStarted(), appStarted({ occurredAt: NOW - 500 })]
+
+      await handler(post({ events }), ENV, NOW)
+
+      const body = upstream.calls[0].body as { events: { params: Record<string, string | number> }[] }
+      // `session_id` 必须是正整数（GA 要求匹配 ^\d+$），而且是**数字**不是字符串。
+      const day = Math.floor(NOW / 86_400_000)
+      expect(body.events[0].params.session_id).toBe(day)
+      expect(typeof body.events[0].params.session_id).toBe('number')
+      // 同一批里逐事件同值：会话是「收到时刻」的函数，不是「事件时刻」的函数。
+      expect(body.events[1].params.session_id).toBe(day)
+      expect(body.events[1].params.engagement_time_msec).toBe(body.events[0].params.engagement_time_msec)
+      expect(typeof body.events[0].params.engagement_time_msec).toBe('number')
+      expect(Number(body.events[0].params.engagement_time_msec)).toBeGreaterThan(0)
+    })
+
+    it('声明不用作个性化广告', async () => {
+      const upstream = createUpstream()
+      const handler = createTelemetryHandler({ fetchImpl: upstream.fetchImpl })
+
+      await handler(post(), ENV, NOW)
+
+      const body = upstream.calls[0].body as { consent: unknown; non_personalized_ads: unknown }
+      expect(body.consent).toEqual({ ad_user_data: 'DENIED', ad_personalization: 'DENIED' })
+      expect(body.non_personalized_ads).toBe(true)
     })
 
     it('拿不到地区时发 XX 而不是留空', async () => {

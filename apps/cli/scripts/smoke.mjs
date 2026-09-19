@@ -6,7 +6,7 @@
  * 这些在 typecheck / lint / 单测里全都是绿的，构建产物却可能是坏的（历史上真出过一次：
  * 动态 import 的 helper 在 Node 里碰到了 `document`，而所有静态检查都通过）。
  *
- * 只碰临时数据目录与随机空闲端口，不会动到本机正在跑的 One Switch。
+ * 只碰临时数据目录与随机空闲端口，不会动到本机正在跑的 OSW。
  * 前置条件：先构建（`pnpm build:cli`）。
  *
  * 用法：pnpm smoke:cli
@@ -75,12 +75,12 @@ function assertExitCode(result, expected) {
   assert.equal(
     result.code,
     expected,
-    `one-switch ${result.args.join(' ')} → exit ${result.code} (signal ${result.signal})\n--- stdout ---\n${result.stdout}\n--- stderr ---\n${result.stderr}`,
+    `osw ${result.args.join(' ')} → exit ${result.code} (signal ${result.signal})\n--- stdout ---\n${result.stdout}\n--- stderr ---\n${result.stderr}`,
   )
 }
 
 function describeInstance(instance) {
-  return `one-switch ${instance.args.join(' ')}\n--- stdout ---\n${instance.stdout}\n--- stderr ---\n${instance.stderr}`
+  return `osw ${instance.args.join(' ')}\n--- stdout ---\n${instance.stdout}\n--- stderr ---\n${instance.stderr}`
 }
 
 const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds))
@@ -174,7 +174,7 @@ async function cleanup() {
 }
 
 async function main() {
-  log.title('One Switch CLI smoke test')
+  log.title('OSW CLI smoke test')
 
   if (!fs.existsSync(entryPath)) {
     log.error(`build output not found at ${entryPath}; run "pnpm build:cli" first`)
@@ -187,7 +187,7 @@ async function main() {
     process.exit(1)
   }
 
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-smoke-'))
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'osw-smoke-'))
   const proxyPort = await findFreePort()
   const managementPort = await findFreePort()
   const spareProxyPort = await findFreePort()

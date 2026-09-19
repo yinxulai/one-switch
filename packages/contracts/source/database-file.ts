@@ -3,8 +3,8 @@
  *
  * 一个数据目录里有**两个**数据库，各自带自己的 schema 版本号：
  *
- *   - `one-switch-config-v1.db`——配置库，用户写的东西（供应商、模型、路由、改写规则、设置）；
- *   - `one-switch-data-v1.db`——数据库，系统写的东西（请求日志、用量、正文、运行时日志、健康状态）。
+ *   - `osw-config-v1.db`——配置库，用户写的东西（供应商、模型、路由、改写规则、设置）；
+ *   - `osw-data-v1.db`——数据库，系统写的东西（请求日志、用量、正文、运行时日志、健康状态）。
  *
  * 文件名里的数字是**该文件自己的 schema 版本**：手写常量，不在启动时从 `app.getVersion()` 推导，
  * 而是只在**应用大版本发布**时加一，目的是甩掉累积的迁移历史——换名字就是换文件，新文件从一份
@@ -16,7 +16,7 @@
  *
  * 见 `docs/product/data-model.md` 的数据库初始化策略。
  */
-export const DATABASE_FILE_PREFIX = 'one-switch'
+export const DATABASE_FILE_PREFIX = 'osw'
 
 /**
  * 数据库角色。
@@ -40,7 +40,7 @@ export const DATABASE_SCHEMA_VERSIONS: Record<DatabaseRole, number> = {
   data: 1,
 }
 
-/** 数据文件名：`one-switch-config-v1.db` / `one-switch-data-v1.db`。 */
+/** 数据文件名：`osw-config-v1.db` / `osw-data-v1.db`。 */
 export function createDatabaseFileName(role: DatabaseRole): string {
   return `${DATABASE_FILE_PREFIX}-${role}-v${DATABASE_SCHEMA_VERSIONS[role]}.db`
 }

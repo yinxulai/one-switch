@@ -48,7 +48,7 @@ describe('applyRequestRewriteRules', () => {
       { 'X-Test': 'before' },
       [rule([
         requestHeader('header-set', 'X-Test', 'after'),
-        jsonAction({ type: 'body-set', path: '$.metadata.source', value: 'one-switch' }),
+        jsonAction({ type: 'body-set', path: '$.metadata.source', value: 'osw' }),
         jsonAction({ type: 'body-replace', path: '$.text', search: 'hello', replacement: 'hi', regex: false }),
       ])],
       context(),
@@ -56,7 +56,7 @@ describe('applyRequestRewriteRules', () => {
 
     expect(result.headers['X-Test']).toBe('after')
     expect(result.headers['content-length']).toBe(String(result.body.length))
-    expect(parsed(result)).toEqual({ metadata: { source: 'one-switch' }, text: 'hi' })
+    expect(parsed(result)).toEqual({ metadata: { source: 'osw' }, text: 'hi' })
     expect(result.appliedRuleIds).toEqual(['rule-test'])
     expect(result.skippedRuleIds).toEqual([])
   })

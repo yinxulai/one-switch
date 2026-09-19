@@ -8,7 +8,7 @@ import { configureSettingsDefaults, getSettings, onSettingsChanged, updateSettin
 let temporaryDirectory: string
 
 beforeEach(async () => {
-  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-settings-store-'))
+  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'osw-settings-store-'))
   await initDatabases(temporaryDirectory)
   configureSettingsDefaults({ listenHost: '127.0.0.1', listenPort: 9300 })
 })

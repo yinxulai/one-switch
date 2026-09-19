@@ -177,7 +177,7 @@ function shutdown(exitCode) {
 }
 
 async function main() {
-  log.title('One Switch development')
+  log.title('OSW development')
   log.info(`host: ${path.relative(repositoryRoot, appDirectory)}`)
 
   await waitForConsoleServer()

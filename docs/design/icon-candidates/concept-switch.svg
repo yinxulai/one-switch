@@ -1,4 +1,4 @@
-<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="One Switch">
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="OSW">
   <!-- 备选概念 · Switch：最贴名字 —— 一枚开关，右端是"已切换"的状态 -->
   <defs>
     <linearGradient id="os" gradientUnits="userSpaceOnUse" x1="24" y1="128" x2="232" y2="128">

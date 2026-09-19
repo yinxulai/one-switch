@@ -13,15 +13,15 @@ import { RULE_PRESETS, createBlankRule, createRuleFromPreset } from './rule-pres
 const t = getTranslator('zh-CN')
 
 describe('内置规则模板', () => {
-  it('修改 UA 的默认值是 OneSwitch/<构建时的应用版本号>', () => {
+  it('修改 UA 的默认值是 OSW/<构建时的应用版本号>', () => {
     const preset = RULE_PRESETS.find(item => item.id === 'set-user-agent')
     if (!preset) throw new Error('缺少「修改 User-Agent」模板')
 
     const [action] = preset.actions
     expect(action).toMatchObject({ stage: 'request', target: 'header', operation: 'set', path: 'User-Agent' })
-    expect(action.value).toBe(`OneSwitch/${__APP_VERSION__}`)
+    expect(action.value).toBe(`OSW/${__APP_VERSION__}`)
     // 版本号必须真的被替换进来了：注入失败时 `__APP_VERSION__` 会变成 `undefined` 或空串。
-    expect(action.value).toMatch(/^OneSwitch\/\d+\.\d+/)
+    expect(action.value).toMatch(/^OSW\/\d+\.\d+/)
   })
 
   it('清单保持精简，每个模板只演示一种基础动作并自带可运行用例', () => {

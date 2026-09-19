@@ -11,7 +11,7 @@
 export const uiEn = {
   // ========== 应用 ==========
   'app.tagline': 'local ai gateway',
-  'app.windowTitle': 'One Switch',
+  'app.windowTitle': 'OSW',
 
   // ========== 导航 ==========
   'nav.section.primary': 'Primary',
@@ -700,7 +700,7 @@ export const uiEn = {
   'rules.presets.blank.description': 'Nothing pre-filled; configure every action yourself.',
   'rules.presets.testCaseName': 'Template sample input',
   'rules.presets.setUserAgent.name': 'Override User-Agent',
-  'rules.presets.setUserAgent.description': 'Replace the User-Agent request header with a fixed value to hide which client is talking. The default is OneSwitch/<app version>; swap it for whatever your upstream expects.',
+  'rules.presets.setUserAgent.description': 'Replace the User-Agent request header with a fixed value to hide which client is talking. The default is OSW/<app version>; swap it for whatever your upstream expects.',
   'rules.presets.removeRequestHeader.name': 'Drop a request header',
   'rules.presets.removeRequestHeader.description': 'Remove a header the client sent, such as a local session cookie.',
   'rules.presets.setRequestField.name': 'Set a request field',
@@ -1474,7 +1474,7 @@ export const uiEn = {
 
   // 上游代理
   'settings.outboundProxy.title': 'Outbound Proxy',
-  'settings.outboundProxy.description': 'Network path One Switch uses to reach model services',
+  'settings.outboundProxy.description': 'Network path OSW uses to reach model services',
   'settings.outboundProxy.mode': 'Proxy mode',
   'settings.outboundProxy.modeAria': 'Proxy mode',
   'settings.outboundProxy.mode.direct': 'No proxy',
@@ -1636,16 +1636,16 @@ export const uiEn = {
   'native.tray.openWindow': 'Open the main window',
   'native.tray.startProxy': 'Start the proxy server',
   'native.tray.stopProxy': 'Stop the proxy server',
-  'native.tray.quit': 'Quit One Switch',
+  'native.tray.quit': 'Quit OSW',
 
   // role 菜单的标签由系统提供，这里只翻顶层 label。
   'native.menu.edit': 'Edit',
   'native.menu.view': 'View',
   'native.menu.window': 'Window',
 
-  'native.error.fatalTitle': 'One Switch failed to run',
+  'native.error.fatalTitle': 'OSW failed to run',
   'native.error.fatalDetail': 'The app will exit. Check the logs and try again.',
-  'native.error.startupTitle': 'One Switch failed to start',
+  'native.error.startupTitle': 'OSW failed to start',
   'native.error.startupDetail': 'The app could not finish starting. Check the logs and try again.',
   'native.error.rendererLoadFailed': 'Failed to load the main window ({code}): {description}',
 
@@ -1656,7 +1656,7 @@ export const uiEn = {
   // 面向用户的可读文案：帮助、启动横幅、状态、停止结果。
   // 诊断消息（日志、异常堆栈）仍固定英文（见 docs/product/i18n.md §2），不在这里。
   // 参数名、端口号、路径都是原样打印的字面量，所以占位符名保持与代码一致。
-  'native.cli.usage': 'Usage: one-switch [command] [options]',
+  'native.cli.usage': 'Usage: osw [command] [options]',
   'native.cli.commands': 'Commands:',
   'native.cli.command.start': 'Start the service (default when no command is given)',
   'native.cli.command.stop': 'Stop the instance started by this CLI',
@@ -1674,7 +1674,7 @@ export const uiEn = {
   'native.cli.option.json': 'Print JSON instead of text (status only)',
   'native.cli.managementLoopback': 'The management service always listens on 127.0.0.1: it has no authentication, so remote access has to go through an SSH tunnel.',
 
-  'native.cli.start.title': 'One Switch {version} ({environment})',
+  'native.cli.start.title': 'OSW {version} ({environment})',
   'native.cli.start.console': 'Console: {url}',
   'native.cli.start.proxy': 'Proxy: {url}',
   'native.cli.start.management': 'Management: {url}',
@@ -1685,14 +1685,14 @@ export const uiEn = {
   'native.cli.start.exposedHint': 'The proxy is not authenticated. Drop --host to keep it on 127.0.0.1.',
 
   'native.cli.stop.requesting': 'Asking pid {pid} to stop...',
-  'native.cli.stop.done': 'One Switch stopped.',
-  'native.cli.stop.notRunning': 'One Switch is not running (no runtime file in {path}).',
+  'native.cli.stop.done': 'OSW stopped.',
+  'native.cli.stop.notRunning': 'OSW is not running (no runtime file in {path}).',
   'native.cli.stop.stale': 'No running instance found; removed the stale runtime file at {path}.',
   'native.cli.stop.timeout': 'Shutdown was requested, but pid {pid} is still alive after {seconds}s.',
   'native.cli.stop.rejected': 'The running instance rejected the shutdown request (it has no shutdown handshake, or another service owns that port).',
-  'native.cli.stop.failed': 'Failed to stop One Switch: {message}',
+  'native.cli.stop.failed': 'Failed to stop OSW: {message}',
 
-  'native.cli.status.title': 'One Switch status',
+  'native.cli.status.title': 'OSW status',
   'native.cli.status.running': 'running',
   'native.cli.status.stopped': 'not running',
   'native.cli.status.unresponsive': 'not responding (state file present)',
@@ -1713,14 +1713,14 @@ export const uiEn = {
   'native.cli.error.missingValue': '{option} requires a value',
   'native.cli.error.invalidPort': '{option} must be an integer between 1 and 65535, got "{value}"',
   'native.cli.error.webMissing': 'Console assets are missing at {path}; build the workspace first (pnpm build).',
-  'native.cli.error.portInUse': 'Cannot start One Switch: {address} is already in use.',
+  'native.cli.error.portInUse': 'Cannot start OSW: {address} is already in use.',
   'native.cli.error.portInUseHint': 'Stop the process that holds the port, or pass --proxy-port / --management-port to use other ports.',
-  'native.cli.error.startFailed': 'Failed to start One Switch: {message}',
+  'native.cli.error.startFailed': 'Failed to start OSW: {message}',
   'native.cli.error.alreadyRunning': 'An instance is already running (pid {pid}, data directory {dataDir}).',
-  'native.cli.error.alreadyRunningHint': 'Run one-switch stop first; to run two at once, give one of them a different --data-dir.',
+  'native.cli.error.alreadyRunningHint': 'Run osw stop first; to run two at once, give one of them a different --data-dir.',
   'native.cli.error.lockUnknown': 'Cannot tell whether {path} is in use: it exists, but its owner cannot be read.',
   'native.cli.error.sqliteTitle': 'node:sqlite is not available',
-  'native.cli.error.sqliteBody': 'One Switch CLI stores its data with the built-in "node:sqlite" module. It exists in Node.js 22.5 and newer (on 22.5-22.12 Node has to be started with --experimental-sqlite). Current version: {version}.',
+  'native.cli.error.sqliteBody': 'OSW CLI stores its data with the built-in "node:sqlite" module. It exists in Node.js 22.5 and newer (on 22.5-22.12 Node has to be started with --experimental-sqlite). Current version: {version}.',
 } as const
 
 export type UiCatalogKey = keyof typeof uiEn

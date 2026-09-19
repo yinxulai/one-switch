@@ -2,11 +2,11 @@
 
 ## 文档状态
 
-本文定义 One Switch 访问模型供应商时使用指定网络代理的产品与技术契约。功能已实现（`packages/core/source/infrastructure/network/outbound-connector.ts` 基于 `proxy-agent`，管理 API 提供 `/api/outbound-proxy/test`，设置页有对应卡片），本文同时作为行为契约与验收依据。
+本文定义 OSW 访问模型供应商时使用指定网络代理的产品与技术契约。功能已实现（`packages/core/source/infrastructure/network/outbound-connector.ts` 基于 `proxy-agent`，管理 API 提供 `/api/outbound-proxy/test`，设置页有对应卡片），本文同时作为行为契约与验收依据。
 
 ## 背景与目标
 
-部分网络环境无法直接访问模型供应商，或要求所有外部流量经过公司网关、调试代理或本地代理软件。One Switch 当前使用 Node.js `http.request` / `https.request` 直接访问上游，用户只能依赖进程环境变量或操作系统网络配置，控制台内没有可见、可验证的出站代理设置。
+部分网络环境无法直接访问模型供应商，或要求所有外部流量经过公司网关、调试代理或本地代理软件。OSW 当前使用 Node.js `http.request` / `https.request` 直接访问上游，用户只能依赖进程环境变量或操作系统网络配置，控制台内没有可见、可验证的出站代理设置。
 
 本功能提供应用级全局出站代理策略，使用户可以：
 
@@ -23,8 +23,8 @@
 
 | 名称 | 方向 | 说明 |
 | --- | --- | --- |
-| 本地代理服务 | AI 客户端 → One Switch | One Switch 在 `listenHost:listenPort` 上提供的模型 API 入口 |
-| 上游出站代理 | One Switch → 网络代理 → 模型供应商 | 本文新增的网络访问能力 |
+| 本地代理服务 | AI 客户端 → OSW | OSW 在 `listenHost:listenPort` 上提供的模型 API 入口 |
+| 上游出站代理 | OSW → 网络代理 → 模型供应商 | 本文新增的网络访问能力 |
 
 上游代理策略不修改本地代理服务的监听地址、端口或访问控制。“使用系统代理”只读取操作系统或 Electron 会话解析出的代理结果，不修改系统配置，也不影响其他应用。
 
@@ -53,7 +53,7 @@
 
 ### 设置区域
 
-运行设置页在“监听配置”之后增加“上游代理”设置区域。监听配置描述客户端如何访问 One Switch，上游代理描述 One Switch 如何访问供应商，两者相邻但语义独立。
+运行设置页在“监听配置”之后增加“上游代理”设置区域。监听配置描述客户端如何访问 OSW，上游代理描述 OSW 如何访问供应商，两者相邻但语义独立。
 
 设置项：
 

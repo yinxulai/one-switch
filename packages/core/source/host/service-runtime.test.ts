@@ -101,7 +101,7 @@ async function startHarness(options: HarnessOptions = {}): Promise<Harness> {
 }
 
 beforeEach(() => {
-  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-service-runtime-'))
+  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'osw-service-runtime-'))
   dataDirectory = path.join(temporaryDirectory, 'data')
 })
 

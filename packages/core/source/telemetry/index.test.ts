@@ -41,7 +41,7 @@ async function startEndpoint(): Promise<StubEndpoint> {
   const address = server.address()
   if (address === null || typeof address === 'string') throw new Error('stub endpoint did not start')
   return {
-    url: `http://127.0.0.1:${address.port}/v1/events`,
+    url: `http://127.0.0.1:${address.port}/v1/track`,
     batches,
     close: () => new Promise<void>(resolve => server.close(() => resolve())),
   }
@@ -82,7 +82,7 @@ let stop: (() => void) | null
 let config: RuntimeConfig
 
 beforeEach(async () => {
-  dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-telemetry-'))
+  dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'osw-telemetry-'))
   await initDatabases(dataDir)
   endpoint = await startEndpoint()
   await updateSettings({ telemetryEndpoint: endpoint.url })

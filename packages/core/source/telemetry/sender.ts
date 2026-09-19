@@ -23,9 +23,9 @@ export type TelemetrySender = (endpoint: string, batch: TelemetryBatch) => Promi
  * 固定的 User-Agent。
  *
  * 报文里本来就不带任何用户代理的痕迹，如果连请求头都沿用宿主（Electron 的 UA 里有系统与
- * 内核版本），那就等于在信封上又写了一遍；这里只声明「是 One-Switch 的统计流量」这一件事。
+ * 内核版本），那就等于在信封上又写了一遍；这里只声明「是 OSW 的统计流量」这一件事。
  */
-const TELEMETRY_USER_AGENT = 'One-Switch-Telemetry'
+const TELEMETRY_USER_AGENT = 'OSW-Telemetry'
 
 const DIRECT_SETTINGS: OutboundProxySettings = {
   outboundProxyMode: 'direct',

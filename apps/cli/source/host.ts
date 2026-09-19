@@ -14,7 +14,7 @@ import { getRuntimeProfile, type RuntimeEnvironment } from '@common/runtime-prof
  * 命令行形态固定跑在 production 档预设上。
  *
  * 桌面形态靠 `VITE_DEV_SERVER_URL` 判断自己是不是开发运行，那时数据目录会换成
- * `.one-switch-development`、端口换成 19300/19301；命令行没有「开发服务器」这个输入，
+ * `.osw-development`、端口换成 19300/19301；命令行没有「开发服务器」这个输入，
  * 所以只有一个答案。
  *
  * 这是**唯一**一处选择：数据目录名与默认端口都从这一档预设里取。别处再写一遍
@@ -32,7 +32,7 @@ export const CLI_RUNTIME_ENVIRONMENT: RuntimeEnvironment = 'production'
  * 位置选在**用户主目录**而不是各平台的应用数据目录（`%APPDATA%` / `Application Support` /
  * `$XDG_CONFIG_HOME`）：数据目录的摆放规矩三个平台各一套，而这里真正的诉求只是「一个用户
  * 一份数据」，主目录对三个平台是同一个答案。目录名走预设而不是写死一个字面量——Linux 上
- * 曾经因此分叉成 `one-switch`（小写，看着更像 XDG 惯例）与桌面形态的 `One Switch`，
+ * 曾经因此分叉成 `osw`（小写，看着更像 XDG 惯例）与桌面形态的 `OSW`，
  * 两个目录各自有半份数据。
  *
  * 三个平台都不新增环境变量：用户改位置只能靠 `--data-dir`。

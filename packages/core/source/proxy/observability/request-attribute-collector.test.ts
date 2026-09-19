@@ -23,7 +23,7 @@ describe('collectRequestAttributes', () => {
   })
 
   it('captures an explicit source independently from UA parsing', () => {
-    expect(collectedAttributes('curl/8.0.1', { 'x-one-switch-source': 'build-agent' })).toMatchObject({
+    expect(collectedAttributes('curl/8.0.1', { 'x-osw-source': 'build-agent' })).toMatchObject({
       'client.category': 'cli',
       'client.name': 'curl',
       'request.source': 'build-agent',

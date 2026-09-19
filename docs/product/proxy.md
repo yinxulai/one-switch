@@ -9,7 +9,7 @@
 - 客户端只需配置一个统一的服务根地址（如 `http://127.0.0.1:port`），无需按协议区分；填进客户端的 Base URL 按客户端习惯补路径——OpenAI 兼容客户端填 `<origin>/v1`（它自己拼 `/chat/completions` 等），Anthropic 客户端填 `<origin>`（它自己拼 `/v1/messages`），见 [desktop.md](./desktop.md) §接入配置页
 - 支持普通 HTTP 请求和 SSE 流式响应透传
 - 不强制接管系统代理；推荐用户在 AI 工具中配置本地 Base URL
-- 可选的应用级上游出站代理用于 One Switch 访问模型供应商，覆盖真实模型请求、连接测试和模型列表获取；协议、绕过规则和安全边界详见 [outbound-proxy.md](./outbound-proxy.md)
+- 可选的应用级上游出站代理用于 OSW 访问模型供应商，覆盖真实模型请求、连接测试和模型列表获取；协议、绕过规则和安全边界详见 [outbound-proxy.md](./outbound-proxy.md)
 
 ## 协议识别
 
@@ -41,7 +41,7 @@
       "id": "default",
       "object": "model",
       "created": 0,
-      "owned_by": "one-switch"
+      "owned_by": "osw"
     }
   ]
 }

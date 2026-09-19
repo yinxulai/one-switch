@@ -47,7 +47,7 @@ export function startManagementServer(options: ManagementServerOptions = {}): Pr
     const handleListening = () => {
       candidate.off('error', handleError)
       startupPromise = null
-      console.log(`[one-switch] management server listening on ${host}:${port}`)
+      console.log(`[osw] management server listening on ${host}:${port}`)
       resolve(candidate)
     }
     candidate.once('error', handleError)

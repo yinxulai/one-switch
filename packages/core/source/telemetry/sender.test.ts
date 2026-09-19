@@ -54,7 +54,7 @@ async function startEndpoint(statusCode: number): Promise<StubEndpoint> {
   const address = server.address()
   if (address === null || typeof address === 'string') throw new Error('stub endpoint did not start')
   return {
-    url: `http://127.0.0.1:${address.port}/v1/events?tenant=test`,
+    url: `http://127.0.0.1:${address.port}/v1/track?tenant=test`,
     received,
     close: () => new Promise<void>(resolve => server.close(() => resolve())),
   }
@@ -77,9 +77,9 @@ describe('createTelemetrySender', () => {
     const request = endpoint.received[0]
     expect(request?.method).toBe('POST')
     // 查询串要原样带上：正式端点靠路径与查询串区分环境。
-    expect(request?.url).toBe('/v1/events?tenant=test')
+    expect(request?.url).toBe('/v1/track?tenant=test')
     expect(request?.headers['content-type']).toBe('application/json')
-    expect(request?.headers['user-agent']).toBe('One-Switch-Telemetry')
+    expect(request?.headers['user-agent']).toBe('OSW-Telemetry')
     expect(JSON.parse(request?.body ?? '')).toEqual(SAMPLE_BATCH)
   })
 

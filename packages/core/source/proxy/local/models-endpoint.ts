@@ -15,7 +15,7 @@ export const modelsEndpoint: LocalEndpoint = {
     response.setHeader('Content-Type', 'application/json')
     response.end(JSON.stringify({
       object: 'list',
-      data: [{ id: 'default', object: 'model', created: 0, owned_by: 'one-switch' }],
+      data: [{ id: 'default', object: 'model', created: 0, owned_by: 'osw' }],
     }))
   },
 }

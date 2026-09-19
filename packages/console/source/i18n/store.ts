@@ -22,7 +22,7 @@ export const useLanguageStore = create<LanguageState>()(persist(
     preference: 'system',
     setPreference: preference => set({ preference }),
   }),
-  { name: 'one-switch-language' },
+  { name: 'osw-language' },
 ))
 
 /** 渲染进程能拿到的系统语言；Electron 会把应用 locale 透传到 `navigator.language`。 */

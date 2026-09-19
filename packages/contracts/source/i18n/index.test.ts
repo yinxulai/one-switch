@@ -16,7 +16,7 @@ import { DEFAULT_LOCALE, type Catalog } from './types'
  */
 
 const catalog: Catalog = {
-  'app.title': 'One Switch',
+  'app.title': 'OSW',
   'app.greeting': '你好，{name}',
   'item.count': { one: '1 项', other: '{count} 项' },
   'item.noOther': { one: '只有单数' },
@@ -63,7 +63,7 @@ describe('locale helpers', () => {
 describe('createTranslator', () => {
   it('命中主目录并做插值', () => {
     const t = createTranslator({ locale: 'zh-CN', catalog })
-    expect(t('app.title')).toBe('One Switch')
+    expect(t('app.title')).toBe('OSW')
     expect(t('app.greeting', { name: '小明' })).toBe('你好，小明')
     expect(t.locale).toBe('zh-CN')
   })

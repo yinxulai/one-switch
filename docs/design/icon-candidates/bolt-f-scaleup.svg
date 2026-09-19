@@ -1,4 +1,4 @@
-<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="One Switch">
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="OSW">
   <!-- 等比放大：形状、角度、笔杆粗细、圆角全部不动，只整体放大到贴满方形 -->
   <defs>
     <linearGradient id="os" gradientUnits="userSpaceOnUse" x1="41" y1="16" x2="215" y2="241">

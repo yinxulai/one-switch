@@ -61,7 +61,7 @@ export function useLogsModel(initialSearchText?: string) {
     try {
       const data = await exportMutation.mutateAsync()
       const blobUrl = URL.createObjectURL(new Blob([data.content], { type: 'text/plain;charset=utf-8' }))
-      const anchor = document.createElement('a'); anchor.href = blobUrl; anchor.download = `one-switch-${new Date().toISOString().replaceAll(':', '-')}.log`; anchor.click(); URL.revokeObjectURL(blobUrl)
+      const anchor = document.createElement('a'); anchor.href = blobUrl; anchor.download = `osw-${new Date().toISOString().replaceAll(':', '-')}.log`; anchor.click(); URL.revokeObjectURL(blobUrl)
       toast.success(t('logs.toast.exported'))
     } catch (error) { toast.error(error instanceof Error ? error.message : t('logs.toast.exportFailed')) }
   }, [exportMutation, toast, t])

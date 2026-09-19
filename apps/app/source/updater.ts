@@ -2,7 +2,7 @@ import { app, shell } from 'electron'
 import { autoUpdater, type UpdateInfo } from 'electron-updater'
 import { nativeTranslator } from './i18n'
 
-const GITHUB_RELEASES_PAGE = 'https://github.com/yinxulai/one-switch/releases/latest'
+const GITHUB_RELEASES_PAGE = 'https://github.com/yinxulai/osw/releases/latest'
 
 /**
  * 产物名里的平台 / 架构标记，用来在 `latest*.yml` 的 `files` 里认出「本机要下的那个」。
@@ -238,7 +238,7 @@ export class UpdaterManager {
       latestVersion: info.version,
       releaseNotes,
       releaseDate: info.releaseDate ?? new Date().toISOString(),
-      releaseUrl: `https://github.com/yinxulai/one-switch/releases/tag/v${info.version}`,
+      releaseUrl: `https://github.com/yinxulai/osw/releases/tag/v${info.version}`,
       assets,
       preferredAsset: pickPreferredAsset(assets),
     }

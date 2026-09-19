@@ -1,0 +1,29 @@
+@import 'tailwindcss';
+
+/* 与产品界面同一套排版基准（见 packages/console/source/index.css）。
+   字体从仓库安装的 @fontsource-variable/geist 取；若站点构建环境没装该包会静默回退 sans-serif。 */
+:root {
+  --font-sans:
+    'Geist Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono:
+    'Source Code Pro', 'SF Mono', 'Fira Code', ui-monospace, SFMono-Regular,
+    Menlo, Monaco, Consolas, monospace;
+}
+
+@theme inline {
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  background: #0b0d12;
+  color: #f3f4f8;
+}
+
+/* 遵循「禁止阴影」：层次靠明度阶梯 + 1px 发丝边框，不用 shadow-*。 */

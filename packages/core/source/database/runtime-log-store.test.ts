@@ -8,7 +8,7 @@ import { clearRuntimeLogs, createRuntimeLog, listAllRuntimeLogs, listRuntimeLogs
 let temporaryDirectory: string
 
 beforeEach(async () => {
-  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-runtime-log-'))
+  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'osw-runtime-log-'))
   await initDatabases(temporaryDirectory)
   clearRuntimeLogs()
 })

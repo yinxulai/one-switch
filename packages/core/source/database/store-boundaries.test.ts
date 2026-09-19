@@ -28,7 +28,7 @@ const EMPTY_USAGE = { inputTokens: null, outputTokens: null, cachedInputTokens: 
 let temporaryDirectory: string
 
 beforeEach(async () => {
-  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'one-switch-store-boundaries-'))
+  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'osw-store-boundaries-'))
   await initDatabases(temporaryDirectory)
 })
 

@@ -7,7 +7,7 @@
  *      现在每个能力一个具名方法。
  *   2. **运行时信息由主进程给，不在渲染层重算**。管理 API 的基地址属于「启动之后才知道」
  *      的东西（端口可以被用户改），所以用一次同步 IPC 取回来，并通过 `contextBridge`
- *      注入 `window.__ONE_SWITCH__`——控制台在它的模块脚本里直接读。
+ *      注入 `window.__OSW__`——控制台在它的模块脚本里直接读。
  */
 
 import { contextBridge, ipcRenderer } from 'electron'
@@ -85,6 +85,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
  */
 const runtime = ipcRenderer.sendSync('runtime:get-config') as { apiBase: string }
 
-contextBridge.exposeInMainWorld('__ONE_SWITCH__', {
+contextBridge.exposeInMainWorld('__OSW__', {
   apiBase: runtime.apiBase,
 })
