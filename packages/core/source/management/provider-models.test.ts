@@ -61,3 +61,90 @@ describe('provider model routes', () => {
     expect(responseData(deleteRes).data).toMatchObject({ logicalModelId: logicalModel.id, providerModelId: created.id })
   })
 })
+
+async function createModelWithEndpoint(providerId: string, modelName: string, logicalModelId = 'default'): Promise<{ id: string }> {
+  const response = mockResponse()
+  await providerModelRoutes.invoke('/api/provider-model/create', response, {
+    providerId,
+    modelName,
+    logicalModelId,
+    endpoints: [{ protocol: 'openai-completions', endpointUrl: 'https://example.com/v1/chat/completions' }],
+  })
+  return responseData(response).data as { id: string }
+}
+
+describe('provider model CRUD routes', () => {
+  it('lists models, including the soft-deleted ones when asked', async () => {
+    const provider = await createProvider({ name: 'Crud Provider', apiKeyReference: 'key_crud', enabled: true })
+    const model = await createModelWithEndpoint(provider.id, 'crud-model')
+
+    const alive = mockResponse()
+    await providerModelRoutes.invoke('/api/provider-model/list', alive, {})
+    expect(responseData(alive).data).toEqual([expect.objectContaining({ id: model.id })])
+
+    const remove = mockResponse()
+    await providerModelRoutes.invoke('/api/provider-model/delete', remove, { id: model.id })
+
+    const afterDelete = mockResponse()
+    await providerModelRoutes.invoke('/api/provider-model/list', afterDelete, {})
+    expect(responseData(afterDelete).data).toEqual([])
+
+    const withDeleted = mockResponse()
+    await providerModelRoutes.invoke('/api/provider-model/list', withDeleted, { includeDeleted: true })
+    expect(responseData(withDeleted).data).toEqual([expect.objectContaining({ id: model.id })])
+  })
+
+  it('lists the models bound to a logical model', async () => {
+    const provider = await createProvider({ name: 'Logical Provider', apiKeyReference: 'key_logical', enabled: true })
+    const logicalModel = await createLogicalModel({ id: 'logical-list', name: 'logical-list', description: '' })
+    const model = await createModelWithEndpoint(provider.id, 'logical-model', logicalModel.id)
+
+    const res = mockResponse()
+    await providerModelRoutes.invoke('/api/provider-model/list-by-logical-model', res, { logicalModelId: logicalModel.id })
+    expect(responseData(res).data).toEqual([expect.objectContaining({ id: model.id })])
+  })
+
+  it('reads a single model and throws for an unknown id', async () => {
+    const provider = await createProvider({ name: 'Read Provider', apiKeyReference: 'key_read', enabled: true })
+    const model = await createModelWithEndpoint(provider.id, 'read-model')
+
+    const found = mockResponse()
+    await providerModelRoutes.invoke('/api/provider-model/get', found, { id: model.id })
+    expect(responseData(found).data).toMatchObject({ id: model.id })
+
+    await expect(providerModelRoutes.invoke('/api/provider-model/get', mockResponse(), { id: 'model_missing' }))
+      .rejects.toThrow(/provider model not found/)
+  })
+
+  it('merges partial updates and rewrites the scheduling policy when both fields are given', async () => {
+    const provider = await createProvider({ name: 'Update Provider', apiKeyReference: 'key_update', enabled: true })
+    const logicalModel = await createLogicalModel({ id: 'logical-update', name: 'logical-update', description: '' })
+    const model = await createModelWithEndpoint(provider.id, 'update-model', logicalModel.id)
+
+    const res = mockResponse()
+    await providerModelRoutes.invoke('/api/provider-model/update', res, {
+      id: model.id,
+      modelName: 'renamed-model',
+      enabled: true,
+      logicalModelId: logicalModel.id,
+      priority: 42,
+    })
+    expect(responseData(res).data).toMatchObject({ id: model.id, modelName: 'renamed-model', enabled: true })
+
+    const policies = mockResponse()
+    await providerModelRoutes.invoke('/api/scheduling-policy/list', policies, { logicalModelId: logicalModel.id })
+    expect(responseData(policies).data).toEqual([
+      expect.objectContaining({ providerModelId: model.id, logicalModelId: logicalModel.id, priority: 42 }),
+    ])
+  })
+
+  it('leaves the scheduling policy untouched when only a logical model id is supplied', async () => {
+    const provider = await createProvider({ name: 'Partial Provider', apiKeyReference: 'key_partial', enabled: true })
+    const logicalModel = await createLogicalModel({ id: 'logical-partial', name: 'logical-partial', description: '' })
+    const model = await createModelWithEndpoint(provider.id, 'partial-model', logicalModel.id)
+
+    const res = mockResponse()
+    await providerModelRoutes.invoke('/api/provider-model/update', res, { id: model.id, logicalModelId: logicalModel.id, modelName: 'still-partial' })
+    expect(responseData(res).data).toMatchObject({ id: model.id, modelName: 'still-partial' })
+  })
+})

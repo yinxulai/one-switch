@@ -5,7 +5,7 @@ import type { ServerResponse } from 'node:http'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SecretStore } from '@common/secret-store'
 import { closeDatabases, initDatabases } from '../database'
-import { createProvider, getProvider, listProviders } from '@server/database/provider-store'
+import { createProvider, getProvider, listProviders, createProviderEndpoint } from '@server/database/provider-store'
 import { configureSecretStore } from '@server/infrastructure/secrets/secret-store'
 import { deleteProviderAndSecret, providerRoutes } from './routes/catalog/providers'
 import { mockResponse } from './test-support'
@@ -85,5 +85,84 @@ describe('provider management', () => {
     await providerRoutes.invoke('/api/provider/reorder', reorderRes, { ids: reversed })
     expect((responseData(reorderRes).data as { id: string }[]).map(provider => provider.id)).toEqual(reversed)
     expect((await listProviders()).map(provider => provider.id)).toEqual(reversed)
+  })
+
+  it('reads a provider by id and reports a missing one as 404', async () => {
+    const provider = await createProvider({ name: 'Readable', apiKeyReference: 'key_readable', enabled: true })
+
+    const found = mockResponse()
+    await providerRoutes.invoke('/api/provider/get', found, { id: provider.id })
+    expect(responseData(found).data).toMatchObject({ id: provider.id, name: 'Readable' })
+
+    const missing = mockResponse()
+    await providerRoutes.invoke('/api/provider/get', missing, { id: 'prov_missing' })
+    expect(missing.statusCode).toBe(404)
+  })
+
+  it('lists the endpoints declared on a provider', async () => {
+    const provider = await createProvider({ name: 'Endpoints', apiKeyReference: 'key_endpoints', enabled: true })
+    await createProviderEndpoint({ providerId: provider.id, protocol: 'openai-completions', url: 'https://example.com/v1/chat/completions' })
+
+    const res = mockResponse()
+    await providerRoutes.invoke('/api/provider/endpoints', res, { id: provider.id })
+    expect(responseData(res).data).toEqual([
+      expect.objectContaining({ providerId: provider.id, protocol: 'openai-completions' }),
+    ])
+  })
+
+  it('merges updates and rotates the API key in place', async () => {
+    const provider = await createProvider({ name: 'Before', apiKeyReference: 'key_rotate', timeoutMilliseconds: 10_000, enabled: true })
+
+    const res = mockResponse()
+    await providerRoutes.invoke('/api/provider/update', res, {
+      id: provider.id,
+      name: 'After',
+      timeoutMilliseconds: 45_000,
+      enabled: false,
+      apiKey: 'sk-rotated',
+    })
+
+    expect(responseData(res).data).toMatchObject({ id: provider.id, name: 'After', timeoutMilliseconds: 45_000, enabled: false })
+    expect(secretStore.set).toHaveBeenCalledWith('key_rotate', 'sk-rotated')
+  })
+
+  it('replaces the provider endpoints when the update carries them', async () => {
+    const provider = await createProvider({ name: 'Endpoint Update', apiKeyReference: 'key_endpoint_update', enabled: true })
+
+    const res = mockResponse()
+    await providerRoutes.invoke('/api/provider/update', res, {
+      id: provider.id,
+      endpoints: { 'anthropic-messages': 'https://example.com/v1/messages' },
+    })
+
+    const endpoints = mockResponse()
+    await providerRoutes.invoke('/api/provider/endpoints', endpoints, { id: provider.id })
+    expect(responseData(endpoints).data).toEqual([
+      expect.objectContaining({ protocol: 'anthropic-messages', url: 'https://example.com/v1/messages' }),
+    ])
+  })
+
+  it('reports 404 when updating a provider that does not exist', async () => {
+    const res = mockResponse()
+    await providerRoutes.invoke('/api/provider/update', res, { id: 'prov_missing', name: 'Nope' })
+    expect(res.statusCode).toBe(404)
+  })
+
+  it('deletes a provider and its secret through the route', async () => {
+    const provider = await createProvider({ name: 'Delete Me', apiKeyReference: 'key_delete_me', enabled: true })
+
+    const res = mockResponse()
+    await providerRoutes.invoke('/api/provider/delete', res, { id: provider.id })
+
+    expect(responseData(res).data).toEqual({ id: provider.id })
+    expect(secretStore.delete).toHaveBeenCalledWith('key_delete_me')
+  })
+
+  it('resets a provider health record', async () => {
+    const provider = await createProvider({ name: 'Heal Me', apiKeyReference: 'key_heal_me', enabled: true })
+
+    const res = mockResponse()
+    await providerRoutes.invoke('/api/provider/reset-health', res, { providerId: provider.id })
+    expect(responseData(res).data).toEqual({ providerId: provider.id })
   })
 })
