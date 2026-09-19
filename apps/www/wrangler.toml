@@ -27,8 +27,8 @@ routes = [
 
 # 静态资源：Vite 构建产物。`not_found_handling` 让任意深层路径都回落到 SPA 入口。
 [assets]
-directory = "./output"
 binding = "ASSETS"
+directory = "./output"
 not_found_handling = "single-page-application"
 
 # R2 桶：承载安装包（`<version>/OSW-*.{dmg,exe,AppImage}`）。上传方式见 README.md。
